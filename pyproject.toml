@@ -1,0 +1,23 @@
+[project]
+name = "spectqt"
+version = "0.1.0"
+description = "LSL Heartrate Analysis Program"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "black>=25.1.0",
+    "easywebdav>=1.2.0",
+    "flake8>=7.2.0",
+    "ipympl>=0.9.7",
+    "ipyvuetify>=1.11.1",
+    "ipywidgets>=8.1.6",
+    "isort>=6.0.1",
+    "matplotlib>=3.10.1",
+    "mplcursors>=0.6",
+    "mypy>=1.15.0",
+    "numpy>=2.2.5",
+    "pandas>=2.2.3",
+    "pyside6>=6.9.0",
+    "pyxdf>=1.17.0",
+    "scipy>=1.15.2",
+]
