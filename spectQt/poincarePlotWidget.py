@@ -1,12 +1,19 @@
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QScrollArea, QFrame
-)
-from matplotlib.patches import Ellipse
+import mplcursors
 import numpy as np
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.patches import Ellipse
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QFrame,
+    QHBoxLayout,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
+
 import spectHR as cs
-import mplcursors  
+
 
 class PoincarePlotWidget(QWidget):
     """
@@ -61,7 +68,7 @@ class PoincarePlotWidget(QWidget):
         scroll.setWidget(checkbox_container)
         self.main_layout.addWidget(scroll, stretch=1)
 
-    def plot_poincare(self, dataset):
+    def poincarePlot(self, dataset):
         """
         Plot the Poincaré graph based on the provided dataset, grouped by epoch.
 

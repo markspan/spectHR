@@ -17,9 +17,9 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QHeaderView,
-    QMainWindow, QMenu, QMenuBar, QSizePolicy,
-    QSplitter, QStatusBar, QTabWidget, QTreeWidget,
-    QTreeWidgetItem, QVBoxLayout, QWidget)
+    QMainWindow, QMenu, QMenuBar, QScrollArea,
+    QSizePolicy, QSplitter, QStatusBar, QTabWidget,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -36,10 +36,17 @@ class Ui_MainWindow(object):
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.splitter = QSplitter(self.centralwidget)
         self.splitter.setObjectName(u"splitter")
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.MinimumExpanding)
+        sizePolicy.setHorizontalStretch(1)
+        sizePolicy.setVerticalStretch(1)
+        sizePolicy.setHeightForWidth(self.splitter.sizePolicy().hasHeightForWidth())
+        self.splitter.setSizePolicy(sizePolicy)
+        self.splitter.setBaseSize(QSize(2, 0))
+        self.splitter.setFrameShape(QFrame.Shape.VLine)
         self.splitter.setOrientation(Qt.Orientation.Horizontal)
         self.Treeframe = QFrame(self.splitter)
         self.Treeframe.setObjectName(u"Treeframe")
-        self.Treeframe.setMaximumSize(QSize(512, 16777215))
+        self.Treeframe.setBaseSize(QSize(100, 0))
         self.Treeframe.setStyleSheet(u"background-color: #f3f3f3;")
         self.Treeframe.setFrameShape(QFrame.Shape.StyledPanel)
         self.Treeframe.setFrameShadow(QFrame.Shadow.Raised)
@@ -69,9 +76,48 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2.addWidget(self.mplPreProcessing)
 
         self.Views.addTab(self.PreProcessing, "")
-        self.PoinCare = QWidget()
-        self.PoinCare.setObjectName(u"PoinCare")
-        self.Views.addTab(self.PoinCare, "")
+        self.Poincare = QWidget()
+        self.Poincare.setObjectName(u"Poincare")
+        self.horizontalLayout_3 = QHBoxLayout(self.Poincare)
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+        self.mplPoincare = QWidget(self.Poincare)
+        self.mplPoincare.setObjectName(u"mplPoincare")
+
+        self.horizontalLayout_3.addWidget(self.mplPoincare)
+
+        self.Views.addTab(self.Poincare, "")
+        self.Epochs = QWidget()
+        self.Epochs.setObjectName(u"Epochs")
+        self.horizontalLayout_4 = QHBoxLayout(self.Epochs)
+        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.mplEpochs = QWidget(self.Epochs)
+        self.mplEpochs.setObjectName(u"mplEpochs")
+
+        self.horizontalLayout_4.addWidget(self.mplEpochs)
+
+        self.Views.addTab(self.Epochs, "")
+        self.Profiles = QWidget()
+        self.Profiles.setObjectName(u"Profiles")
+        self.horizontalLayout_5 = QHBoxLayout(self.Profiles)
+        self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
+        self.mplProfiles = QWidget(self.Profiles)
+        self.mplProfiles.setObjectName(u"mplProfiles")
+        self.verticalLayout_2 = QVBoxLayout(self.mplProfiles)
+        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.scrollArea = QScrollArea(self.mplProfiles)
+        self.scrollArea.setObjectName(u"scrollArea")
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollAreaWidgetContents = QWidget()
+        self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 293, 475))
+        self.scrollArea.setWidget(self.scrollAreaWidgetContents)
+
+        self.verticalLayout_2.addWidget(self.scrollArea)
+
+
+        self.horizontalLayout_5.addWidget(self.mplProfiles)
+
+        self.Views.addTab(self.Profiles, "")
         self.splitter.addWidget(self.Views)
 
         self.verticalLayout.addWidget(self.splitter)
@@ -96,7 +142,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.Views.setCurrentIndex(0)
+        self.Views.setCurrentIndex(2)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -107,7 +153,9 @@ class Ui_MainWindow(object):
         self.actionOpen_Workspace.setText(QCoreApplication.translate("MainWindow", u"Open Workspace", None))
         self.actionSettings.setText(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.Views.setTabText(self.Views.indexOf(self.PreProcessing), QCoreApplication.translate("MainWindow", u"PreProcessing", None))
-        self.Views.setTabText(self.Views.indexOf(self.PoinCare), QCoreApplication.translate("MainWindow", u"PoinCare", None))
+        self.Views.setTabText(self.Views.indexOf(self.Poincare), QCoreApplication.translate("MainWindow", u"Poincare", None))
+        self.Views.setTabText(self.Views.indexOf(self.Epochs), QCoreApplication.translate("MainWindow", u"Epochs", None))
+        self.Views.setTabText(self.Views.indexOf(self.Profiles), QCoreApplication.translate("MainWindow", u"Profiles", None))
         self.menufile.setTitle(QCoreApplication.translate("MainWindow", u"WorkSpace", None))
         self.menuView.setTitle(QCoreApplication.translate("MainWindow", u"View", None))
     # retranslateUi

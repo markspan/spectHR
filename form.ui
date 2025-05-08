@@ -71,7 +71,7 @@
         <string notr="true">background-color: #f3f3f3;</string>
        </property>
        <property name="currentIndex">
-        <number>0</number>
+        <number>2</number>
        </property>
        <property name="documentMode">
         <bool>true</bool>
@@ -100,11 +100,41 @@
         <attribute name="title">
          <string>Epochs</string>
         </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_4">
+         <item>
+          <widget class="QWidget" name="mplEpochs" native="true"/>
+         </item>
+        </layout>
        </widget>
        <widget class="QWidget" name="Profiles">
         <attribute name="title">
          <string>Profiles</string>
         </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_5">
+         <item>
+          <widget class="QWidget" name="mplProfiles" native="true">
+           <layout class="QVBoxLayout" name="verticalLayout_2">
+            <item>
+             <widget class="QScrollArea" name="scrollArea">
+              <property name="widgetResizable">
+               <bool>true</bool>
+              </property>
+              <widget class="QWidget" name="scrollAreaWidgetContents">
+               <property name="geometry">
+                <rect>
+                 <x>0</x>
+                 <y>0</y>
+                 <width>293</width>
+                 <height>475</height>
+                </rect>
+               </property>
+              </widget>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
        </widget>
       </widget>
      </widget>

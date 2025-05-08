@@ -1,16 +1,26 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QComboBox, QHBoxLayout, QPushButton, QStyle
-from PySide6.QtGui import QIcon, QTransform
-from PySide6.QtCore import QSize
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-import matplotlib.patches as patches
-from matplotlib.ticker import MultipleLocator
-from matplotlib.patches import FancyArrowPatch
-import matplotlib.pyplot as plt
 import math
+
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from matplotlib.patches import FancyArrowPatch
+from matplotlib.ticker import MultipleLocator
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QIcon, QTransform
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QPushButton,
+    QStyle,
+    QVBoxLayout,
+    QWidget,
+)
+
 from spectHR.ui.LineHandler import LineHandler
+
 
 class PrepPlotWidget(QWidget):
     def __init__(self, parent=None):
@@ -22,8 +32,6 @@ class PrepPlotWidget(QWidget):
 
         # Initialize attributes
         self.data = None
-        self.x_min = None
-        self.x_max = None
         self.line_handler = None
         self.RTopColors = {
             "N": "blue",
@@ -111,62 +119,62 @@ class PrepPlotWidget(QWidget):
         print(f"Edit mode set to: {mode}")
 
     def zoom_in(self):
-        x_range = (self.x_max - self.x_min) / 3
-        middle = (self.x_max + self.x_min) / 2
-        self.x_min = middle - x_range
-        self.x_max = middle + x_range
+        x_range = (self.data.x_max - self.data.x_min) / 3
+        middle = (self.data.x_max + self.data.x_min) / 2
+        self.data.x_min = middle - x_range
+        self.data.x_max = middle + x_range
         self.update_view()
 
     def zoom_out(self):
-        x_range = (self.x_max - self.x_min) / 1.5
-        middle = (self.x_max + self.x_min) / 2
-        self.x_min = max(middle - x_range, self.data.ecg.time.iat[0])
-        self.x_max = min(self.x_min + (2 * x_range), self.data.ecg.time.iat[-1])
+        x_range = (self.data.x_max - self.data.x_min) / 1.5
+        middle = (self.data.x_max + self.data.x_min) / 2
+        self.data.x_min = max(middle - x_range, self.data.ecg.time.iat[0])
+        self.data.x_max = min(self.data.x_min + (2 * x_range), self.data.ecg.time.iat[-1])
         self.update_view()
 
     def pan_left(self):
-        x_range = self.x_max - self.x_min
-        self.x_min = max(self.data.ecg.time.iat[0], self.x_min - x_range)
-        self.x_max = self.x_min + x_range
+        x_range = self.data.x_max - self.data.x_min
+        self.data.x_min = max(self.data.ecg.time.iat[0], self.data.x_min - x_range)
+        self.data.x_max = self.data.x_min + x_range
         self.update_view()
 
     def pan_right(self):
-        x_range = self.x_max - self.x_min
-        self.x_min = min(self.data.ecg.time.iat[-1] - x_range, self.x_min + x_range)
-        self.x_max = self.x_min + x_range
+        x_range = self.data.x_max - self.data.x_min
+        self.data.x_min = min(self.data.ecg.time.iat[-1] - x_range, self.data.x_min + x_range)
+        self.data.x_max = self.data.x_min + x_range
         self.update_view()
 
     def go_to_start(self):
-        x_range = self.x_max - self.x_min
-        self.x_min = self.data.ecg.time.iat[0]
-        self.x_max = self.x_min + x_range
+        x_range = self.data.x_max - self.data.x_min
+        self.data.x_min = self.data.ecg.time.iat[0]
+        self.data.x_max = self.data.x_min + x_range
         self.update_view()
 
     def go_to_end(self):
-        x_range = self.x_max - self.x_min
-        self.x_max = self.data.ecg.time.iat[-1]
-        self.x_min = self.x_max - x_range
+        x_range = self.data.x_max - self.data.x_min
+        self.data.x_max = self.data.ecg.time.iat[-1]
+        self.data.x_min = self.data.x_max - x_range
         self.update_view()
 
     def next(self):
-        x_range = self.x_max - self.x_min
-        idx = (self.data.RTops["ID"] != "N") & (self.data.RTops["time"] > self.x_max)
+        x_range = self.data.x_max - self.data.x_min
+        idx = (self.data.RTops["ID"] != "N") & (self.data.RTops["time"] > self.data.x_max)
         center = self.data.RTops.loc[idx, "time"].iloc[0] if idx.any() else None
 
         if center is not None:
-            self.x_min = center - (0.5 * x_range)
-            self.x_max = self.x_min + x_range        
+            self.data.x_min = center - (0.5 * x_range)
+            self.data.x_max = self.data.x_min + x_range        
         
         self.update_view()
 
     def prev(self):
-        x_range = self.x_max - self.x_min
-        idx = (self.data.RTops["ID"] != "N") & (self.data.RTops["time"] < self.x_min)
+        x_range = self.data.x_max - self.data.x_min
+        idx = (self.data.RTops["ID"] != "N") & (self.data.RTops["time"] < self.data.x_min)
         center = self.data.RTops.loc[idx, "time"].iloc[-1] if idx.any() else None
 
         if center is not None:
-            self.x_min = center - (0.5 * x_range)
-            self.x_max = self.x_min + x_range
+            self.data.x_min = center - (0.5 * x_range)
+            self.data.x_max = self.data.x_min + x_range
 
         self.update_view()
 
@@ -180,7 +188,7 @@ class PrepPlotWidget(QWidget):
         if hasattr(self.data, "RTops"):
             # Plot only R-tops within x_min and x_max
             visibles = self.data.RTops[
-                (self.data.RTops["time"] >= self.x_min - 1) & (self.data.RTops["time"] <= self.x_max + 1)
+                (self.data.RTops["time"] >= self.data.x_min - 1) & (self.data.RTops["time"] <= self.data.x_max + 1)
             ]
 
             if len(visibles) < 100:
@@ -189,17 +197,15 @@ class PrepPlotWidget(QWidget):
                 )  # Plot VLines in the current view, if there are less than 100
                 self.ax_ecg.set_ylim(self.ax_ecg.get_ylim()[0], self.ax_ecg.get_ylim()[1] * 1.2)
 
-            self.set_ecg_plot_properties(self.ax_ecg, self.x_min, self.x_max)
+            self.set_ecg_plot_properties(self.ax_ecg, self.data.x_min, self.data.x_max)
 
             # Plot the breathing rate if available in the data
             if self.ax_br is not None and self.data.br is not None:
                 self.plot_breathing_rate(
-                    self.ax_br, self.data.br.time, self.data.br.level, self.x_min, self.x_max, self.line_handler
+                    self.ax_br, self.data.br.time, self.data.br.level, self.data.x_min, self.data.x_max, self.line_handler
                 )
-                self.set_br_plot_properties(self.ax_br, self.x_min, self.x_max)
+                self.set_br_plot_properties(self.ax_br, self.data.x_min, self.data.x_max)
 
-            self.data.x_min = self.x_min
-            self.data.x_max = self.x_max
             self.ax_overview.figure.canvas.draw()
             self.fig.canvas.draw_idle()
 
@@ -210,13 +216,13 @@ class PrepPlotWidget(QWidget):
         """
         if event.inaxes == self.ax_overview:  # If click is on the overview plot
             # Check if the press is within the draggable region (x_min, x_max)
-            if self.x_min <= event.xdata <= self.x_max:
-                self.initial_xmin, self.initial_xmax = self.x_min, self.x_max
-                dist = self.x_max - self.x_min
+            if self.data.x_min <= event.xdata <= self.data.x_max:
+                self.initial_xmin, self.initial_xmax = self.data.x_min, self.data.x_max
+                dist = self.data.x_max - self.data.x_min
                 # Determine drag mode based on proximity to the edges of the zoom box
-                if abs(event.xdata - self.x_min) < 0.3 * dist:
+                if abs(event.xdata - self.data.x_min) < 0.3 * dist:
                     self.drag_mode = "left"
-                elif abs(event.xdata - self.x_max) < 0.3 * dist:
+                elif abs(event.xdata - self.data.x_max) < 0.3 * dist:
                     self.drag_mode = "right"
                 else:
                     self.drag_mode = "center"
@@ -235,16 +241,16 @@ class PrepPlotWidget(QWidget):
         if event.inaxes == self.ax_overview:  # If click is on the overview plot
             # Adjust the zoom limits based on drag mode (left, right, or center)
             if self.drag_mode == "left":
-                self.x_min = min(event.xdata, self.x_max - 0.1)
+                self.data.x_min = min(event.xdata, self.data.x_max - 0.1)
             elif self.drag_mode == "right":
-                self.x_max = max(event.xdata, self.x_min + 0.1)
+                self.data.x_max = max(event.xdata, self.data.x_min + 0.1)
             elif self.drag_mode == "center":
                 dx = event.xdata - 0.5 * (self.initial_xmin + self.initial_xmax)
-                self.x_min = self.initial_xmin + dx
-                self.x_max = self.initial_xmax + dx
+                self.data.x_min = self.initial_xmin + dx
+                self.data.x_max = self.initial_xmax + dx
             # Update the zoom box position
-            self.positional_patch.set_x(self.x_min)
-            self.positional_patch.set_width(self.x_max - self.x_min)
+            self.positional_patch.set_x(self.data.x_min)
+            self.positional_patch.set_width(self.data.x_max - self.data.x_min)
             self.fig.canvas.draw_idle()
 
     def on_release(self, event):
@@ -386,7 +392,7 @@ class PrepPlotWidget(QWidget):
         """
         ax.clear()
         ax.plot(ecg_time, ecg_level, label="ECG Signal", color="red", linewidth=0.8, alpha=1)
-        ax.set_xlim(self.x_min, self.x_max)
+        ax.set_xlim(self.data.x_min, self.data.x_max)
 
     def plot_breathing_rate(self, ax, br_time, br_level, x_min, x_max, line_handler):
         """
@@ -401,8 +407,8 @@ class PrepPlotWidget(QWidget):
         Updates the plot view by replotting data and adjusting the positional patch.
         """
         self.update_plot()
-        self.positional_patch.set_x(self.x_min)
-        self.positional_patch.set_width(self.x_max - self.x_min)
+        self.positional_patch.set_x(self.data.x_min)
+        self.positional_patch.set_width(self.data.x_max - self.data.x_min)
 
         self.ax_overview.figure.canvas.draw()
         self.fig.canvas.draw_idle()
@@ -464,13 +470,20 @@ class PrepPlotWidget(QWidget):
         plt.title("")
 
         # Initialize x-axis limits based on input or data
-        self.x_min = x_min if x_min is not None else self.data.ecg.time.min()
-        self.x_max = x_max if x_max is not None else self.data.ecg.time.max()
+        
+        x_min = x_min if x_min is not None else self.data.ecg.time.min()
+        x_max = x_max if x_max is not None else self.data.ecg.time.max()
 
-        self.x_min = data.x_min if data.x_min is not None else self.x_min
-        self.x_max = data.x_max if data.x_max is not None else self.x_max
-
+        if not hasattr(self.data, 'x_min'):
+            self.data.x_min = x_min
+            self.data.x_max = x_max
+        self.data.x_min = self.data.x_min if self.data.x_min is not None else x_min
+        self.data.x_max = self.data.x_max if self.data.x_max is not None else x_max
+        
+        print(f'{x_min} - {x_max}')
+        print(f'{self.data.x_min} - {self.data.x_max}')
         # Create figure and axis handles
+        
         if fig is None:
             print("new fig")
             self.fig, self.ax_ecg, self.ax_overview, self.ax_br = self.create_figure_axes(data)
@@ -485,11 +498,11 @@ class PrepPlotWidget(QWidget):
         self.fig.tight_layout()
 
         self.line_handler = LineHandler(self.ax_ecg, callback_drag=self.update_rtop, callback_remove=self.remove_rtop)
-        self.positional_patch = self.plot_overview(self.ax_overview, data.ecg.time, data.ecg.level, self.x_min, self.x_max)
+        self.positional_patch = self.plot_overview(self.ax_overview, data.ecg.time, data.ecg.level, self.data.x_min, self.data.x_max)
 
         # State variables for dragging
         self.drag_mode = None
-        self.initial_xmin, self.initial_xmax = self.x_min, self.x_max
+        self.initial_xmin, self.initial_xmax = self.data.x_min, self.data.x_max
 
         self.update_plot()
 
