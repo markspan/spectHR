@@ -62,6 +62,11 @@ class MainWindow(QMainWindow):
         layout2 = QVBoxLayout()
         layout2.addWidget(self.poincare_plot_widget)
         self.ui.mplPoincare.setLayout(layout2)
+                                                  
+        self.gantt_plot_widget = spQt.GanttPlotWidget()  # Create the GanttPlotWidget instance
+        layout3 = QVBoxLayout()  # Create a new layout for the widget
+        layout3.addWidget(self.gantt_plot_widget)  # Add the GanttPlotWidget to the layout
+        self.ui.mplEpochs.setLayout(layout3)  # Set the layout to the mplEpochs placeholder
 
         # Create layout for Welch PSD plot widgets (one per epoch)
         self.welch_psd_layout = QVBoxLayout()
@@ -89,6 +94,12 @@ class MainWindow(QMainWindow):
         if self.dataset is not None:
             self.dataset.save()
 
+        if index == 1 and self.dataset is not None:
+            self.show_poincare_plot(self.dataset)
+
+        if index == 2 and self.dataset is not None:
+            self.show_gantt_plot(self.dataset)
+
         if index == 3 and self.dataset is not None:
             self.show_welch_psd_plot(self.dataset)
 
@@ -113,6 +124,7 @@ class MainWindow(QMainWindow):
         # Update the UI with the new dataset
         self.show_preprocessing_plot(self.dataset)
         self.show_poincare_plot(self.dataset)
+        self.show_gantt_plot(self.dataset)
         self.show_welch_psd_plot(self.dataset)
 
     def show_preprocessing_plot(self, data):
@@ -125,7 +137,19 @@ class MainWindow(QMainWindow):
             The dataset object containing preprocessed ECG signals.
         """
         self.prep_plot_widget.prepPlot(data)
+    def show_gantt_plot(self, data):
+        """
+        Display the Gantt plot of the epochs in the appropriate widget.
 
+        Parameters
+        ----------
+        data : object
+            The dataset object containing epoch information.
+        """
+        if data is not None:
+            # Call the method from the GanttPlotWidget to generate and display the plot
+            self.gantt_plot_widget.plotGantt(data)
+            
     def show_poincare_plot(self, data):
         """
         Display the Poincaré plot of the ECG signal in the appropriate widget.

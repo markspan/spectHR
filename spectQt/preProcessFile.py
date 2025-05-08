@@ -25,6 +25,8 @@ def PreProcessFile(file_path):
 
     # Apply a high-pass filter to remove baseline drift
     dataset = cs.filterECGData(dataset, {"filterType": "highpass", "cutoff": 1})
+    
+    dataset = cs.borderData(dataset)
 
     # Compute R-peaks only if not already present
     if not hasattr(dataset, 'RTops'):

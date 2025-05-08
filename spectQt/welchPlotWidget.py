@@ -34,7 +34,10 @@ class WelchPSDPlotWidget(QWidget):
         """
         Plots the Welch PSD from the dataset for a specific epoch.
         """
-
+        # Check visibility
+        if hasattr(dataset, "active_epochs"):
+            if dataset.active_epochs.get(epoch, True) is False:
+                return  # Don't plot invisible epochs
         # Filter dataset for the specific epoch
         epoch_data = dataset[dataset['epoch'] == epoch]
 
