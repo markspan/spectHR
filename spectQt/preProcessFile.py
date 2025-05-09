@@ -22,14 +22,14 @@ def PreProcessFile(file_path):
     """
     # Load dataset without resetting metadata; auto-detect polarity
     dataset = cs.SpectHRDataset(file_path, reset=False, flip='auto')
-
-    # Apply a high-pass filter to remove baseline drift
-    dataset = cs.filterECGData(dataset, {"filterType": "highpass", "cutoff": 1})
+    if file_path.endswith('.xdf'):
+        # Apply a high-pass filter to remove baseline drift
+        dataset = cs.filterECGData(dataset, {"filterType": "highpass", "cutoff": 1})
     
-    dataset = cs.borderData(dataset)
+        dataset = cs.borderData(dataset)
 
-    # Compute R-peaks only if not already present
-    if not hasattr(dataset, 'RTops'):
-        dataset = cs.calcPeaks(dataset)
+        # Compute R-peaks only if not already present
+        if not hasattr(dataset, 'RTops'):
+            dataset = cs.calcPeaks(dataset)
 
     return dataset

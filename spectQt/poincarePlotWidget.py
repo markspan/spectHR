@@ -3,6 +3,7 @@ import mplcursors
 import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.patches import Ellipse
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -11,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import Qt
+
 import spectHR as cs
 
 
@@ -159,10 +160,14 @@ class PoincarePlotWidget(QWidget):
         self.ax.axline((0, 0), slope=1, color='gray', linestyle='--', linewidth=0.7)
         self.ax.grid(True)
         # Only include visible entries in legend
-        handles_labels = [
-            (h, h.get_label()) for e, h in self.scatter_handles.items()
-            if self.dataset.active_epochs.get(e, True)  # True if missing
-        ]
+        if hasattr(self.dataset, 'active_epochs'):
+            handles_labels = [
+                (h, h.get_label()) for e, h in self.scatter_handles.items()
+                if self.dataset.active_epochs.get(e, True)  # True if missing
+            ]
+        else:
+            handles_labels = self.scatter_handles.items()
+            
         if handles_labels:
             handles, labels = zip(*handles_labels)
             self.ax.legend(
@@ -175,26 +180,29 @@ class PoincarePlotWidget(QWidget):
         self.fig.subplots_adjust(left=0.3)  # Make room on the left for the legend
         self.ax.set_aspect('equal', adjustable='datalim')
         self.ax.set_box_aspect(1)
-
+        self.filtered_by_epoch = {}
+        # Step 2: create the sets
+        for unique_epoch in dataset.unique_epochs:
+            # Create a mask for the current epoch
+            mask = [ unique_epoch in sublist if sublist is not None else False for sublist in dataset.RTops.epoch ]    
+            # Subset dataset.RTops for the current epoch
+            self.filtered_by_epoch[unique_epoch] = dataset.RTops[mask]
         # Add mplcursors hover annotations
-        all_scatters = list(self.scatter_handles.values())
-        self.cursor = mplcursors.cursor(all_scatters, hover=True)
+        # Add mplcursors hover annotations
+        if self.cursor is not None:
+            self.cursor.remove()
+        self.cursor = mplcursors.cursor([scatter for scatter in self.scatter_handles.values()], hover=True)
 
         @self.cursor.connect("add")
-        def on_add(sel):
-            for epoch, scatter in self.scatter_handles.items():
-                if sel.artist == scatter:
-                    ind = sel.index
-                    data = self.filtered_by_epoch[epoch]
-                    if ind < len(data):
-                        time = data.index[ind]  # assuming time is in the index
-                        sel.annotation.set(text=f"{epoch}\nTime: {time}")
-                    else:
-                        sel.annotation.set(text=f"{epoch}\nIndex: {ind}")
-                    break
-
-        # Redraw canvas
-        self.canvas.draw()
+        def on_hover(sel):
+            # Simplified hover function
+ 
+            x_value = sel.artist.get_offsets()[sel.index, 0]
+            y_value = sel.artist.get_offsets()[sel.index, 1]
+            data = self.filtered_by_epoch[sel.epoch]
+            ibi_idx = (np.abs(data.ibi - x_value)).argmin() 
+            time_value = data.time.iloc[ibi_idx]
+            sel.annotation.set_text(f"{epoch.title()}:\nIBI={1000*x_value:.0f}-{1000*y_value:.0f}ms\nTime={time_value:.1f}s")
 
     def update_visibility(self):
         """

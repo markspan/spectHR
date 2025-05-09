@@ -1,13 +1,17 @@
-import pandas as pd
-import numpy as np
-import pyxdf
 import os
-from pathlib import Path
 import pickle
+import re
 from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pyxdf
+
+from spectHR.Actions.csBreathing import calculate_breathing_signal
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.Webdav import copyWebdav
-from spectHR.Actions.csBreathing import calculate_breathing_signal
+
 
 class TimeSeries:
     """
@@ -163,6 +167,10 @@ class SpectHRDataset:
             logger.info(f"Loading dataset from Raw Harness File: {self.file_path}")
             self.loadRawHarness(self.file_path, flip=flip)
             self.save()
+        elif self.file_path.endswith('.evt') and Path(self.file_path).exists():
+            logger.info(f"Loading dataset from CARSPAN evt File: {self.file_path}")
+            self.loadEVT(self.file_path, flip=flip)
+            self.save()
         else:
             logger.error(f"File {self.file_path} was not found")
 
@@ -177,6 +185,83 @@ class SpectHRDataset:
         except Exception as e:
             logger.error(f"Failed to save pickle file: {e}")
 
+    def loadEVT(self, filename, flip='auto'):
+        """
+        Loads RTops from a CARSPAN .evt file and generates structured events for epochs.
+
+        Args:
+            filename (str): Path to the evt file.
+            flip (str or bool, optional): Not used, included for compatibility.
+        """
+        logger.info('Loading CARSPAN EVT RTops')
+
+        # Step 1: Read only [Data] section
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+
+        data_section = False
+        event_codes = []
+        times = []
+
+        for line in lines:
+            if line.strip() == "[Data]":
+                data_section = True
+                continue
+            if not data_section:
+                continue
+
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                try:
+                    code = int(parts[0])
+                    time = float(parts[1])
+                    event_codes.append(code)
+                    times.append(time)
+                except ValueError:
+                    continue  # Skip malformed lines
+
+        df = pd.DataFrame({'event_code': event_codes, 'time': times})
+
+        # Step 2: Extract RTops (event_code == 1)
+        rtops = df[df['event_code'] == 1].copy()
+        rtops.reset_index(drop=True, inplace=True)
+        rtops['ibi'] = np.append(np.diff(rtops['time']), np.nan)
+        rtops['epoch'] = None  # To be filled by create_epoch_series()
+        self.RTops = rtops[['time', 'ibi', 'epoch']]
+        self.RTops['ID'] = 'N'
+        # Step 3: Extract start and end codes (11 and 21)
+        start_times = df[df['event_code'] == 11]['time'].tolist()
+        end_times = df[df['event_code'] == 21]['time'].tolist()
+
+        if len(start_times) != len(end_times):
+            raise ValueError("Mismatched number of start (11) and end (21) codes.")
+
+        # Step 4: Build structured events
+        event_timestamps = []
+        event_labels = []
+        for i, (start, end) in enumerate(zip(start_times, end_times), 1):
+            event_timestamps.extend([start, end])
+            event_labels.extend([f'start series {i}', f'end series {i}'])
+
+        self.events = pd.DataFrame({
+            'time': pd.Series(event_timestamps),
+            'label': pd.Series(event_labels)
+        })
+
+        # Step 5: Create dummy ECG at 130 Hz
+        fs = 130
+        if rtops.empty:
+            raise ValueError("No RTops found in file.")
+        start_time = rtops['time'].iloc[0]
+        end_time = rtops['time'].iloc[-1]
+        n_samples = int(np.round((end_time - start_time) * fs)) + 1
+        ecg_timestamps = np.linspace(start_time, end_time, n_samples)
+        ecg_levels = np.zeros_like(ecg_timestamps)
+        self.ecg = TimeSeries(ecg_timestamps, ecg_levels)
+
+        # Step 6: Assign epochs based on events
+        self.create_epoch_series()
+   
     def load_from_pickle(self):
         """
         Loads the dataset from a pickle file.
@@ -432,6 +517,7 @@ class SpectHRDataset:
     
             # Assign epoch label to the time series (ecg and RTopTimes)
             for idx in self.epoch.loc[(self.ecg.time >= start_time) & (self.ecg.time <= end_time)].index:
+                print("*")
                 self.epoch.at[idx].append(epoch_name)
                 
         self.unique_epochs = self.get_unique_epochs()

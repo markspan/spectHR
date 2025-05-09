@@ -106,13 +106,13 @@
          </item>
         </layout>
        </widget>
-       <widget class="QWidget" name="Profiles">
+       <widget class="QWidget" name="PSD">
         <attribute name="title">
-         <string>Profiles</string>
+         <string>PSD</string>
         </attribute>
         <layout class="QHBoxLayout" name="horizontalLayout_5">
          <item>
-          <widget class="QWidget" name="mplProfiles" native="true">
+          <widget class="QWidget" name="mplPSD" native="true">
            <layout class="QVBoxLayout" name="verticalLayout_2">
             <item>
              <widget class="QScrollArea" name="scrollArea">
@@ -124,8 +124,8 @@
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>98</width>
-                 <height>28</height>
+                 <width>293</width>
+                 <height>475</height>
                 </rect>
                </property>
               </widget>
@@ -133,6 +133,16 @@
             </item>
            </layout>
           </widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="Parameters">
+        <attribute name="title">
+         <string>Parameters</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_6">
+         <item>
+          <widget class="QWidget" name="mplParameters" native="true"/>
          </item>
         </layout>
        </widget>

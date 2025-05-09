@@ -60,7 +60,10 @@ class WelchPSDPlotWidget(QWidget):
 
         # Welch PSD
         #freqs, power = welch(ibi_resampled, fs=fs, window=window, nperseg=nperseg, noverlap=noverlap)
-        freqs, power = welch(ibi_resampled, fs=fs, scaling='density', nfft=2**12, nperseg=nperseg, noverlap=noverlap, window=window)
+        try:
+            freqs, power = welch(ibi_resampled, fs=fs, scaling='density', nfft=2**12, nperseg=nperseg, noverlap=noverlap, window=window)
+        except ValueError:
+            return -1
         # Power bands
         vlf_band = (0.003, 0.04)  # Very Low Frequency (VLF)
         lf_band = (0.04, 0.15)    # Low Frequency (LF)
@@ -76,7 +79,15 @@ class WelchPSDPlotWidget(QWidget):
         lf_power = band_power(freqs, power, lf_band)
         hf_power = band_power(freqs, power, hf_band)
         lf_hf_ratio = lf_power / hf_power if hf_power != 0 else np.nan
-
+        # 5. Store spectral measures in a dictionary
+        spectral_measures = {
+            'epoch': epoch,
+            'VLF Power': vlf_power,
+            'LF Power': lf_power,
+            'HF Power': hf_power,
+            'LF/HF Ratio': lf_hf_ratio
+        }
+        
         # Extract PSD values for each band
         vlf_psd = power[(freqs >= vlf_band[0]) & (freqs <= vlf_band[1])]
         lf_psd = power[(freqs >= lf_band[0]) & (freqs <= lf_band[1])]
@@ -153,3 +164,4 @@ class WelchPSDPlotWidget(QWidget):
 
         # Display the plot
         self.canvas.draw()
+        return spectral_measures

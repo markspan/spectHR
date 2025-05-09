@@ -96,28 +96,38 @@ class Ui_MainWindow(object):
         self.horizontalLayout_4.addWidget(self.mplEpochs)
 
         self.Views.addTab(self.Epochs, "")
-        self.Profiles = QWidget()
-        self.Profiles.setObjectName(u"Profiles")
-        self.horizontalLayout_5 = QHBoxLayout(self.Profiles)
+        self.PSD = QWidget()
+        self.PSD.setObjectName(u"PSD")
+        self.horizontalLayout_5 = QHBoxLayout(self.PSD)
         self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
-        self.mplProfiles = QWidget(self.Profiles)
-        self.mplProfiles.setObjectName(u"mplProfiles")
-        self.verticalLayout_2 = QVBoxLayout(self.mplProfiles)
+        self.mplPSD = QWidget(self.PSD)
+        self.mplPSD.setObjectName(u"mplPSD")
+        self.verticalLayout_2 = QVBoxLayout(self.mplPSD)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.scrollArea = QScrollArea(self.mplProfiles)
+        self.scrollArea = QScrollArea(self.mplPSD)
         self.scrollArea.setObjectName(u"scrollArea")
         self.scrollArea.setWidgetResizable(True)
         self.scrollAreaWidgetContents = QWidget()
         self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
-        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 98, 28))
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 293, 475))
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
 
         self.verticalLayout_2.addWidget(self.scrollArea)
 
 
-        self.horizontalLayout_5.addWidget(self.mplProfiles)
+        self.horizontalLayout_5.addWidget(self.mplPSD)
 
-        self.Views.addTab(self.Profiles, "")
+        self.Views.addTab(self.PSD, "")
+        self.Parameters = QWidget()
+        self.Parameters.setObjectName(u"Parameters")
+        self.horizontalLayout_6 = QHBoxLayout(self.Parameters)
+        self.horizontalLayout_6.setObjectName(u"horizontalLayout_6")
+        self.mplParameters = QWidget(self.Parameters)
+        self.mplParameters.setObjectName(u"mplParameters")
+
+        self.horizontalLayout_6.addWidget(self.mplParameters)
+
+        self.Views.addTab(self.Parameters, "")
         self.splitter.addWidget(self.Views)
 
         self.verticalLayout.addWidget(self.splitter)
@@ -155,7 +165,8 @@ class Ui_MainWindow(object):
         self.Views.setTabText(self.Views.indexOf(self.PreProcessing), QCoreApplication.translate("MainWindow", u"PreProcessing", None))
         self.Views.setTabText(self.Views.indexOf(self.Poincare), QCoreApplication.translate("MainWindow", u"Poincare", None))
         self.Views.setTabText(self.Views.indexOf(self.Epochs), QCoreApplication.translate("MainWindow", u"Epochs", None))
-        self.Views.setTabText(self.Views.indexOf(self.Profiles), QCoreApplication.translate("MainWindow", u"Profiles", None))
+        self.Views.setTabText(self.Views.indexOf(self.PSD), QCoreApplication.translate("MainWindow", u"PSD", None))
+        self.Views.setTabText(self.Views.indexOf(self.Parameters), QCoreApplication.translate("MainWindow", u"Parameters", None))
         self.menufile.setTitle(QCoreApplication.translate("MainWindow", u"WorkSpace", None))
         self.menuView.setTitle(QCoreApplication.translate("MainWindow", u"View", None))
     # retranslateUi
