@@ -1,5 +1,6 @@
 import sys
 
+import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
 
@@ -62,7 +63,8 @@ class MainWindow(QMainWindow):
         layout2 = QVBoxLayout()
         layout2.addWidget(self.poincare_plot_widget)
         self.ui.mplPoincare.setLayout(layout2)
-                                                  
+        
+        # Create and embed the Gantt plot widget    
         self.gantt_plot_widget = spQt.GanttPlotWidget()  # Create the GanttPlotWidget instance
         layout3 = QVBoxLayout()  # Create a new layout for the widget
         layout3.addWidget(self.gantt_plot_widget)  # Add the GanttPlotWidget to the layout
@@ -71,6 +73,13 @@ class MainWindow(QMainWindow):
         # Create layout for Welch PSD plot widgets (one per epoch)
         self.welch_psd_layout = QVBoxLayout()
         self.ui.scrollAreaWidgetContents.setLayout(self.welch_psd_layout)
+
+        # Create and embed the Parameters plot widget
+        self.parameters_plot_widget = spQt.ParametersPlotWidget()
+        layout4 = QVBoxLayout()
+        layout4.addWidget(self.parameters_plot_widget)
+        self.ui.mplParameters.setLayout(layout4)  # Assuming mplParameters is the placeholder for the parameters tab
+
 
         # Connect UI signals to their handlers
         self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
@@ -103,6 +112,10 @@ class MainWindow(QMainWindow):
         if index == 3 and self.dataset is not None:
             self.show_welch_psd_plot(self.dataset)
 
+        if index == 4 and self.dataset is not None:  
+            self.show_parameters_plot(self.dataset)
+
+
     def on_file_selection(self):
         """
         Handler triggered when the user selects a file from the workspace tree.
@@ -126,6 +139,7 @@ class MainWindow(QMainWindow):
         self.show_poincare_plot(self.dataset)
         self.show_gantt_plot(self.dataset)
         self.show_welch_psd_plot(self.dataset)
+        self.show_parameters_plot(self.dataset)
 
     def show_preprocessing_plot(self, data):
         """
@@ -137,6 +151,7 @@ class MainWindow(QMainWindow):
             The dataset object containing preprocessed ECG signals.
         """
         self.prep_plot_widget.prepPlot(data)
+        
     def show_gantt_plot(self, data):
         """
         Display the Gantt plot of the epochs in the appropriate widget.
@@ -186,16 +201,30 @@ class MainWindow(QMainWindow):
             exploded = cs.explode(data)
 
             # Create and display a WelchPSDPlotWidget per epoch
+            psd_Values_list = []  # Initialize the list to store PSD values
             for epoch in exploded['epoch'].unique():
                 widget = spQt.WelchPSDPlotWidget()
-                widget.plot_psd(exploded, epoch, fs=4, logscale=False, nperseg=256, noverlap=128,
+                spectral_measures = widget.plot_psd(exploded, epoch, fs=4, logscale=False, nperseg=256, noverlap=128,
                                 interp_kind='linear', window='hamming', interpolate=True)
-                self.welch_psd_layout.addWidget(widget)
-
+                
+                if spectral_measures != -1:
+                    psd_Values_list.append(spectral_measures)
+                    self.welch_psd_layout.addWidget(widget)
+            data.psd_Values = pd.DataFrame(psd_Values_list)
             # Ensure the scroll area is properly set up
             self.ui.scrollArea.setWidgetResizable(True)
             self.ui.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-         
+            
+    def show_parameters_plot(self, data):
+        """
+        Display the parameters plot of the ECG signal in the appropriate widget.
+
+        Parameters
+        ----------
+        data : object
+            The dataset object containing RR intervals or relevant features.
+        """
+        self.parameters_plot_widget.display_parameters(data)
                 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

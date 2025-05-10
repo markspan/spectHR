@@ -1,6 +1,8 @@
-import os
 import json
+import os
+
 from PySide6.QtWidgets import QTreeWidgetItem
+
 
 def LoadWorkspace():
     default_json = os.path.join(os.path.dirname(__file__), "DefaultWorkSpace.json")
@@ -24,7 +26,8 @@ def LoadWorkspace():
 def PopulateTree(treewidget, workspace):
     treewidget.clear()
     categories = {
-        "XDF Files": "*.xdf"
+        "XDF Files": "*.xdf",
+        "CARSPAN Files": "*.evt"
     }
     treewidget.setHeaderLabels(["File Name"]) 
     for label, pattern in categories.items():

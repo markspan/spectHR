@@ -4,6 +4,7 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import qtawesome as qta
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
@@ -53,6 +54,7 @@ class PrepPlotWidget(QWidget):
         # Create a combo box for selecting the edit mode
         self.mode_selector = QComboBox()
         self.mode_selector.addItems(["Drag", "Add", "Remove"])
+        self.mode_selector.setFixedWidth(120)  # Set width to 200 pixels
         self.mode_selector.currentTextChanged.connect(self.set_edit_mode)
 
         # Create navigation buttons
@@ -72,32 +74,42 @@ class PrepPlotWidget(QWidget):
         def make_btn(icon_name=None, text=None, callback=None, rotate=False):
             btn = QPushButton()
             if icon_name:
-                icon = self.style().standardIcon(getattr(QStyle, icon_name))
+                #icon = self.style().standardIcon(getattr(QStyle, icon_name))
+                icon = qta.icon(icon_name)
                 if rotate:
-                    pixmap = icon.pixmap(QSize(32, 32))
+                    pixmap = icon.pixmap(QSize(48, 48))
                     # Rotate the pixmap by 90 degrees
-                    transform = QTransform().rotate(180)
+                    transform = QTransform().rotate(rotate)
                     rotated_pixmap = pixmap.transformed(transform)
                     # Create a new icon from the rotated pixmap
                     icon = QIcon(rotated_pixmap)
                 btn.setIcon(icon)
-                btn.setIconSize(QSize(32, 32))
+                btn.setIconSize(QSize(48, 48))
             if text:
                 btn.setText(text)
-            btn.setStyleSheet("margin: 4px;")
+            # Set the button to be flat and square
+            btn.setFlat(True)
+            btn.setStyleSheet("""
+                QPushButton {
+                    margin: 4px;
+                    width: 56px;
+                    height: 56px;
+                    border: none;
+                }
+            """)
             if callback:
                 btn.clicked.connect(callback)
             return btn
 
         # Button definitions with standard Qt icons or custom icons
-        begin = make_btn('SP_MediaSkipBackward', None, self.go_to_start)
-        left = make_btn('SP_MediaSeekBackward', None, self.pan_left)
-        prev = make_btn('SP_MediaPlay', None, self.prev, True)
-        wider = make_btn('SP_ToolBarHorizontalExtensionButton', None, self.zoom_out)
-        zoom = make_btn('SP_ToolBarHorizontalExtensionButton', None, self.zoom_in, True)
-        next = make_btn('SP_MediaPlay', None, self.next)
-        right = make_btn('SP_MediaSeekForward', None, self.pan_right)
-        end = make_btn('SP_MediaSkipForward', None, self.go_to_end)
+        begin = make_btn('fa6s.right-to-bracket', None, self.go_to_start, 180)
+        left = make_btn('fa6s.backward', None, self.pan_left)
+        prev = make_btn('fa6s.square-caret-left', None, self.prev)
+        wider = make_btn('fa6s.minus', None, self.zoom_out)
+        zoom = make_btn('fa6s.plus', None, self.zoom_in, 180)
+        next = make_btn('fa6s.square-caret-right', None, self.next)
+        right = make_btn('fa6s.forward', None, self.pan_right)
+        end = make_btn('fa6s.right-to-bracket', None, self.go_to_end)
 
         # Layout to hold buttons
         nav_layout = QHBoxLayout()
@@ -485,7 +497,6 @@ class PrepPlotWidget(QWidget):
         # Create figure and axis handles
         
         if fig is None:
-            print("new fig")
             self.fig, self.ax_ecg, self.ax_overview, self.ax_br = self.create_figure_axes(data)
         else:
             self.ax_ecg = self.fig.axes[0]
@@ -515,6 +526,5 @@ class PrepPlotWidget(QWidget):
         self.layout.insertWidget(1, self.canvas)  # Insert new canvas in correct position
         self.edit_mode = "Drag"
         self.canvas.draw()
-        print('Updated the plot....')
 
         return self.fig
