@@ -1,4 +1,5 @@
 import pandas as pd
+import os 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
@@ -82,8 +83,7 @@ class ParametersPlotWidget(QWidget):
             ]).reset_index()
                         # Merge PSD values if available
         if hasattr(dataset, 'psd_Values'):
-            #dataset.descriptives_Values = pd.merge(dataset.descriptives_Values, dataset.psd_Values, on='epoch', how='outer')
-            pass
+            dataset.descriptives_Values = pd.merge(dataset.descriptives_Values, dataset.psd_Values, on='epoch', how='outer')
                 
         # populate the table
         data = dataset.descriptives_Values
@@ -116,7 +116,7 @@ class ParametersPlotWidget(QWidget):
             # Collect data from the table widget
             data = []
             for row in range(self.table_widget.rowCount()):
-                row_data = []
+                row_data = [os.path.splitext(self.dataset.filename)[0]] 
                 for col in range(self.table_widget.columnCount()):
                     item = self.table_widget.item(row, col)
                     if item is not None:
@@ -129,13 +129,13 @@ class ParametersPlotWidget(QWidget):
             df = pd.DataFrame(data)
 
             # Save the DataFrame to a CSV file
-            df.to_csv(self.dataset.filename+'.csv', index=False, header=self.get_table_headers())
+            df.to_csv(os.path.splitext(self.dataset.filename)[0] + '.csv', index=False, header=self.get_table_headers())
 
     def get_table_headers(self):
         """
         Get the headers from the QTableWidget.
         """
-        headers = []
+        headers = ['Subject']
         for col in range(self.table_widget.columnCount()):
             header_item = self.table_widget.horizontalHeaderItem(col)
             if header_item is not None:
