@@ -9,6 +9,8 @@ import pandas as pd
 import pyxdf
 
 from spectHR.Actions.csBreathing import calculate_breathing_signal
+from spectHR.Actions.csActions import classify
+
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.Webdav import copyWebdav
 
@@ -252,13 +254,18 @@ class SpectHRDataset:
         fs = 130
         if rtops.empty:
             raise ValueError("No RTops found in file.")
-        start_time = rtops['time'].iloc[0]
-        end_time = rtops['time'].iloc[-1]
-        n_samples = int(np.round((end_time - start_time) * fs)) + 1
-        ecg_timestamps = np.linspace(start_time, end_time, n_samples)
-        ecg_levels = np.zeros_like(ecg_timestamps)
-        self.ecg = TimeSeries(ecg_timestamps, ecg_levels)
+        
+        #start_time = rtops['time'].iloc[0]
+        #end_time = rtops['time'].iloc[-1]
+        #n_samples = int(np.round((end_time - start_time) * fs)) + 1
+        #ecg_timestamps = np.linspace(start_time, end_time, n_samples)
+        #ecg_levels = np.zeros_like(ecg_timestamps)
+        
+        ecg_timestamps = rtops['time']
+        ecg_levels = 1000.0/rtops['ibi']
 
+        self.ecg = TimeSeries(ecg_timestamps, ecg_levels)
+        classify(self)
         # Step 6: Assign epochs based on events
         self.create_epoch_series()
    
@@ -517,7 +524,6 @@ class SpectHRDataset:
     
             # Assign epoch label to the time series (ecg and RTopTimes)
             for idx in self.epoch.loc[(self.ecg.time >= start_time) & (self.ecg.time <= end_time)].index:
-                print("*")
                 self.epoch.at[idx].append(epoch_name)
                 
         self.unique_epochs = self.get_unique_epochs()

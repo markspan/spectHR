@@ -22,8 +22,7 @@ from PySide6.QtWidgets import (
 
 from spectHR.ui.LineHandler import LineHandler
 
-
-class PrepPlotWidget(QWidget):
+class HeartRatePlotWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -278,7 +277,7 @@ class PrepPlotWidget(QWidget):
         """
         Helper to get figure dimensions in inches.
         """
-        return (15, 3)
+        return (15, 5)
 
     def create_figure_axes(self, data):
         """

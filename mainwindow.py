@@ -3,13 +3,16 @@ import sys
 import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
+from PySide6.QtGui import QFont
 
 import spectHR as cs
 import spectQt as spQt
+import matplotlib.pyplot as plt
+
 from ui_form import Ui_MainWindow
+from comel.wrapper import ComelMainWindowWrapper
 
-
-class MainWindow(QMainWindow):
+class MainWindow(ComelMainWindowWrapper):
     """
     Main application window for the spectQt ECG pre-processing GUI.
 
@@ -43,10 +46,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-
+        
+        self.darktheme = False
+        self.ui.actionToggle_Theme.triggered.connect(self.do_toggle_theme)
+        
         self.setWindowTitle("spectHR - ECG Preprocessing")
         self.resize(1920, 800)
-        self.ui.splitter.setSizes([200, 1700])
+        self.ui.Splitter.setSizes([200, 1700])
 
         # Initialize workspace and populate the tree view
         self.workspace = spQt.LoadWorkspace()
@@ -86,6 +92,16 @@ class MainWindow(QMainWindow):
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
 
         self.dataset = None  # Initialize dataset placeholder
+
+    def do_toggle_theme(self):
+        self.darktheme = not self.darktheme
+        self.toggle_theme()
+        
+        if self.darktheme:
+            plt.style.use('dark_background')
+        else:
+            plt.style.use('default')
+
 
     def on_tab_changed(self, index):
         """
@@ -228,6 +244,11 @@ class MainWindow(QMainWindow):
                 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    # Set global default font
+    default_font = QFont("Segoe UI", 12)
+    default_font.setBold(False)
+    app.setStyle("WindowsVista")
+    app.setFont(default_font)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

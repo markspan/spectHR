@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
 
 import spectHR as cs
 
-
 class ParametersPlotWidget(QWidget):
     """
     A QWidget that displays calculated parameters in a spreadsheet-like manner.
@@ -83,9 +82,9 @@ class ParametersPlotWidget(QWidget):
             ]).reset_index()
                         # Merge PSD values if available
         if hasattr(dataset, 'psd_Values'):
-            dataset.descriptives_Values = pd.merge(dataset.descriptives_Values, dataset.psd_Values, on='epoch', how='outer')
+            #dataset.descriptives_Values = pd.merge(dataset.descriptives_Values, dataset.psd_Values, on='epoch', how='outer')
+            pass
                 
-
         # populate the table
         data = dataset.descriptives_Values
         # Ensure 'epoch' is the first column
@@ -130,7 +129,7 @@ class ParametersPlotWidget(QWidget):
             df = pd.DataFrame(data)
 
             # Save the DataFrame to a CSV file
-            df.to_csv(self.dataset.filename+'csv', index=False, header=self.get_table_headers())
+            df.to_csv(self.dataset.filename+'.csv', index=False, header=self.get_table_headers())
 
     def get_table_headers(self):
         """
