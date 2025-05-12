@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>965</width>
-    <height>602</height>
+    <width>1137</width>
+    <height>580</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -39,9 +39,15 @@
        <enum>Qt::Orientation::Horizontal</enum>
       </property>
       <widget class="QFrame" name="Treeframe">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
        <property name="baseSize">
         <size>
-         <width>19</width>
+         <width>0</width>
          <height>0</height>
         </size>
        </property>
@@ -74,48 +80,122 @@
         <string notr="true"/>
        </property>
        <property name="currentIndex">
-        <number>0</number>
+        <number>3</number>
        </property>
        <property name="documentMode">
         <bool>true</bool>
        </property>
        <widget class="QWidget" name="PreProcessing">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <attribute name="title">
-         <string>PreProcessing</string>
+         <string>Preprocessing</string>
         </attribute>
         <layout class="QHBoxLayout" name="horizontalLayout_2">
          <item>
-          <widget class="QWidget" name="mplPreProcessing" native="true"/>
+          <widget class="QWidget" name="mplPreProcessing" native="true">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="Series">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <attribute name="title">
+         <string>IBI Series</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_7">
+         <item>
+          <widget class="QWidget" name="mplIBISeries" native="true">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
          </item>
         </layout>
        </widget>
        <widget class="QWidget" name="Poincare">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <attribute name="title">
          <string>Poincare</string>
         </attribute>
         <layout class="QHBoxLayout" name="horizontalLayout_3">
          <item>
-          <widget class="QWidget" name="mplPoincare" native="true"/>
+          <widget class="QWidget" name="mplPoincare" native="true">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
          </item>
         </layout>
        </widget>
        <widget class="QWidget" name="Epochs">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <attribute name="title">
          <string>Epochs</string>
         </attribute>
         <layout class="QHBoxLayout" name="horizontalLayout_4">
          <item>
-          <widget class="QWidget" name="mplEpochs" native="true"/>
+          <widget class="QWidget" name="mplEpochs" native="true">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
          </item>
         </layout>
        </widget>
        <widget class="QWidget" name="PSD">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <attribute name="title">
          <string>PSD</string>
         </attribute>
         <layout class="QHBoxLayout" name="horizontalLayout_5">
          <item>
           <widget class="QWidget" name="mplPSD" native="true">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
            <layout class="QVBoxLayout" name="verticalLayout_2">
             <item>
              <widget class="QScrollArea" name="scrollArea">
@@ -127,9 +207,15 @@
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>365</width>
-                 <height>479</height>
+                 <width>62</width>
+                 <height>16</height>
                 </rect>
+               </property>
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
                </property>
               </widget>
              </widget>
@@ -140,12 +226,25 @@
         </layout>
        </widget>
        <widget class="QWidget" name="Parameters">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <attribute name="title">
          <string>Parameters</string>
         </attribute>
         <layout class="QHBoxLayout" name="horizontalLayout_6">
          <item>
-          <widget class="QWidget" name="mplParameters" native="true"/>
+          <widget class="QWidget" name="mplParameters" native="true">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
          </item>
         </layout>
        </widget>
@@ -159,7 +258,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>965</width>
+     <width>1137</width>
      <height>22</height>
     </rect>
    </property>
@@ -168,6 +267,8 @@
      <string>WorkSpace</string>
     </property>
     <addaction name="actionOpen_Workspace"/>
+    <addaction name="separator"/>
+    <addaction name="actionFlip_ECG"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -193,6 +294,11 @@
   <action name="actionToggle_Theme">
    <property name="text">
     <string>Toggle Theme</string>
+   </property>
+  </action>
+  <action name="actionFlip_ECG">
+   <property name="text">
+    <string>Flip ECG</string>
    </property>
   </action>
  </widget>

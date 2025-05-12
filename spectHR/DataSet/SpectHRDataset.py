@@ -8,9 +8,8 @@ import numpy as np
 import pandas as pd
 import pyxdf
 
-from spectHR.Actions.csBreathing import calculate_breathing_signal
 from spectHR.Actions.csActions import classify
-
+from spectHR.Actions.csBreathing import calculate_breathing_signal
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.Webdav import copyWebdav
 
@@ -134,6 +133,7 @@ class SpectHRDataset:
         self.filename = os.path.basename(filename)  # Extract filename
         self.pkl_filename = os.path.splitext(self.filename)[0] + ".pkl"  # Name for cached pickle file
         self.file_path = os.path.join(self.datadir, self.filename)  # Full path to the input file
+        self.has_ecg = True
         
         # Ensure a valid data directory
         if not self.datadir:
@@ -171,7 +171,7 @@ class SpectHRDataset:
             self.save()
         elif self.file_path.endswith('.evt') and Path(self.file_path).exists():
             logger.info(f"Loading dataset from CARSPAN evt File: {self.file_path}")
-            self.loadEVT(self.file_path, flip=flip)
+            self.loadEVT(self.file_path)
             self.save()
         else:
             logger.error(f"File {self.file_path} was not found")
@@ -187,7 +187,7 @@ class SpectHRDataset:
         except Exception as e:
             logger.error(f"Failed to save pickle file: {e}")
 
-    def loadEVT(self, filename, flip='auto'):
+    def loadEVT(self, filename):
         """
         Loads RTops from a CARSPAN .evt file and generates structured events for epochs.
 
@@ -196,7 +196,7 @@ class SpectHRDataset:
             flip (str or bool, optional): Not used, included for compatibility.
         """
         logger.info('Loading CARSPAN EVT RTops')
-
+        self.has_ecg= False
         # Step 1: Read only [Data] section
         with open(filename, 'r') as f:
             lines = f.readlines()
@@ -250,16 +250,8 @@ class SpectHRDataset:
             'label': pd.Series(event_labels)
         })
 
-        # Step 5: Create dummy ECG at 130 Hz
-        fs = 130
         if rtops.empty:
             raise ValueError("No RTops found in file.")
-        
-        #start_time = rtops['time'].iloc[0]
-        #end_time = rtops['time'].iloc[-1]
-        #n_samples = int(np.round((end_time - start_time) * fs)) + 1
-        #ecg_timestamps = np.linspace(start_time, end_time, n_samples)
-        #ecg_levels = np.zeros_like(ecg_timestamps)
         
         ecg_timestamps = rtops['time']
         ecg_levels = 1000.0/rtops['ibi']
@@ -268,6 +260,8 @@ class SpectHRDataset:
         classify(self)
         # Step 6: Assign epochs based on events
         self.create_epoch_series()
+        self.RTops['epoch'] = self.epoch
+        
    
     def load_from_pickle(self):
         """
@@ -462,7 +456,6 @@ class SpectHRDataset:
                 event_timestamps = pd.Series(rawdata[index]["time_stamps"])
                 event_labels = pd.Series(rawdata[index]["time_series"])
                 event_labels = event_labels.apply(lambda x: x[0])
-            
                 ievents = pd.DataFrame({
                     'time': event_timestamps - self.starttime,
                     'label': event_labels
@@ -489,44 +482,53 @@ class SpectHRDataset:
     def create_epoch_series(self):
         """
         Creates an 'epoch' series within the dataset to map each time point in the ECG
-        to a corresponding epoch(s) based on event labels ('start' and 'end').
-    
+        to a corresponding epoch(s) based on event labels ('start' and 'stop').
+
         Returns:
             pd.Series: A series with epoch labels (lists) for each time index in the ECG and RTopTimes.
         """
+        # Check for no events and then return
         if self.events is None:
             self.log_error('No events available for epoch generation')
             return
-    
         # Initialize the epoch series as a series of lists
         self.epoch = pd.Series(index=self.ecg.time.index, dtype="object").map(lambda x: [])
-    
+
+        # Get all event labels
         labels = self.events['label'].str.lower()
-        start_indices = self.events[labels.str.startswith('start')].index
-        end_indices = self.events[labels.str.startswith('end')].index
+        labels = labels.str.replace('^end ', 'stop ', regex=True)
+        # Find start events
+        start_events = self.events[labels.str.startswith('start ')]
 
         # Loop through each 'start' event
-        for start_idx in start_indices:
-            epoch_name = self.events['label'][start_idx][5:].strip()  # Get the epoch name
-            start_time = self.events['time'][start_idx]
-    
-            # Find the corresponding 'end' event with the same epoch name
-            same_epoch_end_indices = end_indices[self.events['label'][end_indices].str[4:].str.strip() == epoch_name]
-            same_epoch_end_indices = same_epoch_end_indices[same_epoch_end_indices > start_idx] # force end to be after start
-    
-            if not same_epoch_end_indices.empty:
-                # Use the first matching 'end'
-                end_time = self.events['time'][same_epoch_end_indices[0]]
+        for start_idx, start_event in start_events.iterrows():
+            start_epoch_name = start_event['label'][5:].strip()  # Get the epoch name
+            start_time = start_event['time']
+
+            # Find the corresponding 'stop' event with the same epoch name
+            stop_events = self.events[labels.str.startswith('stop ')]
+            matching_stop_events = stop_events[stop_events['label'].str[4:].str.strip() == start_epoch_name]
+
+            if not matching_stop_events.empty:
+                # Use the first matching 'stop' event that occurs after the start event
+                matching_stop_events = matching_stop_events[matching_stop_events.index > start_idx]
+                if not matching_stop_events.empty:
+                    end_time = matching_stop_events.iloc[0]['time']
+                else:
+                    # No matching 'stop' event after the start event, use the next 'start' or end of data
+                    next_start_idx = start_events[start_events.index > start_idx].index.min()
+                    end_time = self.events['time'][next_start_idx] if pd.notna(next_start_idx) else self.ecg.time.iloc[-1]
             else:
-                # No matching 'end', use the next 'start' or end of data
-                next_start_idx = start_indices[start_indices.get_loc(start_idx) + 1] if start_idx + 1 < len(start_indices) else None
-                end_time = self.events['time'][next_start_idx] if next_start_idx else self.ecg.time.iloc[-1]
-    
+                # No matching 'stop' event, use the next 'start' or end of data
+                next_start_idx = start_events[start_events.index > start_idx].index.min()
+                end_time = self.events['time'][next_start_idx] if pd.notna(next_start_idx) else self.ecg.time.iloc[-1]
+
             # Assign epoch label to the time series (ecg and RTopTimes)
             for idx in self.epoch.loc[(self.ecg.time >= start_time) & (self.ecg.time <= end_time)].index:
-                self.epoch.at[idx].append(epoch_name)
-                
+                self.epoch.at[idx].append(start_epoch_name)
+
         self.unique_epochs = self.get_unique_epochs()
+
         
 
     def get_unique_epochs(self):

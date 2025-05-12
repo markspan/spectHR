@@ -1,8 +1,10 @@
+import copy
+
 import matplotlib.pyplot as plt
 import numpy as np
-import copy
-from PySide6.QtWidgets import QWidget, QVBoxLayout
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from PySide6.QtWidgets import QVBoxLayout, QWidget
+
 from spectHR.Tools.Logger import logger
 
 
@@ -64,14 +66,13 @@ class GanttPlotWidget(QWidget):
 
         # Flatten the filtered epochs list for easier plotting
         exploded = RTops.explode("filtered_epoch")
-
         # Calculate start and end times for each epoch
         epochs_gantt = (
             exploded.groupby("filtered_epoch")
             .agg(start=("time", "min"), end=("time", "max"))
             .reset_index()
         )
-
+   
         # Sort epochs by start time (descending)
         epochs_gantt = epochs_gantt.sort_values(by="start", ascending=False).reset_index(drop=True)
 

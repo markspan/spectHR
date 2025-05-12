@@ -128,8 +128,7 @@ class PrepPlotWidget(QWidget):
     def set_edit_mode(self, mode):
         self.edit_mode = mode
         self.line_handler.update_mode(mode)
-        print(f"Edit mode set to: {mode}")
-
+ 
     def zoom_in(self):
         x_range = (self.data.x_max - self.data.x_min) / 3
         middle = (self.data.x_max + self.data.x_min) / 2
@@ -492,10 +491,7 @@ class PrepPlotWidget(QWidget):
         self.data.x_min = self.data.x_min if self.data.x_min is not None else x_min
         self.data.x_max = self.data.x_max if self.data.x_max is not None else x_max
         
-        print(f'{x_min} - {x_max}')
-        print(f'{self.data.x_min} - {self.data.x_max}')
         # Create figure and axis handles
-        
         if fig is None:
             self.fig, self.ax_ecg, self.ax_overview, self.ax_br = self.create_figure_axes(data)
         else:

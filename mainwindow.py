@@ -1,16 +1,16 @@
 import sys
 
+import matplotlib.pyplot as plt
 import pandas as pd
+from comel.wrapper import ComelMainWindowWrapper
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
 
 import spectHR as cs
 import spectQt as spQt
-import matplotlib.pyplot as plt
-
 from ui_form import Ui_MainWindow
-from comel.wrapper import ComelMainWindowWrapper
+
 
 class MainWindow(ComelMainWindowWrapper):
     """
@@ -49,6 +49,7 @@ class MainWindow(ComelMainWindowWrapper):
         
         self.darktheme = False
         self.ui.actionToggle_Theme.triggered.connect(self.do_toggle_theme)
+        self.ui.actionFlip_ECG.triggered.connect(self.do_flip_ecg)
         
         self.setWindowTitle("spectHR - ECG Preprocessing")
         self.resize(1920, 800)
@@ -64,17 +65,23 @@ class MainWindow(ComelMainWindowWrapper):
         layout1.addWidget(self.prep_plot_widget)
         self.ui.mplPreProcessing.setLayout(layout1)
 
+       # Create and embed the ibiseries plot widget
+        self.ibiseries_plot_widget = spQt.IBISeriesPlotWidget()
+        layout2 = QVBoxLayout()
+        layout2.addWidget(self.ibiseries_plot_widget)
+        self.ui.mplIBISeries.setLayout(layout2)
+
         # Create and embed the Poincare plot widget
         self.poincare_plot_widget = spQt.PoincarePlotWidget()
-        layout2 = QVBoxLayout()
-        layout2.addWidget(self.poincare_plot_widget)
-        self.ui.mplPoincare.setLayout(layout2)
+        layout3 = QVBoxLayout()
+        layout3.addWidget(self.poincare_plot_widget)
+        self.ui.mplPoincare.setLayout(layout3)
         
         # Create and embed the Gantt plot widget    
         self.gantt_plot_widget = spQt.GanttPlotWidget()  # Create the GanttPlotWidget instance
-        layout3 = QVBoxLayout()  # Create a new layout for the widget
-        layout3.addWidget(self.gantt_plot_widget)  # Add the GanttPlotWidget to the layout
-        self.ui.mplEpochs.setLayout(layout3)  # Set the layout to the mplEpochs placeholder
+        layout4 = QVBoxLayout()  # Create a new layout for the widget
+        layout4.addWidget(self.gantt_plot_widget)  # Add the GanttPlotWidget to the layout
+        self.ui.mplEpochs.setLayout(layout4)  # Set the layout to the mplEpochs placeholder
 
         # Create layout for Welch PSD plot widgets (one per epoch)
         self.welch_psd_layout = QVBoxLayout()
@@ -82,17 +89,25 @@ class MainWindow(ComelMainWindowWrapper):
 
         # Create and embed the Parameters plot widget
         self.parameters_plot_widget = spQt.ParametersPlotWidget()
-        layout4 = QVBoxLayout()
-        layout4.addWidget(self.parameters_plot_widget)
-        self.ui.mplParameters.setLayout(layout4)  # Assuming mplParameters is the placeholder for the parameters tab
+        layout5 = QVBoxLayout()
+        layout5.addWidget(self.parameters_plot_widget)
+        self.ui.mplParameters.setLayout(layout5)  # Assuming mplParameters is the placeholder for the parameters tab
 
 
         # Connect UI signals to their handlers
         self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
-
         self.dataset = None  # Initialize dataset placeholder
 
+    def do_flip_ecg(self):
+        ecglevel = self.dataset.ecg.level
+        ecgtime = self.dataset.ecg.time
+        self.dataset.ecg = cs.TimeSeries(ecgtime, -ecglevel)
+        self.dataset = cs.calcPeaks(self.dataset)
+        self.dataset.save()
+        self.show_preprocessing_plot(self.dataset)
+        
+        
     def do_toggle_theme(self):
         self.darktheme = not self.darktheme
         self.toggle_theme()
@@ -120,15 +135,18 @@ class MainWindow(ComelMainWindowWrapper):
             self.dataset.save()
 
         if index == 1 and self.dataset is not None:
-            self.show_poincare_plot(self.dataset)
+            self.show_ibiseries_plot(self.dataset)
 
         if index == 2 and self.dataset is not None:
-            self.show_gantt_plot(self.dataset)
+            self.show_poincare_plot(self.dataset)
 
         if index == 3 and self.dataset is not None:
+            self.show_gantt_plot(self.dataset)
+
+        if index == 4 and self.dataset is not None:
             self.show_welch_psd_plot(self.dataset)
 
-        if index == 4 and self.dataset is not None:  
+        if index == 5 and self.dataset is not None:  
             self.show_parameters_plot(self.dataset)
 
 
@@ -144,14 +162,17 @@ class MainWindow(ComelMainWindowWrapper):
             return
 
         file_path = selected_items[0].text(0)
-        if file_path == 'XDF Files':  # Avoid processing placeholder nodes
+        if file_path == 'XDF Files':      # Avoid processing placeholder nodes
+            return
+        if file_path == 'CARSPAN Files':  # Avoid processing placeholder nodes
             return
 
         # Load and preprocess the file
         self.dataset = spQt.PreProcessFile(file_path)
 
         # Update the UI with the new dataset
-        self.show_preprocessing_plot(self.dataset)
+        self.show_preprocessing_plot(self.dataset)        
+        self.show_ibiseries_plot(self.dataset)
         self.show_poincare_plot(self.dataset)
         self.show_gantt_plot(self.dataset)
         self.show_welch_psd_plot(self.dataset)
@@ -166,8 +187,28 @@ class MainWindow(ComelMainWindowWrapper):
         data : object
             The dataset object containing preprocessed ECG signals.
         """
-        self.prep_plot_widget.prepPlot(data)
-        
+        if data.has_ecg:
+            self.ui.Views.setTabVisible(0, True)
+            self.ui.Views.setCurrentIndex(0)
+            # Call the method from the PrepPlotWidget to generate and display the plot
+            self.prep_plot_widget.prepPlot(data)
+        else:
+            self.ui.Views.setTabVisible(0, False)
+            self.ui.Views.setCurrentIndex(1)
+            
+    def show_ibiseries_plot(self, data):
+        """
+        Display the ibi series plot of the epochs in the appropriate widget.
+
+        Parameters
+        ----------
+        data : object
+            The dataset object containing epoch information.
+        """
+        if data is not None:
+            # Call the method from the GanttPlotWidget to generate and display the plot
+            self.ibiseries_plot_widget.plotIBISeries(data)
+
     def show_gantt_plot(self, data):
         """
         Display the Gantt plot of the epochs in the appropriate widget.

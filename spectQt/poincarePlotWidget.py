@@ -93,7 +93,12 @@ class PoincarePlotWidget(QWidget):
         """
         self.dataset = dataset
         self.setFocus()  # Ensure the widget gets focus
-        active_epochs = getattr(dataset, "active_epochs", {})  # Load saved visibility if present
+
+        # Ensure active_epochs is a dictionary
+        active_epochs = getattr(dataset, "active_epochs", {})
+        if isinstance(active_epochs, set):
+            active_epochs = {epoch: True for epoch in active_epochs}
+
         # Clear any existing checkboxes from the layout
         for i in reversed(range(self.checkbox_layout.count())):
             widget = self.checkbox_layout.itemAt(i).widget()
@@ -119,8 +124,9 @@ class PoincarePlotWidget(QWidget):
             y = data.ibi[1:].reset_index(drop=True)
 
             # Plot scatter for IBI vs next IBI
-            
             scatter = self.ax.scatter(x, y, label=epoch, alpha=0.2)
+            scatter.epoch = epoch  # Store epoch in scatter for hover function
+
             ibm = np.mean(x)
             col = scatter.get_facecolor()
 
@@ -159,6 +165,7 @@ class PoincarePlotWidget(QWidget):
         self.ax.set_ylabel('Next IBI (ms)', fontsize=12)
         self.ax.axline((0, 0), slope=1, color='gray', linestyle='--', linewidth=0.7)
         self.ax.grid(True)
+
         # Only include visible entries in legend
         if hasattr(self.dataset, 'active_epochs'):
             handles_labels = [
@@ -167,7 +174,7 @@ class PoincarePlotWidget(QWidget):
             ]
         else:
             handles_labels = self.scatter_handles.items()
-            
+
         if handles_labels:
             handles, labels = zip(*handles_labels)
             self.ax.legend(
@@ -181,29 +188,39 @@ class PoincarePlotWidget(QWidget):
         self.ax.set_aspect('equal', adjustable='datalim')
         self.ax.set_box_aspect(1)
         self.filtered_by_epoch = {}
+
         # Step 2: create the sets
         for unique_epoch in dataset.unique_epochs:
             # Create a mask for the current epoch
-            mask = [ unique_epoch in sublist if sublist is not None else False for sublist in dataset.RTops.epoch ]    
+            mask = [unique_epoch in sublist if sublist is not None else False for sublist in dataset.RTops.epoch]
             # Subset dataset.RTops for the current epoch
             self.filtered_by_epoch[unique_epoch] = dataset.RTops[mask]
+
         # Add mplcursors hover annotations
-        # Add mplcursors hover annotations
-        if self.cursor is not None:
+        # Remove existing cursor if present
+        if hasattr(self, 'cursor') and self.cursor is not None:
             self.cursor.remove()
+        # Create a new cursor
         self.cursor = mplcursors.cursor([scatter for scatter in self.scatter_handles.values()], hover=True)
 
         @self.cursor.connect("add")
         def on_hover(sel):
-            # Simplified hover function
- 
-            x_value = sel.artist.get_offsets()[sel.index, 0]
-            y_value = sel.artist.get_offsets()[sel.index, 1]
-            data = self.filtered_by_epoch[sel.epoch]
-            ibi_idx = (np.abs(data.ibi - x_value)).argmin() 
-            time_value = data.time.iloc[ibi_idx]
-            sel.annotation.set_text(f"{epoch.title()}:\nIBI={1000*x_value:.0f}-{1000*y_value:.0f}ms\nTime={time_value:.1f}s")
+            scatter = sel.artist
+            epoch = getattr(scatter, 'epoch', 'Unknown')  # or use scatter.get_gid()
+            x_value = scatter.get_offsets()[sel.index, 0]
+            y_value = scatter.get_offsets()[sel.index, 1]
 
+            data = self.filtered_by_epoch[epoch]
+            ibi_idx = (np.abs(data.ibi - x_value)).argmin()
+            time_value = data.time.iloc[ibi_idx]
+
+            sel.annotation.set_text(
+                f"{epoch.title()}:\n"
+                f"IBI = {1000*x_value:.0f}–{1000*y_value:.0f} ms\n"
+                f"Time = {time_value:.1f} s"
+            )            
+                
+            
     def update_visibility(self):
         """
         Toggle visibility of each epoch's plot elements based on checkbox state,

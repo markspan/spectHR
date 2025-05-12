@@ -1,5 +1,6 @@
+import os
+
 import pandas as pd
-import os 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 import spectHR as cs
+
 
 class ParametersPlotWidget(QWidget):
     """
@@ -84,6 +86,7 @@ class ParametersPlotWidget(QWidget):
                         # Merge PSD values if available
         if hasattr(dataset, 'psd_Values'):
             dataset.descriptives_Values = pd.merge(dataset.descriptives_Values, dataset.psd_Values, on='epoch', how='outer')
+            #pass
                 
         # populate the table
         data = dataset.descriptives_Values

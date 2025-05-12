@@ -69,6 +69,11 @@ class WelchPSDPlotWidget(QWidget):
         lf_band = (0.04, 0.15)    # Low Frequency (LF)
         hf_band = (0.15, 0.4)     # High Frequency (HF)
 
+        # Power bands
+        #vlf_band = (0.02, 0.06)  # Very Low Frequency (VLF)
+        #lf_band = (0.07, 0.14)    # Low Frequency (LF)
+        #hf_band = (0.15, 0.4)     # High Frequency (HF)
+
         # Helper function to compute power in a specified frequency range using numerical integration
         def band_power(frequencies, power_spectrum, band):
             idx = np.logical_and(frequencies >= band[0], frequencies <= band[1])
