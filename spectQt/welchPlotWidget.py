@@ -61,7 +61,7 @@ class WelchPSDPlotWidget(QWidget):
         # Welch PSD
         #freqs, power = welch(ibi_resampled, fs=fs, window=window, nperseg=nperseg, noverlap=noverlap)
         try:
-            freqs, power = welch(ibi_resampled, fs=fs, scaling='density', nfft=2**12, nperseg=nperseg, noverlap=noverlap, window=window)
+            freqs, power = welch(ibi_resampled, fs=fs, scaling='density', nfft=1024, nperseg=nperseg, noverlap=noverlap, window=window)
         except ValueError:
             return -1
         # Power bands

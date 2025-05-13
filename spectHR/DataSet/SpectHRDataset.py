@@ -1,12 +1,12 @@
 import os
 import pickle
-import re
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pyxdf
+import scipy
 
 from spectHR.Actions.csActions import classify
 from spectHR.Actions.csBreathing import calculate_breathing_signal
@@ -134,7 +134,7 @@ class SpectHRDataset:
         self.pkl_filename = os.path.splitext(self.filename)[0] + ".pkl"  # Name for cached pickle file
         self.file_path = os.path.join(self.datadir, self.filename)  # Full path to the input file
         self.has_ecg = True
-        
+        self.toMatlab = False
         # Ensure a valid data directory
         if not self.datadir:
             self.datadir=os.getcwd()
@@ -186,7 +186,34 @@ class SpectHRDataset:
             logger.info(f"Dataset saved as pickle: {self.pkl_path}")
         except Exception as e:
             logger.error(f"Failed to save pickle file: {e}")
+            
+        if self.toMatlab:
+            data_fields = {
+                key: self.convert_datetime_to_string(value)
+                for key, value in self.__dict__.items()
+                if not callable(value) and not key.startswith('__') and value is not None
+            }
+            # Save the data fields to a .mat file
+            scipy.io.savemat(self.pkl_path + '.mat', data_fields)
+        
+    def convert_datetime_to_string(self, obj):
+        """
+        Recursively convert datetime.datetime objects to strings in a nested structure.
 
+        Parameters:
+        - obj: The object to convert.
+
+        Returns:
+        - The converted object.
+        """
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, dict):
+            return {key: self.convert_datetime_to_string(value) for key, value in obj.items()}
+        elif isinstance(obj, (list, set, tuple)):
+            return [self.convert_datetime_to_string(item) for item in obj]
+        else:
+            return obj
     def loadEVT(self, filename):
         """
         Loads RTops from a CARSPAN .evt file and generates structured events for epochs.

@@ -478,9 +478,15 @@ class IBISeriesPlotWidget(QWidget):
         bpe = self.fig.canvas.mpl_connect("button_press_event", self.on_press)
         bod = self.fig.canvas.mpl_connect('motion_notify_event', self.on_drag)
         bor = self.fig.canvas.mpl_connect('button_release_event', self.on_release)
-        self.canvas.setParent(None)
+        
+         # Remove the old canvas from the layout
+        if self.canvas is not None:
+            self.layout.removeWidget(self.canvas)
+            self.canvas.setParent(None)
+            self.canvas.deleteLater()  # Optional: Delete the old canvas to free up resources
+            
         self.canvas = FigureCanvas(self.fig)
         self.layout.insertWidget(0, self.canvas)
         self.canvas.draw()
 
-        return self.fig
+        return self.canvas
