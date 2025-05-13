@@ -27,7 +27,7 @@ class GanttPlotWidget(QWidget):
         # Initialize matplotlib figure and canvas
         self.fig, self.ax = plt.subplots(figsize=(15, 7))
         self.canvas = FigureCanvas(self.fig)
-
+        self.setVisible(False)
         # Set up the layout
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
@@ -45,7 +45,7 @@ class GanttPlotWidget(QWidget):
             labels (bool): If True, displays start and end time annotations on the chart.
         """
         self.dataset = dataset
-
+        self.setVisible(True)
         # Deep copy RTops to avoid modifying the original dataset
         RTops = copy.deepcopy(dataset.RTops)
 

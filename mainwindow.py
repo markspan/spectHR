@@ -2,7 +2,6 @@ import sys
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from comel.wrapper import ComelMainWindowWrapper
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
@@ -12,7 +11,7 @@ import spectQt as spQt
 from ui_form import Ui_MainWindow
 
 
-class MainWindow(ComelMainWindowWrapper):
+class MainWindow(QMainWindow):
     """
     Main application window for the spectQt ECG pre-processing GUI.
 
@@ -47,8 +46,6 @@ class MainWindow(ComelMainWindowWrapper):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         
-        self.darktheme = False
-        self.ui.actionToggle_Theme.triggered.connect(self.do_toggle_theme)
         self.ui.actionFlip_ECG.triggered.connect(self.do_flip_ecg)
         
         self.setWindowTitle("spectHR - ECG Preprocessing")
@@ -108,16 +105,6 @@ class MainWindow(ComelMainWindowWrapper):
         self.show_preprocessing_plot(self.dataset)
         
         
-    def do_toggle_theme(self):
-        self.darktheme = not self.darktheme
-        self.toggle_theme()
-        
-        if self.darktheme:
-            plt.style.use('dark_background')
-        else:
-            plt.style.use('default')
-
-
     def on_tab_changed(self, index):
         """
         Handler triggered when the user switches tabs in the UI.

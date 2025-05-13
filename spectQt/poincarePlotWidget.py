@@ -69,20 +69,7 @@ class PoincarePlotWidget(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setWidget(checkbox_container)
         self.main_layout.addWidget(scroll, stretch=1)
-
-    def keyPressEvent(self, event):
-        """
-        Handles key press events. Removes the mplcursor if the Escape key is pressed.
-        """
-        if event.key() == Qt.Key_Escape:
-            if hasattr(self, 'cursor'):
-                # Remove the cursor from the plot
-                self.cursor.remove()
-                self.cursor = None
-                self.canvas.draw()  # Redraw the canvas after removing the cursor
-            event.accept()
-        else:
-            super().keyPressEvent(event)
+        self.setVisible(False)
 
     def poincarePlot(self, dataset):
         """
@@ -92,6 +79,7 @@ class PoincarePlotWidget(QWidget):
             dataset: A dataset object with `RTops`, `ibi`, and `unique_epochs` attributes.
         """
         self.dataset = dataset
+        self.setVisible(True)
         self.setFocus()  # Ensure the widget gets focus
 
         # Ensure active_epochs is a dictionary
@@ -201,7 +189,7 @@ class PoincarePlotWidget(QWidget):
         if hasattr(self, 'cursor') and self.cursor is not None:
             self.cursor.remove()
         # Create a new cursor
-        self.cursor = mplcursors.cursor([scatter for scatter in self.scatter_handles.values()], hover=True)
+        self.cursor = mplcursors.cursor([scatter for scatter in self.scatter_handles.values()], hover=False, multiple=True)
 
         @self.cursor.connect("add")
         def on_hover(sel):

@@ -30,7 +30,7 @@ class PrepPlotWidget(QWidget):
         # Set up the Matplotlib figure and canvas
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
-
+        self.setVisible(False)
         # Initialize attributes
         self.data = None
         self.line_handler = None
@@ -66,6 +66,7 @@ class PrepPlotWidget(QWidget):
         self.layout.addWidget(self.canvas)
         self.layout.addWidget(self.navigation_bar)
         self.setLayout(self.layout)
+        
     
     def create_navigation_bar(self):
         """
@@ -476,6 +477,7 @@ class PrepPlotWidget(QWidget):
         - Mode selection for dragging, adding, finding, or removing R-top times.
         """
         self.data = data
+        self.setVisible(True)
         # Main Plot: Configure theme
         plt.ioff()
         plt.title("")

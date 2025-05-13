@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'form.ui'
+## Form generated from reading UI file 'altform.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.0
 ##
@@ -67,14 +67,21 @@ class Ui_MainWindow(object):
         __qtreewidgetitem.setText(0, u"1");
         self.treeWidget.setHeaderItem(__qtreewidgetitem)
         self.treeWidget.setObjectName(u"treeWidget")
+        self.treeWidget.setEnabled(True)
         self.treeWidget.setRootIsDecorated(True)
+        self.treeWidget.setAnimated(True)
 
         self.horizontalLayout.addWidget(self.treeWidget)
 
         self.Splitter.addWidget(self.Treeframe)
         self.Views = QTabWidget(self.Splitter)
         self.Views.setObjectName(u"Views")
-        self.Views.setStyleSheet(u"")
+        self.Views.setStyleSheet(u"border: 1px solid gray;\n"
+"border-radius: 1px;\n"
+"")
+        self.Views.setTabPosition(QTabWidget.TabPosition.North)
+        self.Views.setTabShape(QTabWidget.TabShape.Triangular)
+        self.Views.setIconSize(QSize(32, 32))
         self.Views.setDocumentMode(True)
         self.PreProcessing = QWidget()
         self.PreProcessing.setObjectName(u"PreProcessing")
@@ -149,7 +156,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scrollAreaWidgetContents = QWidget()
         self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
-        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 62, 16))
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 98, 28))
         sizePolicy1.setHeightForWidth(self.scrollAreaWidgetContents.sizePolicy().hasHeightForWidth())
         self.scrollAreaWidgetContents.setSizePolicy(sizePolicy1)
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
@@ -197,11 +204,10 @@ class Ui_MainWindow(object):
         self.menufile.addSeparator()
         self.menufile.addAction(self.actionFlip_ECG)
         self.menuView.addAction(self.actionSettings)
-        self.menuView.addAction(self.actionToggle_Theme)
 
         self.retranslateUi(MainWindow)
 
-        self.Views.setCurrentIndex(3)
+        self.Views.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
