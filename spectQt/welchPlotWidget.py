@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -6,6 +8,7 @@ from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 from scipy.interpolate import interp1d
 from scipy.signal import welch
 
+warnings.filterwarnings("ignore")
 
 class WelchPSDPlotWidget(QWidget):
     """
@@ -92,37 +95,39 @@ class WelchPSDPlotWidget(QWidget):
             'HF Power': hf_power,
             'LF/HF Ratio': lf_hf_ratio
         }
-        
-        # Extract PSD values for each band
-        vlf_psd = power[(freqs >= vlf_band[0]) & (freqs <= vlf_band[1])]
-        lf_psd = power[(freqs >= lf_band[0]) & (freqs <= lf_band[1])]
-        hf_psd = power[(freqs >= hf_band[0]) & (freqs <= hf_band[1])]
+        try:
+            # Extract PSD values for each band
+            vlf_psd = power[(freqs >= vlf_band[0]) & (freqs <= vlf_band[1])]
+            lf_psd = power[(freqs >= lf_band[0]) & (freqs <= lf_band[1])]
+            hf_psd = power[(freqs >= hf_band[0]) & (freqs <= hf_band[1])]
 
-        # Filter freqs to get the values within the band
-        vlf_freqs = freqs[(freqs >= vlf_band[0]) & (freqs <= vlf_band[1])]
-        lf_freqs = freqs[(freqs >= lf_band[0]) & (freqs <= lf_band[1])]
-        hf_freqs = freqs[(freqs >= hf_band[0]) & (freqs <= hf_band[1])]
+            # Filter freqs to get the values within the band
+            vlf_freqs = freqs[(freqs >= vlf_band[0]) & (freqs <= vlf_band[1])]
+            lf_freqs = freqs[(freqs >= lf_band[0]) & (freqs <= lf_band[1])]
+            hf_freqs = freqs[(freqs >= hf_band[0]) & (freqs <= hf_band[1])]
 
-        # Interpolate PSD values to ensure exact band boundaries
-        vlf_psd_ex = np.insert(vlf_psd, 0, np.interp(vlf_band[0], freqs, power))
-        vlf_psd_ex = np.append(vlf_psd_ex, np.interp(lf_band[0], freqs, power))
+            # Interpolate PSD values to ensure exact band boundaries
+            vlf_psd_ex = np.insert(vlf_psd, 0, np.interp(vlf_band[0], freqs, power))
+            vlf_psd_ex = np.append(vlf_psd_ex, np.interp(lf_band[0], freqs, power))
 
-        lf_psd_ex = np.insert(lf_psd, 0, np.interp(vlf_band[1], freqs, power))
-        lf_psd_ex = np.append(lf_psd_ex, np.interp(hf_band[0], freqs, power))
+            lf_psd_ex = np.insert(lf_psd, 0, np.interp(vlf_band[1], freqs, power))
+            lf_psd_ex = np.append(lf_psd_ex, np.interp(hf_band[0], freqs, power))
 
-        hf_psd_ex = np.insert(hf_psd, 0, np.interp(lf_band[1], freqs, power))
-        hf_psd_ex = np.append(hf_psd_ex, np.interp(hf_band[1], freqs, power))
+            hf_psd_ex = np.insert(hf_psd, 0, np.interp(lf_band[1], freqs, power))
+            hf_psd_ex = np.append(hf_psd_ex, np.interp(hf_band[1], freqs, power))
 
-        # Interpolate frequencies to ensure exact band boundaries
-        vlf_freqs_ex = np.insert(vlf_freqs, 0, vlf_band[0])
-        vlf_freqs_ex = np.append(vlf_freqs_ex, lf_band[0])
+            # Interpolate frequencies to ensure exact band boundaries
+            vlf_freqs_ex = np.insert(vlf_freqs, 0, vlf_band[0])
+            vlf_freqs_ex = np.append(vlf_freqs_ex, lf_band[0])
 
-        lf_freqs_ex = np.insert(lf_freqs, 0, vlf_band[1])
-        lf_freqs_ex = np.append(lf_freqs_ex, hf_band[0])
+            lf_freqs_ex = np.insert(lf_freqs, 0, vlf_band[1])
+            lf_freqs_ex = np.append(lf_freqs_ex, hf_band[0])
 
-        hf_freqs_ex = np.insert(hf_freqs, 0, lf_band[1])
-        hf_freqs_ex = np.append(hf_freqs_ex, hf_band[1])
-
+            hf_freqs_ex = np.insert(hf_freqs, 0, lf_band[1])
+            hf_freqs_ex = np.append(hf_freqs_ex, hf_band[1])
+        except ValueError:
+            return(spectral_measures)
+            
         # Plot
         self.ax.clear()
         self.ax.plot(freqs, power, '-k', alpha=0.5, linewidth=0.5, label=f'PSD Spectrum {title}')

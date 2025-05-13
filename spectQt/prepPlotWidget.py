@@ -72,7 +72,7 @@ class PrepPlotWidget(QWidget):
         """
         Create a navigation bar with icons and labels, and attach callbacks.
         """
-        def make_btn(icon_name=None, text=None, callback=None, rotate=False):
+        def make_btn(icon_name=None, text=None, callback=None, rotate=False, tooltip=None):
             btn = QPushButton()
             if icon_name:
                 #icon = self.style().standardIcon(getattr(QStyle, icon_name))
@@ -100,17 +100,19 @@ class PrepPlotWidget(QWidget):
             """)
             if callback:
                 btn.clicked.connect(callback)
+            if tooltip is not None:
+                btn.setToolTip(tooltip)
             return btn
 
         # Button definitions with standard Qt icons or custom icons
-        begin = make_btn('fa6s.right-to-bracket', None, self.go_to_start, 180)
-        left = make_btn('fa6s.backward', None, self.pan_left)
-        prev = make_btn('fa6s.square-caret-left', None, self.prev)
-        wider = make_btn('ei.zoom-out', None, self.zoom_out)
-        zoom = make_btn('ei.zoom-in', None, self.zoom_in)
-        next = make_btn('fa6s.square-caret-right', None, self.next)
-        right = make_btn('fa6s.forward', None, self.pan_right)
-        end = make_btn('fa6s.right-to-bracket', None, self.go_to_end)
+        begin = make_btn('fa6s.right-to-bracket', None, self.go_to_start, 180, 'Goto Start')
+        left = make_btn('fa6s.backward', None, self.pan_left, False, 'Pan Left')
+        prev = make_btn('fa6s.square-caret-left', None, self.prev, False, 'Previous Non-Normal R-top')
+        wider = make_btn('ei.zoom-out', None, self.zoom_out, False, 'Zoom Out')
+        zoom = make_btn('ei.zoom-in', None, self.zoom_in, False, 'Zoom In')
+        next = make_btn('fa6s.square-caret-right', None, self.next, False, 'Next Non-Normal R-top')
+        right = make_btn('fa6s.forward', None, self.pan_right, False, 'Pan Right')
+        end = make_btn('fa6s.right-to-bracket', None, self.go_to_end, False, 'Goto End')
 
         # Layout to hold buttons
         nav_layout = QHBoxLayout()

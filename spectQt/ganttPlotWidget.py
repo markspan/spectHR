@@ -55,7 +55,7 @@ class GanttPlotWidget(QWidget):
         else:
             visible_epochs = {epoch: True for epoch in dataset.unique_epochs}
 
-        logger.info(f'Visible epochs: {list(visible_epochs.keys())}')
+        # logger.info(f'Visible epochs: {list(visible_epochs.keys())}')
 
         # Filter the RTops DataFrame: Keep rows containing at least one visible epoch
         RTops["filtered_epoch"] = RTops["epoch"].apply(

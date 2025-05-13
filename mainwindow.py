@@ -118,9 +118,12 @@ class MainWindow(QMainWindow):
         ------------
         Saves the current dataset if it exists.
         """
+        # Set the cursor to a wait cursor while processing
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        # Save the dataset if it exists
         if self.dataset is not None:
             self.dataset.save()
-
+        # Show the appropriate plot based on the selected tab
         if index == 1 and self.dataset is not None:
             self.show_ibiseries_plot(self.dataset)
 
@@ -135,14 +138,14 @@ class MainWindow(QMainWindow):
 
         if index == 5 and self.dataset is not None:  
             self.show_parameters_plot(self.dataset)
-
+        # Restore the cursor to the default state
+        QApplication.restoreOverrideCursor()
 
     def on_file_selection(self):
         """
         Handler triggered when the user selects a file from the workspace tree.
-
-        It loads and preprocesses the selected file, then updates both
-        the preprocessing and Poincaré plots accordingly.
+        It loads and preprocesses the selected file, then updates all
+        the plots accordingly.
         """
         selected_items = self.ui.treeWidget.selectedItems()
         if not selected_items:
@@ -153,17 +156,22 @@ class MainWindow(QMainWindow):
             return
         if file_path == 'CARSPAN Files':  # Avoid processing placeholder nodes
             return
-
+        
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         # Load and preprocess the file
         self.dataset = spQt.PreProcessFile(file_path)
 
         # Update the UI with the new dataset
-        self.show_preprocessing_plot(self.dataset)        
-        self.show_ibiseries_plot(self.dataset)
-        self.show_poincare_plot(self.dataset)
-        self.show_gantt_plot(self.dataset)
-        self.show_welch_psd_plot(self.dataset)
-        self.show_parameters_plot(self.dataset)
+        try:
+            self.show_preprocessing_plot(self.dataset)        
+            self.show_ibiseries_plot(self.dataset)
+            self.show_poincare_plot(self.dataset)
+            self.show_gantt_plot(self.dataset)
+            self.show_welch_psd_plot(self.dataset)
+            self.show_parameters_plot(self.dataset)
+        except Exception:
+            pass
+        QApplication.restoreOverrideCursor()
 
     def show_preprocessing_plot(self, data):
         """
@@ -254,7 +262,10 @@ class MainWindow(QMainWindow):
                 if spectral_measures != -1:
                     psd_Values_list.append(spectral_measures)
                     self.welch_psd_layout.addWidget(widget)
-            data.psd_Values = pd.DataFrame(psd_Values_list)
+            
+            if psd_Values_list is not None:
+                data.psd_Values = pd.DataFrame(psd_Values_list)
+                            
             # Ensure the scroll area is properly set up
             self.ui.scrollArea.setWidgetResizable(True)
             self.ui.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)

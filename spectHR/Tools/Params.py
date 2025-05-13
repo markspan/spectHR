@@ -1,10 +1,15 @@
 import numpy as np
 
+
 def rmssd(ibi):
-    ibi = np.asarray(ibi)
-    nnd = np.diff(ibi)
-    rmssd = np.sum([x**2 for x in nnd])
-    rmssd = np.sqrt(1. / nnd.size * rmssd)
+    try:
+        ibi = np.asarray(ibi)
+        nnd = np.diff(ibi)
+        rmssd = np.sum([x**2 for x in nnd])
+        rmssd = np.sqrt(1. / nnd.size * rmssd)
+    except ZeroDivisionError:
+        # Return NaN if division by zero occurs
+        return np.nan
     return rmssd
 
 def sdnn(ibi):
@@ -56,6 +61,8 @@ def sd_ratio(ibi):
     Returns:
         float: The ratio of SD1 to SD2, representing the relative balance of short- to long-term variability.
     """
+    if sd2(ibi) == 0:
+        return np.nan
     return sd1(ibi) / sd2(ibi)
 
 def ellipse_area(ibi):
