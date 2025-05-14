@@ -2,9 +2,9 @@ import sys
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QInputDialog
+from PySide6.QtCore import Qt, QPoint
+from PySide6.QtGui import QFont, QAction
+from PySide6.QtWidgets import QApplication, QMenu, QMainWindow, QVBoxLayout, QInputDialog
 
 import spectHR as cs
 import spectQt as spQt
@@ -55,6 +55,9 @@ class MainWindow(QMainWindow):
         # Initialize workspace and populate the tree view
         self.workspace = spQt.LoadWorkspace()
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
+        # Connect the customContextMenuRequested signal to a slot
+        self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.ui.treeWidget.customContextMenuRequested.connect(self.show_context_menu)
 
         # Create and embed the preprocessing plot widget
         self.prep_plot_widget = spQt.PrepPlotWidget()
@@ -95,6 +98,36 @@ class MainWindow(QMainWindow):
         self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
         self.dataset = None  # Initialize dataset placeholder
+
+    def show_context_menu(self, position):
+            """
+            Show a context menu at the specified position.
+
+            Args:
+                position (QPoint): The position where the context menu is requested.
+            """
+            # Get the item that was clicked
+            item = self.ui.treeWidget.itemAt(position)
+            if not item:
+                return
+
+            # Create a context menu
+            context_menu = QMenu(self)
+
+            # Create actions for the context menu
+            action1 = QAction("Action 1", self)
+            action2 = QAction("Action 2", self)
+
+            # Connect the actions to their respective functions
+            #action1.triggered.connect(lambda: self.handle_action1(item))
+            #action2.triggered.connect(lambda: self.handle_action2(item))
+
+            # Add the actions to the context menu
+            context_menu.addAction(action1)
+            context_menu.addAction(action2)
+
+            # Show the context menu at the requested position
+            context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
 
     def do_flip_ecg(self):
         ecglevel = self.dataset.ecg.level
@@ -189,6 +222,7 @@ class MainWindow(QMainWindow):
             self.prep_plot_widget.prepPlot(data)
         else:
             self.ui.Views.setTabVisible(0, False)
+            self.prep_plot_widget.prepPlot(data)
             self.ui.Views.setCurrentIndex(1)
             
     def show_ibiseries_plot(self, data):

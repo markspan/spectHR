@@ -214,6 +214,7 @@ class SpectHRDataset:
             return [self.convert_datetime_to_string(item) for item in obj]
         else:
             return obj
+        
     def loadEVT(self, filename):
         """
         Loads RTops from a CARSPAN .evt file and generates structured events for epochs.
@@ -223,7 +224,8 @@ class SpectHRDataset:
             flip (str or bool, optional): Not used, included for compatibility.
         """
         logger.info('Loading CARSPAN EVT RTops')
-        self.has_ecg= False
+        self.has_ecg = False
+
         # Step 1: Read only [Data] section
         with open(filename, 'r') as f:
             lines = f.readlines()
@@ -258,6 +260,7 @@ class SpectHRDataset:
         rtops['epoch'] = None  # To be filled by create_epoch_series()
         self.RTops = rtops[['time', 'ibi', 'epoch']]
         self.RTops['ID'] = 'N'
+
         # Step 3: Extract start and end codes (11 and 21)
         start_times = df[df['event_code'] == 11]['time'].tolist()
         end_times = df[df['event_code'] == 21]['time'].tolist()
@@ -279,15 +282,21 @@ class SpectHRDataset:
 
         if rtops.empty:
             raise ValueError("No RTops found in file.")
-        
+
         ecg_timestamps = rtops['time']
-        ecg_levels = 1000.0/rtops['ibi']
+        ecg_levels = 1000.0 / rtops['ibi']
 
         self.ecg = TimeSeries(ecg_timestamps, ecg_levels)
+
+        # Initialize self.epoch as a series with the same index as self.ecg.time
+        self.epoch = pd.Series(index=self.ecg.time.index, dtype="object").map(lambda x: [])
+
         classify(self)
+
         # Step 6: Assign epochs based on events
         self.create_epoch_series()
         self.RTops['epoch'] = self.epoch
+
         
    
     def load_from_pickle(self):
