@@ -227,8 +227,8 @@ border-radius: 1px;
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>98</width>
-                 <height>28</height>
+                 <width>436</width>
+                 <height>450</height>
                 </rect>
                </property>
                <property name="sizePolicy">
@@ -279,7 +279,7 @@ border-radius: 1px;
      <x>0</x>
      <y>0</y>
      <width>1137</width>
-     <height>22</height>
+     <height>33</height>
     </rect>
    </property>
    <widget class="QMenu" name="menufile">
@@ -288,16 +288,24 @@ border-radius: 1px;
     </property>
     <addaction name="actionOpen_Workspace"/>
     <addaction name="separator"/>
-    <addaction name="actionFlip_ECG"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
      <string>View</string>
     </property>
     <addaction name="actionSettings"/>
+    <addaction name="separator"/>
+   </widget>
+   <widget class="QMenu" name="menuEdits">
+    <property name="title">
+     <string>Edits</string>
+    </property>
+    <addaction name="actionAdd_Epoch"/>
+    <addaction name="actionFlip_Ecg"/>
    </widget>
    <addaction name="menufile"/>
    <addaction name="menuView"/>
+   <addaction name="menuEdits"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionOpen_Workspace">
@@ -318,6 +326,21 @@ border-radius: 1px;
   <action name="actionFlip_ECG">
    <property name="text">
     <string>Flip ECG</string>
+   </property>
+  </action>
+  <action name="action_2">
+   <property name="text">
+    <string>Add Epoch</string>
+   </property>
+  </action>
+  <action name="actionAdd_Epoch">
+   <property name="text">
+    <string>Add Epoch</string>
+   </property>
+  </action>
+  <action name="actionFlip_Ecg">
+   <property name="text">
+    <string>Flip Ecg</string>
    </property>
   </action>
  </widget>

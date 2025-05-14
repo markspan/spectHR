@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QInputDialog
 
 import spectHR as cs
 import spectQt as spQt
@@ -46,8 +46,8 @@ class MainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         
-        self.ui.actionFlip_ECG.triggered.connect(self.do_flip_ecg)
-        
+        self.ui.actionFlip_Ecg.triggered.connect(self.do_flip_ecg)
+        self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
         self.setWindowTitle("spectHR - ECG Preprocessing")
         self.resize(1920, 800)
         self.ui.Splitter.setSizes([200, 1700])
@@ -74,10 +74,10 @@ class MainWindow(QMainWindow):
         layout3.addWidget(self.poincare_plot_widget)
         self.ui.mplPoincare.setLayout(layout3)
         
-        # Create and embed the Gantt plot widget    
-        self.gantt_plot_widget = spQt.GanttPlotWidget()  # Create the GanttPlotWidget instance
+        # Create and embed the Epoch plot widget    
+        self.epoch_plot_widget = spQt.EpochPlotWidget()  # Create the EpochPlotWidget instance
         layout4 = QVBoxLayout()  # Create a new layout for the widget
-        layout4.addWidget(self.gantt_plot_widget)  # Add the GanttPlotWidget to the layout
+        layout4.addWidget(self.epoch_plot_widget)  # Add the PlotWidget to the layout
         self.ui.mplEpochs.setLayout(layout4)  # Set the layout to the mplEpochs placeholder
 
         # Create layout for Welch PSD plot widgets (one per epoch)
@@ -131,7 +131,7 @@ class MainWindow(QMainWindow):
             self.show_poincare_plot(self.dataset)
 
         if index == 3 and self.dataset is not None:
-            self.show_gantt_plot(self.dataset)
+            self.show_epoch_plot(self.dataset)
 
         if index == 4 and self.dataset is not None:
             self.show_welch_psd_plot(self.dataset)
@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
             self.show_preprocessing_plot(self.dataset)        
             self.show_ibiseries_plot(self.dataset)
             self.show_poincare_plot(self.dataset)
-            self.show_gantt_plot(self.dataset)
+            self.show_epoch_plot(self.dataset)
             self.show_welch_psd_plot(self.dataset)
             self.show_parameters_plot(self.dataset)
         except Exception:
@@ -201,12 +201,12 @@ class MainWindow(QMainWindow):
             The dataset object containing epoch information.
         """
         if data is not None:
-            # Call the method from the GanttPlotWidget to generate and display the plot
+            # Call the method from the PlotWidget to generate and display the plot
             self.ibiseries_plot_widget.plotIBISeries(data)
 
-    def show_gantt_plot(self, data):
+    def show_epoch_plot(self, data):
         """
-        Display the Gantt plot of the epochs in the appropriate widget.
+        Display the plot of the epochs in the appropriate widget.
 
         Parameters
         ----------
@@ -214,8 +214,8 @@ class MainWindow(QMainWindow):
             The dataset object containing epoch information.
         """
         if data is not None:
-            # Call the method from the GanttPlotWidget to generate and display the plot
-            self.gantt_plot_widget.plotGantt(data)
+            # Call the method from the PlotWidget to generate and display the plot
+            self.epoch_plot_widget.plotEpoch(data)
             
     def show_poincare_plot(self, data):
         """
@@ -280,7 +280,29 @@ class MainWindow(QMainWindow):
             The dataset object containing RR intervals or relevant features.
         """
         self.parameters_plot_widget.display_parameters(data)
-                
+
+    def add_epoch(self):
+        """
+        Prompt the user for an epoch label and add it to the dataset with the start and end times
+        set to the full range of the dataset.
+        """
+        if self.dataset is None:
+            return
+
+        # Prompt the user for an epoch label
+        epoch_label, ok = QInputDialog.getText(self, 'Add Epoch', 'Epoch Label:')
+        if not ok or not epoch_label:
+            return
+
+        # Get the full range of the dataset
+        start_time = self.dataset.ecg.time.min()
+        end_time = self.dataset.ecg.time.max()
+        # Add the new epoch to the dataset
+        self.dataset.add_epoch_to_dataset(epoch_label, start_time, end_time)
+
+        # Replot the figure to include the new epoch
+        self.epoch_plot_widget.plotEpoch(self.dataset)
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     # Set global default font

@@ -170,14 +170,18 @@ def borderData(DataSet, par=None):
         # Get the first and last event timestamps
         first_event_time = DS.events['time'].iloc[0]-1
         last_event_time = DS.events['time'].iloc[-1]+1
-        logger.info(f'Slicing from {first_event_time} to {last_event_time}')
+        
         # Slice TimeSeries based on the first and last event times
+        mask = (DS.ecg.time >= first_event_time) & (DS.ecg.time <= last_event_time)
+
         if DS.ecg is not None:
             DS.ecg = DS.ecg.slicetime(first_event_time, last_event_time)
 
         if DS.br is not None:
             DS.br = DS.br.slicetime(first_event_time, last_event_time)
         
+        if hasattr(DS, 'epoch'):
+            DS.epoch = DS.epoch[mask]
     return DS
     
 

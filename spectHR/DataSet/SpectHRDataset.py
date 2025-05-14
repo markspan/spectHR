@@ -556,7 +556,64 @@ class SpectHRDataset:
 
         self.unique_epochs = self.get_unique_epochs()
 
-        
+    def add_epoch_to_dataset(self, epoch_label, start_time, end_time):
+        """
+        Add a new epoch to the dataset.
+
+        Args:
+            epoch_label (str): The label for the new epoch.
+            start_time (float): The start time for the new epoch.
+            end_time (float): The end time for the new epoch.
+        """
+        if self.events is None:
+            self.events = pd.DataFrame(columns=['time', 'label'])
+
+        # Add the new epoch to the events DataFrame
+        new_start_event = pd.DataFrame({
+            'time': [start_time],
+            'label': [f'start {epoch_label}']
+        })
+        new_end_event = pd.DataFrame({
+            'time': [end_time],
+            'label': [f'stop {epoch_label}']
+        })
+        self.events = pd.concat([self.events, new_start_event, new_end_event], ignore_index=True)
+
+        # Initialize the epoch series if it doesn't exist
+        if not hasattr(self, 'epoch'):
+            self.epoch = pd.Series(index=self.ecg.time.index, dtype="object").map(lambda x: [])
+        # Update the epoch series to include the new epoch
+        mask = (self.ecg.time >= start_time) & (self.ecg.time <= end_time)
+
+        for idx in self.epoch[mask].index:
+            self.epoch.at[idx].append(epoch_label)
+
+        # Update the unique epochs
+        self.unique_epochs = self.get_unique_epochs()
+
+        # Update the RTops DataFrame to reflect the new epoch assignments
+        if hasattr(self, 'RTops'):
+            self.update_RTops_epochs()
+
+    def update_RTops_epochs(self):
+        """
+        Update the RTops DataFrame to reflect the new epoch assignments.
+        """
+        if self.RTops is None:
+            return
+
+        # Clear existing epoch assignments in RTops
+        self.RTops['epoch'] = self.RTops['epoch'].apply(lambda x: [])
+
+        # Loop through each epoch and update RTops
+        for epoch in self.unique_epochs:
+            # Get the start and end times for the epoch
+            epoch_start = self.events[self.events['label'].str.lower().str.startswith(f'start {epoch.lower()}')]['time'].min()
+            epoch_end = self.events[self.events['label'].str.lower().str.startswith(f'stop {epoch.lower()}')]['time'].max()
+
+            # Update RTops entries that fall within the epoch boundaries
+            for idx in self.RTops.loc[(self.RTops['time'] >= epoch_start) & (self.RTops['time'] <= epoch_end)].index:
+                self.RTops.at[idx, 'epoch'].append(epoch)
 
     def get_unique_epochs(self):
         """
