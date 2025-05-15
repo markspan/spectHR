@@ -260,7 +260,6 @@ class EpochPlotWidget(QWidget):
                 else:
                     # update the label text
                     label.set_text(new_text)
-                    print(label)
                     # Update the corresponding epoch name in the dataset
                     index = self.ax.get_yticks().tolist().index(label.get_position()[1])
                     old_epoch_name = self.yticklabels[index]
@@ -285,28 +284,24 @@ class EpochPlotWidget(QWidget):
 
         # Update the epoch name in the RTops DataFrame
         if self.dataset.RTops is not None:
-            print('Rtops')
             self.dataset.RTops['epoch'] = self.dataset.RTops['epoch'].apply(
                 lambda epochs: [new_name if epoch == old_name else epoch for epoch in epochs]
             )
 
         # Update the epoch name in the events DataFrame
         if self.dataset.events is not None:
-            print('Events')
             self.dataset.events['label'] = self.dataset.events['label'].apply(
                 lambda label: label.replace(old_name, new_name) if old_name in label else label
             )
 
         # Update the epoch name in the epoch series
         if hasattr(self.dataset, 'epoch'):
-            print('epoch')
             self.dataset.epoch = self.dataset.epoch.apply(
                 lambda epochs: [new_name if epoch == old_name else epoch for epoch in epochs]
             )
 
         # Update the unique epochs
         if hasattr(self.dataset, 'unique_epochs'):
-            print('unique')
             self.dataset.unique_epochs = self.dataset.get_unique_epochs()
 
     def delete_epoch_from_dataset(self, epoch_name):

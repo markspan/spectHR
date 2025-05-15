@@ -329,7 +329,6 @@ class SpectHRDataset:
         l = len(ecg_levels)/3  # noqa: E741
         ml = ecg_levels.loc[l:2*l]
         magic = abs(np.mean(ml) - np.min(ml)) / (abs(np.mean(ml) - np.max(ml)))
-        print(f"Magic is {magic}")
         if (magic > 1.5 and flip == 'auto') or flip is True:
             ecg_levels = -ecg_levels
     
@@ -390,7 +389,6 @@ class SpectHRDataset:
         l = len(ecg_levels)/3  # noqa: E741
         ml = ecg_levels.loc[l:2*l]
         magic = abs(np.mean(ml) - np.min(ml)) / (abs(np.mean(ml) - np.max(ml)))
-        print(f"Magic is {magic}")
         if (magic > 1.5 and flip == 'auto') or flip is True:
             ecg_levels = -ecg_levels
     
@@ -555,7 +553,6 @@ class SpectHRDataset:
                 self.epoch.at[idx].append(start_epoch_name)
 
         self.unique_epochs = self.get_unique_epochs()
-        print(f"Unique epochs: {self.unique_epochs}")
 
     def add_epoch_to_dataset(self, epoch_label, start_time, end_time):
         """
