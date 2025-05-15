@@ -60,7 +60,7 @@ class TimeSeries:
         mask = (self.time >= time_min) & (self.time <= time_max)
         try:
             sliced = TimeSeries(self.time[mask], self.level[mask], self.srate)
-        except:
+        except:  # noqa: E722
             sliced = TimeSeries(self.time, self.level, self.srate)
         return sliced
 
@@ -128,13 +128,13 @@ class SpectHRDataset:
         self.starttime = None  # Start time of the recording
         self.x_min = None
         self.x_max = None
+        self.toMatlab = False
         # Set up file paths and directories
         self.datadir = os.path.dirname(filename)  # Directory of the input file
         self.filename = os.path.basename(filename)  # Extract filename
         self.pkl_filename = os.path.splitext(self.filename)[0] + ".pkl"  # Name for cached pickle file
         self.file_path = os.path.join(self.datadir, self.filename)  # Full path to the input file
         self.has_ecg = True
-        self.toMatlab = False
         # Ensure a valid data directory
         if not self.datadir:
             self.datadir=os.getcwd()
@@ -178,7 +178,7 @@ class SpectHRDataset:
 
     def save(self):
         """
-        Saves the current state of the dataset as a pickle file.
+        Saves the current state of the dataset as a pickle file and optionally as a .mat file.
         """
         try:
             with open(self.pkl_path, "wb") as pkl_file:
@@ -186,35 +186,24 @@ class SpectHRDataset:
             logger.info(f"Dataset saved as pickle: {self.pkl_path}")
         except Exception as e:
             logger.error(f"Failed to save pickle file: {e}")
-            
+
         if self.toMatlab:
-            data_fields = {
-                key: self.convert_datetime_to_string(value)
-                for key, value in self.__dict__.items()
-                if not callable(value) and not key.startswith('__') and value is not None
-            }
-            # Save the data fields to a .mat file
-            scipy.io.savemat(self.pkl_path + '.mat', data_fields)
-        
-    def convert_datetime_to_string(self, obj):
-        """
-        Recursively convert datetime.datetime objects to strings in a nested structure.
+            data_fields = {}
 
-        Parameters:
-        - obj: The object to convert.
+            # Save self.RTops
+            if hasattr(self, 'RTops') and self.RTops is not None:
+                rtops_data = self.RTops.copy()
+                # Convert lists to arrays and ensure no None values
+                if 'epoch' in rtops_data.columns:
+                    rtops_data['epoch'] = rtops_data['epoch'].apply(lambda x: np.array([str(v) for v in x if v is not None]) if isinstance(x, list) or isinstance(x,set) else x)
+                data_fields['RTops'] = rtops_data
 
-        Returns:
-        - The converted object.
-        """
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        elif isinstance(obj, dict):
-            return {key: self.convert_datetime_to_string(value) for key, value in obj.items()}
-        elif isinstance(obj, (list, set, tuple)):
-            return [self.convert_datetime_to_string(item) for item in obj]
-        else:
-            return obj
-        
+            try:
+                scipy.io.savemat(self.pkl_path + '.mat', data_fields)
+                logger.info(f"Dataset saved as .mat file: {self.pkl_path}.mat")
+            except Exception as e:
+                logger.error(f"Failed to save .mat file: {e}")
+
     def loadEVT(self, filename):
         """
         Loads RTops from a CARSPAN .evt file and generates structured events for epochs.
@@ -257,7 +246,8 @@ class SpectHRDataset:
         rtops = df[df['event_code'] == 1].copy()
         rtops.reset_index(drop=True, inplace=True)
         rtops['ibi'] = np.append(np.diff(rtops['time']), np.nan)
-        rtops['epoch'] = None  # To be filled by create_epoch_series()
+        rtops['epoch'] = [set([''])] * len(rtops)
+        
         self.RTops = rtops[['time', 'ibi', 'epoch']]
         self.RTops['ID'] = 'N'
 
@@ -271,9 +261,10 @@ class SpectHRDataset:
         # Step 4: Build structured events
         event_timestamps = []
         event_labels = []
+        # Create events for each epoch
         for i, (start, end) in enumerate(zip(start_times, end_times), 1):
             event_timestamps.extend([start, end])
-            event_labels.extend([f'start series {i}', f'end series {i}'])
+            event_labels.extend([f'start series {i}', f'stop series {i}'])
 
         self.events = pd.DataFrame({
             'time': pd.Series(event_timestamps),
@@ -295,10 +286,10 @@ class SpectHRDataset:
 
         # Step 6: Assign epochs based on events
         self.create_epoch_series()
-        self.RTops['epoch'] = self.epoch
+        self.update_RTops_epochs()
+
 
         
-   
     def load_from_pickle(self):
         """
         Loads the dataset from a pickle file.
@@ -335,7 +326,7 @@ class SpectHRDataset:
         ecg_timestamps -= self.starttime  # Normalize timestamps
     
         # Determine if the ECG signal needs to be flipped based on signal characteristics
-        l = len(ecg_levels)/3
+        l = len(ecg_levels)/3  # noqa: E741
         ml = ecg_levels.loc[l:2*l]
         magic = abs(np.mean(ml) - np.min(ml)) / (abs(np.mean(ml) - np.max(ml)))
         print(f"Magic is {magic}")
@@ -347,7 +338,7 @@ class SpectHRDataset:
     
         # Create event timestamps and labels
         event_timestamps = pd.Series([ecg_timestamps.iloc[0], ecg_timestamps.iloc[-1]])
-        event_labels = pd.Series(['start series', 'end series'])
+        event_labels = pd.Series(['start series', 'stop series'])
         
         # Create DataFrame for events: this creates an epoch as large as the dataset
         eventlist = []
@@ -396,7 +387,7 @@ class SpectHRDataset:
         ecg_timestamps = pd.Series(np.arange(start, end + median_diff, median_diff))
   
         # Determine if the ECG signal needs to be flipped based on signal characteristics
-        l = len(ecg_levels)/3
+        l = len(ecg_levels)/3  # noqa: E741
         ml = ecg_levels.loc[l:2*l]
         magic = abs(np.mean(ml) - np.min(ml)) / (abs(np.mean(ml) - np.max(ml)))
         print(f"Magic is {magic}")
@@ -408,7 +399,7 @@ class SpectHRDataset:
     
         # Create event timestamps and labels
         event_timestamps = pd.Series([ecg_timestamps.iloc[0], ecg_timestamps.iloc[-1]])
-        event_labels = pd.Series(['start series', 'end series'])
+        event_labels = pd.Series(['start series', 'stop series'])
         
         # Create DataFrame for events: this creates an epoch as large as the dataset
         eventlist = []
@@ -462,7 +453,7 @@ class SpectHRDataset:
             ecg_timestamps -= self.starttime
             # pragmatic approuch. Might do better. This flips the signal if it thinks it needs to...
             magic = abs(np.mean(ecg_levels) - np.min(ecg_levels))/(abs(np.mean(ecg_levels) - np.max(ecg_levels)))
-            if (magic > 1.5 and flip == 'auto') or flip == True: 
+            if (magic > 1.5 and flip == 'auto') or flip:
                 ecg_levels = -ecg_levels
 
             self.ecg = TimeSeries(ecg_timestamps, ecg_levels)
@@ -506,7 +497,7 @@ class SpectHRDataset:
             })]
             eventlist.append(pd.DataFrame({
                 'time': [ecg_timestamps.iloc[-1]],
-                'label': ['end All']
+                'label': ['stop All']
             }))
             self.events = pd.concat(eventlist, ignore_index=True)
             self.create_epoch_series()
@@ -564,6 +555,7 @@ class SpectHRDataset:
                 self.epoch.at[idx].append(start_epoch_name)
 
         self.unique_epochs = self.get_unique_epochs()
+        print(f"Unique epochs: {self.unique_epochs}")
 
     def add_epoch_to_dataset(self, epoch_label, start_time, end_time):
         """
@@ -612,7 +604,7 @@ class SpectHRDataset:
             return
 
         # Clear existing epoch assignments in RTops
-        self.RTops['epoch'] = self.RTops['epoch'].apply(lambda x: [])
+        self.RTops['epoch'] = self.RTops['epoch'].apply(lambda x: set())
 
         # Loop through each epoch and update RTops
         for epoch in self.unique_epochs:
@@ -621,8 +613,9 @@ class SpectHRDataset:
             epoch_end = self.events[self.events['label'].str.lower().str.startswith(f'stop {epoch.lower()}')]['time'].max()
 
             # Update RTops entries that fall within the epoch boundaries
-            for idx in self.RTops.loc[(self.RTops['time'] >= epoch_start) & (self.RTops['time'] <= epoch_end)].index:
-                self.RTops.at[idx, 'epoch'].append(epoch)
+            mask = (self.RTops['time'] >= epoch_start) & (self.RTops['time'] <= epoch_end)
+            for idx in self.RTops[mask].index:
+                self.RTops.at[idx, 'epoch'].add(epoch)
 
     def get_unique_epochs(self):
         """

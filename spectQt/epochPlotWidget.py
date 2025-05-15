@@ -1,11 +1,12 @@
 import copy
+
+import matplotlib
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
-import pandas as pd
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLineEdit, QInputDialog
-import matplotlib.patches as patches
-import matplotlib
+from PySide6.QtWidgets import QInputDialog, QVBoxLayout, QWidget
+
 
 class EpochPlotWidget(QWidget):
     """
@@ -115,7 +116,7 @@ class EpochPlotWidget(QWidget):
                 'rect': rect,
                 'epoch': epoch,
                 'start': start_times.iloc[i],
-                'end': start_times.iloc[i] + durations.iloc[i],
+                'stop': start_times.iloc[i] + durations.iloc[i],
                 'start_text': start_text,
                 'end_text': end_text
             })
@@ -140,6 +141,7 @@ class EpochPlotWidget(QWidget):
         self.ax.set_title("")                 # No chart title
         self.ax.grid(axis="y", linestyle="-", alpha=0.7)  # Add grid lines along the y-axis
         # Set x-axis limits
+        
         self.ax.set_xlim([start_times.min() - 1, epochs_gantt["end"].max() + 1])
         # Set y-axis limits to provide more vertical space
         self.ax.set_ylim([-1, len(epoch_names)])
@@ -188,11 +190,11 @@ class EpochPlotWidget(QWidget):
         if self.drag_side == 'left':
             # Set the start time to the current cursor position
             new_start = event.xdata
-            if new_start < rect_data['end']:  # Ensure start time is before end time
+            if new_start < rect_data['stop']:  # Ensure start time is before end time
                 rect.set_x(new_start)
                 rect_data['start'] = new_start
                 # Adjust the width to keep the end time the same
-                rect.set_width(rect_data['end'] - new_start)
+                rect.set_width(rect_data['stop'] - new_start)
                 rect_data['rect'] = rect
                 # Update start time annotation
                 rect_data['start_text'].set_position((new_start, rect.get_y() + rect.get_height() / 2))
@@ -202,7 +204,7 @@ class EpochPlotWidget(QWidget):
             new_end = event.xdata
             if new_end > rect_data['start']:  # Ensure end time is after start time
                 rect.set_width(new_end - rect_data['start'])
-                rect_data['end'] = new_end
+                rect_data['stop'] = new_end
                 rect_data['rect'] = rect
                 # Update end time annotation
                 rect_data['end_text'].set_position((new_end, rect.get_y() + rect.get_height() / 2))
@@ -234,7 +236,7 @@ class EpochPlotWidget(QWidget):
         for rect_data in self.rectangles:
             epoch = rect_data['epoch']
             start_time = rect_data['start']
-            end_time = rect_data['end']
+            end_time = rect_data['stop']
 
             # Update RTops entries that fall within the epoch boundaries
             for idx in self.dataset.RTops.loc[(self.dataset.RTops['time'] >= start_time) & (self.dataset.RTops['time'] <= end_time)].index:

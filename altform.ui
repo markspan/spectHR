@@ -227,8 +227,8 @@ border-radius: 1px;
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>436</width>
-                 <height>450</height>
+                 <width>98</width>
+                 <height>28</height>
                 </rect>
                </property>
                <property name="sizePolicy">
@@ -279,7 +279,7 @@ border-radius: 1px;
      <x>0</x>
      <y>0</y>
      <width>1137</width>
-     <height>33</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menufile">
@@ -301,7 +301,6 @@ border-radius: 1px;
      <string>Edits</string>
     </property>
     <addaction name="actionAdd_Epoch"/>
-    <addaction name="actionFlip_Ecg"/>
    </widget>
    <addaction name="menufile"/>
    <addaction name="menuView"/>

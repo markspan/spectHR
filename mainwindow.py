@@ -1,10 +1,15 @@
 import sys
 
-import matplotlib.pyplot as plt
 import pandas as pd
-from PySide6.QtCore import Qt, QPoint
-from PySide6.QtGui import QFont, QAction
-from PySide6.QtWidgets import QApplication, QMenu, QMainWindow, QVBoxLayout, QInputDialog
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QInputDialog,
+    QMainWindow,
+    QMenu,
+    QVBoxLayout,
+)
 
 import spectHR as cs
 import spectQt as spQt
@@ -46,7 +51,7 @@ class MainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         
-        self.ui.actionFlip_Ecg.triggered.connect(self.do_flip_ecg)
+        #self.ui.actionFlip_Ecg.triggered.connect(self.do_flip_ecg)
         self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
         self.setWindowTitle("spectHR - ECG Preprocessing")
         self.resize(1920, 800)
@@ -115,21 +120,22 @@ class MainWindow(QMainWindow):
             context_menu = QMenu(self)
 
             # Create actions for the context menu
-            action1 = QAction("Action 1", self)
-            action2 = QAction("Action 2", self)
+            Reload = QAction("Reload Raw", self)
+            Invert = QAction("invert ECG polarity", self)
 
             # Connect the actions to their respective functions
-            #action1.triggered.connect(lambda: self.handle_action1(item))
-            #action2.triggered.connect(lambda: self.handle_action2(item))
+            Reload.triggered.connect(lambda: self.reload(item))
+            Invert.triggered.connect(lambda: self.invert(item))
 
             # Add the actions to the context menu
-            context_menu.addAction(action1)
-            context_menu.addAction(action2)
+            context_menu.addAction(Reload)
+            context_menu.addAction(Invert)
 
             # Show the context menu at the requested position
             context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
 
-    def do_flip_ecg(self):
+    def invert(self, item):
+        
         ecglevel = self.dataset.ecg.level
         ecgtime = self.dataset.ecg.time
         self.dataset.ecg = cs.TimeSeries(ecgtime, -ecglevel)
@@ -191,6 +197,7 @@ class MainWindow(QMainWindow):
             return
         
         QApplication.setOverrideCursor(Qt.WaitCursor)
+        
         # Load and preprocess the file
         self.dataset = spQt.PreProcessFile(file_path)
 
@@ -204,7 +211,8 @@ class MainWindow(QMainWindow):
             self.show_parameters_plot(self.dataset)
         except Exception:
             pass
-        QApplication.restoreOverrideCursor()
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def show_preprocessing_plot(self, data):
         """
@@ -329,8 +337,8 @@ class MainWindow(QMainWindow):
             return
 
         # Get the full range of the dataset
-        start_time = self.dataset.ecg.time.min()
-        end_time = self.dataset.ecg.time.max()
+        start_time = self.dataset.ecg.time.iloc[0]
+        end_time = self.dataset.ecg.time.iloc[-1]
         # Add the new epoch to the dataset
         self.dataset.add_epoch_to_dataset(epoch_label, start_time, end_time)
 

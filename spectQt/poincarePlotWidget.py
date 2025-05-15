@@ -207,7 +207,9 @@ class PoincarePlotWidget(QWidget):
                 f"IBI = {1000*x_value:.0f}–{1000*y_value:.0f} ms\n"
                 f"Time = {time_value:.1f} s"
             )            
-                
+            sel.annotation.get_bbox_patch().set_alpha(0.5)
+            sel.annotation.get_bbox_patch().set_facecolor(scatter.get_facecolor())  
+        self.canvas.draw()
             
     def update_visibility(self):
         """
@@ -222,4 +224,5 @@ class PoincarePlotWidget(QWidget):
                 self.scatter_handles[epoch].set_visible(visible)
             if epoch in self.ellipse_handles:
                 self.ellipse_handles[epoch].set_visible(visible)
+                
         self.canvas.draw()

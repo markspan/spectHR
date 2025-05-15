@@ -83,7 +83,8 @@ class ParametersPlotWidget(QWidget):
                 ('sd_ratio', cs.Tools.Params.sd_ratio),
                 ('ellipse_area', cs.ellipse_area)
             ]).reset_index()
-                        # Merge PSD values if available
+        print(dataset.descriptives_Values)
+        # Merge PSD values if available
         if hasattr(dataset, 'psd_Values'):
             dataset.descriptives_Values = pd.merge(dataset.descriptives_Values, dataset.psd_Values, on='epoch', how='outer')
             #pass
@@ -109,8 +110,6 @@ class ParametersPlotWidget(QWidget):
         # Resize columns to fit content
         self.table_widget.resizeColumnsToContents()
 
-        # Redraw the table
-        # self.table_widget.update()
 
     def save_data(self):
             """

@@ -162,7 +162,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scrollAreaWidgetContents = QWidget()
         self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
-        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 436, 450))
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 98, 28))
         sizePolicy1.setHeightForWidth(self.scrollAreaWidgetContents.sizePolicy().hasHeightForWidth())
         self.scrollAreaWidgetContents.setSizePolicy(sizePolicy1)
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
@@ -194,7 +194,7 @@ class Ui_MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1137, 33))
+        self.menubar.setGeometry(QRect(0, 0, 1137, 22))
         self.menufile = QMenu(self.menubar)
         self.menufile.setObjectName(u"menufile")
         self.menuView = QMenu(self.menubar)
@@ -214,7 +214,6 @@ class Ui_MainWindow(object):
         self.menuView.addAction(self.actionSettings)
         self.menuView.addSeparator()
         self.menuEdits.addAction(self.actionAdd_Epoch)
-        self.menuEdits.addAction(self.actionFlip_Ecg)
 
         self.retranslateUi(MainWindow)
 
