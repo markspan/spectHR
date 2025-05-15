@@ -83,7 +83,6 @@ class ParametersPlotWidget(QWidget):
                 ('sd_ratio', cs.Tools.Params.sd_ratio),
                 ('ellipse_area', cs.ellipse_area)
             ]).reset_index()
-        print(dataset.descriptives_Values)
         # Merge PSD values if available
         if hasattr(dataset, 'psd_Values'):
             dataset.descriptives_Values = pd.merge(dataset.descriptives_Values, dataset.psd_Values, on='epoch', how='outer')
