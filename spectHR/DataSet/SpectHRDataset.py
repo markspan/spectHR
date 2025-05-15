@@ -19,17 +19,22 @@ class TimeSeries:
     A class to represent a time series with time and level data, along with optional sampling rate.
 
     Attributes:
-        time (pd.Series): Timestamps of the time series.
-        level (pd.Series): Values corresponding to each timestamp.
-        srate (float): Sampling rate, calculated if not provided.
+    ----------
+    time : pd.Series
+        Timestamps of the time series.
+    level : pd.Series
+        Values corresponding to each timestamp.
+    srate : float
+        Sampling rate, calculated if not provided.
 
     Methods:
-        slicetime(time_min, time_max):
-            Returns a subset of the TimeSeries between specified time bounds.
-        to_dataframe():
-            Converts the TimeSeries to a Pandas DataFrame.
+    -------
+    slicetime(time_min, time_max):
+        Returns a subset of the TimeSeries between specified time bounds.
+    to_dataframe():
+        Converts the TimeSeries to a Pandas DataFrame.
     """
-    
+
     def __init__(self, x, y, srate=None):
         """
         Initializes the TimeSeries object.
@@ -55,12 +60,12 @@ class TimeSeries:
 
         Returns:
             TimeSeries: A new TimeSeries object with data between the specified times.
-            or the original series of slicing was not possible
+            or the original series if slicing was not possible.
         """
         mask = (self.time >= time_min) & (self.time <= time_max)
         try:
             sliced = TimeSeries(self.time[mask], self.level[mask], self.srate)
-        except:  # noqa: E722
+        except Exception:  # noqa: E722
             sliced = TimeSeries(self.time, self.level, self.srate)
         return sliced
 
@@ -73,49 +78,57 @@ class TimeSeries:
         """
         return pd.DataFrame({"time": self.time, "level": self.level, "srate": [self.srate] * len(self.time)})
 
-
 class SpectHRDataset:
     """
     A class to represent a dataset containing ECG, breathing, and event data.
 
     Attributes:
-        ecg (TimeSeries): The ECG data as a TimeSeries object.
-        br (TimeSeries): The breathing data as a TimeSeries object.
-        events (pd.DataFrame): A DataFrame containing event timestamps and labels.
-        history (list): A list of actions performed on the dataset.
-        par (dict): Parameters associated with various actions.
-        starttime (float): The start time of the dataset.
+    ----------
+    ecg : TimeSeries
+        The ECG data as a TimeSeries object.
+    br : TimeSeries
+        The breathing data as a TimeSeries object.
+    events : pd.DataFrame
+        A DataFrame containing event timestamps and labels.
+    history : list
+        A list of actions performed on the dataset.
+    par : dict
+        Parameters associated with various actions.
+    starttime : float
+        The start time of the dataset.
 
     Methods:
-        loadData(filename, ecg_index=None, br_index=None, event_index=None):
-            Loads data from an XDF file and initializes the dataset.
-        log_action(action_name, params):
-            Logs an action with its parameters into the dataset history.
+    -------
+    loadData(filename, ecg_index=None, br_index=None, event_index=None):
+        Loads data from an XDF file and initializes the dataset.
+    log_action(action_name, params):
+        Logs an action with its parameters into the dataset history.
     """
-    def __init__(self, filename, ecg_index=None, br_index=None, event_index=None, par=None, reset = False, use_webdav = False, flip = False):
+
+    def __init__(self, filename, ecg_index=None, br_index=None, event_index=None, par=None, reset=False, use_webdav=False, flip=False):
         """
         Initializes the SpectHRDataset by loading physiological data from a file.
-        
-        The constructor handles loading data from an XDF or raw text file, using cached pickle files when available. 
+
+        The constructor handles loading data from an XDF or raw text file, using cached pickle files when available.
         It also manages dataset parameters, directory structures, and optional WebDAV-based file retrieval.
 
         Args:
-            filename (str): 
-                Path to the input file, which can be an XDF file containing multiple streams 
+            filename (str):
+                Path to the input file, which can be an XDF file containing multiple streams
                 or a raw text file from a Polar device.
-            ecg_index (int, optional): 
+            ecg_index (int, optional):
                 Index of the ECG (Electrocardiogram) stream in the XDF file. Defaults to None.
-            br_index (int, optional): 
+            br_index (int, optional):
                 Index of the breathing (BR) stream in the XDF file. Defaults to None.
-            event_index (int, optional): 
+            event_index (int, optional):
                 Index of the event stream in the XDF file. Defaults to None.
-            par (dict, optional): 
+            par (dict, optional):
                 Dictionary of initial parameters for the dataset. Defaults to an empty dictionary if None.
-            reset (bool, optional): 
+            reset (bool, optional):
                 If True, forces reloading the data from the original source file instead of using a cached pickle file. Defaults to False.
-            use_webdav (bool, optional): 
+            use_webdav (bool, optional):
                 If True, attempts to download the file using WebDAV if it is not found locally. Defaults to False.
-            flip (bool, optional): 
+            flip (bool, optional):
                 If True, flips the signal orientation for compatibility with certain data sources. Defaults to False.
         """
         # Initialize dataset attributes
@@ -137,17 +150,17 @@ class SpectHRDataset:
         self.has_ecg = True
         # Ensure a valid data directory
         if not self.datadir:
-            self.datadir=os.getcwd()
-            
+            self.datadir = os.getcwd()
+
         # Create a cache directory for storing preprocessed data
         cache_dir = Path(self.datadir) / 'cache'
 
         if not cache_dir.exists():
             logger.info(f'Creating cache dir: {cache_dir}')
-            cache_dir.mkdir(parents=True)            
+            cache_dir.mkdir(parents=True)
         # Path to the cached pickle file
         self.pkl_path = os.path.join(cache_dir, self.pkl_filename)
-        
+
         # Fetch the file via WebDAV if needed
         if use_webdav:
             if not Path(self.file_path).exists():
@@ -157,11 +170,11 @@ class SpectHRDataset:
         if Path(self.pkl_path).exists() and not reset:
             logger.info(f"Loading dataset from pickle: {self.pkl_path}")
             self.load_from_pickle()
-        elif  self.file_path.endswith('.xdf') and Path(self.file_path).exists():
+        elif self.file_path.endswith('.xdf') and Path(self.file_path).exists():
             logger.info(f"Loading dataset from XDF: {self.file_path}")
             self.loadData(self.file_path, ecg_index, br_index, event_index, flip=flip)
             self.save()
-        elif  self.file_path.endswith('.txt') and Path(self.file_path).exists():
+        elif self.file_path.endswith('.txt') and Path(self.file_path).exists():
             logger.info(f"Loading dataset from Raw Polar File: {self.file_path}")
             self.loadRawPolar(self.file_path, flip=flip)
             self.save()
@@ -195,7 +208,7 @@ class SpectHRDataset:
                 rtops_data = self.RTops.copy()
                 # Convert lists to arrays and ensure no None values
                 if 'epoch' in rtops_data.columns:
-                    rtops_data['epoch'] = rtops_data['epoch'].apply(lambda x: np.array([str(v) for v in x if v is not None]) if isinstance(x, list) or isinstance(x,set) else x)
+                    rtops_data['epoch'] = rtops_data['epoch'].apply(lambda x: np.array([str(v) for v in x if v is not None]) if isinstance(x, (list, set)) else x)
                 data_fields['RTops'] = rtops_data
 
             try:
@@ -210,7 +223,6 @@ class SpectHRDataset:
 
         Args:
             filename (str): Path to the evt file.
-            flip (str or bool, optional): Not used, included for compatibility.
         """
         logger.info('Loading CARSPAN EVT RTops')
         self.has_ecg = False
@@ -247,7 +259,7 @@ class SpectHRDataset:
         rtops.reset_index(drop=True, inplace=True)
         rtops['ibi'] = np.append(np.diff(rtops['time']), np.nan)
         rtops['epoch'] = [set([''])] * len(rtops)
-        
+
         self.RTops = rtops[['time', 'ibi', 'epoch']]
         self.RTops['ID'] = 'N'
 
@@ -288,8 +300,6 @@ class SpectHRDataset:
         self.create_epoch_series()
         self.update_RTops_epochs()
 
-
-        
     def load_from_pickle(self):
         """
         Loads the dataset from a pickle file.
@@ -301,11 +311,11 @@ class SpectHRDataset:
             logger.info("Dataset loaded successfully from pickle")
         except Exception as e:
             logger.error(f"Failed to load pickle file: {e}")
-    
+
     def loadRawPolar(self, filename, flip='auto'):
         """
         Loads raw Polar data from a CSV file into the dataset.
-    
+
         Args:
             filename (str): Path to the Polar data file (CSV).
             flip (str or bool, optional): Determines whether to flip the ECG signal.
@@ -313,32 +323,32 @@ class SpectHRDataset:
                 True forces flipping, and False prevents it. Defaults to 'auto'.
         """
         logger.info('Loading Raw Polar Data')
-    
+
         # Read raw data from CSV file
         rawdata = pd.read_csv(filename, sep=';')
-    
+
         # Extract ECG levels and timestamps
         ecg_levels = rawdata.loc[:, "ecg [uV]"]
         ecg_timestamps = rawdata.loc[:, "timestamp [ms]"] / 1000.0  # Convert ms to seconds
-    
+
         # Set the start time based on the 130th sample
         self.starttime = ecg_timestamps.iloc[0]
         ecg_timestamps -= self.starttime  # Normalize timestamps
-    
+
         # Determine if the ECG signal needs to be flipped based on signal characteristics
-        l = len(ecg_levels)/3  # noqa: E741
+        l = len(ecg_levels) // 3  # noqa: E741
         ml = ecg_levels.loc[l:2*l]
         magic = abs(np.mean(ml) - np.min(ml)) / (abs(np.mean(ml) - np.max(ml)))
         if (magic > 1.5 and flip == 'auto') or flip is True:
             ecg_levels = -ecg_levels
-    
+
         # Store ECG data as a TimeSeries object
         self.ecg = TimeSeries(ecg_timestamps, ecg_levels)
-    
+
         # Create event timestamps and labels
         event_timestamps = pd.Series([ecg_timestamps.iloc[0], ecg_timestamps.iloc[-1]])
         event_labels = pd.Series(['start series', 'stop series'])
-        
+
         # Create DataFrame for events: this creates an epoch as large as the dataset
         eventlist = []
         ievents = pd.DataFrame({
@@ -346,16 +356,16 @@ class SpectHRDataset:
             'label': event_labels
         })
         eventlist.append(ievents)
-    
+
         # Concatenate events and store them
         self.events = pd.concat(eventlist, ignore_index=True)
-        self.create_epoch_series()        
+        self.create_epoch_series()
 
     def loadRawHarness(self, filename, flip='auto'):
         """
         Loads raw data from a CSV file into the dataset.
         ref the Harness
-        
+
         Args:
             filename (str): Path to the Polar data file (CSV).
             flip (str or bool, optional): Determines whether to flip the ECG signal.
@@ -384,21 +394,21 @@ class SpectHRDataset:
         end = start + median_diff * (n - 1)
 
         ecg_timestamps = pd.Series(np.arange(start, end + median_diff, median_diff))
-  
+
         # Determine if the ECG signal needs to be flipped based on signal characteristics
-        l = len(ecg_levels)/3  # noqa: E741
+        l = len(ecg_levels) // 3  # noqa: E741
         ml = ecg_levels.loc[l:2*l]
         magic = abs(np.mean(ml) - np.min(ml)) / (abs(np.mean(ml) - np.max(ml)))
         if (magic > 1.5 and flip == 'auto') or flip is True:
             ecg_levels = -ecg_levels
-    
+
         # Store ECG data as a TimeSeries object
         self.ecg = TimeSeries(ecg_timestamps, ecg_levels - ecg_levels.mean())
-    
+
         # Create event timestamps and labels
         event_timestamps = pd.Series([ecg_timestamps.iloc[0], ecg_timestamps.iloc[-1]])
         event_labels = pd.Series(['start series', 'stop series'])
-        
+
         # Create DataFrame for events: this creates an epoch as large as the dataset
         eventlist = []
         ievents = pd.DataFrame({
@@ -406,12 +416,12 @@ class SpectHRDataset:
             'label': event_labels
         })
         eventlist.append(ievents)
-    
+
         # Concatenate events and store them
         self.events = pd.concat(eventlist, ignore_index=True)
-        self.create_epoch_series()        
-        
-    def loadData(self, filename, ecg_index=None, br_index=None, bp_index=None, event_index=None, flip = 'auto'):
+        self.create_epoch_series()
+
+    def loadData(self, filename, ecg_index=None, br_index=None, bp_index=None, event_index=None, flip='auto'):
         """
         Loads data from an XDF file into the dataset.
 
@@ -423,15 +433,15 @@ class SpectHRDataset:
         """
         rawdata, _ = pyxdf.load_xdf(filename)
 
-        # Identify ECG stream automatically if not provided: 
+        # Identify ECG stream automatically if not provided:
         if ecg_index is None:
-            ecg_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith('ECG') and d['info']['effective_srate'] > 0 ), None)
+            ecg_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith('ECG') and d['info']['effective_srate'] > 0), None)
             if ecg_index is None:
                 logger.info("There is no stream named 'Polar'")
 
         # Identify accelerometer stream for breathing automatically if not provided
         if br_index is None:
-            br_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith('Acc') and d['info']['effective_srate'] > 0 ), None)
+            br_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith('Acc') and d['info']['effective_srate'] > 0), None)
             if br_index is None:
                 logger.info("There is no stream named 'Accelerometer'")
 
@@ -441,16 +451,15 @@ class SpectHRDataset:
             if event_index is None:
                 logger.info("There is no stream of type 'Markers'")
 
-        
         # Load ECG data
         if ecg_index is not None:
             ecg_timestamps = pd.Series(rawdata[ecg_index]["time_stamps"])
             self.starttime = ecg_timestamps[0]  # Set dataset start time
-            
+
             ecg_levels = pd.Series(rawdata[ecg_index]["time_series"].flatten())
             ecg_timestamps -= self.starttime
-            # pragmatic approuch. Might do better. This flips the signal if it thinks it needs to...
-            magic = abs(np.mean(ecg_levels) - np.min(ecg_levels))/(abs(np.mean(ecg_levels) - np.max(ecg_levels)))
+            # Pragmatic approach. Might do better. This flips the signal if it thinks it needs to...
+            magic = abs(np.mean(ecg_levels) - np.min(ecg_levels)) / (abs(np.mean(ecg_levels) - np.max(ecg_levels)))
             if (magic > 1.5 and flip == 'auto') or flip:
                 ecg_levels = -ecg_levels
 
@@ -458,7 +467,7 @@ class SpectHRDataset:
 
         # Load breathing data
         if br_index is not None:
-            logger.info("Expecting Breathing data")       
+            logger.info("Expecting Breathing data")
             br_timestamps = pd.Series(rawdata[br_index]["time_stamps"])
             br_data = rawdata[br_index]["time_series"]
             br_levels = calculate_breathing_signal(br_data, 200)
@@ -471,7 +480,7 @@ class SpectHRDataset:
             bp_timestamps = pd.Series(rawdata[bp_index]["time_stamps"])
             bp_levels = pd.Series(rawdata[bp_index]["time_series"].flatten())
             bp_timestamps -= self.starttime
-            
+
             self.bp = TimeSeries(bp_timestamps, bp_levels)
 
         # Load event data
@@ -499,10 +508,16 @@ class SpectHRDataset:
             }))
             self.events = pd.concat(eventlist, ignore_index=True)
             self.create_epoch_series()
-            
-    def log_error(message):
-        logger.error(message)
 
+    @staticmethod
+    def log_error(message):
+        """
+        Logs an error message.
+
+        Args:
+            message (str): The error message to log.
+        """
+        logger.error(message)
 
     def create_epoch_series(self):
         """
@@ -616,13 +631,14 @@ class SpectHRDataset:
 
     def get_unique_epochs(self):
         """
-        Returns a set of unique epoch names from the_epoch series.
-        """        # Flatten all lists into one and find unique values
+        Returns a set of unique epoch names from the epoch series.
+        """
+        # Flatten all lists into one and find unique values
         all_epochs = [epoch for sublist in self.epoch.dropna() for epoch in sublist]
         unique_epochs = set(all_epochs)
         unique_epochs.discard("")
         return unique_epochs
-        
+
     def log_action(self, action_name, params):
         """
         Logs an action performed on the dataset.
@@ -632,3 +648,4 @@ class SpectHRDataset:
             params (dict): Parameters associated with the action.
         """
         self.history.append({'action': action_name, 'timestamp': datetime.now(), 'parameters': params})
+        logger.info(f"Action logged: {action_name} with parameters {params}")

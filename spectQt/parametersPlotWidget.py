@@ -21,7 +21,15 @@ class ParametersPlotWidget(QWidget):
     A QWidget that displays calculated parameters in a spreadsheet-like manner.
 
     Attributes:
-        table_widget (QTableWidget): The table widget to display the parameters.
+    ----------
+    table_widget : QTableWidget
+        The table widget to display the parameters.
+    main_layout : QVBoxLayout
+        The main layout of the widget.
+    button_layout : QHBoxLayout
+        The layout for buttons.
+    save_button : QPushButton
+        The button to save the table data.
     """
 
     def __init__(self, parent=None):
@@ -67,7 +75,7 @@ class ParametersPlotWidget(QWidget):
         self.setFocus()  # Ensure the widget gets focus
 
         # Calculate descriptive statistics grouped by epoch
-        dataset.descriptives_Values = cs.explode(dataset)\
+        dataset.descriptives_values = cs.explode(dataset)\
             .groupby('epoch')['ibi']\
             .agg([
                 ('N', len),
@@ -83,17 +91,18 @@ class ParametersPlotWidget(QWidget):
                 ('sd_ratio', cs.Tools.Params.sd_ratio),
                 ('ellipse_area', cs.ellipse_area)
             ]).reset_index()
+
         # Merge PSD values if available
-        if hasattr(dataset, 'psd_Values'):
-            dataset.descriptives_Values = pd.merge(dataset.descriptives_Values, dataset.psd_Values, on='epoch', how='outer')
-            #pass
-                
-        # populate the table
-        data = dataset.descriptives_Values
+        if hasattr(dataset, 'psd_values'):
+            dataset.descriptives_values = pd.merge(dataset.descriptives_values, dataset.psd_values, on='epoch', how='outer')
+
+        # Populate the table
+        data = dataset.descriptives_values
         # Ensure 'epoch' is the first column
         columns = ['epoch'] + [col for col in data.columns if col != 'epoch']
         data = data[columns]
 
+        self.table_widget.clear()
         # Set the number of rows and columns
         self.table_widget.setRowCount(data.shape[0])
         self.table_widget.setColumnCount(data.shape[1])
@@ -109,32 +118,34 @@ class ParametersPlotWidget(QWidget):
         # Resize columns to fit content
         self.table_widget.resizeColumnsToContents()
 
-
     def save_data(self):
-            """
-            Save the contents of the QTableWidget to a CSV file.
-            """
-            # Collect data from the table widget
-            data = []
-            for row in range(self.table_widget.rowCount()):
-                row_data = [os.path.splitext(self.dataset.filename)[0]] 
-                for col in range(self.table_widget.columnCount()):
-                    item = self.table_widget.item(row, col)
-                    if item is not None:
-                        row_data.append(item.text())
-                    else:
-                        row_data.append('')
-                data.append(row_data)
+        """
+        Save the contents of the QTableWidget to a CSV file.
+        """
+        # Collect data from the table widget
+        data = []
+        for row in range(self.table_widget.rowCount()):
+            row_data = [os.path.splitext(self.dataset.filename)[0]]
+            for col in range(self.table_widget.columnCount()):
+                item = self.table_widget.item(row, col)
+                if item is not None:
+                    row_data.append(item.text())
+                else:
+                    row_data.append('')
+            data.append(row_data)
 
-            # Create a pandas DataFrame
-            df = pd.DataFrame(data)
+        # Create a pandas DataFrame
+        df = pd.DataFrame(data)
 
-            # Save the DataFrame to a CSV file
-            df.to_csv(os.path.splitext(self.dataset.filename)[0] + '.csv', index=False, header=self.get_table_headers())
+        # Save the DataFrame to a CSV file
+        df.to_csv(os.path.splitext(self.dataset.filename)[0] + '.csv', index=False, header=self.get_table_headers())
 
     def get_table_headers(self):
         """
         Get the headers from the QTableWidget.
+
+        Returns:
+            list: A list of headers including 'Subject' as the first header.
         """
         headers = ['Subject']
         for col in range(self.table_widget.columnCount()):

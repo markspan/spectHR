@@ -22,8 +22,8 @@ class MainWindow(QMainWindow):
 
     This window contains:
     - A tree view of available files (e.g., XDF recordings).
-    - Two Matplotlib-based widgets: one for viewing preprocessed ECG signals and
-      another for viewing Poincaré plots.
+    - Multiple Matplotlib-based widgets for viewing preprocessed ECG signals,
+      Poincaré plots, and other visualizations.
     - A tab interface to switch between different views.
 
     Attributes:
@@ -50,8 +50,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        
-        #self.ui.actionFlip_Ecg.triggered.connect(self.do_flip_ecg)
+
         self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
         self.setWindowTitle("spectHR - ECG Preprocessing")
         self.resize(1920, 800)
@@ -60,6 +59,7 @@ class MainWindow(QMainWindow):
         # Initialize workspace and populate the tree view
         self.workspace = spQt.LoadWorkspace()
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
+
         # Connect the customContextMenuRequested signal to a slot
         self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.treeWidget.customContextMenuRequested.connect(self.show_context_menu)
@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
         layout1.addWidget(self.prep_plot_widget)
         self.ui.mplPreProcessing.setLayout(layout1)
 
-       # Create and embed the ibiseries plot widget
+        # Create and embed the ibiseries plot widget
         self.ibiseries_plot_widget = spQt.IBISeriesPlotWidget()
         layout2 = QVBoxLayout()
         layout2.addWidget(self.ibiseries_plot_widget)
@@ -81,12 +81,12 @@ class MainWindow(QMainWindow):
         layout3 = QVBoxLayout()
         layout3.addWidget(self.poincare_plot_widget)
         self.ui.mplPoincare.setLayout(layout3)
-        
-        # Create and embed the Epoch plot widget    
-        self.epoch_plot_widget = spQt.EpochPlotWidget()  # Create the EpochPlotWidget instance
-        layout4 = QVBoxLayout()  # Create a new layout for the widget
-        layout4.addWidget(self.epoch_plot_widget)  # Add the PlotWidget to the layout
-        self.ui.mplEpochs.setLayout(layout4)  # Set the layout to the mplEpochs placeholder
+
+        # Create and embed the Epoch plot widget
+        self.epoch_plot_widget = spQt.EpochPlotWidget()
+        layout4 = QVBoxLayout()
+        layout4.addWidget(self.epoch_plot_widget)
+        self.ui.mplEpochs.setLayout(layout4)
 
         # Create layout for Welch PSD plot widgets (one per epoch)
         self.welch_psd_layout = QVBoxLayout()
@@ -96,8 +96,7 @@ class MainWindow(QMainWindow):
         self.parameters_plot_widget = spQt.ParametersPlotWidget()
         layout5 = QVBoxLayout()
         layout5.addWidget(self.parameters_plot_widget)
-        self.ui.mplParameters.setLayout(layout5)  # Assuming mplParameters is the placeholder for the parameters tab
-
+        self.ui.mplParameters.setLayout(layout5)
 
         # Connect UI signals to their handlers
         self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
@@ -105,45 +104,63 @@ class MainWindow(QMainWindow):
         self.dataset = None  # Initialize dataset placeholder
 
     def show_context_menu(self, position):
-            """
-            Show a context menu at the specified position.
+        """
+        Show a context menu at the specified position.
 
-            Args:
-                position (QPoint): The position where the context menu is requested.
-            """
-            # Get the item that was clicked
-            item = self.ui.treeWidget.itemAt(position)
-            if not item:
-                return
+        Args:
+            position (QPoint): The position where the context menu is requested.
+        """
+        # Get the item that was clicked
+        item = self.ui.treeWidget.itemAt(position)
+        if not item:
+            return
 
-            # Create a context menu
-            context_menu = QMenu(self)
+        # Only allow context menu for raw files
+        if not item.text(0).lower().endswith('.xdf'):
+            return
 
-            # Create actions for the context menu
-            Reload = QAction("Reload Raw", self)
-            Invert = QAction("invert ECG polarity", self)
+        # Create a context menu
+        context_menu = QMenu(self)
 
-            # Connect the actions to their respective functions
-            Reload.triggered.connect(lambda: self.reload(item))
-            Invert.triggered.connect(lambda: self.invert(item))
+        # Create actions for the context menu
+        reload_action = QAction("Reload Raw", self)
+        invert_action = QAction("Invert ECG Polarity", self)
 
-            # Add the actions to the context menu
-            context_menu.addAction(Reload)
-            context_menu.addAction(Invert)
+        # Connect the actions to their respective functions
+        reload_action.triggered.connect(lambda: self.reload(item))
+        invert_action.triggered.connect(self.invert)
 
-            # Show the context menu at the requested position
-            context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
+        # Add the actions to the context menu
+        context_menu.addAction(reload_action)
+        context_menu.addAction(invert_action)
 
-    def invert(self, item):
-        
-        ecglevel = self.dataset.ecg.level
-        ecgtime = self.dataset.ecg.time
-        self.dataset.ecg = cs.TimeSeries(ecgtime, -ecglevel)
+        # Show the context menu at the requested position
+        context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
+
+    def reload(self, item):
+        """
+        Reload the selected file and update the preprocessing plot.
+
+        Args:
+            item: The selected item in the tree view.
+        """
+        self.dataset = spQt.PreProcessFile(item.text(0), reset=True)
+        self.show_preprocessing_plot(self.dataset)
+
+    def invert(self):
+        """
+        Invert the ECG polarity and update the preprocessing plot.
+        """
+        if self.dataset is None:
+            return
+
+        ecg_level = self.dataset.ecg.level
+        ecg_time = self.dataset.ecg.time
+        self.dataset.ecg = cs.TimeSeries(ecg_time, -ecg_level)
         self.dataset = cs.calcPeaks(self.dataset)
         self.dataset.save()
         self.show_preprocessing_plot(self.dataset)
-        
-        
+
     def on_tab_changed(self, index):
         """
         Handler triggered when the user switches tabs in the UI.
@@ -152,17 +169,12 @@ class MainWindow(QMainWindow):
         ----------
         index : int
             The index of the newly selected tab.
-
-        Side Effects
-        ------------
-        Saves the current dataset if it exists.
         """
-        # Set the cursor to a wait cursor while processing
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        # Save the dataset if it exists
+
         if self.dataset is not None:
             self.dataset.save()
-        # Show the appropriate plot based on the selected tab
+
         if index == 1 and self.dataset is not None:
             self.show_ibiseries_plot(self.dataset)
 
@@ -175,9 +187,9 @@ class MainWindow(QMainWindow):
         if index == 4 and self.dataset is not None:
             self.show_welch_psd_plot(self.dataset)
 
-        if index == 5 and self.dataset is not None:  
+        if index == 5 and self.dataset is not None:
             self.show_parameters_plot(self.dataset)
-        # Restore the cursor to the default state
+
         QApplication.restoreOverrideCursor()
 
     def on_file_selection(self):
@@ -191,19 +203,17 @@ class MainWindow(QMainWindow):
             return
 
         file_path = selected_items[0].text(0)
-        if file_path == 'XDF Files':      # Avoid processing placeholder nodes
+        if file_path in ('XDF Files', 'CARSPAN Files'):
             return
-        if file_path == 'CARSPAN Files':  # Avoid processing placeholder nodes
-            return
-        
+
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        
+
         # Load and preprocess the file
         self.dataset = spQt.PreProcessFile(file_path)
 
         # Update the UI with the new dataset
         try:
-            self.show_preprocessing_plot(self.dataset)        
+            self.show_preprocessing_plot(self.dataset)
             self.show_ibiseries_plot(self.dataset)
             self.show_poincare_plot(self.dataset)
             self.show_epoch_plot(self.dataset)
@@ -226,16 +236,15 @@ class MainWindow(QMainWindow):
         if data.has_ecg:
             self.ui.Views.setTabVisible(0, True)
             self.ui.Views.setCurrentIndex(0)
-            # Call the method from the PrepPlotWidget to generate and display the plot
             self.prep_plot_widget.prepPlot(data)
         else:
             self.ui.Views.setTabVisible(0, False)
             self.prep_plot_widget.prepPlot(data)
             self.ui.Views.setCurrentIndex(1)
-            
+
     def show_ibiseries_plot(self, data):
         """
-        Display the ibi series plot of the epochs in the appropriate widget.
+        Display the IBI series plot of the epochs in the appropriate widget.
 
         Parameters
         ----------
@@ -243,7 +252,6 @@ class MainWindow(QMainWindow):
             The dataset object containing epoch information.
         """
         if data is not None:
-            # Call the method from the PlotWidget to generate and display the plot
             self.ibiseries_plot_widget.plotIBISeries(data)
 
     def show_epoch_plot(self, data):
@@ -256,9 +264,8 @@ class MainWindow(QMainWindow):
             The dataset object containing epoch information.
         """
         if data is not None:
-            # Call the method from the PlotWidget to generate and display the plot
             self.epoch_plot_widget.plotEpoch(data)
-            
+
     def show_poincare_plot(self, data):
         """
         Display the Poincaré plot of the ECG signal in the appropriate widget.
@@ -269,9 +276,6 @@ class MainWindow(QMainWindow):
             The dataset object containing RR intervals or relevant features.
         """
         self.poincare_plot_widget.poincarePlot(data)
-
-
-    # In your MainWindow class, modify the show_welch_psd_plot method as follows:
 
     def show_welch_psd_plot(self, data):
         """
@@ -289,29 +293,29 @@ class MainWindow(QMainWindow):
                 widget = item.widget()
                 if widget:
                     widget.setParent(None)
-                    widget.deleteLater()  # Ensure the widget is properly deleted
+                    widget.deleteLater()
 
             # Explode and compute PSD per epoch
             exploded = cs.explode(data)
+            psd_values_list = []
 
-            # Create and display a WelchPSDPlotWidget per epoch
-            psd_Values_list = []  # Initialize the list to store PSD values
             for epoch in exploded['epoch'].unique():
                 widget = spQt.WelchPSDPlotWidget()
-                spectral_measures = widget.plot_psd(exploded, epoch, fs=4, logscale=False, nperseg=256, noverlap=128,
-                                interp_kind='linear', window='hamming', interpolate=True)
-                
+                spectral_measures = widget.plot_psd(exploded, epoch, fs=4, logscale=False, nperseg=256,
+                                                   noverlap=128, interp_kind='linear', window='hamming',
+                                                   interpolate=True)
+
                 if spectral_measures != -1:
-                    psd_Values_list.append(spectral_measures)
+                    psd_values_list.append(spectral_measures)
                     self.welch_psd_layout.addWidget(widget)
-            
-            if psd_Values_list is not None:
-                data.psd_Values = pd.DataFrame(psd_Values_list)
-                            
+
+            if psd_values_list:
+                data.psd_values = pd.DataFrame(psd_values_list)
+
             # Ensure the scroll area is properly set up
             self.ui.scrollArea.setWidgetResizable(True)
             self.ui.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-            
+
     def show_parameters_plot(self, data):
         """
         Display the parameters plot of the ECG signal in the appropriate widget.
@@ -339,6 +343,7 @@ class MainWindow(QMainWindow):
         # Get the full range of the dataset
         start_time = self.dataset.ecg.time.iloc[0]
         end_time = self.dataset.ecg.time.iloc[-1]
+
         # Add the new epoch to the dataset
         self.dataset.add_epoch_to_dataset(epoch_label, start_time, end_time)
 
@@ -355,3 +360,4 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
+# This code is part of the spectHR project, which is licensed under the GNU License.

@@ -14,13 +14,30 @@ class EpochPlotWidget(QWidget):
     Uses `dataset.active_epochs` to filter which epochs are shown if defined.
 
     Attributes:
-        fig (matplotlib.figure.Figure): Matplotlib figure.
-        ax (matplotlib.axes.Axes): Axes to plot on.
-        canvas (FigureCanvas): Qt canvas for embedding matplotlib.
-        color_dict (dict): Maps epoch names to matplotlib color values.
+    ----------
+    fig : matplotlib.figure.Figure
+        Matplotlib figure.
+    ax : matplotlib.axes.Axes
+        Axes to plot on.
+    canvas : FigureCanvas
+        Qt canvas for embedding matplotlib.
+    color_dict : dict
+        Maps epoch names to matplotlib color values.
+    dataset : object
+        The dataset object containing epoch information.
+    rectangles : list
+        Stores rectangles and their data.
+    yticklabels : list
+        Stores y-axis tick labels.
     """
 
     def __init__(self, parent=None):
+        """
+        Initialize the EpochPlotWidget and its layout components.
+
+        Args:
+            parent (QWidget, optional): The parent widget. Defaults to None.
+        """
         super().__init__(parent)
         self.setWindowTitle('Epoch Gantt Chart')
 
@@ -36,6 +53,8 @@ class EpochPlotWidget(QWidget):
 
         self.dataset = None
         self.color_dict = {}
+        self.rectangles = []
+        self.yticklabels = []
 
     def plotEpoch(self, dataset, labels=True):
         """
@@ -47,6 +66,7 @@ class EpochPlotWidget(QWidget):
         """
         self.dataset = dataset
         self.setVisible(True)
+
         # Deep copy RTops to avoid modifying the original dataset
         RTops = copy.deepcopy(dataset.RTops)
 
@@ -61,10 +81,11 @@ class EpochPlotWidget(QWidget):
             lambda x: [e for e in x if e in visible_epochs] if x is not None else []
         )
 
-        RTops = RTops[RTops["filtered_epoch"].str.len() > 0]  # Remove rows with no visible epochs
+        RTops = RTops[RTops["filtered_epoch"].str.len() > 0]
 
         # Flatten the filtered epochs list for easier plotting
         exploded = RTops.explode("filtered_epoch")
+
         # Calculate start and end times for each epoch
         epochs_gantt = (
             exploded.groupby("filtered_epoch")
@@ -82,36 +103,36 @@ class EpochPlotWidget(QWidget):
 
         # Generate unique colors for each epoch using a colormap
         colors = plt.cm.tab20(np.linspace(0, 1, len(epoch_names)))
-        self.color_dict = dict(zip(epoch_names, colors))  # Map epoch names to specific colors
+        self.color_dict = dict(zip(epoch_names, colors))
 
         # Clear the previous plot
         self.ax.clear()
 
-        # Store rectangles and their data
-        self.rectangles = []
-        
         # Plot rectangles for each epoch
         for i, epoch in enumerate(epoch_names):
             rect = patches.Rectangle(
-                (start_times.iloc[i], i - 0.4),  # (x, y)
-                durations.iloc[i],              # width
-                0.8,                            # height
+                (start_times.iloc[i], i - 0.4),
+                durations.iloc[i],
+                0.8,
                 fill=True,
                 color=self.color_dict[epoch],
                 edgecolor="black",
                 alpha=0.5
             )
             self.ax.add_patch(rect)
+
             # Annotate start time
             start_text = self.ax.text(
                 start_times.iloc[i], i, f"{round(start_times.iloc[i])}",
                 va="center", ha="left", fontsize=8, rotation='vertical'
             )
+
             # Annotate end time
             end_text = self.ax.text(
                 start_times.iloc[i] + durations.iloc[i], i, f"{round(start_times.iloc[i] + durations.iloc[i])}",
                 va="center", ha="right", fontsize=8, rotation='vertical'
             )
+
             self.rectangles.append({
                 'rect': rect,
                 'epoch': epoch,
@@ -123,9 +144,8 @@ class EpochPlotWidget(QWidget):
 
         # Customize y-axis ticks and labels
         self.ax.set_yticks(range(len(epoch_names)))
-        yticklabels = [name.title() for name in epoch_names]  # Convert epoch names to title case
-        self.ax.set_yticklabels(yticklabels) 
-        # Store yticklabels for reference
+        yticklabels = [name.title() for name in epoch_names]
+        self.ax.set_yticklabels(yticklabels)
         self.yticklabels = yticklabels
 
         # Connect event handlers for y-axis label clicks
@@ -136,14 +156,13 @@ class EpochPlotWidget(QWidget):
             label.set_picker(True)
 
         # Add axis labels and grid
-        self.ax.set_xlabel("Time")            # Label x-axis
-        self.ax.set_ylabel("")                # No y-axis label
-        self.ax.set_title("")                 # No chart title
-        self.ax.grid(axis="y", linestyle="-", alpha=0.7)  # Add grid lines along the y-axis
+        self.ax.set_xlabel("Time")
+        self.ax.set_ylabel("")
+        self.ax.set_title("")
+        self.ax.grid(axis="y", linestyle="-", alpha=0.7)
+
         # Set x-axis limits
-        
         self.ax.set_xlim([start_times.min() - 1, epochs_gantt["end"].max() + 1])
-        # Set y-axis limits to provide more vertical space
         self.ax.set_ylim([-1, len(epoch_names)])
 
         # Connect event handlers
@@ -190,10 +209,9 @@ class EpochPlotWidget(QWidget):
         if self.drag_side == 'left':
             # Set the start time to the current cursor position
             new_start = event.xdata
-            if new_start < rect_data['stop']:  # Ensure start time is before end time
+            if new_start < rect_data['stop']:
                 rect.set_x(new_start)
                 rect_data['start'] = new_start
-                # Adjust the width to keep the end time the same
                 rect.set_width(rect_data['stop'] - new_start)
                 rect_data['rect'] = rect
                 # Update start time annotation
@@ -202,7 +220,7 @@ class EpochPlotWidget(QWidget):
         elif self.drag_side == 'right':
             # Set the end time to the current cursor position
             new_end = event.xdata
-            if new_end > rect_data['start']:  # Ensure end time is after start time
+            if new_end > rect_data['start']:
                 rect.set_width(new_end - rect_data['start'])
                 rect_data['stop'] = new_end
                 rect_data['rect'] = rect
@@ -247,25 +265,21 @@ class EpochPlotWidget(QWidget):
         if isinstance(event.artist, matplotlib.text.Text):
             label = event.artist
             current_text = label.get_text()
+
             # Use QInputDialog to get new label text
             new_text, ok = QInputDialog.getText(self, 'Rename Epoch', 'New name:', text=current_text)
             if ok:
-                if new_text=='':
+                if new_text == '':
                     # If the new text is empty, delete the epoch
                     index = self.ax.get_yticks().tolist().index(label.get_position()[1])
                     old_epoch_name = self.yticklabels[index]
-
-                    # Remove the epoch from the dataset
                     self.delete_epoch_from_dataset(old_epoch_name)
                 else:
-                    # update the label text
+                    # Update the label text
                     label.set_text(new_text)
-                    # Update the corresponding epoch name in the dataset
                     index = self.ax.get_yticks().tolist().index(label.get_position()[1])
                     old_epoch_name = self.yticklabels[index]
                     self.yticklabels[index] = new_text
-                    
-                    # Update the epoch name in the dataset
                     self.update_epoch_name_in_dataset(old_epoch_name, new_text)
 
                 # Replot the figure to reflect the changes

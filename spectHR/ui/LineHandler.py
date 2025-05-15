@@ -1,6 +1,8 @@
-import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+
 from spectHR.Tools.Logger import logger
+
 
 class DraggableVLine:
     """
@@ -40,7 +42,7 @@ class DraggableVLine:
             if (DraggableVLine.active_line is None) and (self.line.contains(event)[0]):
                 DraggableVLine.active_line = self.line
                 self.press = self.line.get_xdata()[0]      
-                logger.info(f'setting active line to line at {self.press}')
+                #logger.info(f'setting active line to line at {self.press}')
 
 
     def on_drag(self, event):
@@ -79,9 +81,14 @@ class DraggableVLine:
              or self.press is None \
                 and self.callback_remove:
             self.callback_remove(self.press, event.xdata)
-            logger.info(f'release line at {self.press}')
+            #logger.info(f'release line at {self.press}')
             DraggableVLine.active_line = None
-            self.line.remove()
+            try:
+                self.line.remove()
+            except NotImplementedError:
+                pass
+            finally:
+                self.line = None  # Ensure the line reference is cleared
         
         self.press = None
         DraggableVLine.active_line = None
@@ -161,6 +168,6 @@ class LineHandler:
         plt.draw()  # Redraw the canvas
    
     def update_mode(self, mode):
-        logger.info(f'Changed mode to {mode}')
+        #logger.info(f'Changed mode to {mode}')
         DraggableVLine.mode = mode
 
