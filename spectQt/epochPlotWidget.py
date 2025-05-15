@@ -317,6 +317,12 @@ class EpochPlotWidget(QWidget):
         # Update the unique epochs
         if hasattr(self.dataset, 'unique_epochs'):
             self.dataset.unique_epochs = self.dataset.get_unique_epochs()
+    
+        # Update the visible epochs
+        if hasattr(self.dataset, 'visible_epochs'):
+           self.dataset.visible_epochs = self.dataset.visible_epochs.apply(
+                lambda epochs: [new_name if epoch == old_name else epoch for epoch in epochs]
+            )
 
     def delete_epoch_from_dataset(self, epoch_name):
         """

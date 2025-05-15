@@ -298,7 +298,7 @@ border-radius: 1px;
    </widget>
    <widget class="QMenu" name="menuEdits">
     <property name="title">
-     <string>Edits</string>
+     <string>Transformations</string>
     </property>
     <addaction name="actionAdd_Epoch"/>
    </widget>

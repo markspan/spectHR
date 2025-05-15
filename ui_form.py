@@ -240,6 +240,6 @@ class Ui_MainWindow(object):
         self.Views.setTabText(self.Views.indexOf(self.Parameters), QCoreApplication.translate("MainWindow", u"Parameters", None))
         self.menufile.setTitle(QCoreApplication.translate("MainWindow", u"WorkSpace", None))
         self.menuView.setTitle(QCoreApplication.translate("MainWindow", u"View", None))
-        self.menuEdits.setTitle(QCoreApplication.translate("MainWindow", u"Edits", None))
+        self.menuEdits.setTitle(QCoreApplication.translate("MainWindow", u"Transformations", None))
     # retranslateUi
 
