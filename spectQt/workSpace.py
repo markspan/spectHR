@@ -1,11 +1,18 @@
 import json
 import os
+import sys
 
 from PySide6.QtWidgets import QTreeWidgetItem
 
+def exe_dir_path(filename):
+    """Get path to a file in the same directory as the executable."""
+    base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    return os.path.join(base_dir, filename)
 
-def LoadWorkspace():
-    default_json = os.path.join(os.path.dirname(__file__), "DefaultWorkSpace.json")
+def LoadWorkspace(default_json = None):
+    if default_json is None:  
+        default_json = exe_dir_path("DefaultWorkSpace.json")
+
     cwd = os.getcwd()
     workspace = {
         "DataDirectory": cwd,
@@ -20,7 +27,9 @@ def LoadWorkspace():
                 workspace.update({k: loaded.get(k, v) for k, v in workspace.items()})
         except Exception as e:
             print(f"Could not load workspace file: {e}")
-
+    else:
+        with open(default_json, "w") as f: 
+            json.dump(workspace, f, indent=4)
     return workspace
 
 def PopulateTree(treewidget, workspace):

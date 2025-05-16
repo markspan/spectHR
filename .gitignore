@@ -10,3 +10,7 @@ wheels/
 .venv
 *.pkl
 /cache
+MyWorkSpace.json
+DefaultWorkSpace.json
+*.csv
+ui_form2.py

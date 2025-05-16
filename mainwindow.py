@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QVBoxLayout,
+    QFileDialog,
 )
 
 import spectHR as cs
@@ -59,7 +60,7 @@ class MainWindow(QMainWindow):
         # Initialize workspace and populate the tree view
         self.workspace = spQt.LoadWorkspace()
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
-
+        self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
         # Connect the customContextMenuRequested signal to a slot
         self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.treeWidget.customContextMenuRequested.connect(self.show_context_menu)
@@ -102,6 +103,11 @@ class MainWindow(QMainWindow):
         self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
         self.dataset = None  # Initialize dataset placeholder
+    
+    def OpenWorkSpace(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select a file", "", "workspace Files (*.json);;Text Files (*.txt)")
+        self.workspace = spQt.LoadWorkspace(file_path)
+        spQt.PopulateTree(self.ui.treeWidget, self.workspace)
 
     def show_context_menu(self, position):
         """

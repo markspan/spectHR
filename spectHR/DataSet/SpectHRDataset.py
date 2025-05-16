@@ -150,7 +150,7 @@ class SpectHRDataset:
         self.pkl_filename = os.path.splitext(self.filename)[0] + ".pkl"  # Name for cached pickle file
         self.file_path = os.path.join(self.datadir, self.filename)  # Full path to the input file
 
-        
+        # TODO this should be put in workspace code
         # Ensure a valid data directory
         if not self.datadir:
             self.datadir = os.getcwd()
@@ -163,7 +163,7 @@ class SpectHRDataset:
             cache_dir.mkdir(parents=True)
         # Path to the cached pickle file
         self.pkl_path = os.path.join(cache_dir, self.pkl_filename)
-
+        # upto here
         # Fetch the file via WebDAV if needed
         if use_webdav:
             if not Path(self.file_path).exists():
@@ -472,19 +472,19 @@ class SpectHRDataset:
         stop_events = self.events[self.events['label'].str.lower().str.startswith('stop')].copy()
 
         # Extract epoch names (case-insensitive)
-        start_events.loc[:, 'epoch'] = start_events['label'].str.replace('^start ', '', case=False, regex=True)
-        stop_events.loc[:, 'epoch'] = stop_events['label'].str.replace('^stop ', '', case=False, regex=True)
+        start_events.loc[:, 'label'] = start_events['label'].str.replace('^start ', '', case=False, regex=True)
+        stop_events.loc[:, 'label'] = stop_events['label'].str.replace('^stop ', '', case=False, regex=True)
 
         # Initialize epochs list
         epochs = []
 
         # Iterate over start events
         for _, start_event in start_events.iterrows():
-            epoch = start_event['epoch']
+            epoch = start_event['label']
             start_time = start_event['time']
 
             # Find corresponding stop event
-            stop_event = stop_events[stop_events['epoch'].str.lower() == epoch.lower()]
+            stop_event = stop_events[stop_events['label'].str.lower() == epoch.lower()]
 
             if not stop_event.empty:
                 end_time = stop_event.iloc[0]['time']
