@@ -10,11 +10,11 @@ def rmssd(ibi):
     except ZeroDivisionError:
         # Return NaN if division by zero occurs
         return np.nan
-    return rmssd
+    return 1000.0 * rmssd
 
 def sdnn(ibi):
     ibi = np.asarray(ibi)
-    return np.std(ibi)
+    return 1000.0 * np.std(ibi)
 
 def sd1(ibi):
     """
@@ -94,7 +94,7 @@ def sdsd(ibi):
         float: The SDSD value, representing the variability in the successive differences of IBIs.
     """
     try:
-        ibi = np.asarray(ibi)
+        ibi = 1000.0 * np.asarray(ibi)
         ret = np.std(np.diff(ibi))
     except Exception as e:
         # If calculation fails, return NaN
