@@ -106,7 +106,7 @@ class SpectHRDataset:
         Logs an action with its parameters into the dataset history.
     """
 
-    def __init__(self, filename, ecg_index=None, br_index=None, event_index=None, par=None, reset=False, use_webdav=False, flip=False):
+    def __init__(self, workspace, filename, ecg_index=None, br_index=None, event_index=None, par=None, reset=False, use_webdav=False, flip=False):
         """
         Initializes the SpectHRDataset by loading physiological data from a file.
 
@@ -134,6 +134,7 @@ class SpectHRDataset:
         """
         # Initialize dataset attributes
         self.ecg = None  # ECG data
+        self.workspace = workspace
         self.has_ecg = True
         self.br = None  # Breathing data
         self.bp = None  # Blood pressure data (if applicable)
@@ -145,7 +146,7 @@ class SpectHRDataset:
         
         self.toMatlab = False
         # Set up file paths and directories
-        self.datadir = os.path.dirname(filename)  # Directory of the input file
+        self.datadir = self.workspace['DataDirectory']  # Directory of the input file
         self.filename = os.path.basename(filename)  # Extract filename
         self.pkl_filename = os.path.splitext(self.filename)[0] + ".pkl"  # Name for cached pickle file
         self.file_path = os.path.join(self.datadir, self.filename)  # Full path to the input file
@@ -156,11 +157,11 @@ class SpectHRDataset:
             self.datadir = os.getcwd()
 
         # Create a cache directory for storing preprocessed data
-        cache_dir = Path(self.datadir) / 'cache'
+        cache_dir = self.workspace['CacheDirectory']
 
-        if not cache_dir.exists():
+        if not os.path.isdir(cache_dir):
             logger.info(f'Creating cache dir: {cache_dir}')
-            cache_dir.mkdir(parents=True)
+            os.makedirs(cache_dir)
         # Path to the cached pickle file
         self.pkl_path = os.path.join(cache_dir, self.pkl_filename)
         # upto here

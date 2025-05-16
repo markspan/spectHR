@@ -105,6 +105,9 @@ class MainWindow(QMainWindow):
         self.dataset = None  # Initialize dataset placeholder
     
     def OpenWorkSpace(self):
+        """
+        Open a json worksace file, holding the directories.
+        """
         file_path, _ = QFileDialog.getOpenFileName(self, "Select a file", "", "workspace Files (*.json);;Text Files (*.txt)")
         self.workspace = spQt.LoadWorkspace(file_path)
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
@@ -150,7 +153,7 @@ class MainWindow(QMainWindow):
         Args:
             item: The selected item in the tree view.
         """
-        self.dataset = spQt.PreProcessFile(item.text(0), reset=True)
+        self.dataset = spQt.PreProcessFile(self.workspace, item.text(0), reset=True)
         self.show_preprocessing_plot(self.dataset)
 
     def invert(self):
@@ -215,7 +218,7 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         # Load and preprocess the file
-        self.dataset = spQt.PreProcessFile(file_path)
+        self.dataset = spQt.PreProcessFile(self.workspace, file_path)
 
         # Update the UI with the new dataset
         #try:

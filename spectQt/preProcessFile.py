@@ -1,7 +1,6 @@
 import spectHR as cs
 
-
-def PreProcessFile(file_path, reset = False):
+def PreProcessFile(workspace, file_path, reset = False):
     """
     Load and preprocess an ECG dataset from a given file path.
 
@@ -21,7 +20,7 @@ def PreProcessFile(file_path, reset = False):
         The preprocessed dataset, ready for visualization or analysis.
     """
     # Load dataset without resetting metadata; auto-detect polarity
-    dataset = cs.SpectHRDataset(file_path, reset=reset, flip='auto')
+    dataset = cs.SpectHRDataset(workspace, file_path, reset=reset, flip='auto')
     if file_path.endswith('.xdf'):
         dataset = cs.borderData(dataset)
         # Apply a high-pass filter to remove baseline drift
