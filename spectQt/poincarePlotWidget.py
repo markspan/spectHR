@@ -28,7 +28,6 @@ class PoincarePlotWidget(QWidget):
         epoch_checkboxes (dict): Dictionary mapping epoch names to their QCheckBox widgets.
         scatter_handles (dict): Dictionary mapping epoch names to scatter plot handles.
         ellipse_handles (dict): Dictionary mapping epoch names to ellipse patch handles.
-        filtered_by_epoch (dict): Dictionary of filtered RTops data per epoch.
     """
 
     def __init__(self, parent=None):
@@ -94,11 +93,19 @@ class PoincarePlotWidget(QWidget):
                 widget.setParent(None)
 
         # Filter RTops data by epoch
-        self.filtered_by_epoch = {}
-        for unique_epoch in dataset.unique_epochs:
-            mask = [unique_epoch in sublist if sublist is not None else False
-                    for sublist in dataset.RTops.epoch]
-            self.filtered_by_epoch[unique_epoch] = dataset.RTops[mask]
+        dataset.filtered_by_epoch = {}
+       
+        for _, epoch in dataset.epochs.iterrows():
+            unique_epoch = epoch['label']
+            start_time = epoch['starttime']
+            end_time = epoch['endtime']
+
+            # Filter RTops data for the current epoch
+            mask = (dataset.RTops['time'] >= start_time) & (dataset.RTops['time'] <= end_time)
+            filtered_data = dataset.RTops[mask]
+
+            # Store the filtered data in the dictionary
+            dataset.filtered_by_epoch[unique_epoch] = filtered_data
 
         # Clear existing plot
         self.ax.clear()
@@ -106,8 +113,8 @@ class PoincarePlotWidget(QWidget):
         self.ellipse_handles = {}
 
         # Plot data for each epoch
-        for epoch in sorted(dataset.unique_epochs):
-            data = self.filtered_by_epoch[epoch]
+        for epoch in sorted(dataset.epochs.label):
+            data = dataset.filtered_by_epoch[epoch]
             x = data.ibi[:-1].reset_index(drop=True)
             y = data.ibi[1:].reset_index(drop=True)
 
@@ -147,6 +154,8 @@ class PoincarePlotWidget(QWidget):
             self.epoch_checkboxes[epoch] = checkbox
             self.checkbox_layout.addWidget(checkbox)
 
+        self.update_visibility()  # Initialize visibility based on active_epochs
+ 
         # Configure plot appearance
         self.ax.set_title('')
         self.ax.set_xlabel('IBI (ms)', fontsize=12)
@@ -177,13 +186,6 @@ class PoincarePlotWidget(QWidget):
         self.ax.set_box_aspect(1)
         self.filtered_by_epoch = {}
 
-        # Step 2: create the sets
-        for unique_epoch in dataset.unique_epochs:
-            # Create a mask for the current epoch
-            mask = [unique_epoch in sublist if sublist is not None else False for sublist in dataset.RTops.epoch]
-            # Subset dataset.RTops for the current epoch
-            self.filtered_by_epoch[unique_epoch] = dataset.RTops[mask]
-
         # Add mplcursors hover annotations
         # Remove existing cursor if present
         if hasattr(self, 'cursor') and self.cursor is not None:
@@ -198,7 +200,7 @@ class PoincarePlotWidget(QWidget):
             x_value = scatter.get_offsets()[sel.index, 0]
             y_value = scatter.get_offsets()[sel.index, 1]
 
-            data = self.filtered_by_epoch[epoch]
+            data = dataset.filtered_by_epoch[epoch]
             ibi_idx = (np.abs(data.ibi - x_value)).argmin()
             time_value = data.time.iloc[ibi_idx]
 

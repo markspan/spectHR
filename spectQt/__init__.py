@@ -1,6 +1,5 @@
 # spectQt/__init__.py
 from .epochPlotWidget import EpochPlotWidget
-from .ganttPlotWidget import GanttPlotWidget
 from .ibiSeriesPlotWidget import IBISeriesPlotWidget
 from .parametersPlotWidget import ParametersPlotWidget
 from .poincarePlotWidget import PoincarePlotWidget

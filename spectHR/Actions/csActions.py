@@ -1,20 +1,23 @@
+import copy
+
 import numpy as np
 import pandas as pd
-import copy
 import scipy.signal as signal
+
+import spectHR as cs
 from spectHR.Tools.Logger import logger
 
-    
+
 def calcPeaks(DataSet, par=None):
     """
     Detects R-tops (peaks) in an ECG signal and calculates the Inter-Beat Interval (IBI).
 
     Args:
-        DataSet (CarspanDataSet): The dataset object containing ECG data.
+        DataSet (CarspanDataSet): The DataSet object containing ECG data.
         par (dict): Parameter dictionary for peak detection and filtering.
 
     Returns:
-        DataSet (CarspanDataSet): The dataset with updated RTopTimes.
+        DataSet (CarspanDataSet): The DataSet with updated RTopTimes.
         par (dict): The parameter dictionary, updated if necessary.
     """
     
@@ -60,8 +63,8 @@ def calcPeaks(DataSet, par=None):
     # Print the number of detected R-tops for logging purposes
     logger.info(f"Found {len(locs)} r-tops")
 
-    # Step 7: Update the dataset's RTopTimes with the time stamps corresponding to the detected peaks
-    DS.RTops = pd.DataFrame({'time': (DS.ecg.time.iloc[locs] + correction).tolist(), 'epoch': DS.epoch.iloc[locs]})
+    # Step 7: Update the DataSet's RTopTimes with the time stamps corresponding to the detected peaks
+    DS.RTops = pd.DataFrame({'time': (DS.ecg.time.iloc[locs] + correction).tolist()})
     # Step 8: If warrented: classify and label the peaks 
     # Calculate the IBIs
     IBI = np.append(np.diff(DS.RTops['time']), float('nan'))
@@ -72,9 +75,90 @@ def calcPeaks(DataSet, par=None):
         classify(DS)
     # Log the action
     DS.log_action('calcPeaks', par)
-    # Step 9: Return the updated dataset and the parameters
+    # Step 9: Return the updated DataSet and the parameters
     return DS
 
+def loadEVT(DataSet, filename):
+    """
+    Loads RTops from a CARSPAN .evt file and generates structured events for epochs.
+
+    Args:
+        filename (str): Path to the evt file.
+        DataSet (CarspanDataSet): The DataSet object to be updated.
+    """
+    logger.info('Loading CARSPAN EVT RTops')
+    DataSet.has_ecg = False
+
+    # Step 1: Read only [Data] section
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+
+    data_section = False
+    event_codes = []
+    times = []
+
+    for line in lines:
+        if line.strip() == "[Data]":
+            data_section = True
+            continue
+        if not data_section:
+            continue
+
+        parts = line.strip().split()
+        if len(parts) >= 2:
+            try:
+                code = int(parts[0])
+                time = float(parts[1])
+                event_codes.append(code)
+                times.append(time)
+            except ValueError:
+                continue  # Skip malformed lines
+
+    df = pd.DataFrame({'event_code': event_codes, 'time': times})
+
+    # Step 2: Extract RTops (event_code == 1)
+    rtops = df[df['event_code'] == 1].copy()
+    rtops.reset_index(drop=True, inplace=True)
+    rtops['ibi'] = np.append(np.diff(rtops['time']), np.nan)
+    rtops['epoch'] = [set([''])] * len(rtops)
+
+    DataSet.RTops = rtops[['time', 'ibi']]
+    DataSet.RTops['ID'] = 'N'
+
+    # Step 3: Extract start and end codes (11 and 21)
+    start_times = df[df['event_code'] == 11]['time'].tolist()
+    end_times = df[df['event_code'] == 21]['time'].tolist()
+
+    if len(start_times) != len(end_times):
+        raise ValueError("Mismatched number of start (11) and end (21) codes.")
+
+    # Step 4: Build structured events
+    event_timestamps = []
+    event_labels = []
+    # Create events for each epoch
+    for i, (start, end) in enumerate(zip(start_times, end_times), 1):
+        event_timestamps.extend([start, end])
+        event_labels.extend([f'start series {i}', f'stop series {i}'])
+
+    DataSet.events = pd.DataFrame({
+        'time': pd.Series(event_timestamps),
+        'label': pd.Series(event_labels)
+    })
+
+    if rtops.empty:
+        raise ValueError("No RTops found in file.")
+
+    ecg_timestamps = rtops['time']
+    ecg_levels = 1000.0 / rtops['ibi']
+
+    DataSet.ecg = cs.TimeSeries(ecg_timestamps, ecg_levels)
+   
+    # Step 5: Classify the RTops
+    classify(DataSet)
+
+    # Initialize epochs
+    DataSet.create_epochs()
+ 
 
 def filterECGData(DataSet, par=None):
     """
@@ -83,11 +167,11 @@ def filterECGData(DataSet, par=None):
     to clean the ECG signal.
 
     Args:
-        DataSet (CarspanDataSet): The dataset object containing ECG data.
+        DataSet (CarspanDataSet): The DataSet object containing ECG data.
         par (dict): Parameter dictionary for filtering configurations.
 
     Returns:
-        DataSet (CarspanDataSet): The filtered dataset (when implemented).
+        DataSet (CarspanDataSet): The filtered DataSet (when implemented).
     """
     # Example filtering logic could go here
     # You could apply a band-pass filter using scipy or another library
@@ -139,18 +223,17 @@ def filterECGData(DataSet, par=None):
         
     # Log the action
     DS.log_action('filterData', par)
-
     logger.info(f"Data filtered with a {par['filterType']} filter (cutoff = {par['cutoff']} Hz).")
     return DS
 
-import copy
+
 
 def borderData(DataSet, par=None):
     """
     Creates a modified version of the provided DataSet by slicing TimeSeries based on the first and last events.
 
     Args:
-        DataSet: The original dataset to be modified.
+        DataSet: The original DataSet to be modified.
         par (dict, optional): Parameters for additional configurations. Defaults to None.
 
     Returns:
@@ -165,7 +248,7 @@ def borderData(DataSet, par=None):
 
     # Create a deep copy of the DataSet to avoid modifying the original object
     DS = copy.deepcopy(DataSet)
-    # Ensure that events exist in the dataset
+    # Ensure that events exist in the DataSet
     if DS.events is not None and not DS.events.empty:
         # Get the first and last event timestamps
         first_event_time = DS.events['time'].iloc[0]-1
@@ -182,6 +265,10 @@ def borderData(DataSet, par=None):
         
         if hasattr(DS, 'epoch'):
             DS.epoch = DS.epoch[mask]
+            # Log the action
+        DS.log_action('borderData', par)
+        logger.info(f"Data sliced to the first and last events: {first_event_time} - {last_event_time}")
+
     return DS
     
 
@@ -190,7 +277,7 @@ def classify(data, par=None):
     Classifies Inter-Beat Intervals (IBIs) based on statistical thresholds.
 
     Args:
-        DataSet: The dataset containing the ECG data and R-top times.
+        DataSet: The DataSet containing the ECG data and R-top times.
         par (dict, optional): Parameters for classification.
 
     Returns:

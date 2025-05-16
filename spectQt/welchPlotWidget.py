@@ -42,10 +42,9 @@ class WelchPSDPlotWidget(QWidget):
             if dataset.active_epochs.get(epoch, True) is False:
                 return  # Don't plot invisible epochs
         # Filter dataset for the specific epoch
-        epoch_data = dataset[dataset['epoch'] == epoch]
-
-        ibi_times = epoch_data['time']
-        ibi_values = epoch_data['ibi']
+ 
+        ibi_times = dataset['time']
+        ibi_values = dataset['ibi']
 
         try:
             title = epoch.title()

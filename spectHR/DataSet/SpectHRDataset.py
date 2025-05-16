@@ -8,6 +8,7 @@ import pandas as pd
 import pyxdf
 import scipy
 
+import spectHR as cs
 from spectHR.Actions.csActions import classify
 from spectHR.Actions.csBreathing import calculate_breathing_signal
 from spectHR.Tools.Logger import logger
@@ -133,21 +134,23 @@ class SpectHRDataset:
         """
         # Initialize dataset attributes
         self.ecg = None  # ECG data
+        self.has_ecg = True
         self.br = None  # Breathing data
         self.bp = None  # Blood pressure data (if applicable)
-        self.events = None  # Event markers
+        self.events = None  # Event markers: pandas dataframe with time and label as columns
+        self.epochs = None  # Epochs from start and end events
         self.history = []  # History of processing steps
         self.par = par if par is not None else {}  # Dataset parameters
         self.starttime = None  # Start time of the recording
-        self.x_min = None
-        self.x_max = None
+        
         self.toMatlab = False
         # Set up file paths and directories
         self.datadir = os.path.dirname(filename)  # Directory of the input file
         self.filename = os.path.basename(filename)  # Extract filename
         self.pkl_filename = os.path.splitext(self.filename)[0] + ".pkl"  # Name for cached pickle file
         self.file_path = os.path.join(self.datadir, self.filename)  # Full path to the input file
-        self.has_ecg = True
+
+        
         # Ensure a valid data directory
         if not self.datadir:
             self.datadir = os.getcwd()
@@ -224,82 +227,9 @@ class SpectHRDataset:
         Args:
             filename (str): Path to the evt file.
         """
-        logger.info('Loading CARSPAN EVT RTops')
-        self.has_ecg = False
-
-        # Step 1: Read only [Data] section
-        with open(filename, 'r') as f:
-            lines = f.readlines()
-
-        data_section = False
-        event_codes = []
-        times = []
-
-        for line in lines:
-            if line.strip() == "[Data]":
-                data_section = True
-                continue
-            if not data_section:
-                continue
-
-            parts = line.strip().split()
-            if len(parts) >= 2:
-                try:
-                    code = int(parts[0])
-                    time = float(parts[1])
-                    event_codes.append(code)
-                    times.append(time)
-                except ValueError:
-                    continue  # Skip malformed lines
-
-        df = pd.DataFrame({'event_code': event_codes, 'time': times})
-
-        # Step 2: Extract RTops (event_code == 1)
-        rtops = df[df['event_code'] == 1].copy()
-        rtops.reset_index(drop=True, inplace=True)
-        rtops['ibi'] = np.append(np.diff(rtops['time']), np.nan)
-        rtops['epoch'] = [set([''])] * len(rtops)
-
-        self.RTops = rtops[['time', 'ibi', 'epoch']]
-        self.RTops['ID'] = 'N'
-
-        # Step 3: Extract start and end codes (11 and 21)
-        start_times = df[df['event_code'] == 11]['time'].tolist()
-        end_times = df[df['event_code'] == 21]['time'].tolist()
-
-        if len(start_times) != len(end_times):
-            raise ValueError("Mismatched number of start (11) and end (21) codes.")
-
-        # Step 4: Build structured events
-        event_timestamps = []
-        event_labels = []
-        # Create events for each epoch
-        for i, (start, end) in enumerate(zip(start_times, end_times), 1):
-            event_timestamps.extend([start, end])
-            event_labels.extend([f'start series {i}', f'stop series {i}'])
-
-        self.events = pd.DataFrame({
-            'time': pd.Series(event_timestamps),
-            'label': pd.Series(event_labels)
-        })
-
-        if rtops.empty:
-            raise ValueError("No RTops found in file.")
-
-        ecg_timestamps = rtops['time']
-        ecg_levels = 1000.0 / rtops['ibi']
-
-        self.ecg = TimeSeries(ecg_timestamps, ecg_levels)
-
-        # Initialize self.epoch as a series with the same index as self.ecg.time
-        self.epoch = pd.Series(index=self.ecg.time.index, dtype="object").map(lambda x: [])
-
-        classify(self)
-
-        # Step 6: Assign epochs based on events
-        self.create_epoch_series()
-        self.update_RTops_epochs()
-
+        cs.loadEVT(self, filename)
+        self.create_epochs()
+        
     def load_from_pickle(self):
         """
         Loads the dataset from a pickle file.
@@ -359,7 +289,7 @@ class SpectHRDataset:
 
         # Concatenate events and store them
         self.events = pd.concat(eventlist, ignore_index=True)
-        self.create_epoch_series()
+        self.create_epochs()
 
     def loadRawHarness(self, filename, flip='auto'):
         """
@@ -419,7 +349,7 @@ class SpectHRDataset:
 
         # Concatenate events and store them
         self.events = pd.concat(eventlist, ignore_index=True)
-        self.create_epoch_series()
+        self.create_epochs()
 
     def loadData(self, filename, ecg_index=None, br_index=None, bp_index=None, event_index=None, flip='auto'):
         """
@@ -496,8 +426,9 @@ class SpectHRDataset:
                 })
                 eventlist.append(ievents)
             self.events = pd.concat(eventlist, ignore_index=True)
-            self.create_epoch_series()
-        if not self.unique_epochs:
+            self.create_epochs()
+            
+        if self.epochs.empty:
             eventlist = [pd.DataFrame({
                 'time': [ecg_timestamps.iloc[1]],
                 'label': ['start All']
@@ -507,7 +438,7 @@ class SpectHRDataset:
                 'label': ['stop All']
             }))
             self.events = pd.concat(eventlist, ignore_index=True)
-            self.create_epoch_series()
+            self.create_epochs()
 
     @staticmethod
     def log_error(message):
@@ -519,56 +450,55 @@ class SpectHRDataset:
         """
         logger.error(message)
 
-    def create_epoch_series(self):
+    def create_epochs(self):
         """
-        Creates an 'epoch' series within the dataset to map each time point in the ECG
-        to a corresponding epoch(s) based on event labels ('start' and 'stop').
+        Creates a DataFrame of epochs based on the start and stop events in the dataset.
+        The DataFrame contains the following columns:
+        - 'label': The name of the epoch.
+        - 'starttime': The start time of the epoch.
+        - 'endtime': The end time of the epoch.
+        """
 
-        Returns:
-            pd.Series: A series with epoch labels (lists) for each time index in the ECG and RTopTimes.
-        """
         # Check for no events and then return
         if self.events is None:
             self.log_error('No events available for epoch generation')
             return
-        # Initialize the epoch series as a series of lists
-        self.epoch = pd.Series(index=self.ecg.time.index, dtype="object").map(lambda x: [])
 
-        # Get all event labels
-        labels = self.events['label'].str.lower()
-        labels = labels.str.replace('^end ', 'stop ', regex=True)
-        # Find start events
-        start_events = self.events[labels.str.startswith('start ')]
+        # Replace 'end ' with 'stop ' in the 'label' column (case-insensitive)
+        self.events['label'] = self.events['label'].str.replace('^end ', 'stop ', case=False, regex=True)
 
-        # Loop through each 'start' event
-        for start_idx, start_event in start_events.iterrows():
-            start_epoch_name = start_event['label'][5:].strip()  # Get the epoch name
+        # Separate start and stop events (case-insensitive)
+        start_events = self.events[self.events['label'].str.lower().str.startswith('start')].copy()
+        stop_events = self.events[self.events['label'].str.lower().str.startswith('stop')].copy()
+
+        # Extract epoch names (case-insensitive)
+        start_events.loc[:, 'epoch'] = start_events['label'].str.replace('^start ', '', case=False, regex=True)
+        stop_events.loc[:, 'epoch'] = stop_events['label'].str.replace('^stop ', '', case=False, regex=True)
+
+        # Initialize epochs list
+        epochs = []
+
+        # Iterate over start events
+        for _, start_event in start_events.iterrows():
+            epoch = start_event['epoch']
             start_time = start_event['time']
 
-            # Find the corresponding 'stop' event with the same epoch name
-            stop_events = self.events[labels.str.startswith('stop ')]
-            matching_stop_events = stop_events[stop_events['label'].str[4:].str.strip() == start_epoch_name]
+            # Find corresponding stop event
+            stop_event = stop_events[stop_events['epoch'].str.lower() == epoch.lower()]
 
-            if not matching_stop_events.empty:
-                # Use the first matching 'stop' event that occurs after the start event
-                matching_stop_events = matching_stop_events[matching_stop_events.index > start_idx]
-                if not matching_stop_events.empty:
-                    end_time = matching_stop_events.iloc[0]['time']
-                else:
-                    # No matching 'stop' event after the start event, use the next 'start' or end of data
-                    next_start_idx = start_events[start_events.index > start_idx].index.min()
-                    end_time = self.events['time'][next_start_idx] if pd.notna(next_start_idx) else self.ecg.time.iloc[-1]
+            if not stop_event.empty:
+                end_time = stop_event.iloc[0]['time']
             else:
-                # No matching 'stop' event, use the next 'start' or end of data
-                next_start_idx = start_events[start_events.index > start_idx].index.min()
-                end_time = self.events['time'][next_start_idx] if pd.notna(next_start_idx) else self.ecg.time.iloc[-1]
+                # Find the next event's start time
+                next_event = self.events[self.events['time'] > start_time].sort_values('time').iloc[0]
+                end_time = next_event['time']
 
-            # Assign epoch label to the time series (ecg and RTopTimes)
-            for idx in self.epoch.loc[(self.ecg.time >= start_time) & (self.ecg.time <= end_time)].index:
-                self.epoch.at[idx].append(start_epoch_name)
+            epochs.append({'label': epoch.lower(), 'starttime': start_time, 'endtime': end_time})
 
-        self.unique_epochs = self.get_unique_epochs()
+        # Create epochs DataFrame
+        self.epochs = pd.DataFrame(epochs)
 
+ 
     def add_epoch_to_dataset(self, epoch_label, start_time, end_time):
         """
         Add a new epoch to the dataset.
@@ -578,66 +508,7 @@ class SpectHRDataset:
             start_time (float): The start time for the new epoch.
             end_time (float): The end time for the new epoch.
         """
-        if self.events is None:
-            self.events = pd.DataFrame(columns=['time', 'label'])
-
-        # Add the new epoch to the events DataFrame
-        new_start_event = pd.DataFrame({
-            'time': [start_time],
-            'label': [f'start {epoch_label}']
-        })
-        new_end_event = pd.DataFrame({
-            'time': [end_time],
-            'label': [f'stop {epoch_label}']
-        })
-        self.events = pd.concat([self.events, new_start_event, new_end_event], ignore_index=True)
-
-        # Initialize the epoch series if it doesn't exist
-        if not hasattr(self, 'epoch'):
-            self.epoch = pd.Series(index=self.ecg.time.index, dtype="object").map(lambda x: [])
-        # Update the epoch series to include the new epoch
-        mask = (self.ecg.time >= start_time) & (self.ecg.time <= end_time)
-
-        for idx in self.epoch[mask].index:
-            self.epoch.at[idx].append(epoch_label)
-
-        # Update the unique epochs
-        self.unique_epochs = self.get_unique_epochs()
-
-        # Update the RTops DataFrame to reflect the new epoch assignments
-        if hasattr(self, 'RTops'):
-            self.update_RTops_epochs()
-
-    def update_RTops_epochs(self):
-        """
-        Update the RTops DataFrame to reflect the new epoch assignments.
-        """
-        if self.RTops is None:
-            return
-
-        # Clear existing epoch assignments in RTops
-        self.RTops['epoch'] = self.RTops['epoch'].apply(lambda x: set())
-
-        # Loop through each epoch and update RTops
-        for epoch in self.unique_epochs:
-            # Get the start and end times for the epoch
-            epoch_start = self.events[self.events['label'].str.lower().str.startswith(f'start {epoch.lower()}')]['time'].min()
-            epoch_end = self.events[self.events['label'].str.lower().str.startswith(f'stop {epoch.lower()}')]['time'].max()
-
-            # Update RTops entries that fall within the epoch boundaries
-            mask = (self.RTops['time'] >= epoch_start) & (self.RTops['time'] <= epoch_end)
-            for idx in self.RTops[mask].index:
-                self.RTops.at[idx, 'epoch'].add(epoch)
-
-    def get_unique_epochs(self):
-        """
-        Returns a set of unique epoch names from the epoch series.
-        """
-        # Flatten all lists into one and find unique values
-        all_epochs = [epoch for sublist in self.epoch.dropna() for epoch in sublist]
-        unique_epochs = set(all_epochs)
-        unique_epochs.discard("")
-        return unique_epochs
+        self.epochs.loc[len(self.epochs)] = [epoch_label.lower(), start_time, end_time]
 
     def log_action(self, action_name, params):
         """

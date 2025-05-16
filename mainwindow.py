@@ -212,17 +212,17 @@ class MainWindow(QMainWindow):
         self.dataset = spQt.PreProcessFile(file_path)
 
         # Update the UI with the new dataset
-        try:
-            self.show_preprocessing_plot(self.dataset)
-            self.show_ibiseries_plot(self.dataset)
-            self.show_poincare_plot(self.dataset)
-            self.show_epoch_plot(self.dataset)
-            self.show_welch_psd_plot(self.dataset)
-            self.show_parameters_plot(self.dataset)
-        except Exception:
-            pass
-        finally:
-            QApplication.restoreOverrideCursor()
+        #try:
+        self.show_preprocessing_plot(self.dataset)
+        #self.show_ibiseries_plot(self.dataset)
+        self.show_poincare_plot(self.dataset)
+        #self.show_epoch_plot(self.dataset)
+        #self.show_welch_psd_plot(self.dataset)
+        #self.show_parameters_plot(self.dataset)
+        #except Exception:
+        #    pass
+        #finally:
+        QApplication.restoreOverrideCursor()
 
     def show_preprocessing_plot(self, data):
         """
@@ -277,7 +277,7 @@ class MainWindow(QMainWindow):
         """
         self.poincare_plot_widget.poincarePlot(data)
 
-    def show_welch_psd_plot(self, data):
+    def show_welch_psd_plot(self, dataset):
         """
         Display the Welch PSD plots of the ECG signal in the scroll area.
 
@@ -286,7 +286,7 @@ class MainWindow(QMainWindow):
         data : object
             The dataset object containing RR intervals or relevant features.
         """
-        if data is not None:
+        if dataset is not None:
             # Clear previous widgets
             while self.welch_psd_layout.count():
                 item = self.welch_psd_layout.takeAt(0)
@@ -295,13 +295,16 @@ class MainWindow(QMainWindow):
                     widget.setParent(None)
                     widget.deleteLater()
 
-            # Explode and compute PSD per epoch
-            exploded = cs.explode(data)
+            # compute PSD per epoch
+            # Extract relevant columns for plotting
+            active_epochs = {epoch: active for epoch, active in dataset.active_epochs.items() if active}
+            visuals = dataset.epochs.loc[dataset.epochs['label'].isin(active_epochs.keys())]        
             psd_values_list = []
+            epoch_names = visuals["label"].tolist()
 
-            for epoch in exploded['epoch'].unique():
+            for epoch in epoch_names:
                 widget = spQt.WelchPSDPlotWidget()
-                spectral_measures = widget.plot_psd(exploded, epoch, fs=4, logscale=False, nperseg=256,
+                spectral_measures = widget.plot_psd(dataset.filtered_by_epoch[epoch], epoch, fs=4, logscale=False, nperseg=256,
                                                    noverlap=128, interp_kind='linear', window='hamming',
                                                    interpolate=True)
 
@@ -310,7 +313,7 @@ class MainWindow(QMainWindow):
                     self.welch_psd_layout.addWidget(widget)
 
             if psd_values_list:
-                data.psd_values = pd.DataFrame(psd_values_list)
+                dataset.psd_values = pd.DataFrame(psd_values_list)
 
             # Ensure the scroll area is properly set up
             self.ui.scrollArea.setWidgetResizable(True)

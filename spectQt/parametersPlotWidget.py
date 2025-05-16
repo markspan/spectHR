@@ -73,9 +73,18 @@ class ParametersPlotWidget(QWidget):
         """
         self.dataset = dataset
         self.setFocus()  # Ensure the widget gets focus
+        # Filter the filtered_by_epoch dictionary to include only active epochs
+        if hasattr(dataset, 'active_epochs'):
+            active_epochs = {epoch: data for epoch, data in dataset.filtered_by_epoch.items()
+                            if dataset.active_epochs.get(epoch, True)}
+        else:
+            active_epochs = dataset.filtered_by_epoch
+
+        # Concatenate the active epochs
+        descriptiveData = pd.concat(active_epochs, names=['epoch']).reset_index(level=1, drop=True)
 
         # Calculate descriptive statistics grouped by epoch
-        dataset.descriptives_values = cs.explode(dataset)\
+        dataset.descriptives_values = descriptiveData\
             .groupby('epoch')['ibi']\
             .agg([
                 ('N', len),
