@@ -283,7 +283,7 @@ def ecgArtifactDetection(ts, par={}):
     ecg = np.array(ts.level)
     n_samples = len(ecg)
     epoch_len = fs  # 1-second epochs
-
+    epochs_cleared = 0
     # Create template from a clean 5-second middle segment
     mid_center = n_samples // 2
     five_sec_len = 5 * fs
@@ -348,7 +348,7 @@ def ecgArtifactDetection(ts, par={}):
         if len(rpeaks) == 0:
             # Still no R-peaks after extension: zero out original (unextended) epoch
             ecg_cleaned[start:end] = 0
-            logger.info('*')
+            epochs_cleared += 1
             continue
 
         reject_epoch = False
@@ -368,7 +368,7 @@ def ecgArtifactDetection(ts, par={}):
 
         if reject_epoch:
             ecg_cleaned[start:end] = 0
-            logger.info("#")
+            epochs_cleared += 1
 
     # Handle final partial epoch (if any)
     if remainder > 0:
@@ -382,7 +382,7 @@ def ecgArtifactDetection(ts, par={}):
         rpeaks, r_start, r_end = detect_rpeaks_with_extension(start, end)
         if len(rpeaks) == 0:
             ecg_cleaned[start:end] = 0
-            logger.info('*')
+            epochs_cleared += 1
         else:
             reject_epoch = False
             for r_peak in rpeaks:
@@ -400,10 +400,12 @@ def ecgArtifactDetection(ts, par={}):
                     break
             if reject_epoch:
                 ecg_cleaned[start:end] = 0
-                logger.info("#")
+                epochs_cleared += 1
 
     # Replace 'level' with cleaned signal as Series with original metadata
+    logger.info(f'Cleared {epochs_cleared} epochs')
     ts_cleaned.level = pd.Series(ecg_cleaned, index=ts.level.index, name=ts.level.name)
+    ts.log_action('ecgArtifactDetection', par)
     return ts_cleaned
 
 def borderData(DataSet, par=None):
