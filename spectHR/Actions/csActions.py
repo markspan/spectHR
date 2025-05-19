@@ -348,6 +348,7 @@ def ecgArtifactDetection(ts, par={}):
         if len(rpeaks) == 0:
             # Still no R-peaks after extension: zero out original (unextended) epoch
             ecg_cleaned[start:end] = 0
+            logger.info('*')
             continue
 
         reject_epoch = False
@@ -367,6 +368,7 @@ def ecgArtifactDetection(ts, par={}):
 
         if reject_epoch:
             ecg_cleaned[start:end] = 0
+            logger.info("#")
 
     # Handle final partial epoch (if any)
     if remainder > 0:
@@ -380,6 +382,7 @@ def ecgArtifactDetection(ts, par={}):
         rpeaks, r_start, r_end = detect_rpeaks_with_extension(start, end)
         if len(rpeaks) == 0:
             ecg_cleaned[start:end] = 0
+            logger.info('*')
         else:
             reject_epoch = False
             for r_peak in rpeaks:
@@ -397,6 +400,7 @@ def ecgArtifactDetection(ts, par={}):
                     break
             if reject_epoch:
                 ecg_cleaned[start:end] = 0
+                logger.info("#")
 
     # Replace 'level' with cleaned signal as Series with original metadata
     ts_cleaned.level = pd.Series(ecg_cleaned, index=ts.level.index, name=ts.level.name)
