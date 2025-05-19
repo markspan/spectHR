@@ -409,7 +409,7 @@ def ecgArtifactDetection(DataSet, par={}):
     # Replace 'level' with cleaned signal as Series with original metadata
     logger.info(f'Cleared {epochs_cleared} epochs')
     ts_cleaned.level = pd.Series(ecg_cleaned, index=ts.level.index, name=ts.level.name)
-    ts.log_action('ecgArtifactDetection', par)
+    DataSet.log_action('ecgArtifactDetection', par)
     return ts_cleaned
 
 def borderData(DataSet, par=None):
