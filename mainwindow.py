@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
             Clean up the raw ECG signal: 
             """
             QApplication.setOverrideCursor(Qt.WaitCursor)
-            cleanSet = cs.ecgArtifactDetection(self.dataset.ecg, par = {'dtw_thresh': 100000})
+            cleanSet = cs.ecgArtifactDetection(self.dataset, par = {'dtw_thresh': 100000})
             QApplication.restoreOverrideCursor()
             self.dataset.ecg = cleanSet
             self.dataset = cs.calcPeaks(self.dataset)
