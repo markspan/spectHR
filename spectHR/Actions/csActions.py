@@ -232,7 +232,7 @@ import neurokit2 as nk
 from fastdtw import fastdtw
 from copy import deepcopy
 
-def ecgArtifactDetection(DataSet, par={}):
+def ecgArtifactDetection(Data, par={}):
     """
     Detect and suppress artifact-laden segments in an ECG time series using dynamic time warping (DTW)
     against a template QRS complex derived from a clean middle segment of the signal.
@@ -271,9 +271,11 @@ def ecgArtifactDetection(DataSet, par={}):
     import neurokit2 as nk
     from fastdtw import fastdtw
 
+    DataSet = copy.deepcopy(Data)
+    
     if not hasattr(DataSet, 'ecg'):
         return
-    
+
     ts = DataSet.ecg
     dtw_thresh = par.get('dtw_thresh', 100000)
     fs = par.get('fs', 130)
@@ -410,7 +412,7 @@ def ecgArtifactDetection(DataSet, par={}):
     logger.info(f'Cleared {epochs_cleared} epochs')
     ts_cleaned.level = pd.Series(ecg_cleaned, index=ts.level.index, name=ts.level.name)
     DataSet.log_action('ecgArtifactDetection', par)
-    return ts_cleaned
+    return DataSet
 
 def borderData(DataSet, par=None):
     """
