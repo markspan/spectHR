@@ -1,6 +1,8 @@
 import sys
 
 import pandas as pd
+import numpy as np
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
@@ -16,6 +18,8 @@ import spectHR as cs
 import spectQt as spQt
 from ui_form import Ui_MainWindow
 
+from scipy.cluster.hierarchy import linkage,  fcluster
+import matplotlib.pyplot as plt
 
 class MainWindow(QMainWindow):
     """
@@ -133,18 +137,32 @@ class MainWindow(QMainWindow):
 
         # Create actions for the context menu
         reload_action = QAction("Reload Raw", self)
+        clean_action = QAction("ECG Artefact Detection", self)
         invert_action = QAction("Invert ECG Polarity", self)
 
         # Connect the actions to their respective functions
         reload_action.triggered.connect(lambda: self.reload(item))
         invert_action.triggered.connect(self.invert)
+        clean_action.triggered.connect(self.clean)
 
         # Add the actions to the context menu
         context_menu.addAction(reload_action)
+        context_menu.addAction(clean_action)
         context_menu.addAction(invert_action)
 
         # Show the context menu at the requested position
         context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
+
+    def clean(self):
+            """
+            Clean up the raw ECG signal: 
+            """
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            cleanSet = cs.ecgArtifactDetection(self.dataset.ecg, par = {'dtw_thresh': 100000})
+            QApplication.restoreOverrideCursor()
+            self.dataset.ecg = cleanSet
+            self.dataset = cs.calcPeaks(self.dataset)
+            self.show_preprocessing_plot(self.dataset)
 
     def reload(self, item):
         """
@@ -163,9 +181,7 @@ class MainWindow(QMainWindow):
         if self.dataset is None:
             return
 
-        ecg_level = self.dataset.ecg.level
-        ecg_time = self.dataset.ecg.time
-        self.dataset.ecg = cs.TimeSeries(ecg_time, -ecg_level)
+        self.dataset.ecg = cs.TimeSeries(self.dataset.ecg.time, -self.dataset.ecg.level)
         self.dataset = cs.calcPeaks(self.dataset)
         self.dataset.save()
         self.show_preprocessing_plot(self.dataset)

@@ -1,12 +1,13 @@
-import copy
-
 import numpy as np
 import pandas as pd
+
 import scipy.signal as signal
 
-import spectHR as cs
-from spectHR.Tools.Logger import logger
+import copy
 
+import spectHR as cs
+
+from spectHR.Tools.Logger import logger
 
 def calcPeaks(DataSet, par=None):
     """
@@ -226,7 +227,180 @@ def filterECGData(DataSet, par=None):
     logger.info(f"Data filtered with a {par['filterType']} filter (cutoff = {par['cutoff']} Hz).")
     return DS
 
+import numpy as np
+import neurokit2 as nk
+from fastdtw import fastdtw
+from copy import deepcopy
 
+def ecgArtifactDetection(ts, par={}):
+    """
+    Detect and suppress artifact-laden segments in an ECG time series using dynamic time warping (DTW)
+    against a template QRS complex derived from a clean middle segment of the signal.
+
+    Parameters
+    ----------
+    ts : pd.DataFrame or object with attribute 'level' (pd.Series)
+        The ECG time series. The 'level' attribute should be a pandas Series containing the ECG signal,
+        indexed by timestamps.
+
+    par : dict, optional
+        Dictionary of parameters:
+        - 'dtw_thresh' (float): DTW distance threshold for rejection. Default is 100000.
+        - 'fs' (int): Sampling frequency of the ECG signal in Hz. Default is 130.
+        - 'norm' (bool): Whether to z-score normalize ECG segments before comparison. Default is False.
+        - 'max_extension_secs' (float): Maximum duration (in seconds) by which to extend an epoch
+          if no R-peaks are initially detected. Default is 2 seconds.
+
+    Returns
+    -------
+    ts_cleaned : same type as input ts
+        A deep copy of `ts`, with 'level' replaced by a version in which artifact epochs have been
+        zeroed out based on DTW distance to the template beat.
+
+    Notes
+    -----
+    - Each 1-second epoch is examined for R-peaks. If none are found, the epoch is extended by up
+      to `max_extension_secs` in both directions to allow for delayed beats.
+    - The middle 5 seconds of the signal are used to extract a template QRS complex from a clean beat.
+    - DTW distance is calculated between this template and each beat in the epoch.
+    - If any beat in the epoch exceeds the `dtw_thresh`, the entire epoch is rejected.
+    """
+    import copy
+    import numpy as np
+    import pandas as pd
+    import neurokit2 as nk
+    from fastdtw import fastdtw
+
+    dtw_thresh = par.get('dtw_thresh', 100000)
+    fs = par.get('fs', 130)
+    norm = par.get('norm', False)
+    max_extension_secs = par.get('max_extension_secs', 2)
+
+    # Create deep copy to preserve original data
+    ts_cleaned = copy.deepcopy(ts)
+
+    # Convert input ECG signal to numpy array
+    ecg = np.array(ts.level)
+    n_samples = len(ecg)
+    epoch_len = fs  # 1-second epochs
+
+    # Create template from a clean 5-second middle segment
+    mid_center = n_samples // 2
+    five_sec_len = 5 * fs
+    seg_start = max(0, mid_center - five_sec_len // 2)
+    seg_end = min(n_samples, seg_start + five_sec_len)
+    middle_segment = ecg[seg_start:seg_end]
+
+    # Extract R-peaks from the middle segment
+    _, rpeaks_dict = nk.ecg_peaks(middle_segment, sampling_rate=fs)
+    rpeaks = list(rpeaks_dict["ECG_R_Peaks"])
+    if len(rpeaks) == 0:
+        raise RuntimeError("No R-peaks found in middle segment for template creation.")
+
+    # Extract one beat around a well-positioned R-peak to use as template
+    template = None
+    half_win = fs // 2
+    for r in rpeaks:
+        t_start = r - half_win
+        t_end = t_start + fs
+        if t_start >= 0 and t_end <= len(middle_segment):
+            template = middle_segment[t_start:t_end]
+            break
+    if template is None:
+        raise RuntimeError("No suitable R-peak found in middle segment with enough margin for template window.")
+
+    if norm:
+        template = (template - np.mean(template)) / np.std(template)
+
+    def detect_rpeaks_with_extension(start, end):
+        """
+        Attempt to detect R-peaks within an epoch.
+        If no R-peaks are found, extend the window in both directions
+        up to `max_extension_secs` and try again.
+        """
+        window_start, window_end = start, end
+        extension = int(fs * max_extension_secs)
+        while True:
+            epoch = ecg[window_start:window_end]
+            _, rpeaks_dict = nk.ecg_peaks(epoch, sampling_rate=fs)
+            rpeaks = list(rpeaks_dict["ECG_R_Peaks"])
+            if len(rpeaks) > 0:
+                return rpeaks, window_start, window_end
+            # Try to extend the window
+            new_start = max(0, window_start - extension)
+            new_end = min(n_samples, window_end + extension)
+            if new_start == window_start and new_end == window_end:
+                return [], window_start, window_end  # No further extension possible
+            window_start, window_end = new_start, new_end
+
+    ecg_cleaned = np.array(ecg, copy=True)
+
+    # Full 1-second epochs
+    n_full_epochs = n_samples // epoch_len
+    remainder = n_samples % epoch_len
+    last_epoch_index = n_full_epochs - 1 if remainder > 0 else n_full_epochs
+
+    for i in range(last_epoch_index):
+        start = i * epoch_len
+        end = start + epoch_len
+
+        rpeaks, r_start, r_end = detect_rpeaks_with_extension(start, end)
+        if len(rpeaks) == 0:
+            # Still no R-peaks after extension: zero out original (unextended) epoch
+            ecg_cleaned[start:end] = 0
+            continue
+
+        reject_epoch = False
+        for r_peak in rpeaks:
+            global_r = r_peak + r_start  # Shift local to global index
+            sub_start = global_r - fs // 2
+            sub_end = sub_start + fs
+            if sub_start < 0 or sub_end > n_samples:
+                continue  # Skip if beat would exceed bounds
+            sub_segment = ecg[sub_start:sub_end]
+            if norm:
+                sub_segment = (sub_segment - np.mean(sub_segment)) / np.std(sub_segment)
+            dist, _ = fastdtw(sub_segment, template)
+            if dist > dtw_thresh:
+                reject_epoch = True
+                break
+
+        if reject_epoch:
+            ecg_cleaned[start:end] = 0
+
+    # Handle final partial epoch (if any)
+    if remainder > 0:
+        if n_full_epochs == 0:
+            start = 0
+            end = n_samples
+        else:
+            start = last_epoch_index * epoch_len
+            end = n_samples
+
+        rpeaks, r_start, r_end = detect_rpeaks_with_extension(start, end)
+        if len(rpeaks) == 0:
+            ecg_cleaned[start:end] = 0
+        else:
+            reject_epoch = False
+            for r_peak in rpeaks:
+                global_r = r_peak + r_start
+                sub_start = global_r - fs // 2
+                sub_end = sub_start + fs
+                if sub_start < 0 or sub_end > n_samples:
+                    continue
+                sub_segment = ecg[sub_start:sub_end]
+                if norm:
+                    sub_segment = (sub_segment - np.mean(sub_segment)) / np.std(sub_segment)
+                dist, _ = fastdtw(sub_segment, template)
+                if dist > dtw_thresh:
+                    reject_epoch = True
+                    break
+            if reject_epoch:
+                ecg_cleaned[start:end] = 0
+
+    # Replace 'level' with cleaned signal as Series with original metadata
+    ts_cleaned.level = pd.Series(ecg_cleaned, index=ts.level.index, name=ts.level.name)
+    return ts_cleaned
 
 def borderData(DataSet, par=None):
     """

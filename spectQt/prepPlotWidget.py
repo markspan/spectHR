@@ -197,7 +197,7 @@ class PrepPlotWidget(QWidget):
         Redraw the ECG plot, R-top times, and breathing rate (if available).
         This function also adjusts the plot properties for the selected x-axis limits.
         """
-        self.plot_ecg_signal(self.ax_ecg, self.data.ecg.time, self.data.ecg.level)
+        self.plot_ecg_signal(self.ax_ecg, self.data.ecg.time, self.data.ecg.level) # type: ignore
         # Plot R-top times if available in the data
         if hasattr(self.data, "RTops"):
             # Plot only R-tops within x_min and x_max

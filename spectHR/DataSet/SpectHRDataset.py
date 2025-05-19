@@ -134,6 +134,15 @@ class SpectHRDataset:
         """
         # Initialize dataset attributes
         self.ecg = None  # ECG data
+        
+        if workspace == None:
+            cwd = os.getcwd()
+            workspace = {
+                "DataDirectory": cwd,
+                "CacheDirectory": os.path.join(cwd, "cache"),
+                "OutputDirectory": cwd
+            }
+            
         self.workspace = workspace
         self.has_ecg = True
         self.br = None  # Breathing data
@@ -146,6 +155,7 @@ class SpectHRDataset:
         
         self.toMatlab = False
         # Set up file paths and directories
+
         self.datadir = self.workspace['DataDirectory']  # Directory of the input file
         self.filename = os.path.basename(filename)  # Extract filename
         self.pkl_filename = os.path.splitext(self.filename)[0] + ".pkl"  # Name for cached pickle file
