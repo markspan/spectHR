@@ -227,10 +227,7 @@ def filterECGData(DataSet, par=None):
     logger.info(f"Data filtered with a {par['filterType']} filter (cutoff = {par['cutoff']} Hz).")
     return DS
 
-import numpy as np
-import neurokit2 as nk
-from fastdtw import fastdtw
-from copy import deepcopy
+
 
 def ecgArtifactDetection(Data, par={}):
     """

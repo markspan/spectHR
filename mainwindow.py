@@ -1,25 +1,21 @@
 import sys
 
 import pandas as pd
-import numpy as np
-
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QInputDialog,
     QMainWindow,
     QMenu,
     QVBoxLayout,
-    QFileDialog,
 )
 
 import spectHR as cs
 import spectQt as spQt
 from ui_form import Ui_MainWindow
 
-from scipy.cluster.hierarchy import linkage,  fcluster
-import matplotlib.pyplot as plt
 
 class MainWindow(QMainWindow):
     """

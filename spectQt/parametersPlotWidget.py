@@ -85,7 +85,7 @@ class ParametersPlotWidget(QWidget):
 
         # Calculate descriptive statistics grouped by epoch
         dataset.descriptives_values = descriptiveData\
-            .groupby('epoch')['ibi']\
+            .groupby(level='epoch')['ibi']\
             .agg([
                 ('N', len),
                 ('mean', 'mean'),
