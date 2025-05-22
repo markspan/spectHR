@@ -267,7 +267,7 @@ SD<sub>1</sub> corresponds to the width of the ellipse (short axis).
 SD<sub>2</sub> corresponds to the length of the ellipse (long axis).
 The area of the ellipse is often calculated as:
 
-$$	ext{Area} = \pi \cdot SD_1 \cdot SD_2$$
+$$	\text{Area} = \pi \cdot SD_1 \cdot SD_2$$
 
 ---
 
