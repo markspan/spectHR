@@ -102,7 +102,7 @@ The breathing signal is extracted using a two-stage filtering process applied to
 When using the pulled github code:
 - Python 3.7+
 
-**The release should work without any additional requirements. It works only on Windows.**
+**The release should work without any additional requirements. The executabe works only on Windows.**
 
 
 ```python
