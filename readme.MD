@@ -194,12 +194,6 @@ Outlier Detection: Tmax ensures robustness by capturing exceptionally long inter
 
 This parameter structure allows flexibility in adapting the function to different datasets and use cases, balancing sensitivity and robustness in IBI classification.
 
-Once the data is loaded, you can visualize it with interactive plots:
-
-```python
-GUI = cs.prepPlot(DataSet)  # Plot ECG with draggable R-top lines
-```
-
 ### Available Modes
 
 - Drag: Move the vertical lines (R-tops) along the x-axis to adjust detection.
@@ -286,14 +280,6 @@ $$	ext{Area} = \pi \cdot SD_1 \cdot SD_2$$
 - (x,y) points that are topographically district, are an indication of a mis-trigger of the r-top.
 
 ---
-
-#### Example Code
-
-Here is how to generate a Poincaré plot and calculate parameters in `spectHR`:
-
-```python
-cs.poincare(DataSet)
-```
 
 This will display a scatter plot of  vs  and compute SD<sub>1</sub>, SD<sub>2</sub>, and SD<sub>1</sub>/SD<sub>2</sub> ratio, along with other descriptive statistics.
 The plot also allows for selecting relevant epochs in the data. In the standard views of the data in the library, these selections are upheld.
