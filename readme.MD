@@ -282,7 +282,7 @@ $$	\text{Area} = \pi \cdot SD_1 \cdot SD_2$$
 
 - SD<sub>1</sub> and SD<sub>2</sub> do not provide new information compared to SDNN and RMSSD!
 
-- (x,y) points that are topographically district, could be an **indication** of a mis-trigger of the r-top.
+- (x,y) points that are topographically district, could be an *indication* of a mis-trigger of the r-top.
 
 ---
 
