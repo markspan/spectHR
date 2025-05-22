@@ -60,16 +60,6 @@ The **spectHR program** is an interactive tool designed to assist in the analysi
 - Computed metrics and summaries for HRV data.
 - Processed datasets ready for further analysis.
 
-## Dependencies
-
-- **Python Libraries**:
-  - `pyxdf`: For reading .XDF files.
-  - `pandas`: For data manipulation and statistics.
-  - `matplotlib`: For plotting and graphic interaction.
-  - `PyQt5`: For the graphical user interface.
-
----
-
 This tool is ideal for researchers, clinicians, and students who work with HRV data and require an interactive, user-friendly interface for their analyses.
 
 # spectHR - Cardiovascular Spectral Analysis Toolkit
