@@ -156,7 +156,7 @@ Affects the boundaries of normal IBIs:
 
 The thresholds are calculated as:
 
-$$(lower,upper) = \overline{IBI} ± (\mathbf{Nsd} 	imes SD(IBI))$$
+$$(lower,upper) = \overline{IBI} ± (\mathbf{Nsd}\times SD(IBI))$$
 
 Higher values of Nsd result in wider thresholds, reducing sensitivity to variations, while lower values make the classification more sensitive to smaller deviations.
 
