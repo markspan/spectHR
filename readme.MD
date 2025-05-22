@@ -109,8 +109,10 @@ The breathing signal is extracted using a two-stage filtering process applied to
 - The subject wears the device in a stable orientation on the torso.
 
 ### Requirements
-
+When using the pulled github code:
 - Python 3.7+
+the release should work without any additional requirements. It works only on Windows.
+
 
 ```python
 DataSet = cs.calcPeaks(DataSet)
