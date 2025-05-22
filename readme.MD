@@ -69,8 +69,8 @@ This tool is ideal for researchers, clinicians, and students who work with HRV d
 ## Features
 - **Reads XDF**: It reads [labstreaminglayers](https://github.com/sccn/labstreaminglayer) .XDF files. the ECG stream is detected if its label contains 'polar'. Generally for use with the PolarBand H10 and the
 [PolarGUI](https://github.com/markspan/PolarBand2lsl) application. Markers are ready from a seperate stream, and should follow the patterns `start label` and `end label` to mark an epoch (named 'label').
-- **Also reads .txt files from the app of POLAR. Ref. the example file.
-- **Also reads CARSPAN .evt files. Again, ref the example file.
+- **Also reads .txt files:** from the app of POLAR. Ref. the example file.
+- **Also reads CARSPAN .evt files:** Again, ref the example file.
 - **ECG and Breathing Pattern Analysis**: Process and analyze time series data, including ECG and breathing patterns.
 - **Peak Detection (R-tops)**: Automatically detect R-top times in ECG signals.
 - **Interactive Plotting**: Use draggable vertical lines to visualize and manipulate R-tops within a plot.
