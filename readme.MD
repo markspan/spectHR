@@ -1,4 +1,5 @@
-> **⚠️ CAUTION:**  
+
+> **⚠️ CAUTION:**
 > <p style="color: red;">This project is work in progress. It can not be used for data analysis yet. Breathing and blood pressure data are totally untested/not yet implemented.</p>
 
 This project is mainly the introduction of a library. The idea is that library can be used without knowledge of `python` by using the App.
@@ -7,28 +8,28 @@ This project is mainly the introduction of a library. The idea is that library c
 
 ## Overview
 
-The **spectHR program** is an interactive tool designed to assist in the analysis of heart rate variability (HRV) data. It provides a graphical user interface (GUI) within Jupyter Notebooks to explore, preprocess, and visualize HRV data. The app organizes its features into multiple tabs, each focusing on a specific aspect of HRV analysis.
+The **spectHR program** is an interactive tool designed to assist in the analysis of heart rate variability (HRV) data. It provides a graphical user interface (GUI) using Qt to explore, preprocess, and visualize HRV data. The app organizes its features into multiple tabs, each focusing on a specific aspect of HRV analysis.
 
 ## Features
 
-1. **PreProcessing Tab**  
+1. **PreProcessing Tab**
    - Provides tools to preprocess HRV data, such as cleaning and inspecting inter-beat intervals (IBI).
    - Displays a customizable GUI for manipulating the dataset.
 
-2. **Poincare Tab**  
+2. **Poincare Tab**
    - Visualizes HRV data using Poincaré plots, which highlight the relationships between successive IBIs.
    - Ideal for assessing nonlinear dynamics in heart rate data.
 
-3. **Descriptives Tab**  
+3. **Descriptives Tab**
    - Computes detailed descriptive statistics for IBIs, grouped by epochs.
    - Includes metrics such as mean, standard deviation, RMSSD, SDNN, SD1, SD2, and others.
    - Integrates power spectral density (PSD) results into the statistics, if available.
 
-4. **PSD Tab**  
+4. **PSD Tab**
    - Uses Welch's method to compute power spectral density (PSD) for HRV data.
    - Groups PSD results by epochs, providing insights into the frequency domain features of HRV.
 
-5. **Epochs Tab**  
+5. **Epochs Tab**
    - Visualizes epochs of HRV data using a Gantt chart.
    - Offers a clear representation of time-based data segmentation.
 
@@ -38,9 +39,9 @@ The **spectHR program** is an interactive tool designed to assist in the analysi
 - **Dataset**: The app requires a dataset containing HRV-related data, such as IBIs, epochs, and other time-series information. This dataset is expected to support operations defined in the `spectHR` library.
 
 ### Workflow
-1. **Launch the App**  
-   
-2. **Switch Between Tabs**  
+1. **Launch the App**
+
+2. **Switch Between Tabs**
    Navigate through tabs to explore different aspects of HRV analysis. The selected tab dynamically updates its content:
    - Preprocessing tools in the **PreProcessing** tab.
    - Poincaré plot in the **Poincare** tab.
@@ -48,10 +49,10 @@ The **spectHR program** is an interactive tool designed to assist in the analysi
    - PSD analysis in the **PSD** tab.
    - Epoch visualizations in the **Epochs** tab.
 
-3. **Real-Time Updates**  
+3. **Real-Time Updates**
    The app dynamically updates visualizations and calculations as you interact with each tab. Outputs are recalculated and displayed in real-time.
 
-4. **Data Saving**  
+4. **Data Saving**
    Changes to the dataset, such as computed statistics or PSD values, are saved automatically.
 
 ### Outputs
@@ -61,10 +62,11 @@ The **spectHR program** is an interactive tool designed to assist in the analysi
 
 ## Dependencies
 
-- **Python Libraries**:  
+- **Python Libraries**:
   - `pyxdf`: For reading .XDF files.
   - `pandas`: For data manipulation and statistics.
   - `matplotlib`: For plotting and graphic interaction.
+  - `PyQt5`: For the graphical user interface.
 
 ---
 
@@ -83,7 +85,6 @@ This tool is ideal for researchers, clinicians, and students who work with HRV d
 - **Zoom and Epoch Selection**: Interactively zoom into regions of interest and select epochs for marking.
 - **Spectral Analysis**: Perform cardiovascular spectral analysis to study heart rate variability and other metrics.
 
-
 ## Breathing Signal Extraction
 
 This application includes functionality for estimating a breathing-related signal from raw 3-axis accelerometer data, such as that provided by the Polar H10 chest strap. The method is designed to isolate slow, periodic motion associated with breathing while minimizing the influence of gravitational and high-frequency components.
@@ -92,13 +93,13 @@ This application includes functionality for estimating a breathing-related signa
 
 The breathing signal is extracted using a two-stage filtering process applied to the accelerometer data:
 
-1. **Gravity Removal**  
+1. **Gravity Removal**
    A low-pass Butterworth filter with a cutoff frequency of 0.04 Hz is applied separately to each accelerometer axis to estimate the quasi-static gravitational component. This estimated gravity signal is then subtracted from each axis to isolate dynamic movement.
 
-2. **Dynamic Acceleration Norm**  
+2. **Dynamic Acceleration Norm**
    After gravity removal, the norm (Euclidean magnitude) of the dynamic acceleration vector is computed across the three axes. This produces a single scalar time series representing overall movement.
 
-3. **Low-Pass Filtering for Breathing Signal**  
+3. **Low-Pass Filtering for Breathing Signal**
    To isolate breathing-related motion, a second low-pass Butterworth filter (cutoff 0.5 Hz) is applied to the dynamic acceleration norm. The resulting signal contains slow fluctuations likely associated with the respiratory cycle.
 
 ### Assumptions
@@ -110,7 +111,7 @@ The breathing signal is extracted using a two-stage filtering process applied to
 ### Requirements
 
 - Python 3.7+
- 
+
 ```python
 DataSet = cs.calcPeaks(DataSet)
 ```
@@ -135,11 +136,9 @@ This function systematically classifies Inter-Beat Intervals (IBIs) derived from
 - "SNS" (Short-Normal-Short): This label applies to a sequence of three consecutive IBIs, where a "Short" IBI is followed by a "Normal" IBI, then another "Short" IBI. This pattern highlights irregularities interspersed with typical intervals.
 
 
-
 The algorithm calculates a moving average and standard deviation of IBIs over a sliding time window (Tw), defining dynamic, individual-specific thresholds for classifying deviations. Each IBI is assessed against these thresholds and assigned an appropriate label. Subsequent steps ensure detection of sequential patterns like "SL" and "SNS," enhancing the granularity of the classification.
 
 The function also provides a summary of detected classifications, logging the frequency of each label. This systematic approach helps identify deviations from regular heartbeat intervals and potential artifacts, supporting detailed analysis of ECG data.
-
 
 ### Parameters used in the classification:
 
@@ -165,9 +164,7 @@ Affects the boundaries of normal IBIs:
 
 The thresholds are calculated as:
 
-$$
-(lower,upper) = \overline{IBI} ± (\mathbf{Nsd} \times SD(IBI))
-$$
+$$(lower,upper) = \overline{IBI} ± (\mathbf{Nsd} 	imes SD(IBI))$$
 
 Higher values of Nsd result in wider thresholds, reducing sensitivity to variations, while lower values make the classification more sensitive to smaller deviations.
 
@@ -229,15 +226,11 @@ In `spectHR`, Poincaré plots help assess the regularity and variability of the 
 
 Given a sequence of inter-beat intervals (IBI):
 
-$$
-IBI_1, IBI_2, IBI_3, \dots, IBI_n
-$$
+$$IBI_1, IBI_2, IBI_3, \dots, IBI_n$$
 
-Then: 
+Then:
 
-$$
-(IBI_i, IBI_{i+1})
-$$
+$$(IBI_i, IBI_{i+1})$$
 
 creates a scatter plot where the x-axis represents  (current interval) and the y-axis represents  (next interval).
 
@@ -261,9 +254,7 @@ Represents short-term HRV, reflecting beat-to-beat variability.
 
 Formula:
 
-$$
-SD_1 = \sqrt{\frac{1}{2} \text{Var}(IBI_{i+1} - IBI_i)}
-$$
+$$SD_1 = \sqrt{rac{1}{2} 	ext{Var}(IBI_{i+1} - IBI_i)}$$ 
 
 #### SD<sub>2</sub> (Long-term Variability)
 
@@ -273,17 +264,13 @@ Represents long-term HRV, capturing overall variability of the IBIs.
 
 Formula:
 
-$$
-SD_2 = \sqrt{2 \cdot \text{Var}(IBI_i) - \frac{1}{2} \text{Var}(IBI_{i+1} - IBI_i)}
-$$
+$$SD_2 = \sqrt{2 \cdot 	ext{Var}(IBI_i) - rac{1}{2} 	ext{Var}(IBI_{i+1} - IBI_i)}$$ 
 
 #### SD<sub>2</sub>/SD<sub>1</sub> Ratio
 
 The ratio between SD<sub>1</sub> and SD<sub>2</sub> is used to analyze the balance between short-term and long-term HRV.
 
-$$
- SD_{ratio} = \frac{SD_2}{SD_1}
-$$
+$$ SD_{ratio} = rac{SD_2}{SD_1}$$ 
 
 #### Ellipse Fitting
 
@@ -294,9 +281,7 @@ SD<sub>1</sub> corresponds to the width of the ellipse (short axis).
 SD<sub>2</sub> corresponds to the length of the ellipse (long axis).
 The area of the ellipse is often calculated as:
 
-$$
-\text{Area} = \pi \cdot SD_1 \cdot SD_2
-$$
+$$	ext{Area} = \pi \cdot SD_1 \cdot SD_2$$
 
 ---
 
