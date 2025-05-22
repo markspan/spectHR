@@ -240,7 +240,7 @@ Represents short-term HRV, reflecting beat-to-beat variability.
 
 Formula:
 
-$$SD_1 = \sqrt{rac{1}{2}\text{Var}(IBI_{i+1} - IBI_i)}$$ 
+$$SD_1 = \sqrt{\trac{1}{2}\text{Var}(IBI_{i+1} - IBI_i)}$$ 
 
 #### SD<sub>2</sub> (Long-term Variability)
 
@@ -250,7 +250,7 @@ Represents long-term HRV, capturing overall variability of the IBIs.
 
 Formula:
 
-$$SD_2 = \sqrt{2 \cdot \text{Var}(IBI_i) - rac{1}{2} \text{Var}(IBI_{i+1} - IBI_i)}$$ 
+$$SD_2 = \sqrt{2 \cdot \text{Var}(IBI_i) - \trac{1}{2} \text{Var}(IBI_{i+1} - IBI_i)}$$ 
 
 #### SD<sub>2</sub>/SD<sub>1</sub> Ratio
 
