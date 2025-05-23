@@ -4,6 +4,7 @@ import sys
 
 from PySide6.QtWidgets import QTreeWidgetItem
 
+
 def exe_dir_path(filename):
     """Get path to a file in the same directory as the executable."""
     base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
@@ -36,14 +37,18 @@ def PopulateTree(treewidget, workspace):
     treewidget.clear()
     categories = {
         "XDF Files": "*.xdf",
-        "CARSPAN Files": "*.evt"
+        "CARSPAN EVT Files": "*.evt",
+        "RR Text Files": "*.txt"
     }
+    
     treewidget.setHeaderLabels(["File Name"]) 
     for label, pattern in categories.items():
+        
         parent = QTreeWidgetItem([label])
         files = sorted(
             [f for f in os.listdir(workspace["DataDirectory"]) if f.endswith(pattern.split("*")[-1])]
         )
         for fname in files:
-            QTreeWidgetItem(parent, [fname])
+            if fname.lower() != 'requirements.txt':
+                QTreeWidgetItem(parent, [fname])
         treewidget.addTopLevelItem(parent)

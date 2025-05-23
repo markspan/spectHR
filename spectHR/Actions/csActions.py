@@ -1,13 +1,12 @@
-import numpy as np
-import pandas as pd
-
-import scipy.signal as signal
-
 import copy
 
-import spectHR as cs
+import numpy as np
+import pandas as pd
+import scipy.signal as signal
 
+import spectHR as cs
 from spectHR.Tools.Logger import logger
+
 
 def calcPeaks(DataSet, par=None):
     """
@@ -24,7 +23,7 @@ def calcPeaks(DataSet, par=None):
     
     default_par = {
         'MinPeakDistance': 300,  # ms
-        'fSample': 130,          # Sampling frequency (Hz)
+        'fSample': DataSet.ecg.srate,          # Sampling frequency (Hz)
         'MinPeakHeight': None,    # This will be computed during calcPeaks
         'Classify': True
     }
@@ -263,9 +262,10 @@ def ecgArtifactDetection(Data, par={}):
     - If any beat in the epoch exceeds the `dtw_thresh`, the entire epoch is rejected.
     """
     import copy
+
+    import neurokit2 as nk
     import numpy as np
     import pandas as pd
-    import neurokit2 as nk
     from fastdtw import fastdtw
 
     DataSet = copy.deepcopy(Data)

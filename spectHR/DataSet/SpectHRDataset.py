@@ -1,5 +1,6 @@
 import os
 import pickle
+import struct
 from datetime import datetime
 from pathlib import Path
 
@@ -192,13 +193,17 @@ class SpectHRDataset:
             logger.info(f"Loading dataset from Raw Polar File: {self.file_path}")
             self.loadRawPolar(self.file_path, flip=flip)
             self.save()
-        elif self.file_path.endswith('._csv') and Path(self.file_path).exists():
+        elif self.file_path.endswith('.csv') and Path(self.file_path).exists():
             logger.info(f"Loading dataset from Raw Harness File: {self.file_path}")
             self.loadRawHarness(self.file_path, flip=flip)
             self.save()
         elif self.file_path.endswith('.evt') and Path(self.file_path).exists():
             logger.info(f"Loading dataset from CARSPAN evt File: {self.file_path}")
             self.loadEVT(self.file_path)
+            base, ext = os.path.splitext(self.file_path)
+            if os.path.exists(base + '.nff'):
+                self.loadNFF(base + '.nff', 'ECG')
+                logger.info(f"Loading dataset from CARSPAN nff File: {self.file_path}")
             self.save()
         else:
             logger.error(f"File {self.file_path} was not found")
@@ -451,6 +456,174 @@ class SpectHRDataset:
             self.events = pd.concat(eventlist, ignore_index=True)
             self.create_epochs()
 
+    def loadNFF(self, filename, label='ECG'):
+        """
+        Retrieve channel data and corresponding timestamps from an NFF file.
+
+        Args:
+            filename (str): Path to the NFF file.
+            label (str): Label of the channel to retrieve data for.
+
+        Returns:
+            tuple: A tuple containing two pandas Series:
+                - The first Series contains the channel data.
+                - The second Series contains the corresponding timestamps.
+        """
+
+        class TNFF:
+            BLOCKSIZE = 512  # 512 * 2 bytes / block
+            MAXCHAN = 128    # allow for 128 channels
+
+            def __init__(self):
+                self.current_channel = 0
+                self.block_size_table = [0] * self.MAXCHAN
+                self.sweep_offset = [0] * self.MAXCHAN
+                self.num_channels = 0
+                self.header = bytearray(512)
+                self.channel_header = bytearray(256)
+                self.labels = [""] * self.MAXCHAN
+                self.file = None
+
+            def open_file(self, filename, mode='rb'):
+                self.file = open(filename, mode)
+
+            def close_file(self):
+                if self.file:
+                    self.file.close()
+
+            def read_nff_header(self):
+                try:
+                    self.file.seek(0)
+                    self.header = self.file.read(512)
+
+                    self.num_channels = self._get_short(self.header, 13)
+
+                    for i in range(self.MAXCHAN):
+                        self.block_size_table[i] = self.sweep_offset[i] = 0
+
+                    for chan in range(1, self.num_channels + 1):
+                        self._get_channel_header(chan)
+                        self.block_size_table[chan] = self._get_block_size()
+                        self.sweep_offset[chan] = self.sweep_offset[chan - 1] + self.block_size_table[chan - 1]
+                        self.labels[chan - 1] = self._get_label()
+
+                    self.block_size_table[0] = self.sweep_offset[self.num_channels] + self.block_size_table[self.num_channels]
+                    self.current_channel = 0
+                except Exception as e:
+                    self.close_file()
+                    raise Exception("Not a valid NFF file!") from e
+
+            def _get_short(self, data, offset):
+                return struct.unpack('<h', data[offset * 2:offset * 2 + 2])[0]
+
+            def _get_integer(self, data, offset):
+                return struct.unpack('<i', data[offset * 4:offset * 4 + 4])[0]
+
+            def _get_float(self, data, offset):
+                return struct.unpack('<f', data[offset * 4:offset * 4 + 4])[0]
+
+            def get_sample_rate(self):
+                self.sampleRate = 1000000 / self.get_interval(self.current_channel)
+                print(self.sampleRate)
+                return self.sampleRate
+
+            def get_start_time(self):
+                return self._get_float(self.header, 16)
+
+            def get_interval(self, chan):
+                self._get_channel_header(chan)
+                return self._get_integer(self.channel_header, 14)
+
+            def _get_channel_header(self, chan):
+                if chan != self.current_channel:
+                    self._read_nff_cheader(chan)
+
+            def _read_nff_cheader(self, channel_nr):
+                file_pos = 512 + 256 * (channel_nr - 1)
+                self.file.seek(file_pos)
+                self.channel_header = self.file.read(256)
+                self.current_channel = channel_nr
+
+            def _get_block_size(self):
+                return self._get_integer(self.channel_header, 16)
+
+            def _get_label(self):
+                label = []
+                for i in range(18):
+                    ch = chr(self.channel_header[120 + i])
+                    if 32 <= ord(ch) <= 122:
+                        label.append(ch)
+                    else:
+                        label.append(' ')
+                return ''.join(label).strip()
+
+            def read_channel_data(self, chan):
+                buffer = None
+                chan_block_size = self.BLOCKSIZE
+                chan_sweep_offset = (chan - 1) * self.BLOCKSIZE
+                chan_nr_samples = self._get_nr_samples()
+
+                data = [0] * chan_nr_samples
+                self._init_read_nff()
+
+                j = 0
+                while True:
+                    buffer = self._read_nff_sweep()
+                    if buffer is None:
+                        break
+
+                    for i in range(chan_block_size):
+                        if j == chan_nr_samples:
+                            break
+                        data[j] = buffer[chan_sweep_offset + i]
+                        j += 1
+
+                return data
+
+            def _init_read_nff(self):
+                file_pos = 512 + 256 * self.num_channels
+                self.file.seek(file_pos)
+
+            def _read_nff_sweep(self):
+                sweep_size = self.BLOCKSIZE * self.num_channels
+                buf = self.file.read(sweep_size * 2)
+                if len(buf) != sweep_size * 2:
+                    return None
+                return struct.unpack('<' + str(sweep_size) + 'h', buf)
+
+            def _get_nr_samples(self):
+                return self._get_integer(self.channel_header, 15)
+
+        # Create an instance of TNFF and read the file
+        nff = TNFF()
+        nff.open_file(filename)
+        nff.read_nff_header()
+
+        # Check if the label exists
+        if label not in nff.labels:
+            raise ValueError(f"Label '{label}' not found in the NFF file.")
+
+        # Get the channel data
+        chan = nff.labels.index(label) + 1
+        channel_data = nff.read_channel_data(chan)
+
+        # Get the sample rate and start time
+        sample_rate = nff.get_sample_rate()
+        start_time = nff.get_start_time()
+
+        # Create timestamps
+        num_samples = len(channel_data)
+        timestamps = [start_time + i / sample_rate for i in range(num_samples)]
+
+        # Close the file
+        nff.close_file()
+
+        # Return the data and timestamps as pandas Series
+        data_series = pd.Series(channel_data, name=label)
+        timestamp_series = pd.Series(timestamps, name='Timestamps')
+        
+        self.ecg = TimeSeries(timestamp_series, data_series, sample_rate)
+        
     @staticmethod
     def log_error(message):
         """

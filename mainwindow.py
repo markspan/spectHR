@@ -104,6 +104,7 @@ class MainWindow(QMainWindow):
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
         self.dataset = None  # Initialize dataset placeholder
     
+
     def OpenWorkSpace(self):
         """
         Open a json worksace file, holding the directories.
@@ -124,9 +125,9 @@ class MainWindow(QMainWindow):
         if not item:
             return
 
-        # Only allow context menu for raw files
-        if not item.text(0).lower().endswith('.xdf'):
-            return
+        # Only allow context menu for raw files: the ones with ecg data 
+        #if not item.text(0).lower().endswith('.xdf') and not item.text(0).lower().endswith('.txt'):
+        #    return
 
         # Create a context menu
         context_menu = QMenu(self)
@@ -223,7 +224,7 @@ class MainWindow(QMainWindow):
             return
 
         file_path = selected_items[0].text(0)
-        if file_path in ('XDF Files', 'CARSPAN Files'):
+        if file_path in ('XDF Files', 'CARSPAN EVT Files', 'RR Text Files'):
             return
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -234,11 +235,11 @@ class MainWindow(QMainWindow):
         # Update the UI with the new dataset
         #try:
         self.show_preprocessing_plot(self.dataset)
-        #self.show_ibiseries_plot(self.dataset)
+        self.show_ibiseries_plot(self.dataset)
         self.show_poincare_plot(self.dataset)
-        #self.show_epoch_plot(self.dataset)
-        #self.show_welch_psd_plot(self.dataset)
-        #self.show_parameters_plot(self.dataset)
+        self.show_epoch_plot(self.dataset)
+        self.show_welch_psd_plot(self.dataset)
+        self.show_parameters_plot(self.dataset)
         #except Exception:
         #    pass
         #finally:
@@ -295,7 +296,8 @@ class MainWindow(QMainWindow):
         data : object
             The dataset object containing RR intervals or relevant features.
         """
-        self.poincare_plot_widget.poincarePlot(data)
+        if data is not None:
+            self.poincare_plot_widget.poincarePlot(data)
 
     def show_welch_psd_plot(self, dataset):
         """
@@ -321,6 +323,9 @@ class MainWindow(QMainWindow):
             visuals = dataset.epochs.loc[dataset.epochs['label'].isin(active_epochs.keys())]        
             psd_values_list = []
             epoch_names = visuals["label"].tolist()
+            # Lists to store y-axis data
+            all_y_min = []
+            all_y_max = []
 
             for epoch in epoch_names:
                 widget = spQt.WelchPSDPlotWidget()
@@ -330,6 +335,27 @@ class MainWindow(QMainWindow):
 
                 if spectral_measures != -1:
                     psd_values_list.append(spectral_measures)
+                    # Get the current y-axis limits
+                    y_min, y_max = widget.ax.get_ylim()
+                    all_y_min.append(y_min)
+                    all_y_max.append(y_max)
+                    
+            # Determine global y-axis limits
+            global_y_min = min(all_y_min)
+            global_y_max = max(all_y_max)
+    
+            # Second pass: set y-axis limits and add widgets
+            for epoch in epoch_names:
+                widget = spQt.WelchPSDPlotWidget()
+                spectral_measures = widget.plot_psd(dataset.filtered_by_epoch[epoch], epoch, fs=4, logscale=False, nperseg=256,
+                                                noverlap=128, interp_kind='linear', window='hamming',
+                                                interpolate=True)
+
+                if spectral_measures != -1:
+                    # Set the global y-axis limits
+                    widget.ax.set_ylim(global_y_min, global_y_max)
+                    widget.canvas.draw()  # Redraw the canvas with new limits
+
                     self.welch_psd_layout.addWidget(widget)
 
             if psd_values_list:
@@ -348,7 +374,8 @@ class MainWindow(QMainWindow):
         data : object
             The dataset object containing RR intervals or relevant features.
         """
-        self.parameters_plot_widget.display_parameters(data)
+        if data is not None:
+            self.parameters_plot_widget.display_parameters(data)
 
     def add_epoch(self):
         """
@@ -369,8 +396,9 @@ class MainWindow(QMainWindow):
 
         # Add the new epoch to the dataset
         self.dataset.add_epoch_to_dataset(epoch_label, start_time, end_time)
-
+      
         # Replot the figure to include the new epoch
+        self.poincare_plot_widget.poincarePlot(self.dataset)
         self.epoch_plot_widget.plotEpoch(self.dataset)
 
 if __name__ == "__main__":

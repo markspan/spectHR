@@ -5,7 +5,7 @@ def rmssd(ibi):
     try:
         ibi = np.asarray(ibi)
         nnd = np.diff(ibi)
-        rmssd = np.sum([x**2 for x in nnd])
+        rmssd = np.nansum([x**2 for x in nnd])
         rmssd = np.sqrt(1. / nnd.size * rmssd)
     except ZeroDivisionError:
         # Return NaN if division by zero occurs
@@ -14,7 +14,7 @@ def rmssd(ibi):
 
 def sdnn(ibi):
     ibi = np.asarray(ibi)
-    return 1000.0 * np.std(ibi)
+    return 1000.0 * np.nanstd(ibi)
 
 def sd1(ibi):
     """
@@ -30,7 +30,7 @@ def sd1(ibi):
         float: The SD1 value representing short-term variability in the IBIs.
     """
     ibi = np.asarray(ibi)
-    return np.std(np.subtract(1000 * ibi[:-1],  1000 * ibi[1:]) / np.sqrt(2))
+    return np.nanstd(np.subtract(1000 * ibi[:-1],  1000 * ibi[1:]) / np.sqrt(2))
 
 def sd2(ibi):
     """
@@ -46,7 +46,7 @@ def sd2(ibi):
         float: The SD2 value representing long-term variability in the IBIs.
     """
     ibi = np.asarray(ibi)
-    return np.std(np.add(1000 * ibi[:-1],  1000 * ibi[1:]) / np.sqrt(2))
+    return np.nanstd(np.add(1000 * ibi[:-1],  1000 * ibi[1:]) / np.sqrt(2))
 
 def sd_ratio(ibi):
     """
@@ -95,7 +95,7 @@ def sdsd(ibi):
     """
     try:
         ibi = 1000.0 * np.asarray(ibi)
-        ret = np.std(np.diff(ibi))
+        ret = np.nanstd(np.diff(ibi))
     except Exception as e:
         # If calculation fails, return NaN
         ret = np.nan

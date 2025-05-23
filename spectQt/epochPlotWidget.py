@@ -42,7 +42,9 @@ class EpochPlotWidget(QWidget):
         self.setWindowTitle('Epoch Gantt Chart')
 
         # Initialize matplotlib figure and canvas
-        self.fig, self.ax = plt.subplots(figsize=(15, 7))
+        #self.fig, self.ax = plt.subplots(figsize=(15, 7))
+        self.fig = plt.figure()
+        self.ax = plt.gca()
         self.canvas = FigureCanvas(self.fig)
         self.setVisible(False)
 
@@ -65,9 +67,10 @@ class EpochPlotWidget(QWidget):
             dataset: An object with RTops (DataFrame) and optionally active_epochs (dict).
             labels (bool): If True, displays start and end time annotations on the chart.
         """
+        
         self.rectangles = []
         self.dataset = dataset
-        self.setVisible(True)
+        self.setVisible(False)
 
         # Extract relevant columns for plotting
         active_epochs = {epoch: active for epoch, active in dataset.active_epochs.items() if active}
@@ -152,7 +155,9 @@ class EpochPlotWidget(QWidget):
         plt.tight_layout()
 
         # Redraw the canvas
+        self.setVisible(True)
         self.canvas.draw()
+
 
     def on_press(self, event):
         """Handle mouse press event."""

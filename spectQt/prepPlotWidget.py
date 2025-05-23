@@ -49,8 +49,6 @@ class PrepPlotWidget(QWidget):
         self.drag_mode = None
         self.initial_xmin = None
         self.initial_xmax = None
-        self.edit_mode = "Drag"
-
         # Create a combo box for selecting the edit mode
         self.mode_selector = QComboBox()
         self.mode_selector.addItems(["Drag", "Add", "Remove"])
@@ -510,7 +508,6 @@ class PrepPlotWidget(QWidget):
 
         self.line_handler = LineHandler(self.ax_ecg, callback_drag=self.update_rtop, callback_remove=self.remove_rtop)
         self.positional_patch = self.plot_overview(self.ax_overview, data.ecg.time, data.ecg.level, self.data.x_min, self.data.x_max)
-
         # State variables for dragging
         self.drag_mode = None
         self.initial_xmin, self.initial_xmax = self.data.x_min, self.data.x_max
@@ -524,7 +521,7 @@ class PrepPlotWidget(QWidget):
         self.canvas.setParent(None)  # Remove old canvas from layout
         self.canvas = FigureCanvas(self.fig)
         self.layout.insertWidget(1, self.canvas)  # Insert new canvas in correct position
-        self.edit_mode = "Drag"
+        self.set_edit_mode("Drag")  # Default edit mode
         self.canvas.draw()
 
         return self.fig

@@ -16,3 +16,8 @@ ui_form2.py
 dist/SpectHR.exe
 tester.py
 test.py
+/dist
+*.csv
+*.csv
+nffreader.py
+testnff.py
