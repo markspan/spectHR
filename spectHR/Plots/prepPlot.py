@@ -56,7 +56,8 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
         if hasattr(data, "RTops"):
             # Plot only R-tops within x_min and x_max
             visibles = data.RTops[
-                (data.RTops["time"] >= x_min - 1) & (data.RTops["time"] <= x_max + 1)
+                (data.RTops["time"] >= x_min -
+                 1) & (data.RTops["time"] <= x_max + 1)
             ]
 
             if len(visibles) < 100:
@@ -74,7 +75,7 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
                 ax_br, data.br.time, data.br.level, x_min, x_max, line_handler
             )
             set_br_plot_properties(ax_br, x_min, x_max)
-            
+
         data.x_min = x_min
         data.x_max = x_max
         fig.canvas.draw_idle()
@@ -101,8 +102,10 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
         elif edit_mode == "Add":
             if event.inaxes == ax_ecg:
                 if edit_mode == "Add":
-                    datapoint = pd.DataFrame([{"time": event.xdata, "ID": "N", "epoch": None,"ibi": float("nan")}])
-                    data.RTops = pd.concat([data.RTops, datapoint], ignore_index=True)
+                    datapoint = pd.DataFrame(
+                        [{"time": event.xdata, "ID": "N", "epoch": None, "ibi": float("nan")}])
+                    data.RTops = pd.concat(
+                        [data.RTops, datapoint], ignore_index=True)
                     sort_rtop()
                     update_plot(x_min, x_max)
 
@@ -132,7 +135,7 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
         Resets the dragging mode upon mouse release.
         """
         nonlocal drag_mode
-        if event.inaxes == ax_overview: 
+        if event.inaxes == ax_overview:
             drag_mode = None
             update_plot(x_min, x_max)
             fig.canvas.draw_idle()
@@ -140,7 +143,7 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
     # Helper to get figure dimensions in inches
     def calculate_figsize():
         dpi = matplotlib.rcParams["figure.dpi"]  # Get the current DPI setting
-        return (13,5)
+        return (13, 5)
 
     def create_figure_axes(data):
         """
@@ -160,10 +163,10 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
 
         if data.br is not None:
             fig, (ax_ecg, ax_br, ax_overview) = plt.subplots(3, 1,
-                figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [6, 1, 1]})
+                                                             figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [6, 1, 1]})
         else:
             fig, (ax_ecg, ax_overview) = plt.subplots(2, 1,
-                figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [4, 1]})
+                                                      figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [4, 1]})
             ax_br = None
         return fig, ax_ecg, ax_overview, ax_br
 
@@ -236,15 +239,18 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
         ax.set_title("")
         ax.set_xlabel("Time (seconds)")
         ax.set_xlim(x_min, x_max)
-        ax.xaxis.set_major_locator(MultipleLocator(math.pow(10, tdisp - 1)))  # Major ticks every 1 second
-        ax.xaxis.set_minor_locator(MultipleLocator(math.pow(10, tdisp - 1) / 5))  # Minor ticks every 0.2 seconds
+        ax.xaxis.set_major_locator(MultipleLocator(
+            math.pow(10, tdisp - 1)))  # Major ticks every 1 second
+        # Minor ticks every 0.2 seconds
+        ax.xaxis.set_minor_locator(
+            MultipleLocator(math.pow(10, tdisp - 1) / 5))
         ax.get_yaxis().set_visible(False)
         ax.spines[["right", "left", "top"]].set_visible(False)
         if ax_br is not None:
             ax.get_xaxis().set_visible(False)
             ax.spines[["bottom"]].set_visible(False)
             ax.set_xlabel("")
-        
+
     def set_br_plot_properties(ax, x_min, x_max):
         """
         Configure ECG plot properties.
@@ -254,8 +260,11 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
         ax.set_title("")
         ax.set_xlabel("Time (seconds)")
         ax.set_xlim(x_min, x_max)
-        ax.xaxis.set_major_locator(MultipleLocator(math.pow(10, tdisp - 1)))  # Major ticks every 1 second
-        ax.xaxis.set_minor_locator(MultipleLocator(math.pow(10, tdisp - 1) / 5))  # Minor ticks every 0.2 seconds
+        ax.xaxis.set_major_locator(MultipleLocator(
+            math.pow(10, tdisp - 1)))  # Major ticks every 1 second
+        # Minor ticks every 0.2 seconds
+        ax.xaxis.set_minor_locator(
+            MultipleLocator(math.pow(10, tdisp - 1) / 5))
         ax.get_yaxis().set_visible(False)
         ax.spines[["right", "left", "top"]].set_visible(False)
 
@@ -264,7 +273,8 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
         Plot the ECG signal on the provided axis.
         """
         ax.clear()
-        ax.plot(ecg_time, ecg_level, label="ECG Signal", color="red", linewidth=.8, alpha=1)
+        ax.plot(ecg_time, ecg_level, label="ECG Signal",
+                color="red", linewidth=.8, alpha=1)
         ax.set_xlim(x_min, x_max)
 
     def plot_breathing_rate(ax, br_time, br_level, x_min, x_max, line_handler):
@@ -272,7 +282,8 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
         Plot breathing rate data on a separate axis.
         """
         ax.clear()
-        ax.plot(br_time, br_level, label="Breathing Signal", color="green", linewidth=.8, alpha=1)
+        ax.plot(br_time, br_level, label="Breathing Signal",
+                color="green", linewidth=.8, alpha=1)
         ax.set_xlim(x_min, x_max)
 
     def update_view():
@@ -423,6 +434,7 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
         data.RTops["ibi"] = IBI
         update_plot(x_min, x_max)
     # Mode selection dropdown widget for interaction
+
     def update_mode(change, e, d):
         """
         Update the mode in LineHandler based on dropdown selection.
@@ -439,10 +451,10 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
 
     x_min = x_min if x_min is not None else data.ecg.time.min()
     x_max = x_max if x_max is not None else data.ecg.time.max()
-    
+
     x_min = data.x_min if data.x_min is not None else x_min
     x_max = data.x_max if data.x_max is not None else x_max
-    
+
     # Create figure and axis handles
     fig, ax_ecg, ax_overview, ax_br = create_figure_axes(data)
 
@@ -450,16 +462,18 @@ def prepPlot(data, x_min=None, x_max=None, plot_poincare=False):
     fig.canvas.header_visible = False
     fig.tight_layout()
 
-    line_handler = LineHandler(ax_ecg, callback_drag=update_rtop, callback_remove=remove_rtop)
+    line_handler = LineHandler(
+        ax_ecg, callback_drag=update_rtop, callback_remove=remove_rtop)
     # area_handler = AreaHandler(fig, ax_ecg)
-    positional_patch = plot_overview(ax_overview, data.ecg.time, data.ecg.level, x_min, x_max)
+    positional_patch = plot_overview(
+        ax_overview, data.ecg.time, data.ecg.level, x_min, x_max)
 
     # State variables for dragging
     drag_mode = None
     initial_xmin, initial_xmax = x_min, x_max
 
     update_plot(x_min, x_max)
-    
+
     # Connect the patch dragging events
     bpe = fig.canvas.mpl_connect("button_press_event", on_press)
     bod = fig.canvas.mpl_connect('motion_notify_event', on_drag)

@@ -64,8 +64,7 @@ class PrepPlotWidget(QWidget):
         self.layout.addWidget(self.canvas)
         self.layout.addWidget(self.navigation_bar)
         self.setLayout(self.layout)
-        
-    
+
     def create_navigation_bar(self):
         """
         Create a navigation bar with icons and labels, and attach callbacks.
@@ -73,7 +72,7 @@ class PrepPlotWidget(QWidget):
         def make_btn(icon_name=None, text=None, callback=None, rotate=False, tooltip=None):
             btn = QPushButton()
             if icon_name:
-                #icon = self.style().standardIcon(getattr(QStyle, icon_name))
+                # icon = self.style().standardIcon(getattr(QStyle, icon_name))
                 icon = qta.icon(icon_name)
                 if rotate:
                     pixmap = icon.pixmap(QSize(48, 48))
@@ -103,14 +102,20 @@ class PrepPlotWidget(QWidget):
             return btn
 
         # Button definitions with standard Qt icons or custom icons
-        begin = make_btn('fa6s.right-to-bracket', None, self.go_to_start, 180, 'Goto Start')
-        left = make_btn('fa6s.backward', None, self.pan_left, False, 'Pan Left')
-        prev = make_btn('fa6s.square-caret-left', None, self.prev, False, 'Previous Non-Normal R-top')
+        begin = make_btn('fa6s.right-to-bracket', None,
+                         self.go_to_start, 180, 'Goto Start')
+        left = make_btn('fa6s.backward', None,
+                        self.pan_left, False, 'Pan Left')
+        prev = make_btn('fa6s.square-caret-left', None,
+                        self.prev, False, 'Previous Non-Normal R-top')
         wider = make_btn('ei.zoom-out', None, self.zoom_out, False, 'Zoom Out')
         zoom = make_btn('ei.zoom-in', None, self.zoom_in, False, 'Zoom In')
-        next = make_btn('fa6s.square-caret-right', None, self.next, False, 'Next Non-Normal R-top')
-        right = make_btn('fa6s.forward', None, self.pan_right, False, 'Pan Right')
-        end = make_btn('fa6s.right-to-bracket', None, self.go_to_end, False, 'Goto End')
+        next = make_btn('fa6s.square-caret-right', None,
+                        self.next, False, 'Next Non-Normal R-top')
+        right = make_btn('fa6s.forward', None,
+                         self.pan_right, False, 'Pan Right')
+        end = make_btn('fa6s.right-to-bracket', None,
+                       self.go_to_end, False, 'Goto End')
 
         # Layout to hold buttons
         nav_layout = QHBoxLayout()
@@ -129,7 +134,7 @@ class PrepPlotWidget(QWidget):
     def set_edit_mode(self, mode):
         self.edit_mode = mode
         self.line_handler.update_mode(mode)
- 
+
     def zoom_in(self):
         x_range = (self.data.x_max - self.data.x_min) / 3
         middle = (self.data.x_max + self.data.x_min) / 2
@@ -141,18 +146,21 @@ class PrepPlotWidget(QWidget):
         x_range = (self.data.x_max - self.data.x_min) / 1.5
         middle = (self.data.x_max + self.data.x_min) / 2
         self.data.x_min = max(middle - x_range, self.data.ecg.time.iat[0])
-        self.data.x_max = min(self.data.x_min + (2 * x_range), self.data.ecg.time.iat[-1])
+        self.data.x_max = min(
+            self.data.x_min + (2 * x_range), self.data.ecg.time.iat[-1])
         self.update_view()
 
     def pan_left(self):
         x_range = self.data.x_max - self.data.x_min
-        self.data.x_min = max(self.data.ecg.time.iat[0], self.data.x_min - x_range)
+        self.data.x_min = max(
+            self.data.ecg.time.iat[0], self.data.x_min - x_range)
         self.data.x_max = self.data.x_min + x_range
         self.update_view()
 
     def pan_right(self):
         x_range = self.data.x_max - self.data.x_min
-        self.data.x_min = min(self.data.ecg.time.iat[-1] - x_range, self.data.x_min + x_range)
+        self.data.x_min = min(
+            self.data.ecg.time.iat[-1] - x_range, self.data.x_min + x_range)
         self.data.x_max = self.data.x_min + x_range
         self.update_view()
 
@@ -170,19 +178,23 @@ class PrepPlotWidget(QWidget):
 
     def next(self):
         x_range = self.data.x_max - self.data.x_min
-        idx = (self.data.RTops["ID"] != "N") & (self.data.RTops["time"] > self.data.x_max)
-        center = self.data.RTops.loc[idx, "time"].iloc[0] if idx.any() else None
+        idx = (self.data.RTops["ID"] != "N") & (
+            self.data.RTops["time"] > self.data.x_max)
+        center = self.data.RTops.loc[idx,
+                                     "time"].iloc[0] if idx.any() else None
 
         if center is not None:
             self.data.x_min = center - (0.5 * x_range)
-            self.data.x_max = self.data.x_min + x_range        
-        
+            self.data.x_max = self.data.x_min + x_range
+
         self.update_view()
 
     def prev(self):
         x_range = self.data.x_max - self.data.x_min
-        idx = (self.data.RTops["ID"] != "N") & (self.data.RTops["time"] < self.data.x_min)
-        center = self.data.RTops.loc[idx, "time"].iloc[-1] if idx.any() else None
+        idx = (self.data.RTops["ID"] != "N") & (
+            self.data.RTops["time"] < self.data.x_min)
+        center = self.data.RTops.loc[idx,
+                                     "time"].iloc[-1] if idx.any() else None
 
         if center is not None:
             self.data.x_min = center - (0.5 * x_range)
@@ -195,28 +207,33 @@ class PrepPlotWidget(QWidget):
         Redraw the ECG plot, R-top times, and breathing rate (if available).
         This function also adjusts the plot properties for the selected x-axis limits.
         """
-        self.plot_ecg_signal(self.ax_ecg, self.data.ecg.time, self.data.ecg.level) # type: ignore
+        self.plot_ecg_signal(self.ax_ecg, self.data.ecg.time,
+                             self.data.ecg.level)  # type: ignore
         # Plot R-top times if available in the data
         if hasattr(self.data, "RTops"):
             # Plot only R-tops within x_min and x_max
             visibles = self.data.RTops[
-                (self.data.RTops["time"] >= self.data.x_min - 1) & (self.data.RTops["time"] <= self.data.x_max + 1)
+                (self.data.RTops["time"] >= self.data.x_min -
+                 1) & (self.data.RTops["time"] <= self.data.x_max + 1)
             ]
 
             if len(visibles) < 100:
                 self.plot_rtop_times(
                     self.ax_ecg, visibles, self.line_handler
                 )  # Plot VLines in the current view, if there are less than 100
-                self.ax_ecg.set_ylim(self.ax_ecg.get_ylim()[0], self.ax_ecg.get_ylim()[1] * 1.2)
+                self.ax_ecg.set_ylim(self.ax_ecg.get_ylim()[
+                                     0], self.ax_ecg.get_ylim()[1] * 1.2)
 
-            self.set_ecg_plot_properties(self.ax_ecg, self.data.x_min, self.data.x_max)
+            self.set_ecg_plot_properties(
+                self.ax_ecg, self.data.x_min, self.data.x_max)
 
             # Plot the breathing rate if available in the data
             if self.ax_br is not None and self.data.br is not None:
                 self.plot_breathing_rate(
                     self.ax_br, self.data.br.time, self.data.br.level, self.data.x_min, self.data.x_max, self.line_handler
                 )
-                self.set_br_plot_properties(self.ax_br, self.data.x_min, self.data.x_max)
+                self.set_br_plot_properties(
+                    self.ax_br, self.data.x_min, self.data.x_max)
 
             self.ax_overview.figure.canvas.draw()
             self.fig.canvas.draw_idle()
@@ -240,8 +257,10 @@ class PrepPlotWidget(QWidget):
                     self.drag_mode = "center"
         elif self.edit_mode == "Add":
             if event.inaxes == self.ax_ecg:
-                datapoint = pd.DataFrame([{"time": event.xdata, "ID": "N", "epoch": None, "ibi": float("nan")}])
-                self.data.RTops = pd.concat([self.data.RTops, datapoint], ignore_index=True)
+                datapoint = pd.DataFrame(
+                    [{"time": event.xdata, "ID": "N", "epoch": None, "ibi": float("nan")}])
+                self.data.RTops = pd.concat(
+                    [self.data.RTops, datapoint], ignore_index=True)
                 self.sort_rtop()
                 self.update_plot()
 
@@ -257,7 +276,8 @@ class PrepPlotWidget(QWidget):
             elif self.drag_mode == "right":
                 self.data.x_max = max(event.xdata, self.data.x_min + 0.1)
             elif self.drag_mode == "center":
-                dx = event.xdata - 0.5 * (self.initial_xmin + self.initial_xmax)
+                dx = event.xdata - 0.5 * \
+                    (self.initial_xmin + self.initial_xmax)
                 self.data.x_min = self.initial_xmin + dx
                 self.data.x_max = self.initial_xmax + dx
             # Update the zoom box position
@@ -294,15 +314,15 @@ class PrepPlotWidget(QWidget):
         figsize = self.calculate_figsize()
         if data.br is not None:
             fig, (ax_ecg, ax_br, ax_overview) = plt.subplots(3, 1,
-                figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [6, 1, 1]})
+                                                             figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [6, 1, 1]})
         else:
             fig, (ax_ecg, ax_overview) = plt.subplots(2, 1,
-                figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [4, 1]})
+                                                      figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [4, 1]})
             ax_br = None
 
-        #self.canvas.setParent(None)  # Remove old canvas from layout
-        #self.canvas = FigureCanvas(self.fig)
-        #self.layout.insertWidget(1, self.canvas)  # Insert new canvas in correct position
+        # self.canvas.setParent(None)  # Remove old canvas from layout
+        # self.canvas = FigureCanvas(self.fig)
+        # self.layout.insertWidget(1, self.canvas)  # Insert new canvas in correct position
 
         return fig, ax_ecg, ax_overview, ax_br
 
@@ -372,8 +392,11 @@ class PrepPlotWidget(QWidget):
         ax.set_title("")
         ax.set_xlabel("Time (seconds)")
         ax.set_xlim(x_min, x_max)
-        ax.xaxis.set_major_locator(MultipleLocator(math.pow(10, tdisp - 1)))  # Major ticks every 1 second
-        ax.xaxis.set_minor_locator(MultipleLocator(math.pow(10, tdisp - 1) / 5))  # Minor ticks every 0.2 seconds
+        ax.xaxis.set_major_locator(MultipleLocator(
+            math.pow(10, tdisp - 1)))  # Major ticks every 1 second
+        # Minor ticks every 0.2 seconds
+        ax.xaxis.set_minor_locator(
+            MultipleLocator(math.pow(10, tdisp - 1) / 5))
         ax.get_yaxis().set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
@@ -391,8 +414,11 @@ class PrepPlotWidget(QWidget):
         ax.set_title("")
         ax.set_xlabel("Time (seconds)")
         ax.set_xlim(x_min, x_max)
-        ax.xaxis.set_major_locator(MultipleLocator(math.pow(10, tdisp - 1)))  # Major ticks every 1 second
-        ax.xaxis.set_minor_locator(MultipleLocator(math.pow(10, tdisp - 1) / 5))  # Minor ticks every 0.2 seconds
+        ax.xaxis.set_major_locator(MultipleLocator(
+            math.pow(10, tdisp - 1)))  # Major ticks every 1 second
+        # Minor ticks every 0.2 seconds
+        ax.xaxis.set_minor_locator(
+            MultipleLocator(math.pow(10, tdisp - 1) / 5))
         ax.get_yaxis().set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
@@ -403,7 +429,8 @@ class PrepPlotWidget(QWidget):
         Plot the ECG signal on the provided axis.
         """
         ax.clear()
-        ax.plot(ecg_time, ecg_level, label="ECG Signal", color="red", linewidth=0.8, alpha=1)
+        ax.plot(ecg_time, ecg_level, label="ECG Signal",
+                color="red", linewidth=0.8, alpha=1)
         ax.set_xlim(self.data.x_min, self.data.x_max)
 
     def plot_breathing_rate(self, ax, br_time, br_level, x_min, x_max, line_handler):
@@ -411,7 +438,8 @@ class PrepPlotWidget(QWidget):
         Plot breathing rate data on a separate axis.
         """
         ax.clear()
-        ax.plot(br_time, br_level, label="Breathing Signal", color="green", linewidth=0.8, alpha=1)
+        ax.plot(br_time, br_level, label="Breathing Signal",
+                color="green", linewidth=0.8, alpha=1)
         ax.set_xlim(x_min, x_max)
 
     def update_view(self):
@@ -483,7 +511,7 @@ class PrepPlotWidget(QWidget):
         plt.title("")
 
         # Initialize x-axis limits based on input or data
-        
+
         x_min = x_min if x_min is not None else self.data.ecg.time.min()
         x_max = x_max if x_max is not None else self.data.ecg.time.max()
 
@@ -492,10 +520,11 @@ class PrepPlotWidget(QWidget):
             self.data.x_max = x_max
         self.data.x_min = self.data.x_min if self.data.x_min is not None else x_min
         self.data.x_max = self.data.x_max if self.data.x_max is not None else x_max
-        
+
         # Create figure and axis handles
         if fig is None:
-            self.fig, self.ax_ecg, self.ax_overview, self.ax_br = self.create_figure_axes(data)
+            self.fig, self.ax_ecg, self.ax_overview, self.ax_br = self.create_figure_axes(
+                data)
         else:
             self.ax_ecg = self.fig.axes[0]
             self.ax_overview = self.fig.axes[1]
@@ -506,8 +535,10 @@ class PrepPlotWidget(QWidget):
         self.fig.canvas.header_visible = False
         self.fig.tight_layout()
 
-        self.line_handler = LineHandler(self.ax_ecg, callback_drag=self.update_rtop, callback_remove=self.remove_rtop)
-        self.positional_patch = self.plot_overview(self.ax_overview, data.ecg.time, data.ecg.level, self.data.x_min, self.data.x_max)
+        self.line_handler = LineHandler(
+            self.ax_ecg, callback_drag=self.update_rtop, callback_remove=self.remove_rtop)
+        self.positional_patch = self.plot_overview(
+            self.ax_overview, data.ecg.time, data.ecg.level, self.data.x_min, self.data.x_max)
         # State variables for dragging
         self.drag_mode = None
         self.initial_xmin, self.initial_xmax = self.data.x_min, self.data.x_max
@@ -517,10 +548,12 @@ class PrepPlotWidget(QWidget):
         # Connect the patch dragging events
         bpe = self.fig.canvas.mpl_connect("button_press_event", self.on_press)
         bod = self.fig.canvas.mpl_connect('motion_notify_event', self.on_drag)
-        bor = self.fig.canvas.mpl_connect('button_release_event', self.on_release)
+        bor = self.fig.canvas.mpl_connect(
+            'button_release_event', self.on_release)
         self.canvas.setParent(None)  # Remove old canvas from layout
         self.canvas = FigureCanvas(self.fig)
-        self.layout.insertWidget(1, self.canvas)  # Insert new canvas in correct position
+        # Insert new canvas in correct position
+        self.layout.insertWidget(1, self.canvas)
         self.set_edit_mode("Drag")  # Default edit mode
         self.canvas.draw()
 

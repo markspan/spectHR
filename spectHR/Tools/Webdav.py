@@ -19,7 +19,7 @@ def initWebdav():
 
     Returns:
         easywebdav.Client: A WebDAV client instance.
-    
+
     Raises:
         KeyError: If required environment variables are not set.
     """
@@ -37,7 +37,8 @@ def initWebdav():
         username=username,
         password=password,
         protocol='https',  # Explicit protocol declaration
-        path=f"{base_path}/XDFData"  # Path to the specific directory on the server
+        # Path to the specific directory on the server
+        path=f"{base_path}/XDFData"
     )
     return webdav
 
@@ -83,15 +84,17 @@ def copyWebdav(file_path):
 
             # Check if the file exists on the server
             if filename in xdf_files:
-                logger.info(f'Copying "{filename}" to local storage ({datadir}).')
-                
+                logger.info(
+                    f'Copying "{filename}" to local storage ({datadir}).')
+
                 # Ensure local directory exists
                 Path(datadir).mkdir(parents=True, exist_ok=True)
-                
+
                 # Download the file
                 webdav.download(filename, str(full_path))
             else:
-                logger.warning(f'File "{filename}" not found on WebDAV server.')
+                logger.warning(
+                    f'File "{filename}" not found on WebDAV server.')
                 return False
         except Exception as e:
             logger.error(f'Error during WebDAV file retrieval: {e}')

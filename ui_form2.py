@@ -89,11 +89,16 @@ class Ui_MainWindow(object):
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
-        self.Views.setTabText(self.Views.indexOf(self.PreProcessing), _translate("MainWindow", "PreProcessing"))
-        self.Views.setTabText(self.Views.indexOf(self.Poincare), _translate("MainWindow", "Poincare"))
-        self.Views.setTabText(self.Views.indexOf(self.Epochs), _translate("MainWindow", "Epochs"))
-        self.Views.setTabText(self.Views.indexOf(self.Profiles), _translate("MainWindow", "Profiles"))
+        self.Views.setTabText(self.Views.indexOf(
+            self.PreProcessing), _translate("MainWindow", "PreProcessing"))
+        self.Views.setTabText(self.Views.indexOf(
+            self.Poincare), _translate("MainWindow", "Poincare"))
+        self.Views.setTabText(self.Views.indexOf(
+            self.Epochs), _translate("MainWindow", "Epochs"))
+        self.Views.setTabText(self.Views.indexOf(
+            self.Profiles), _translate("MainWindow", "Profiles"))
         self.menufile.setTitle(_translate("MainWindow", "WorkSpace"))
         self.menuView.setTitle(_translate("MainWindow", "View"))
-        self.actionOpen_Workspace.setText(_translate("MainWindow", "Open Workspace"))
+        self.actionOpen_Workspace.setText(
+            _translate("MainWindow", "Open Workspace"))
         self.actionSettings.setText(_translate("MainWindow", "Settings"))

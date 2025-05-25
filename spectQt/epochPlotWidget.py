@@ -42,7 +42,7 @@ class EpochPlotWidget(QWidget):
         self.setWindowTitle('Epoch Gantt Chart')
 
         # Initialize matplotlib figure and canvas
-        #self.fig, self.ax = plt.subplots(figsize=(15, 7))
+        # self.fig, self.ax = plt.subplots(figsize=(15, 7))
         self.fig = plt.figure()
         self.ax = plt.gca()
         self.canvas = FigureCanvas(self.fig)
@@ -67,21 +67,23 @@ class EpochPlotWidget(QWidget):
             dataset: An object with RTops (DataFrame) and optionally active_epochs (dict).
             labels (bool): If True, displays start and end time annotations on the chart.
         """
-        
+
         self.rectangles = []
         self.dataset = dataset
         self.setVisible(False)
 
         # Extract relevant columns for plotting
-        active_epochs = {epoch: active for epoch, active in dataset.active_epochs.items() if active}
+        active_epochs = {epoch: active for epoch,
+                         active in dataset.active_epochs.items() if active}
 
         # Use the keys of the filtered dictionary to select rows from the DataFrame
-        visuals = dataset.epochs.loc[dataset.epochs['label'].isin(active_epochs.keys())]        
+        visuals = dataset.epochs.loc[dataset.epochs['label'].isin(
+            active_epochs.keys())]
         epoch_names = visuals["label"].tolist()
         start_times = visuals["starttime"].tolist()
         durations = (visuals["endtime"] - visuals["starttime"]).tolist()
         end_times = visuals["endtime"].tolist()
-        
+
         # Generate unique colors for each epoch using a colormap
         colors = plt.cm.tab20(np.linspace(0, 1, len(epoch_names)))
         self.color_dict = dict(zip(epoch_names, colors))
@@ -110,7 +112,8 @@ class EpochPlotWidget(QWidget):
 
             # Annotate end time
             end_text = self.ax.text(
-                start_times[i] + durations[i], i, f"{round(start_times[i] + durations[i])}",
+                start_times[i] +
+                durations[i], i, f"{round(start_times[i] + durations[i])}",
                 va="center", ha="right", fontsize=8, rotation='vertical'
             )
 
@@ -158,12 +161,11 @@ class EpochPlotWidget(QWidget):
         self.setVisible(True)
         self.canvas.draw()
 
-
     def on_press(self, event):
         """Handle mouse press event."""
         if event.inaxes != self.ax:
             return
-        
+
         # Check if a rectangle was clicked
         for rect_data in self.rectangles:
             rect = rect_data['rect']
@@ -173,7 +175,7 @@ class EpochPlotWidget(QWidget):
                 self.press_x = event.xdata
                 rect_x, rect_y = rect.get_xy()
                 rect_width = rect.get_width()
-                
+
                 # Determine if the left or right part of the rectangle is clicked
                 if abs(event.xdata - rect_x) < rect_width / 2:
                     self.drag_side = 'left'  # Dragging the start time
@@ -198,9 +200,10 @@ class EpochPlotWidget(QWidget):
                 rect.set_width(rect_data['stop'] - new_start)
                 rect_data['rect'] = rect
                 # Update start time annotation
-                rect_data['start_text'].set_position((new_start, rect.get_y() + rect.get_height() / 2))
+                rect_data['start_text'].set_position(
+                    (new_start, rect.get_y() + rect.get_height() / 2))
                 rect_data['start_text'].set_text(f"{round(new_start)}")
-                
+
         elif self.drag_side == 'right':
             # Set the end time to the current cursor position
             new_end = event.xdata
@@ -209,7 +212,8 @@ class EpochPlotWidget(QWidget):
                 rect_data['stop'] = new_end
                 rect_data['rect'] = rect
                 # Update end time annotation
-                rect_data['end_text'].set_position((new_end, rect.get_y() + rect.get_height() / 2))
+                rect_data['end_text'].set_position(
+                    (new_end, rect.get_y() + rect.get_height() / 2))
                 rect_data['end_text'].set_text(f"{round(new_end)}")
 
         # Redraw the canvas
@@ -234,16 +238,17 @@ class EpochPlotWidget(QWidget):
         Update the RTops filtered by epoch DataFrame to reflect the new epoch boundaries.
         """
         # Filter RTops data by epoch
-        
+
         self.dataset.filtered_by_epoch = {}
-        
+
         for _, epoch in self.dataset.epochs.iterrows():
             unique_epoch = epoch['label']
             start_time = epoch['starttime']
             end_time = epoch['endtime']
 
             # Filter RTops data for the current epoch
-            mask = (self.dataset.RTops['time'] >= start_time) & (self.dataset.RTops['time'] <= end_time)
+            mask = (self.dataset.RTops['time'] >= start_time) & (
+                self.dataset.RTops['time'] <= end_time)
             filtered_data = self.dataset.RTops[mask]
 
             # Store the filtered data in the dictionary
@@ -256,21 +261,25 @@ class EpochPlotWidget(QWidget):
             current_text = label.get_text()
 
             # Use QInputDialog to get new label text
-            new_text, ok = QInputDialog.getText(self, 'Rename Epoch', 'New name:', text=current_text)
+            new_text, ok = QInputDialog.getText(
+                self, 'Rename Epoch', 'New name:', text=current_text)
             if ok:
                 if new_text == '':
                     # If the new text is empty, delete the epoch
-                    index = self.ax.get_yticks().tolist().index(label.get_position()[1])
+                    index = self.ax.get_yticks().tolist().index(
+                        label.get_position()[1])
                     old_epoch_name = self.yticklabels[index]
                     self.delete_epoch_from_dataset(old_epoch_name)
                 else:
                     # Update the label text
                     if new_text.lower() in self.dataset.epochs['label'].str.lower().values:
                         # If the new name already exists, show a warning
-                        print(f"Epoch name '{new_text}' already exists. Please choose a different name.")
+                        print(
+                            f"Epoch name '{new_text}' already exists. Please choose a different name.")
                         return
                     label.set_text(new_text)
-                    index = self.ax.get_yticks().tolist().index(label.get_position()[1])
+                    index = self.ax.get_yticks().tolist().index(
+                        label.get_position()[1])
                     old_epoch_name = self.yticklabels[index]
                     self.yticklabels[index] = new_text
                     self.update_epoch_name_in_dataset(old_epoch_name, new_text)
@@ -292,13 +301,15 @@ class EpochPlotWidget(QWidget):
         # Update the epoch name in the events DataFrame
         if self.dataset.events is not None:
             self.dataset.events['label'] = self.dataset.events['label'].apply(
-                lambda label: label.replace(old_name, new_name.lower()) if old_name.lower() in label.lower() else label.lower()
+                lambda label: label.replace(old_name, new_name.lower(
+                )) if old_name.lower() in label.lower() else label.lower()
             )
 
         # Update the epoch name in the epoch series
         if hasattr(self.dataset, 'epochs'):
             self.dataset.epochs = self.dataset.epochs.apply(
-                lambda epochs: [new_name.lower() if epoch == old_name.lower() else epoch for epoch in epochs]
+                lambda epochs: [new_name.lower() if epoch ==
+                                old_name.lower() else epoch for epoch in epochs]
             )
 
         # Update the active epochs
@@ -306,7 +317,7 @@ class EpochPlotWidget(QWidget):
             isactive = self.dataset.active_epochs[old_name.lower()]
             del self.dataset.active_epochs[old_name.lower()]
             self.dataset.active_epochs[new_name.lower()] = isactive
-            
+
     def delete_epoch_from_dataset(self, epoch_name):
         """
         Delete an epoch from the dataset.
@@ -321,17 +332,16 @@ class EpochPlotWidget(QWidget):
         if self.dataset.events is not None:
             self.dataset.events = self.dataset.events[
                 ~self.dataset.events['label'].str.lower().str.startswith(f'start {epoch_name.lower()}') &
-                ~self.dataset.events['label'].str.lower().str.startswith(f'stop {epoch_name.lower()}')
+                ~self.dataset.events['label'].str.lower().str.startswith(
+                    f'stop {epoch_name.lower()}')
             ].reset_index(drop=True)
 
         # Update the epoch series to remove the epoch
         if hasattr(self.dataset, 'epoch'):
             self.dataset.epoch = self.dataset.epoch.apply(
-                lambda epochs: [epoch.lower() for epoch in epochs if epoch.lower() != epoch_name.lower()]
+                lambda epochs: [
+                    epoch.lower() for epoch in epochs if epoch.lower() != epoch_name.lower()]
             )
-               # Update the active epochs
+            # Update the active epochs
         if hasattr(self.dataset, 'active_epochs'):
             del self.dataset.active_epochs[epoch_name.lower()]
-            
-
-

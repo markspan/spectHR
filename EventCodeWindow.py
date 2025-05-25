@@ -4,11 +4,12 @@ from PySide6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout,
                                QListWidget, QPushButton, QWidget, QLabel)
 from PySide6.QtCore import Qt, Signal
 
+
 class EventCodeWindow(QDialog):
     # Define a signal to emit the selected start and stop codes
     codes_selected = Signal(list, list)
 
-    def __init__(self, event_codes, ignore = None, parent=None):
+    def __init__(self, event_codes, ignore=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Event Code Selection")
         self.setGeometry(100, 100, 600, 400)
@@ -89,12 +90,15 @@ class EventCodeWindow(QDialog):
 
     def update_ok_button_state(self):
         """Enable the OK button if the number of start and stop codes are equal."""
-        self.ok_button.setEnabled(self.start_codes_list.count() == self.stop_codes_list.count())
+        self.ok_button.setEnabled(
+            self.start_codes_list.count() == self.stop_codes_list.count())
 
     def on_ok(self):
         """Handle the OK button click event."""
-        start_codes = [int(self.start_codes_list.item(i).text()) for i in range(self.start_codes_list.count())]
-        stop_codes = [int(self.stop_codes_list.item(i).text()) for i in range(self.stop_codes_list.count())]
+        start_codes = [int(self.start_codes_list.item(i).text())
+                       for i in range(self.start_codes_list.count())]
+        stop_codes = [int(self.stop_codes_list.item(i).text())
+                      for i in range(self.stop_codes_list.count())]
 
         # Emit the selected start and stop codes
         self.codes_selected.emit(start_codes, stop_codes)

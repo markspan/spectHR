@@ -1,7 +1,7 @@
 import spectHR as cs
 
 
-def PreProcessFile(workspace, file_path, reset = False):
+def PreProcessFile(workspace, file_path, reset=False):
     """
     Load and preprocess an ECG dataset from a given file path.
 
@@ -26,7 +26,8 @@ def PreProcessFile(workspace, file_path, reset = False):
         dataset.has_ecg = True
         dataset = cs.borderData(dataset)
         # Apply a high-pass filter to remove baseline drift
-        dataset = cs.filterECGData(dataset, {"filterType": "highpass", "cutoff": 1})
+        dataset = cs.filterECGData(
+            dataset, {"filterType": "highpass", "cutoff": 1})
 
         # Compute R-peaks only if not already present
         if not hasattr(dataset, 'RTops'):

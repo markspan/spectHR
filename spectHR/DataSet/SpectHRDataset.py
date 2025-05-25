@@ -1,7 +1,6 @@
 import os
 import pickle
 import struct
-
 from datetime import datetime
 from pathlib import Path
 from collections import Counter
@@ -18,7 +17,6 @@ from spectHR.Actions.csBreathing import calculate_breathing_signal
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.Webdav import copyWebdav
 
-
 class TimeSeries:
     """
     A class to represent a time series with time and level data, along with optional sampling rate.
@@ -31,13 +29,6 @@ class TimeSeries:
         Values corresponding to each timestamp.
     srate : float
         Sampling rate, calculated if not provided.
-
-    Methods:
-    -------
-    slicetime(time_min, time_max):
-        Returns a subset of the TimeSeries between specified time bounds.
-    to_dataframe():
-        Converts the TimeSeries to a Pandas DataFrame.
     """
 
     def __init__(self, x, y, srate=None):
@@ -53,7 +44,8 @@ class TimeSeries:
         self.level = pd.Series(y)
 
         # Automatically calculate sampling rate if not provided
-        self.srate = srate if srate is not None else round(1.0 / self.time.diff().mean())
+        self.srate = srate if srate is not None else round(
+            1.0 / self.time.diff().mean())
 
     def slicetime(self, time_min, time_max):
         """
@@ -101,13 +93,6 @@ class SpectHRDataset:
         Parameters associated with various actions.
     starttime : float
         The start time of the dataset.
-
-    Methods:
-    -------
-    loadData(filename, ecg_index=None, br_index=None, event_index=None):
-        Loads data from an XDF file and initializes the dataset.
-    log_action(action_name, params):
-        Logs an action with its parameters into the dataset history.
     """
 
     def __init__(self, workspace, filename, ecg_index=None, br_index=None, event_index=None, par=None, reset=False, use_webdav=False, flip=False):
@@ -138,15 +123,15 @@ class SpectHRDataset:
         """
         # Initialize dataset attributes
         self.ecg = None  # ECG data
-        
-        if workspace == None:
+
+        if workspace is None:
             cwd = os.getcwd()
             workspace = {
                 "DataDirectory": cwd,
                 "CacheDirectory": os.path.join(cwd, "cache"),
                 "OutputDirectory": cwd
             }
-            
+
         self.workspace = workspace
         self.has_ecg = True
         self.br = None  # Breathing data
@@ -156,16 +141,18 @@ class SpectHRDataset:
         self.history = []  # History of processing steps
         self.par = par if par is not None else {}  # Dataset parameters
         self.starttime = None  # Start time of the recording
-        
+
         self.toMatlab = False
         # Set up file paths and directories
 
-        self.datadir = self.workspace['DataDirectory']  # Directory of the input file
+        # Directory of the input file
+        self.datadir = self.workspace['DataDirectory']
         self.filename = os.path.basename(filename)  # Extract filename
-        self.pkl_filename = os.path.splitext(self.filename)[0] + ".pkl"  # Name for cached pickle file
-        self.file_path = os.path.join(self.datadir, self.filename)  # Full path to the input file
+        self.pkl_filename = os.path.splitext(
+            self.filename)[0] + ".pkl"  # Name for cached pickle file
+        # Full path to the input file
+        self.file_path = os.path.join(self.datadir, self.filename)
 
-        # TODO this should be put in workspace code
         # Ensure a valid data directory
         if not self.datadir:
             self.datadir = os.getcwd()
@@ -178,7 +165,7 @@ class SpectHRDataset:
             os.makedirs(cache_dir)
         # Path to the cached pickle file
         self.pkl_path = os.path.join(cache_dir, self.pkl_filename)
-        # upto here
+
         # Fetch the file via WebDAV if needed
         if use_webdav:
             if not Path(self.file_path).exists():
@@ -190,23 +177,28 @@ class SpectHRDataset:
             self.load_from_pickle()
         elif self.file_path.endswith('.xdf') and Path(self.file_path).exists():
             logger.info(f"Loading dataset from XDF: {self.file_path}")
-            self.loadData(self.file_path, ecg_index, br_index, event_index, flip=flip)
+            self.loadData(self.file_path, ecg_index,
+                          br_index, event_index, flip=flip)
             self.save()
         elif self.file_path.endswith('.txt') and Path(self.file_path).exists():
-            logger.info(f"Loading dataset from Raw Polar File: {self.file_path}")
+            logger.info(
+                f"Loading dataset from Raw Polar File: {self.file_path}")
             self.loadRawPolar(self.file_path, flip=flip)
             self.save()
         elif self.file_path.endswith('.csv') and Path(self.file_path).exists():
-            logger.info(f"Loading dataset from Raw Harness File: {self.file_path}")
+            logger.info(
+                f"Loading dataset from Raw Harness File: {self.file_path}")
             self.loadRawHarness(self.file_path, flip=flip)
             self.save()
         elif self.file_path.endswith('.evt') and Path(self.file_path).exists():
-            logger.info(f"Loading dataset from CARSPAN evt File: {self.file_path}")
+            logger.info(
+                f"Loading dataset from CARSPAN evt File: {self.file_path}")
             self.loadEVT(self.file_path)
             base, ext = os.path.splitext(self.file_path)
             if os.path.exists(base + '.nff'):
                 self.loadNFF(base + '.nff', 'ECG')
-                logger.info(f"Loading dataset from CARSPAN nff File: {self.file_path}")
+                logger.info(
+                    f"Loading dataset from CARSPAN nff File: {self.file_path}")
             self.save()
         else:
             logger.error(f"File {self.file_path} was not found")
@@ -230,7 +222,8 @@ class SpectHRDataset:
                 rtops_data = self.RTops.copy()
                 # Convert lists to arrays and ensure no None values
                 if 'epoch' in rtops_data.columns:
-                    rtops_data['epoch'] = rtops_data['epoch'].apply(lambda x: np.array([str(v) for v in x if v is not None]) if isinstance(x, (list, set)) else x)
+                    rtops_data['epoch'] = rtops_data['epoch'].apply(lambda x: np.array(
+                        [str(v) for v in x if v is not None]) if isinstance(x, (list, set)) else x)
                 data_fields['RTops'] = rtops_data
 
             try:
@@ -288,20 +281,25 @@ class SpectHRDataset:
 
         self.RTops = rtops[['time', 'ibi']]
         self.RTops['ID'] = 'N'
-        
-        event_code_window = EventCodeWindow(df['event_code'].unique(), ignore = most_common_event_code)
-        event_code_window.codes_selected.connect(self.on_codes_selected)
-        event_code_window.exec()
 
-        # Step 3: Extract start and end codes (11 and 21)
-        #start_times = df[df['event_code'] == 11]['time'].tolist()
-        #end_times = df[df['event_code'] == 21]['time'].tolist()
+        if len(df['event_code'].unique()) > 2:
+            event_code_window = EventCodeWindow(
+                df['event_code'].unique(), ignore=most_common_event_code)
+            event_code_window.codes_selected.connect(self.on_codes_selected)
+            event_code_window.exec()
 
-        start_times = df[df['event_code'].isin(self.start_codes)]['time'].tolist()
-        end_times = df[df['event_code'].isin(self.stop_codes)]['time'].tolist()
+            start_times = df[df['event_code'].isin(
+                self.start_codes)]['time'].tolist()
+            end_times = df[df['event_code'].isin(
+                self.stop_codes)]['time'].tolist()
+
+        else:  # less then two non-r-top codes available.
+            start_times = [times[0]]
+            end_times = [times[-1]]
 
         if len(start_times) != len(end_times):
-            raise ValueError("Mismatched number of start (11) and end (21) codes.")
+            raise ValueError(
+                "Mismatched number of start (11) and end (21) codes.")
 
         # Step 4: Build structured events
         event_timestamps = []
@@ -323,17 +321,15 @@ class SpectHRDataset:
         ecg_levels = 1000.0 / rtops['ibi']
 
         self.ecg = cs.TimeSeries(ecg_timestamps, ecg_levels)
-    
+
         # Step 5: Classify the RTops
         classify(self)
 
         # Initialize epochs
         self.create_epochs()
- 
+
     def on_codes_selected(self, start_codes, stop_codes):
         """Handle the selected start and stop codes."""
-        print("Start Codes:", start_codes)
-        print("Stop Codes:", stop_codes)
         self.start_codes = start_codes
         self.stop_codes = stop_codes
 
@@ -366,7 +362,8 @@ class SpectHRDataset:
 
         # Extract ECG levels and timestamps
         ecg_levels = rawdata.loc[:, "ecg [uV]"]
-        ecg_timestamps = rawdata.loc[:, "timestamp [ms]"] / 1000.0  # Convert ms to seconds
+        # Convert ms to seconds
+        ecg_timestamps = rawdata.loc[:, "timestamp [ms]"] / 1000.0
 
         # Set the start time based on the 130th sample
         self.starttime = ecg_timestamps.iloc[0]
@@ -383,7 +380,8 @@ class SpectHRDataset:
         self.ecg = TimeSeries(ecg_timestamps, ecg_levels)
 
         # Create event timestamps and labels
-        event_timestamps = pd.Series([ecg_timestamps.iloc[0], ecg_timestamps.iloc[-1]])
+        event_timestamps = pd.Series(
+            [ecg_timestamps.iloc[0], ecg_timestamps.iloc[-1]])
         event_labels = pd.Series(['start series', 'stop series'])
 
         # Create DataFrame for events: this creates an epoch as large as the dataset
@@ -412,9 +410,11 @@ class SpectHRDataset:
         logger.info('Loading Raw New Harness Data')
         # Read raw data from CSV file
         rawdata = pd.read_csv(filename, sep=',')
-        rawdata.columns = rawdata.columns.str.strip()  # This will remove any leading/trailing spaces
+        # This will remove any leading/trailing spaces
+        rawdata.columns = rawdata.columns.str.strip()
         # Extract ECG levels and timestamps
-        ecg_levels = rawdata.loc[:, "ECG Data"].replace(-1, pd.NA).astype("float32") * 40
+        ecg_levels = rawdata.loc[:,
+                                 "ECG Data"].replace(-1, pd.NA).astype("float32") * 40
         rawdata['ms'] = rawdata['ms'].replace(-1, pd.NA).astype(float)
         rawdata['ms'] = rawdata['ms'].interpolate(method='linear')
         ecg_timestamps = rawdata.loc[:, "ms"] / 1000.0  # Convert ms to seconds
@@ -422,7 +422,8 @@ class SpectHRDataset:
         ecg_timestamps -= self.starttime  # Normalize timestamps
 
         # autodistance the time.
-        timestamp_diff = np.diff(ecg_timestamps.dropna())  # Drop NA values for diff calculation
+        # Drop NA values for diff calculation
+        timestamp_diff = np.diff(ecg_timestamps.dropna())
 
         # Calculate the median difference
         median_diff = np.median(timestamp_diff)
@@ -430,7 +431,8 @@ class SpectHRDataset:
         start = 0
         end = start + median_diff * (n - 1)
 
-        ecg_timestamps = pd.Series(np.arange(start, end + median_diff, median_diff))
+        ecg_timestamps = pd.Series(
+            np.arange(start, end + median_diff, median_diff))
 
         # Determine if the ECG signal needs to be flipped based on signal characteristics
         l = len(ecg_levels) // 3  # noqa: E741
@@ -443,7 +445,8 @@ class SpectHRDataset:
         self.ecg = TimeSeries(ecg_timestamps, ecg_levels - ecg_levels.mean())
 
         # Create event timestamps and labels
-        event_timestamps = pd.Series([ecg_timestamps.iloc[0], ecg_timestamps.iloc[-1]])
+        event_timestamps = pd.Series(
+            [ecg_timestamps.iloc[0], ecg_timestamps.iloc[-1]])
         event_labels = pd.Series(['start series', 'stop series'])
 
         # Create DataFrame for events: this creates an epoch as large as the dataset
@@ -472,19 +475,22 @@ class SpectHRDataset:
 
         # Identify ECG stream automatically if not provided:
         if ecg_index is None:
-            ecg_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith('ECG') and d['info']['effective_srate'] > 0), None)
+            ecg_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith(
+                'ECG') and d['info']['effective_srate'] > 0), None)
             if ecg_index is None:
                 logger.info("There is no stream named 'Polar'")
 
         # Identify accelerometer stream for breathing automatically if not provided
         if br_index is None:
-            br_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith('Acc') and d['info']['effective_srate'] > 0), None)
+            br_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith(
+                'Acc') and d['info']['effective_srate'] > 0), None)
             if br_index is None:
                 logger.info("There is no stream named 'Accelerometer'")
 
         # Identify event stream automatically if not provided
         if event_index is None:
-            event_index = [i for i, d in enumerate(rawdata) if 'Markers' in d['info']['type']]
+            event_index = [i for i, d in enumerate(
+                rawdata) if 'Markers' in d['info']['type']]
             if event_index is None:
                 logger.info("There is no stream of type 'Markers'")
 
@@ -496,7 +502,8 @@ class SpectHRDataset:
             ecg_levels = pd.Series(rawdata[ecg_index]["time_series"].flatten())
             ecg_timestamps -= self.starttime
             # Pragmatic approach. Might do better. This flips the signal if it thinks it needs to...
-            magic = abs(np.mean(ecg_levels) - np.min(ecg_levels)) / (abs(np.mean(ecg_levels) - np.max(ecg_levels)))
+            magic = abs(np.mean(ecg_levels) - np.min(ecg_levels)) / \
+                (abs(np.mean(ecg_levels) - np.max(ecg_levels)))
             if (magic > 1.5 and flip == 'auto') or flip:
                 ecg_levels = -ecg_levels
 
@@ -534,7 +541,7 @@ class SpectHRDataset:
                 eventlist.append(ievents)
             self.events = pd.concat(eventlist, ignore_index=True)
             self.create_epochs()
-            
+
         if self.epochs.empty:
             eventlist = [pd.DataFrame({
                 'time': [ecg_timestamps.iloc[1]],
@@ -595,10 +602,12 @@ class SpectHRDataset:
                     for chan in range(1, self.num_channels + 1):
                         self._get_channel_header(chan)
                         self.block_size_table[chan] = self._get_block_size()
-                        self.sweep_offset[chan] = self.sweep_offset[chan - 1] + self.block_size_table[chan - 1]
+                        self.sweep_offset[chan] = self.sweep_offset[chan -
+                                                                    1] + self.block_size_table[chan - 1]
                         self.labels[chan - 1] = self._get_label()
 
-                    self.block_size_table[0] = self.sweep_offset[self.num_channels] + self.block_size_table[self.num_channels]
+                    self.block_size_table[0] = self.sweep_offset[self.num_channels] + \
+                        self.block_size_table[self.num_channels]
                     self.current_channel = 0
                 except Exception as e:
                     self.close_file()
@@ -614,8 +623,8 @@ class SpectHRDataset:
                 return struct.unpack('<f', data[offset * 4:offset * 4 + 4])[0]
 
             def get_sample_rate(self):
-                self.sampleRate = 1000000 / self.get_interval(self.current_channel)
-                print(self.sampleRate)
+                self.sampleRate = 1000000 / \
+                    self.get_interval(self.current_channel)
                 return self.sampleRate
 
             def get_start_time(self):
@@ -624,6 +633,7 @@ class SpectHRDataset:
             def get_interval(self, chan):
                 self._get_channel_header(chan)
                 return self._get_integer(self.channel_header, 14)
+
             def get_channel_type(self, chan):
                 """Get the type of the specified channel.
 
@@ -719,11 +729,11 @@ class SpectHRDataset:
         # Check if the label exists
         if label not in nff.labels and nff.num_channels != 1:
             raise ValueError(f"Label '{label}' not found in the NFF file.")
-        
+
         # Get the channel data
         if nff.num_channels == 1:
             chan = 1
-        else: 
+        else:
             chan = nff.labels.index(label) + 1
 
         channel_data = nff.read_channel_data(chan)
@@ -741,9 +751,9 @@ class SpectHRDataset:
         # Return the data and timestamps as pandas Series
         data_series = pd.Series(channel_data, name=label)
         timestamp_series = pd.Series(timestamps, name='Timestamps')
-        
+
         self.ecg = TimeSeries(timestamp_series, data_series, sample_rate)
-        
+
     @staticmethod
     def log_error(message):
         """
@@ -769,15 +779,20 @@ class SpectHRDataset:
             return
 
         # Replace 'end ' with 'stop ' in the 'label' column (case-insensitive)
-        self.events['label'] = self.events['label'].str.replace('^end ', 'stop ', case=False, regex=True)
+        self.events['label'] = self.events['label'].str.replace(
+            '^end ', 'stop ', case=False, regex=True)
 
         # Separate start and stop events (case-insensitive)
-        start_events = self.events[self.events['label'].str.lower().str.startswith('start')].copy()
-        stop_events = self.events[self.events['label'].str.lower().str.startswith('stop')].copy()
+        start_events = self.events[self.events['label'].str.lower(
+        ).str.startswith('start')].copy()
+        stop_events = self.events[self.events['label'].str.lower(
+        ).str.startswith('stop')].copy()
 
         # Extract epoch names (case-insensitive)
-        start_events.loc[:, 'label'] = start_events['label'].str.replace('^start ', '', case=False, regex=True)
-        stop_events.loc[:, 'label'] = stop_events['label'].str.replace('^stop ', '', case=False, regex=True)
+        start_events.loc[:, 'label'] = start_events['label'].str.replace(
+            '^start ', '', case=False, regex=True)
+        stop_events.loc[:, 'label'] = stop_events['label'].str.replace(
+            '^stop ', '', case=False, regex=True)
 
         # Initialize epochs list
         epochs = []
@@ -788,21 +803,23 @@ class SpectHRDataset:
             start_time = start_event['time']
 
             # Find corresponding stop event
-            stop_event = stop_events[stop_events['label'].str.lower() == epoch.lower()]
+            stop_event = stop_events[stop_events['label'].str.lower(
+            ) == epoch.lower()]
 
             if not stop_event.empty:
                 end_time = stop_event.iloc[0]['time']
             else:
                 # Find the next event's start time
-                next_event = self.events[self.events['time'] > start_time].sort_values('time').iloc[0]
+                next_event = self.events[self.events['time']
+                                         > start_time].sort_values('time').iloc[0]
                 end_time = next_event['time']
 
-            epochs.append({'label': epoch.lower(), 'starttime': start_time, 'endtime': end_time})
+            epochs.append(
+                {'label': epoch.lower(), 'starttime': start_time, 'endtime': end_time})
 
         # Create epochs DataFrame
         self.epochs = pd.DataFrame(epochs)
 
- 
     def add_epoch_to_dataset(self, epoch_label, start_time, end_time):
         """
         Add a new epoch to the dataset.
@@ -812,7 +829,8 @@ class SpectHRDataset:
             start_time (float): The start time for the new epoch.
             end_time (float): The end time for the new epoch.
         """
-        self.epochs.loc[len(self.epochs)] = [epoch_label.lower(), start_time, end_time]
+        self.epochs.loc[len(self.epochs)] = [
+            epoch_label.lower(), start_time, end_time]
 
     def log_action(self, action_name, params):
         """
@@ -822,5 +840,10 @@ class SpectHRDataset:
             action_name (str): Name of the action.
             params (dict): Parameters associated with the action.
         """
-        self.history.append({'action': action_name, 'timestamp': datetime.now(), 'parameters': params})
+        self.history.append(
+            {'action': action_name, 'timestamp': datetime.now(), 'parameters': params})
         logger.info(f"Action logged: {action_name} with parameters {params}")
+
+if __name__ == "__main__":
+    # Example usage
+    pass

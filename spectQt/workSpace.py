@@ -10,8 +10,9 @@ def exe_dir_path(filename):
     base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     return os.path.join(base_dir, filename)
 
-def LoadWorkspace(default_json = None):
-    if default_json is None:  
+
+def LoadWorkspace(default_json=None):
+    if default_json is None:
         default_json = exe_dir_path("DefaultWorkSpace.json")
 
     cwd = os.getcwd()
@@ -25,13 +26,15 @@ def LoadWorkspace(default_json = None):
         try:
             with open(default_json, "r") as f:
                 loaded = json.load(f)
-                workspace.update({k: loaded.get(k, v) for k, v in workspace.items()})
+                workspace.update({k: loaded.get(k, v)
+                                 for k, v in workspace.items()})
         except Exception as e:
             print(f"Could not load workspace file: {e}")
     else:
-        with open(default_json, "w") as f: 
+        with open(default_json, "w") as f:
             json.dump(workspace, f, indent=4)
     return workspace
+
 
 def PopulateTree(treewidget, workspace):
     treewidget.clear()
@@ -40,13 +43,14 @@ def PopulateTree(treewidget, workspace):
         "CARSPAN EVT Files": "*.evt",
         "RR Text Files": "*.txt"
     }
-    
-    treewidget.setHeaderLabels(["File Name"]) 
+
+    treewidget.setHeaderLabels(["File Name"])
     for label, pattern in categories.items():
-        
+
         parent = QTreeWidgetItem([label])
         files = sorted(
-            [f for f in os.listdir(workspace["DataDirectory"]) if f.endswith(pattern.split("*")[-1])]
+            [f for f in os.listdir(workspace["DataDirectory"])
+             if f.endswith(pattern.split("*")[-1])]
         )
         for fname in files:
             if fname.lower() != 'requirements.txt':

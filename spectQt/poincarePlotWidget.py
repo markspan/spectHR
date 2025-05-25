@@ -94,14 +94,15 @@ class PoincarePlotWidget(QWidget):
 
         # Filter RTops data by epoch
         dataset.filtered_by_epoch = {}
-       
+
         for _, epoch in dataset.epochs.iterrows():
             unique_epoch = epoch['label']
             start_time = epoch['starttime']
             end_time = epoch['endtime']
 
             # Filter RTops data for the current epoch
-            mask = (dataset.RTops['time'] >= start_time) & (dataset.RTops['time'] <= end_time)
+            mask = (dataset.RTops['time'] >= start_time) & (
+                dataset.RTops['time'] <= end_time)
             filtered_data = dataset.RTops[mask]
 
             # Store the filtered data in the dictionary
@@ -143,7 +144,8 @@ class PoincarePlotWidget(QWidget):
             self.scatter_handles[epoch] = scatter
             self.ellipse_handles[epoch] = ellipse
 
-            visible = active_epochs.get(epoch, True)  # default to True if not stored
+            # default to True if not stored
+            visible = active_epochs.get(epoch, True)
             scatter.set_visible(visible)
             ellipse.set_visible(visible)
 
@@ -155,12 +157,13 @@ class PoincarePlotWidget(QWidget):
             self.checkbox_layout.addWidget(checkbox)
 
         self.update_visibility()  # Initialize visibility based on active_epochs
- 
+
         # Configure plot appearance
         self.ax.set_title('')
         self.ax.set_xlabel('IBI (ms)', fontsize=12)
         self.ax.set_ylabel('Next IBI (ms)', fontsize=12)
-        self.ax.axline((0, 0), slope=1, color='gray', linestyle='--', linewidth=0.7)
+        self.ax.axline((0, 0), slope=1, color='gray',
+                       linestyle='--', linewidth=0.7)
         self.ax.grid(True)
 
         # Only include visible entries in legend
@@ -181,7 +184,8 @@ class PoincarePlotWidget(QWidget):
                 borderaxespad=0.,
                 frameon=False
             )
-        self.fig.subplots_adjust(left=0.3)  # Make room on the left for the legend
+        # Make room on the left for the legend
+        self.fig.subplots_adjust(left=0.3)
         self.ax.set_aspect('equal', adjustable='datalim')
         self.ax.set_box_aspect(1)
         self.filtered_by_epoch = {}
@@ -191,12 +195,14 @@ class PoincarePlotWidget(QWidget):
         if hasattr(self, 'cursor') and self.cursor is not None:
             self.cursor.remove()
         # Create a new cursor
-        self.cursor = mplcursors.cursor([scatter for scatter in self.scatter_handles.values()], hover=False, multiple=True)
+        self.cursor = mplcursors.cursor(
+            [scatter for scatter in self.scatter_handles.values()], hover=False, multiple=True)
 
         @self.cursor.connect("add")
         def on_hover(sel):
             scatter = sel.artist
-            epoch = getattr(scatter, 'epoch', 'Unknown')  # or use scatter.get_gid()
+            # or use scatter.get_gid()
+            epoch = getattr(scatter, 'epoch', 'Unknown')
             x_value = scatter.get_offsets()[sel.index, 0]
             y_value = scatter.get_offsets()[sel.index, 1]
 
@@ -208,11 +214,11 @@ class PoincarePlotWidget(QWidget):
                 f"{epoch.title()}:\n"
                 f"IBI = {1000*x_value:.0f}–{1000*y_value:.0f} ms\n"
                 f"Time = {time_value:.1f} s"
-            )            
+            )
             sel.annotation.get_bbox_patch().set_alpha(0.5)
-            sel.annotation.get_bbox_patch().set_facecolor(scatter.get_facecolor())  
+            sel.annotation.get_bbox_patch().set_facecolor(scatter.get_facecolor())
         self.canvas.draw()
-            
+
     def update_visibility(self):
         """
         Toggle visibility of each epoch's plot elements based on checkbox state,
@@ -226,5 +232,5 @@ class PoincarePlotWidget(QWidget):
                 self.scatter_handles[epoch].set_visible(visible)
             if epoch in self.ellipse_handles:
                 self.ellipse_handles[epoch].set_visible(visible)
-                
+
         self.canvas.draw()

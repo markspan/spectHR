@@ -153,8 +153,10 @@ class IBISeriesPlotWidget(QWidget):
         """
         x_range = (self.data.x_max - self.data.x_min) / 1.5
         middle = (self.data.x_max + self.data.x_min) / 2
-        self.data.x_min = max(middle - x_range, self.data.heartrate.time.iat[0])
-        self.data.x_max = min(self.data.x_min + (2 * x_range), self.data.heartrate.time.iat[-1])
+        self.data.x_min = max(
+            middle - x_range, self.data.heartrate.time.iat[0])
+        self.data.x_max = min(self.data.x_min + (2 * x_range),
+                              self.data.heartrate.time.iat[-1])
         self.update_view()
 
     def pan_left(self):
@@ -162,7 +164,8 @@ class IBISeriesPlotWidget(QWidget):
         Pan the view to the left.
         """
         x_range = self.data.x_max - self.data.x_min
-        self.data.x_min = max(self.data.heartrate.time.iat[0], self.data.x_min - x_range)
+        self.data.x_min = max(
+            self.data.heartrate.time.iat[0], self.data.x_min - x_range)
         self.data.x_max = self.data.x_min + x_range
         self.update_view()
 
@@ -171,7 +174,8 @@ class IBISeriesPlotWidget(QWidget):
         Pan the view to the right.
         """
         x_range = self.data.x_max - self.data.x_min
-        self.data.x_min = min(self.data.heartrate.time.iat[-1] - x_range, self.data.x_min + x_range)
+        self.data.x_min = min(
+            self.data.heartrate.time.iat[-1] - x_range, self.data.x_min + x_range)
         self.data.x_max = self.data.x_min + x_range
         self.update_view()
 
@@ -198,8 +202,10 @@ class IBISeriesPlotWidget(QWidget):
         Move the view to the next significant point in the data.
         """
         x_range = self.data.x_max - self.data.x_min
-        idx = (self.data.RTops["ID"] != "N") & (self.data.RTops["time"] > self.data.x_max)
-        center = self.data.RTops.loc[idx, "time"].iloc[0] if idx.any() else None
+        idx = (self.data.RTops["ID"] != "N") & (
+            self.data.RTops["time"] > self.data.x_max)
+        center = self.data.RTops.loc[idx,
+                                     "time"].iloc[0] if idx.any() else None
 
         if center is not None:
             self.data.x_min = center - (0.5 * x_range)
@@ -212,8 +218,10 @@ class IBISeriesPlotWidget(QWidget):
         Move the view to the previous significant point in the data.
         """
         x_range = self.data.x_max - self.data.x_min
-        idx = (self.data.RTops["ID"] != "N") & (self.data.RTops["time"] < self.data.x_min)
-        center = self.data.RTops.loc[idx, "time"].iloc[-1] if idx.any() else None
+        idx = (self.data.RTops["ID"] != "N") & (
+            self.data.RTops["time"] < self.data.x_min)
+        center = self.data.RTops.loc[idx,
+                                     "time"].iloc[-1] if idx.any() else None
 
         if center is not None:
             self.data.x_min = center - (0.5 * x_range)
@@ -226,19 +234,23 @@ class IBISeriesPlotWidget(QWidget):
         Redraw the heart rate plot and R-top times.
         This function also adjusts the plot properties for the selected x-axis limits.
         """
-        self.plot_heartrate_signal(self.ax_heartrate, self.data.heartrate.time, self.data.heartrate.level)
+        self.plot_heartrate_signal(
+            self.ax_heartrate, self.data.heartrate.time, self.data.heartrate.level)
         if hasattr(self.data, "RTops"):
             visibles = self.data.RTops[
-                (self.data.RTops["time"] >= self.data.x_min - 1) & (self.data.RTops["time"] <= self.data.x_max + 1)
+                (self.data.RTops["time"] >= self.data.x_min -
+                 1) & (self.data.RTops["time"] <= self.data.x_max + 1)
             ]
 
             if len(visibles) < 100:
                 self.plot_rtop_times(
                     self.ax_heartrate, visibles, self.line_handler
                 )
-                self.ax_heartrate.set_ylim(self.ax_heartrate.get_ylim()[0], self.ax_heartrate.get_ylim()[1] * 1.2)
+                self.ax_heartrate.set_ylim(self.ax_heartrate.get_ylim()[
+                                           0], self.ax_heartrate.get_ylim()[1] * 1.2)
 
-            self.set_heartrate_plot_properties(self.ax_heartrate, self.data.x_min, self.data.x_max)
+            self.set_heartrate_plot_properties(
+                self.ax_heartrate, self.data.x_min, self.data.x_max)
 
             self.ax_overview.figure.canvas.draw()
             self.fig.canvas.draw_idle()
@@ -271,7 +283,8 @@ class IBISeriesPlotWidget(QWidget):
             elif self.drag_mode == "right":
                 self.data.x_max = max(event.xdata, self.data.x_min + 0.1)
             elif self.drag_mode == "center":
-                dx = event.xdata - 0.5 * (self.initial_xmin + self.initial_xmax)
+                dx = event.xdata - 0.5 * \
+                    (self.initial_xmin + self.initial_xmax)
                 self.data.x_min = self.initial_xmin + dx
                 self.data.x_max = self.initial_xmax + dx
             self.positional_patch.set_x(self.data.x_min)
@@ -310,7 +323,7 @@ class IBISeriesPlotWidget(QWidget):
         """
         figsize = self.calculate_figsize()
         fig, (ax_heartrate, ax_overview) = plt.subplots(2, 1,
-            figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [4, 1]})
+                                                        figsize=figsize, sharex=False, gridspec_kw={"height_ratios": [4, 1]})
 
         return fig, ax_heartrate, ax_overview
 
@@ -329,7 +342,8 @@ class IBISeriesPlotWidget(QWidget):
         - positional_patch (Rectangle): The patch indicating the zoom region.
         """
         ax.clear()
-        ax.plot(heartrate_time, heartrate_level, linewidth=0.25, alpha=0.5, color="green")
+        ax.plot(heartrate_time, heartrate_level,
+                linewidth=0.25, alpha=0.5, color="green")
         ax.set_title("")
         positional_patch = patches.Rectangle(
             (x_min, ax.get_ylim()[0]),
@@ -399,7 +413,8 @@ class IBISeriesPlotWidget(QWidget):
         ax.set_xlabel("Time (seconds)")
         ax.set_xlim(x_min, x_max)
         ax.xaxis.set_major_locator(MultipleLocator(math.pow(10, tdisp - 1)))
-        ax.xaxis.set_minor_locator(MultipleLocator(math.pow(10, tdisp - 1) / 5))
+        ax.xaxis.set_minor_locator(
+            MultipleLocator(math.pow(10, tdisp - 1) / 5))
         ax.get_yaxis().set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
@@ -415,7 +430,8 @@ class IBISeriesPlotWidget(QWidget):
         - heartrate_level (array-like): The heart rate levels.
         """
         ax.clear()
-        ax.plot(heartrate_time, heartrate_level, label="HeartRate", color="red", linewidth=0.8, alpha=1)
+        ax.plot(heartrate_time, heartrate_level, label="HeartRate",
+                color="red", linewidth=0.8, alpha=1)
         ax.set_xlim(self.data.x_min, self.data.x_max)
 
     def update_view(self):
@@ -446,7 +462,8 @@ class IBISeriesPlotWidget(QWidget):
         heartrate_timestamps = data.RTops['time']
         heartrate_levels = data.RTops['ibi']
 
-        self.data.heartrate = TimeSeries(heartrate_timestamps, heartrate_levels)
+        self.data.heartrate = TimeSeries(
+            heartrate_timestamps, heartrate_levels)
         plt.ioff()
         plt.title("")
 
@@ -460,7 +477,8 @@ class IBISeriesPlotWidget(QWidget):
         self.data.x_max = self.data.x_max if self.data.x_max is not None else x_max
 
         if fig is None:
-            self.fig, self.ax_heartrate, self.ax_overview = self.create_figure_axes(data)
+            self.fig, self.ax_heartrate, self.ax_overview = self.create_figure_axes(
+                data)
         else:
             self.ax_heartrate = self.fig.axes[0]
             self.ax_overview = self.fig.axes[1]
@@ -469,8 +487,10 @@ class IBISeriesPlotWidget(QWidget):
         self.fig.canvas.header_visible = False
         self.fig.tight_layout()
 
-        self.line_handler = LineHandler(self.ax_heartrate, callback_drag=None, callback_remove=None)
-        self.positional_patch = self.plot_overview(self.ax_overview, data.heartrate.time, data.heartrate.level, self.data.x_min, self.data.x_max)
+        self.line_handler = LineHandler(
+            self.ax_heartrate, callback_drag=None, callback_remove=None)
+        self.positional_patch = self.plot_overview(
+            self.ax_overview, data.heartrate.time, data.heartrate.level, self.data.x_min, self.data.x_max)
 
         self.initial_xmin, self.initial_xmax = self.data.x_min, self.data.x_max
 
@@ -478,14 +498,15 @@ class IBISeriesPlotWidget(QWidget):
 
         bpe = self.fig.canvas.mpl_connect("button_press_event", self.on_press)
         bod = self.fig.canvas.mpl_connect('motion_notify_event', self.on_drag)
-        bor = self.fig.canvas.mpl_connect('button_release_event', self.on_release)
-        
-         # Remove the old canvas from the layout
+        bor = self.fig.canvas.mpl_connect(
+            'button_release_event', self.on_release)
+
+        # Remove the old canvas from the layout
         if self.canvas is not None:
             self.layout.removeWidget(self.canvas)
             self.canvas.setParent(None)
             self.canvas.deleteLater()  # Optional: Delete the old canvas to free up resources
-            
+
         self.canvas = FigureCanvas(self.fig)
         self.layout.insertWidget(0, self.canvas)
         self.canvas.draw()

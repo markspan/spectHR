@@ -17,7 +17,6 @@ import spectQt as spQt
 
 from ui_form import Ui_MainWindow
 
-
 class MainWindow(QMainWindow):
     """
     Main application window for the spectQt ECG pre-processing GUI.
@@ -62,9 +61,11 @@ class MainWindow(QMainWindow):
         self.workspace = spQt.LoadWorkspace()
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
         self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
+
         # Connect the customContextMenuRequested signal to a slot
         self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.ui.treeWidget.customContextMenuRequested.connect(self.show_context_menu)
+        self.ui.treeWidget.customContextMenuRequested.connect(
+            self.show_context_menu)
 
         # Create and embed the preprocessing plot widget
         self.prep_plot_widget = spQt.PrepPlotWidget()
@@ -104,13 +105,13 @@ class MainWindow(QMainWindow):
         self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
         self.dataset = None  # Initialize dataset placeholder
-    
 
     def OpenWorkSpace(self):
         """
-        Open a json worksace file, holding the directories.
+        Open a JSON workspace file, holding the directories.
         """
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select a file", "", "workspace Files (*.json);;Text Files (*.txt)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select a file", "", "workspace Files (*.json);;Text Files (*.txt)")
         self.workspace = spQt.LoadWorkspace(file_path)
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
 
@@ -126,10 +127,10 @@ class MainWindow(QMainWindow):
         if not item:
             return
 
-        # Only allow context menu for raw files: the ones with ecg data 
+        # Only allow context menu for raw files: the ones with ecg data
         if not item.text(0).lower().endswith('.xdf') \
-            and not item.text(0).lower().endswith('.txt') \
-            and not item.text(0).lower().endswith('.evt'):
+                and not item.text(0).lower().endswith('.txt') \
+                and not item.text(0).lower().endswith('.evt'):
             return
 
         # Create a context menu
@@ -154,14 +155,15 @@ class MainWindow(QMainWindow):
         context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
 
     def clean(self):
-            """
-            Clean up the raw ECG signal: 
-            """
-            QApplication.setOverrideCursor(Qt.WaitCursor)
-            self.dataset = cs.ecgArtifactDetection(self.dataset, par = {'dtw_thresh': 100000})
-            QApplication.restoreOverrideCursor()
-            self.dataset = cs.calcPeaks(self.dataset)
-            self.show_preprocessing_plot(self.dataset)
+        """
+        Clean up the raw ECG signal.
+        """
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self.dataset = cs.ecgArtifactDetection(
+            self.dataset, par={'dtw_thresh': 100000})
+        QApplication.restoreOverrideCursor()
+        self.dataset = cs.calcPeaks(self.dataset)
+        self.show_preprocessing_plot(self.dataset)
 
     def reload(self, item):
         """
@@ -170,7 +172,8 @@ class MainWindow(QMainWindow):
         Args:
             item: The selected item in the tree view.
         """
-        self.dataset = spQt.PreProcessFile(self.workspace, item.text(0), reset=True)
+        self.dataset = spQt.PreProcessFile(
+            self.workspace, item.text(0), reset=True)
         self.show_preprocessing_plot(self.dataset)
 
     def invert(self):
@@ -180,7 +183,8 @@ class MainWindow(QMainWindow):
         if self.dataset is None:
             return
 
-        self.dataset.ecg = cs.TimeSeries(self.dataset.ecg.time, -self.dataset.ecg.level)
+        self.dataset.ecg = cs.TimeSeries(
+            self.dataset.ecg.time, -self.dataset.ecg.level)
         self.dataset = cs.calcPeaks(self.dataset)
         self.dataset.save()
         self.show_preprocessing_plot(self.dataset)
@@ -239,16 +243,13 @@ class MainWindow(QMainWindow):
         self.dataset = spQt.PreProcessFile(self.workspace, file_path)
 
         # Update the UI with the new dataset
-        #try:
         self.show_preprocessing_plot(self.dataset)
         self.show_ibiseries_plot(self.dataset)
         self.show_poincare_plot(self.dataset)
         self.show_epoch_plot(self.dataset)
         self.show_welch_psd_plot(self.dataset)
         self.show_parameters_plot(self.dataset)
-        #except Exception:
-        #    pass
-        #finally:
+
         QApplication.restoreOverrideCursor()
 
     def show_preprocessing_plot(self, data):
@@ -323,10 +324,12 @@ class MainWindow(QMainWindow):
                     widget.setParent(None)
                     widget.deleteLater()
 
-            # compute PSD per epoch
+            # Compute PSD per epoch
             # Extract relevant columns for plotting
-            active_epochs = {epoch: active for epoch, active in dataset.active_epochs.items() if active}
-            visuals = dataset.epochs.loc[dataset.epochs['label'].isin(active_epochs.keys())]        
+            active_epochs = {epoch: active for epoch,
+                             active in dataset.active_epochs.items() if active}
+            visuals = dataset.epochs.loc[dataset.epochs['label'].isin(
+                active_epochs.keys())]
             psd_values_list = []
             epoch_names = visuals["label"].tolist()
             # Lists to store y-axis data
@@ -336,8 +339,8 @@ class MainWindow(QMainWindow):
             for epoch in epoch_names:
                 widget = spQt.WelchPSDPlotWidget()
                 spectral_measures = widget.plot_psd(dataset.filtered_by_epoch[epoch], epoch, fs=4, logscale=False, nperseg=256,
-                                                   noverlap=128, interp_kind='linear', window='hamming',
-                                                   interpolate=True)
+                                                    noverlap=128, interp_kind='linear', window='hamming',
+                                                    interpolate=True)
 
                 if spectral_measures != -1:
                     psd_values_list.append(spectral_measures)
@@ -345,17 +348,17 @@ class MainWindow(QMainWindow):
                     y_min, y_max = widget.ax.get_ylim()
                     all_y_min.append(y_min)
                     all_y_max.append(y_max)
-                    
+
             # Determine global y-axis limits
             global_y_min = min(all_y_min)
             global_y_max = max(all_y_max)
-    
+
             # Second pass: set y-axis limits and add widgets
             for epoch in epoch_names:
                 widget = spQt.WelchPSDPlotWidget()
                 spectral_measures = widget.plot_psd(dataset.filtered_by_epoch[epoch], epoch, fs=4, logscale=False, nperseg=256,
-                                                noverlap=128, interp_kind='linear', window='hamming',
-                                                interpolate=True)
+                                                    noverlap=128, interp_kind='linear', window='hamming',
+                                                    interpolate=True)
 
                 if spectral_measures != -1:
                     # Set the global y-axis limits
@@ -392,7 +395,8 @@ class MainWindow(QMainWindow):
             return
 
         # Prompt the user for an epoch label
-        epoch_label, ok = QInputDialog.getText(self, 'Add Epoch', 'Epoch Label:')
+        epoch_label, ok = QInputDialog.getText(
+            self, 'Add Epoch', 'Epoch Label:')
         if not ok or not epoch_label:
             return
 
@@ -402,7 +406,7 @@ class MainWindow(QMainWindow):
 
         # Add the new epoch to the dataset
         self.dataset.add_epoch_to_dataset(epoch_label, start_time, end_time)
-      
+
         # Replot the figure to include the new epoch
         self.poincare_plot_widget.poincarePlot(self.dataset)
         self.epoch_plot_widget.plotEpoch(self.dataset)
@@ -417,4 +421,3 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
-# This code is part of the spectHR project, which is licensed under the GNU License.

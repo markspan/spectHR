@@ -76,12 +76,13 @@ class ParametersPlotWidget(QWidget):
         # Filter the filtered_by_epoch dictionary to include only active epochs
         if hasattr(dataset, 'active_epochs'):
             active_epochs = {epoch: data for epoch, data in dataset.filtered_by_epoch.items()
-                            if dataset.active_epochs.get(epoch, True)}
+                             if dataset.active_epochs.get(epoch, True)}
         else:
             active_epochs = dataset.filtered_by_epoch
 
         # Concatenate the active epochs
-        descriptiveData = pd.concat(active_epochs, names=['epoch']).reset_index(level=1, drop=True)
+        descriptiveData = pd.concat(
+            active_epochs, names=['epoch']).reset_index(level=1, drop=True)
 
         # Calculate descriptive statistics grouped by epoch
         dataset.descriptives_values = descriptiveData\
@@ -103,7 +104,8 @@ class ParametersPlotWidget(QWidget):
 
         # Merge PSD values if available
         if hasattr(dataset, 'psd_values'):
-            dataset.descriptives_values = pd.merge(dataset.descriptives_values, dataset.psd_values, on='epoch', how='outer')
+            dataset.descriptives_values = pd.merge(
+                dataset.descriptives_values, dataset.psd_values, on='epoch', how='outer')
 
         # Populate the table
         data = dataset.descriptives_values
@@ -122,7 +124,8 @@ class ParametersPlotWidget(QWidget):
         # Populate the table with data
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
-                self.table_widget.setItem(i, j, QTableWidgetItem(str(data.iloc[i, j])))
+                self.table_widget.setItem(
+                    i, j, QTableWidgetItem(str(data.iloc[i, j])))
 
         # Resize columns to fit content
         self.table_widget.resizeColumnsToContents()
@@ -147,7 +150,8 @@ class ParametersPlotWidget(QWidget):
         df = pd.DataFrame(data)
 
         # Save the DataFrame to a CSV file
-        df.to_csv(os.path.splitext(self.dataset.filename)[0] + '.csv', index=False, header=self.get_table_headers())
+        df.to_csv(os.path.splitext(self.dataset.filename)[
+                  0] + '.csv', index=False, header=self.get_table_headers())
 
     def get_table_headers(self):
         """

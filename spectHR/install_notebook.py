@@ -2,11 +2,13 @@ import shutil
 import os
 import glob
 
+
 def install_notebook():
     """Copy all .ipynb and .xdf files from notebooks/ to the user's home directory (~)."""
     home_dir = os.path.expanduser("~")  # Resolves to the user's home directory
-    notebooks_dir = os.path.join(os.path.dirname(__file__), "notebooks")  # Path to packaged notebooks
-    
+    notebooks_dir = os.path.join(os.path.dirname(
+        __file__), "notebooks")  # Path to packaged notebooks
+
     # Ensure home directory exists
     os.makedirs(home_dir, exist_ok=True)
 
@@ -21,6 +23,7 @@ def install_notebook():
             print(f"Installed: {dest_path}")
         else:
             print(f"Skipped (already exists): {dest_path}")
+
 
 # Execute the function on import
 install_notebook()
