@@ -1,4 +1,4 @@
-
+i
 > **⚠️ CAUTION:**
 > <p style="color: red;">This project is work in progress. It can not be used for data analysis yet. Breathing and blood pressure data are totally untested/not yet implemented.</p>
 
@@ -7,6 +7,8 @@
 ## Overview
 
 The **spectHR program** is an interactive tool designed to assist in the analysis of heart rate variability (HRV) data. It provides a graphical user interface (GUI) using Qt to explore, preprocess, and visualize HRV data. The app organizes its features into multiple tabs, each focusing on a specific aspect of HRV analysis.
+
+I will try to convey information here, hoping others can extend the capabilities of the program. 
 
 ## Features
 
