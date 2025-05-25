@@ -1,15 +1,18 @@
 import os
 import pickle
 import struct
+
 from datetime import datetime
 from pathlib import Path
-
+from collections import Counter
 import numpy as np
 import pandas as pd
 import pyxdf
 import scipy
 
 import spectHR as cs
+from EventCodeWindow import EventCodeWindow
+
 from spectHR.Actions.csActions import classify
 from spectHR.Actions.csBreathing import calculate_breathing_signal
 from spectHR.Tools.Logger import logger
@@ -242,10 +245,98 @@ class SpectHRDataset:
 
         Args:
             filename (str): Path to the evt file.
+            DataSet (CarspanDataSet): The DataSet object to be updated.
         """
-        cs.loadEVT(self, filename)
-        self.create_epochs()
+        logger.info('Loading CARSPAN EVT RTops')
+        self.has_ecg = False
+
+        # Step 1: Read only [Data] section
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+
+        data_section = False
+        event_codes = []
+        times = []
+
+        for line in lines:
+            if line.strip() == "[Data]":
+                data_section = True
+                continue
+            if not data_section:
+                continue
+
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                try:
+                    code = int(parts[0])
+                    time = float(parts[1])
+                    event_codes.append(code)
+                    times.append(time)
+                except ValueError:
+                    continue  # Skip malformed lines
+
+        df = pd.DataFrame({'event_code': event_codes, 'time': times})
+        # Step 2: Determine the most frequent event code
+        event_code_counts = Counter(event_codes)
+        most_common_event_code = event_code_counts.most_common(1)[0][0]
+        logger.info(f'RTop Event Code assumed to be {most_common_event_code}')
+        # then Extract RTops (event_code == most_common)
+        rtops = df[df['event_code'] == most_common_event_code].copy()
+        rtops.reset_index(drop=True, inplace=True)
+        rtops['ibi'] = np.append(np.diff(rtops['time']), np.nan)
+        rtops['epoch'] = [set([''])] * len(rtops)
+
+        self.RTops = rtops[['time', 'ibi']]
+        self.RTops['ID'] = 'N'
         
+        event_code_window = EventCodeWindow(df['event_code'].unique(), ignore = most_common_event_code)
+        event_code_window.codes_selected.connect(self.on_codes_selected)
+        event_code_window.exec()
+
+        # Step 3: Extract start and end codes (11 and 21)
+        #start_times = df[df['event_code'] == 11]['time'].tolist()
+        #end_times = df[df['event_code'] == 21]['time'].tolist()
+
+        start_times = df[df['event_code'].isin(self.start_codes)]['time'].tolist()
+        end_times = df[df['event_code'].isin(self.stop_codes)]['time'].tolist()
+
+        if len(start_times) != len(end_times):
+            raise ValueError("Mismatched number of start (11) and end (21) codes.")
+
+        # Step 4: Build structured events
+        event_timestamps = []
+        event_labels = []
+        # Create events for each epoch
+        for i, (start, end) in enumerate(zip(start_times, end_times), 1):
+            event_timestamps.extend([start, end])
+            event_labels.extend([f'start series {i}', f'stop series {i}'])
+
+        self.events = pd.DataFrame({
+            'time': pd.Series(event_timestamps),
+            'label': pd.Series(event_labels)
+        })
+
+        if rtops.empty:
+            raise ValueError("No RTops found in file.")
+
+        ecg_timestamps = rtops['time']
+        ecg_levels = 1000.0 / rtops['ibi']
+
+        self.ecg = cs.TimeSeries(ecg_timestamps, ecg_levels)
+    
+        # Step 5: Classify the RTops
+        classify(self)
+
+        # Initialize epochs
+        self.create_epochs()
+ 
+    def on_codes_selected(self, start_codes, stop_codes):
+        """Handle the selected start and stop codes."""
+        print("Start Codes:", start_codes)
+        print("Stop Codes:", stop_codes)
+        self.start_codes = start_codes
+        self.stop_codes = stop_codes
+
     def load_from_pickle(self):
         """
         Loads the dataset from a pickle file.
@@ -533,6 +624,32 @@ class SpectHRDataset:
             def get_interval(self, chan):
                 self._get_channel_header(chan)
                 return self._get_integer(self.channel_header, 14)
+            def get_channel_type(self, chan):
+                """Get the type of the specified channel.
+
+                Args:
+                    chan (int): Channel number.
+
+                Returns:
+                    str: The channel type.
+                """
+                self._get_channel_header(chan)
+                return self._get_identity()
+
+            def _get_identity(self):
+                """Get the identity (type) of the current channel.
+
+                Returns:
+                    str: The channel identity.
+                """
+                identity = []
+                for i in range(10):
+                    ch = chr(self.channel_header[110 + i])
+                    if 32 <= ord(ch) <= 122:
+                        identity.append(ch)
+                    else:
+                        identity.append(' ')
+                return ''.join(identity).strip()
 
             def _get_channel_header(self, chan):
                 if chan != self.current_channel:
@@ -600,13 +717,16 @@ class SpectHRDataset:
         nff.read_nff_header()
 
         # Check if the label exists
-        if label not in nff.labels:
+        if label not in nff.labels and nff.num_channels != 1:
             raise ValueError(f"Label '{label}' not found in the NFF file.")
-
+        
         # Get the channel data
-        chan = nff.labels.index(label) + 1
-        channel_data = nff.read_channel_data(chan)
+        if nff.num_channels == 1:
+            chan = 1
+        else: 
+            chan = nff.labels.index(label) + 1
 
+        channel_data = nff.read_channel_data(chan)
         # Get the sample rate and start time
         sample_rate = nff.get_sample_rate()
         start_time = nff.get_start_time()

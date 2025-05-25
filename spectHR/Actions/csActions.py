@@ -1,12 +1,14 @@
 import copy
 
+from collections import Counter
+
 import numpy as np
 import pandas as pd
 import scipy.signal as signal
 
 import spectHR as cs
-from spectHR.Tools.Logger import logger
 
+from spectHR.Tools.Logger import logger
 
 def calcPeaks(DataSet, par=None):
     """
@@ -78,87 +80,6 @@ def calcPeaks(DataSet, par=None):
     # Step 9: Return the updated DataSet and the parameters
     return DS
 
-def loadEVT(DataSet, filename):
-    """
-    Loads RTops from a CARSPAN .evt file and generates structured events for epochs.
-
-    Args:
-        filename (str): Path to the evt file.
-        DataSet (CarspanDataSet): The DataSet object to be updated.
-    """
-    logger.info('Loading CARSPAN EVT RTops')
-    DataSet.has_ecg = False
-
-    # Step 1: Read only [Data] section
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-
-    data_section = False
-    event_codes = []
-    times = []
-
-    for line in lines:
-        if line.strip() == "[Data]":
-            data_section = True
-            continue
-        if not data_section:
-            continue
-
-        parts = line.strip().split()
-        if len(parts) >= 2:
-            try:
-                code = int(parts[0])
-                time = float(parts[1])
-                event_codes.append(code)
-                times.append(time)
-            except ValueError:
-                continue  # Skip malformed lines
-
-    df = pd.DataFrame({'event_code': event_codes, 'time': times})
-
-    # Step 2: Extract RTops (event_code == 1)
-    rtops = df[df['event_code'] == 1].copy()
-    rtops.reset_index(drop=True, inplace=True)
-    rtops['ibi'] = np.append(np.diff(rtops['time']), np.nan)
-    rtops['epoch'] = [set([''])] * len(rtops)
-
-    DataSet.RTops = rtops[['time', 'ibi']]
-    DataSet.RTops['ID'] = 'N'
-
-    # Step 3: Extract start and end codes (11 and 21)
-    start_times = df[df['event_code'] == 11]['time'].tolist()
-    end_times = df[df['event_code'] == 21]['time'].tolist()
-
-    if len(start_times) != len(end_times):
-        raise ValueError("Mismatched number of start (11) and end (21) codes.")
-
-    # Step 4: Build structured events
-    event_timestamps = []
-    event_labels = []
-    # Create events for each epoch
-    for i, (start, end) in enumerate(zip(start_times, end_times), 1):
-        event_timestamps.extend([start, end])
-        event_labels.extend([f'start series {i}', f'stop series {i}'])
-
-    DataSet.events = pd.DataFrame({
-        'time': pd.Series(event_timestamps),
-        'label': pd.Series(event_labels)
-    })
-
-    if rtops.empty:
-        raise ValueError("No RTops found in file.")
-
-    ecg_timestamps = rtops['time']
-    ecg_levels = 1000.0 / rtops['ibi']
-
-    DataSet.ecg = cs.TimeSeries(ecg_timestamps, ecg_levels)
-   
-    # Step 5: Classify the RTops
-    classify(DataSet)
-
-    # Initialize epochs
-    DataSet.create_epochs()
- 
 
 def filterECGData(DataSet, par=None):
     """

@@ -1,6 +1,6 @@
 import sys
-
 import pandas as pd
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 import spectHR as cs
 import spectQt as spQt
+
 from ui_form import Ui_MainWindow
 
 
@@ -126,8 +127,10 @@ class MainWindow(QMainWindow):
             return
 
         # Only allow context menu for raw files: the ones with ecg data 
-        #if not item.text(0).lower().endswith('.xdf') and not item.text(0).lower().endswith('.txt'):
-        #    return
+        if not item.text(0).lower().endswith('.xdf') \
+            and not item.text(0).lower().endswith('.txt') \
+            and not item.text(0).lower().endswith('.evt'):
+            return
 
         # Create a context menu
         context_menu = QMenu(self)
@@ -203,12 +206,15 @@ class MainWindow(QMainWindow):
             self.show_poincare_plot(self.dataset)
 
         if index == 3 and self.dataset is not None:
+            self.show_poincare_plot(self.dataset)
             self.show_epoch_plot(self.dataset)
 
         if index == 4 and self.dataset is not None:
+            self.show_poincare_plot(self.dataset)
             self.show_welch_psd_plot(self.dataset)
 
         if index == 5 and self.dataset is not None:
+            self.show_poincare_plot(self.dataset)
             self.show_parameters_plot(self.dataset)
 
         QApplication.restoreOverrideCursor()
