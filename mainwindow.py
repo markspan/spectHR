@@ -35,6 +35,8 @@ class MainWindow(QMainWindow):
         The structured workspace data loaded from disk or memory.
     prep_plot_widget : PrepPlotWidget
         Widget for displaying the ECG preprocessing plot.
+    ibiseries_plot_widget : IBISeriesPlotWidget
+        Widget for displaying the IBI series plot.
     poincare_plot_widget : PoincarePlotWidget
         Widget for displaying the Poincaré plot.
     welch_psd_widget : WelchPSDWidget
