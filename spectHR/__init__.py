@@ -8,4 +8,5 @@ from spectHR.Plots.Welch import welch_psd
 from spectHR.Tools.Logger import handler, logger
 from spectHR.Tools.Params import *
 from spectHR.Tools.Webdav import copyWebdav
+from spectHR.ui.EventCodeWindow import EventCodeWindow
 from spectHR.ui.LineHandler import DraggableVLine, LineHandler

@@ -1,6 +1,6 @@
 import sys
-import pandas as pd
 
+import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
 
 import spectHR as cs
 import spectQt as spQt
-
 from ui_form import Ui_MainWindow
+
 
 class MainWindow(QMainWindow):
     """
@@ -317,6 +317,13 @@ class MainWindow(QMainWindow):
         data : object
             The dataset object containing RR intervals or relevant features.
         """
+        
+        """
+        Plotting is done a bit weird: we need to plot into a void first, to get the maximum 
+        and minimum axis values, and then plot again with the same axis limits. This is 
+        because the y-axis limits can vary significantly between epochs, and we want to 
+        ensure that all plots are comparable.
+        """
         if dataset is not None:
             # Clear previous widgets
             while self.welch_psd_layout.count():
@@ -337,7 +344,7 @@ class MainWindow(QMainWindow):
             # Lists to store y-axis data
             all_y_min = []
             all_y_max = []
-
+            # First pass: plot without setting y-axis limits to gather min/max
             for epoch in epoch_names:
                 widget = spQt.WelchPSDPlotWidget()
                 spectral_measures = widget.plot_psd(dataset.filtered_by_epoch[epoch], epoch, fs=4, logscale=False, nperseg=256,
