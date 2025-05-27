@@ -1,5 +1,4 @@
 import copy
-
 from collections import Counter
 
 import numpy as np
@@ -7,7 +6,6 @@ import pandas as pd
 import scipy.signal as signal
 
 import spectHR as cs
-
 from spectHR.Tools.Logger import logger
 
 
@@ -411,9 +409,10 @@ def classify(data, par=None):
     par = {**default_par, **(par or {})}
     data.RTops = data.RTops.reset_index(drop=True)
     IBI = data.RTops['ibi'].reset_index(drop=True)
+    
     # Calculate moving average and standard deviation
-    avIBIr = pd.Series(IBI).rolling(window=par["Tw"]).mean().to_numpy()
-    SDavIBIr = pd.Series(IBI).rolling(window=par["Tw"]).std().to_numpy()
+    avIBIr = pd.Series(IBI).rolling(window=par["Tw"], min_periods=1).mean().to_numpy()
+    SDavIBIr = pd.Series(IBI).rolling(window=par["Tw"], min_periods=1).std().to_numpy()
 
     lower = avIBIr - (par["Nsd"] * SDavIBIr)
     higher = avIBIr + (par["Nsd"] * SDavIBIr)

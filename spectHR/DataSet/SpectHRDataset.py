@@ -641,7 +641,7 @@ class SpectHRDataset:
                 return self.sampleRate
 
             def get_start_time(self):
-                return self._get_float(self.header, 16)
+                return self._get_integer(self.header, 16)
 
             def get_interval(self, chan):
                 self._get_channel_header(chan)
@@ -752,12 +752,13 @@ class SpectHRDataset:
         channel_data = nff.read_channel_data(chan)
         # Get the sample rate and start time
         sample_rate = nff.get_sample_rate()
-        start_time = nff.get_start_time()
-
+        start_time = nff.get_start_time()/1000
+        print(f'Start time: {start_time}, Sample rate: {sample_rate}, Channel: {label}')
         # Create timestamps
         num_samples = len(channel_data)
         timestamps = [start_time + i / sample_rate for i in range(num_samples)]
-
+        #timestamps = [i / sample_rate for i in range(num_samples)]
+        print(f'Number of samples: {num_samples}, EndTime: {timestamps[-1]}...')
         # Close the file
         nff.close_file()
 
