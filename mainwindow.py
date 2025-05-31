@@ -1,6 +1,6 @@
 import sys
-import pandas as pd
 
+import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
 
 import spectHR as cs
 import spectQt as spQt
-
 from ui_form import Ui_MainWindow
+
 
 class MainWindow(QMainWindow):
     """
@@ -142,20 +142,49 @@ class MainWindow(QMainWindow):
         reload_action = QAction("Reload Raw", self)
         clean_action = QAction("ECG Artefact Detection", self)
         invert_action = QAction("Invert ECG Polarity", self)
+        retrigger_action = QAction("Retrigger ECG", self)
+        classify_action = QAction("(Re-)Classify RTops", self)
 
         # Connect the actions to their respective functions
         reload_action.triggered.connect(lambda: self.reload(item))
         invert_action.triggered.connect(self.invert)
         clean_action.triggered.connect(self.clean)
+        retrigger_action.triggered.connect(self.retrigger)
+        classify_action.triggered.connect(self.reClassify)
 
         # Add the actions to the context menu
         context_menu.addAction(reload_action)
         context_menu.addAction(clean_action)
         context_menu.addAction(invert_action)
-
+        context_menu.addAction(retrigger_action)
+        context_menu.addAction(classify_action)
         # Show the context menu at the requested position
         context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
 
+    def reClassify(self):
+        """
+        Reclassify the R-peaks in the ECG signal and update the preprocessing plot.
+        """
+        if self.dataset is None:
+            return
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        cs.classify(self.dataset)
+        QApplication.restoreOverrideCursor()
+        self.show_preprocessing_plot(self.dataset)
+        
+    def retrigger(self):
+        """
+        Retrigger the ECG signal by recalculating the R-peaks and updating the preprocessing plot.
+        """
+        if self.dataset is None:
+            return
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self.dataset = cs.calcPeaks(self.dataset)
+        QApplication.restoreOverrideCursor()
+        self.show_preprocessing_plot(self.dataset)  
+        
     def clean(self):
         """
         Clean up the raw ECG signal.
@@ -175,7 +204,7 @@ class MainWindow(QMainWindow):
             item: The selected item in the tree view.
         """
         self.dataset = spQt.PreProcessFile(
-            self.workspace, item.text(0), reset=True)
+            self.workspace, item.text(0), reset=True, border=False)
         self.show_preprocessing_plot(self.dataset)
 
     def invert(self):
@@ -317,6 +346,13 @@ class MainWindow(QMainWindow):
         data : object
             The dataset object containing RR intervals or relevant features.
         """
+        
+        """
+        Plotting is done a bit weird: we need to plot into a void first, to get the maximum 
+        and minimum axis values, and then plot again with the same axis limits. This is 
+        because the y-axis limits can vary significantly between epochs, and we want to 
+        ensure that all plots are comparable.
+        """
         if dataset is not None:
             # Clear previous widgets
             while self.welch_psd_layout.count():
@@ -337,7 +373,7 @@ class MainWindow(QMainWindow):
             # Lists to store y-axis data
             all_y_min = []
             all_y_max = []
-
+            # First pass: plot without setting y-axis limits to gather min/max
             for epoch in epoch_names:
                 widget = spQt.WelchPSDPlotWidget()
                 spectral_measures = widget.plot_psd(dataset.filtered_by_epoch[epoch], epoch, fs=4, logscale=False, nperseg=256,

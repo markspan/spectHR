@@ -46,7 +46,8 @@ class WelchPSDPlotWidget(QWidget):
 
         ibi_times = dataset['time']
         ibi_values = dataset['ibi']
-
+        if ibi_times.empty:
+            return -1
         try:
             title = epoch.title()
         except Exception:
@@ -61,7 +62,8 @@ class WelchPSDPlotWidget(QWidget):
             ibi_resampled = interp_func(time_uniform)
         else:
             ibi_resampled = ibi_values
-
+        # Remove NaN values
+        ibi_resampled = ibi_resampled[~np.isnan(ibi_resampled)]
         # Welch PSD
         # freqs, power = welch(ibi_resampled, fs=fs, window=window, nperseg=nperseg, noverlap=noverlap)
         try:

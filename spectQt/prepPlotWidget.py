@@ -541,7 +541,9 @@ class PrepPlotWidget(QWidget):
         self.positional_patch = self.plot_overview(
             self.ax_overview, data.ecg.time, data.ecg.level, self.data.x_min, self.data.x_max)
         # State variables for dragging
-        self.drag_mode = None
+        self.edit_mode = 'Drag'
+        self.line_handler.update_mode('Drag')
+
         self.initial_xmin, self.initial_xmax = self.data.x_min, self.data.x_max
 
         self.update_plot()

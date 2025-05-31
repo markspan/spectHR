@@ -48,9 +48,10 @@ def PopulateTree(treewidget, workspace):
     for label, pattern in categories.items():
 
         parent = QTreeWidgetItem([label])
+        extension = pattern.split("*")[-1].lower()
         files = sorted(
             [f for f in os.listdir(workspace["DataDirectory"])
-             if f.endswith(pattern.split("*")[-1])]
+             if f.lower().endswith(extension)]
         )
         for fname in files:
             if fname.lower() != 'requirements.txt':

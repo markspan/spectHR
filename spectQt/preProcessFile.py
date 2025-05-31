@@ -1,7 +1,7 @@
 import spectHR as cs
 
 
-def PreProcessFile(workspace, file_path, reset=False):
+def PreProcessFile(workspace, file_path, reset=False, border = True):
     """
     Load and preprocess an ECG dataset from a given file path.
 
@@ -22,15 +22,15 @@ def PreProcessFile(workspace, file_path, reset=False):
     """
     # Load dataset without resetting metadata; auto-detect polarity
     dataset = cs.SpectHRDataset(workspace, file_path, reset=reset, flip='auto')
-    if hasattr(dataset, 'ecg'):
-        dataset.has_ecg = True
-        dataset = cs.borderData(dataset)
-        # Apply a high-pass filter to remove baseline drift
-        dataset = cs.filterECGData(
-            dataset, {"filterType": "highpass", "cutoff": 1})
+    if hasattr(dataset, 'ecg') and hasattr(dataset, 'has_ecg') and dataset.has_ecg:
+        if (border):
+            dataset = cs.borderData(dataset)
+            # Apply a high-pass filter to remove baseline drift
+            dataset = cs.filterECGData(
+                dataset, {"filterType": "highpass", "cutoff": 1})
 
-        # Compute R-peaks only if not already present
-        if not hasattr(dataset, 'RTops'):
-            dataset = cs.calcPeaks(dataset)
+            # Compute R-peaks only if not already present
+            if not hasattr(dataset, 'RTops'):
+                dataset = cs.calcPeaks(dataset)
 
     return dataset

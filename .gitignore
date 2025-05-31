@@ -21,3 +21,14 @@ test.py
 *.csv
 nffreader.py
 testnff.py
+AT100.EVT
+AT100.nff
+AT4019.INF
+AT4019.EVT
+AT4019.nff
+BMT101.nff
+JD1342.evt
+nlr.evt
+nlr.nff
+pp0072.evt
+pp0072.nff

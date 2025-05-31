@@ -1,21 +1,21 @@
 import os
 import pickle
 import struct
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from collections import Counter
+
 import numpy as np
 import pandas as pd
 import pyxdf
 import scipy
 
 import spectHR as cs
-from EventCodeWindow import EventCodeWindow
-
 from spectHR.Actions.csActions import classify
 from spectHR.Actions.csBreathing import calculate_breathing_signal
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.Webdav import copyWebdav
+
 
 class TimeSeries:
     """
@@ -190,13 +190,15 @@ class SpectHRDataset:
                 f"Loading dataset from Raw Harness File: {self.file_path}")
             self.loadRawHarness(self.file_path, flip=flip)
             self.save()
-        elif self.file_path.endswith('.evt') and Path(self.file_path).exists():
+        elif self.file_path.lower().endswith('.evt') and Path(self.file_path).exists():
+            self.has_ecg = False
             logger.info(
                 f"Loading dataset from CARSPAN evt File: {self.file_path}")
             self.loadEVT(self.file_path)
             base, ext = os.path.splitext(self.file_path)
             if os.path.exists(base + '.nff'):
                 self.loadNFF(base + '.nff', 'ECG')
+                self.has_ecg = True
                 logger.info(
                     f"Loading dataset from CARSPAN nff File: {self.file_path}")
             self.save()
@@ -243,10 +245,19 @@ class SpectHRDataset:
         logger.info('Loading CARSPAN EVT RTops')
         self.has_ecg = False
 
+        def _contains_string(lines, search_string):
+            for line in lines:
+                if search_string in line:
+                    return True
+            return False
+        
         # Step 1: Read only [Data] section
         with open(filename, 'r') as f:
             lines = f.readlines()
-
+            
+        if not _contains_string(lines, "[Data]"):
+            lines[0] = "[Data]"
+            
         data_section = False
         event_codes = []
         times = []
@@ -283,23 +294,25 @@ class SpectHRDataset:
         self.RTops['ID'] = 'N'
 
         if len(df['event_code'].unique()) > 2:
-            event_code_window = EventCodeWindow(
-                df['event_code'].unique(), ignore=most_common_event_code)
+            event_code_window = cs.EventCodeWindow(
+                df['event_code'], ignore=most_common_event_code)
             event_code_window.codes_selected.connect(self.on_codes_selected)
             event_code_window.exec()
-
-            start_times = df[df['event_code'].isin(
-                self.start_codes)]['time'].tolist()
-            end_times = df[df['event_code'].isin(
-                self.stop_codes)]['time'].tolist()
-
+            if self.start_codes != [] and self.stop_codes != []:
+                start_times = df[df['event_code'].isin(
+                    self.start_codes)].time.tolist()
+                end_times = df[df['event_code'].isin(
+                    self.stop_codes)].time.tolist()
+            else:
+                start_times = [times[0]]
+                end_times = [times[-1]]
         else:  # less then two non-r-top codes available.
             start_times = [times[0]]
             end_times = [times[-1]]
 
         if len(start_times) != len(end_times):
             raise ValueError(
-                "Mismatched number of start (11) and end (21) codes.")
+                f"Mismatched number of start {start_times} and end {end_times} codes.")
 
         # Step 4: Build structured events
         event_timestamps = []
@@ -628,7 +641,7 @@ class SpectHRDataset:
                 return self.sampleRate
 
             def get_start_time(self):
-                return self._get_float(self.header, 16)
+                return self._get_integer(self.header, 16)
 
             def get_interval(self, chan):
                 self._get_channel_header(chan)
@@ -739,12 +752,13 @@ class SpectHRDataset:
         channel_data = nff.read_channel_data(chan)
         # Get the sample rate and start time
         sample_rate = nff.get_sample_rate()
-        start_time = nff.get_start_time()
-
+        start_time = nff.get_start_time()/1000
+        print(f'Start time: {start_time}, Sample rate: {sample_rate}, Channel: {label}')
         # Create timestamps
         num_samples = len(channel_data)
         timestamps = [start_time + i / sample_rate for i in range(num_samples)]
-
+        #timestamps = [i / sample_rate for i in range(num_samples)]
+        print(f'Number of samples: {num_samples}, EndTime: {timestamps[-1]}...')
         # Close the file
         nff.close_file()
 
