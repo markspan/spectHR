@@ -63,6 +63,14 @@ class MainWindow(QMainWindow):
         self.workspace = spQt.LoadWorkspace()
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
         self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
+        self.ui.actionOpen_Workspace.setShortcut("Ctrl+O")
+        self.ui.actionOpen_Workspace.setStatusTip("Open a workspace file")
+        self.ui.actionOpen_Workspace.setToolTip("Open a workspace file")
+
+        self.ui.actionEdit_Workspace.triggered.connect(self.EditWorkSpace)
+        self.ui.actionEdit_Workspace.setShortcut("Ctrl+E")
+        self.ui.actionEdit_Workspace.setStatusTip("Edit a workspace file")
+        self.ui.actionEdit_Workspace.setToolTip("Edit a workspace file")
 
         # Connect the customContextMenuRequested signal to a slot
         self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -116,6 +124,16 @@ class MainWindow(QMainWindow):
             self, "Select a file", "", "workspace Files (*.json);;Text Files (*.txt)")
         self.workspace = spQt.LoadWorkspace(file_path)
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
+
+    def EditWorkSpace(self):
+        """
+        Edit a JSON workspace file, holding the directories.
+        """
+        dialog = cs.DirectorySelectorDialog(self.workspace)
+        if dialog.exec_() == QInputDialog.Accepted:
+            # Update the workspace with the new directories
+            self.workspace = dialog.get_directories()
+            spQt.PopulateTree(self.ui.treeWidget, self.workspace)
 
     def show_context_menu(self, position):
         """
