@@ -132,6 +132,7 @@ class PrepPlotWidget(QWidget):
         return nav_widget
 
     def set_edit_mode(self, mode):
+        self.mode_selector.setCurrentText(mode)
         self.edit_mode = mode
         self.line_handler.update_mode(mode)
 
@@ -554,7 +555,12 @@ class PrepPlotWidget(QWidget):
         self.canvas = FigureCanvas(self.fig)
         # Insert new canvas in correct position
         self.layout.insertWidget(1, self.canvas)
-        self.set_edit_mode("Drag")  # Default edit mode
+        
+        if self.mode_selector.currentText() is None:
+            self.mode_selector.setCurrentText("Drag")
+            
+        self.set_edit_mode(self.mode_selector.currentText())  # Default edit mode
+        
         self.canvas.draw()
 
         return self.fig
