@@ -172,7 +172,7 @@ class MainWindow(QMainWindow):
         cs.classify(self.dataset)
         QApplication.restoreOverrideCursor()
         self.show_preprocessing_plot(self.dataset)
-        
+
     def retrigger(self):
         """
         Retrigger the ECG signal by recalculating the R-peaks and updating the preprocessing plot.
@@ -183,8 +183,8 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         self.dataset = cs.calcPeaks(self.dataset)
         QApplication.restoreOverrideCursor()
-        self.show_preprocessing_plot(self.dataset)  
-        
+        self.show_preprocessing_plot(self.dataset)
+
     def clean(self):
         """
         Clean up the raw ECG signal.
@@ -346,7 +346,7 @@ class MainWindow(QMainWindow):
         data : object
             The dataset object containing RR intervals or relevant features.
         """
-        
+
         """
         Plotting is done a bit weird: we need to plot into a void first, to get the maximum 
         and minimum axis values, and then plot again with the same axis limits. This is 
@@ -448,6 +448,7 @@ class MainWindow(QMainWindow):
         # Replot the figure to include the new epoch
         self.poincare_plot_widget.poincarePlot(self.dataset)
         self.epoch_plot_widget.plotEpoch(self.dataset)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

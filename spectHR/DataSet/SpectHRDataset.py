@@ -75,6 +75,7 @@ class TimeSeries:
         """
         return pd.DataFrame({"time": self.time, "level": self.level, "srate": [self.srate] * len(self.time)})
 
+
 class SpectHRDataset:
     """
     A class to represent a dataset containing ECG, breathing, and event data.
@@ -250,14 +251,14 @@ class SpectHRDataset:
                 if search_string in line:
                     return True
             return False
-        
+
         # Step 1: Read only [Data] section
         with open(filename, 'r') as f:
             lines = f.readlines()
-            
+
         if not _contains_string(lines, "[Data]"):
             lines[0] = "[Data]"
-            
+
         data_section = False
         event_codes = []
         times = []
@@ -753,12 +754,14 @@ class SpectHRDataset:
         # Get the sample rate and start time
         sample_rate = nff.get_sample_rate()
         start_time = nff.get_start_time()/1000
-        print(f'Start time: {start_time}, Sample rate: {sample_rate}, Channel: {label}')
+        print(
+            f'Start time: {start_time}, Sample rate: {sample_rate}, Channel: {label}')
         # Create timestamps
         num_samples = len(channel_data)
         timestamps = [start_time + i / sample_rate for i in range(num_samples)]
-        #timestamps = [i / sample_rate for i in range(num_samples)]
-        print(f'Number of samples: {num_samples}, EndTime: {timestamps[-1]}...')
+        # timestamps = [i / sample_rate for i in range(num_samples)]
+        print(
+            f'Number of samples: {num_samples}, EndTime: {timestamps[-1]}...')
         # Close the file
         nff.close_file()
 
@@ -857,6 +860,7 @@ class SpectHRDataset:
         self.history.append(
             {'action': action_name, 'timestamp': datetime.now(), 'parameters': params})
         logger.info(f"Action logged: {action_name} with parameters {params}")
+
 
 if __name__ == "__main__":
     # Example usage

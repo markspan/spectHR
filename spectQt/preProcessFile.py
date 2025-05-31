@@ -1,7 +1,7 @@
 import spectHR as cs
 
 
-def PreProcessFile(workspace, file_path, reset=False, border = True):
+def PreProcessFile(workspace, file_path, reset=False, border=True):
     """
     Load and preprocess an ECG dataset from a given file path.
 
