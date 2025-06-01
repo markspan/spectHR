@@ -1,6 +1,8 @@
 import os
 
 import pandas as pd
+import numpy as np
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
@@ -94,6 +96,7 @@ class ParametersPlotWidget(QWidget):
                 ('min', 'min'),
                 ('max', 'max'),
                 ('rmssd', cs.Tools.Params.rmssd),
+                ('crmssd', cs.Tools.Params.crmssd),
                 ('sdnn', cs.Tools.Params.sdnn),
                 ('sdsd', cs.Tools.Params.sdsd),
                 ('sd1', cs.Tools.Params.sd1),
@@ -124,8 +127,17 @@ class ParametersPlotWidget(QWidget):
         # Populate the table with data
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
-                self.table_widget.setItem(
-                    i, j, QTableWidgetItem(str(data.iloc[i, j])))
+                if isinstance(data.iloc[i, j], str):
+                    # If the data is a string, set it directly
+                    self.table_widget.setItem(
+                        i, j, QTableWidgetItem(data.iloc[i, j]))  
+                elif isinstance(data.iloc[i, j], (np.int64)):
+                    # If the data is an integer, set it directly
+                    self.table_widget.setItem(
+                        i, j, QTableWidgetItem(str(data.iloc[i, j])))
+                else: 
+                    self.table_widget.setItem(
+                        i, j, QTableWidgetItem(str(format(data.iloc[i, j], '.4f'))))
 
         # Resize columns to fit content
         self.table_widget.resizeColumnsToContents()

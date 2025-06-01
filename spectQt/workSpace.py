@@ -1,42 +1,47 @@
 import json
 import os
 import sys
+from pathlib import Path
+from platformdirs import user_documents_path
 
 from PySide6.QtWidgets import QTreeWidgetItem
 
 
-def exe_dir_path(filename):
-    """Get path to a file in the same directory as the executable."""
-    base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-    return os.path.join(base_dir, filename)
+def LoadWorkspace(json_file=None):
+    """Load workspace settings from a JSON file or create a default one."""
+    if json_file is None:
+        json_file = user_documents_path() / "DefaultWorkSpace.json"
 
-
-def LoadWorkspace(default_json=None):
-    if default_json is None:
-        default_json = exe_dir_path("DefaultWorkSpace.json")
-
-    cwd = os.getcwd()
     workspace = {
-        "DataDirectory": cwd,
-        "CacheDirectory": os.path.join(cwd, "cache"),
-        "OutputDirectory": cwd
+        "DataDirectory": str(user_documents_path() / 'spectHR'),
+        "CacheDirectory": str(user_documents_path() / 'spectHR/cache'),
+        "OutputDirectory": str(user_documents_path() / 'spectHR/export')
     }
 
-    if os.path.exists(default_json):
+    spectHRDir = user_documents_path() / 'spectHR'
+    if not spectHRDir.exists():
+        os.makedirs(spectHRDir)
+
+    if os.path.exists(json_file):
         try:
-            with open(default_json, "r") as f:
+            with open(json_file, "r") as f:
                 loaded = json.load(f)
                 workspace.update({k: loaded.get(k, v)
                                  for k, v in workspace.items()})
         except Exception as e:
             print(f"Could not load workspace file: {e}")
     else:
-        with open(default_json, "w") as f:
+        with open(json_file, "w") as f:
+            if not os.path.exists(workspace["CacheDirectory"]):
+                os.makedirs(workspace["CacheDirectory"])
+            if not os.path.exists(workspace["OutputDirectory"]):
+                os.makedirs(workspace["OutputDirectory"])
             json.dump(workspace, f, indent=4)
     return workspace
 
 
 def PopulateTree(treewidget, workspace):
+    """Populate a QTreeWidget with files from the workspace directories."""
     treewidget.clear()
     categories = {
         "XDF Files": "*.xdf",
@@ -57,3 +62,5 @@ def PopulateTree(treewidget, workspace):
             if fname.lower() != 'requirements.txt':
                 QTreeWidgetItem(parent, [fname])
         treewidget.addTopLevelItem(parent)
+    treewidget.expandAll()
+    

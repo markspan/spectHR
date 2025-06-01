@@ -1,4 +1,6 @@
 import sys
+import json
+import webbrowser
 
 import pandas as pd
 from PySide6.QtCore import Qt
@@ -67,10 +69,25 @@ class MainWindow(QMainWindow):
         self.ui.actionOpen_Workspace.setStatusTip("Open a workspace file")
         self.ui.actionOpen_Workspace.setToolTip("Open a workspace file")
 
+        # Edit workspace action
         self.ui.actionEdit_Workspace.triggered.connect(self.EditWorkSpace)
         self.ui.actionEdit_Workspace.setShortcut("Ctrl+E")
         self.ui.actionEdit_Workspace.setStatusTip("Edit a workspace file")
         self.ui.actionEdit_Workspace.setToolTip("Edit a workspace file")
+
+        # Save workspace action
+        self.ui.actionSave_Workspace.triggered.connect(self.SaveWorkSpace)
+        self.ui.actionSave_Workspace.setShortcut("Ctrl+S")
+        self.ui.actionSave_Workspace.setStatusTip("Save the current workspace")
+        self.ui.actionSave_Workspace.setToolTip("Save the current workspace")
+
+        # Action to open the Documentation site
+        self.ui.actionDocumentation.triggered.connect(
+            lambda: webbrowser.open("https://github.com/markspan/spectHR/blob/test/readme.MD"))  
+        self.ui.actionDocumentation.setShortcut("Ctrl+D")
+        self.ui.actionDocumentation.setStatusTip("Open the spectHR documentation")
+        self.ui.actionDocumentation.setToolTip("Open the spectHR documentation")
+
 
         # Connect the customContextMenuRequested signal to a slot
         self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -124,6 +141,20 @@ class MainWindow(QMainWindow):
             self, "Select a file", "", "workspace Files (*.json);;Text Files (*.txt)")
         self.workspace = spQt.LoadWorkspace(file_path)
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
+
+    def SaveWorkSpace(self):
+        """
+        Save a JSON workspace file, holding the directories.
+        """
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Select a file", "", "workspace Files (*.json);;Text Files (*.txt)")
+        if file_path:
+            try:
+                # Save the workspace to the selected file
+                with open(file_path, 'w') as file:
+                    json.dump(self.workspace, file, indent=4)
+            except Exception as e:
+                pass
 
     def EditWorkSpace(self):
         """

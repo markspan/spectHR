@@ -42,9 +42,9 @@ class PoincarePlotWidget(QWidget):
         self.setWindowTitle('Poincaré Plot')
 
         # Create matplotlib figure and canvas
-        self.fig, self.ax = plt.subplots(figsize=(6, 6))
+        self.fig, self.ax = plt.subplots(figsize=(6, 6), visible=False)
+        plt.close(self.fig)  # Close the figure to prevent it from displaying immediately
         self.canvas = FigureCanvas(self.fig)
-
         # Set up main horizontal layout
         self.main_layout = QHBoxLayout(self)
         self.setLayout(self.main_layout)

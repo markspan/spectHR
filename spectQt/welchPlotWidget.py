@@ -85,7 +85,7 @@ class WelchPSDPlotWidget(QWidget):
         def band_power(frequencies, power_spectrum, band):
             idx = np.logical_and(
                 frequencies >= band[0], frequencies <= band[1])
-            return np.trapezoid(power_spectrum[idx], frequencies[idx])
+            return 1000 * np.trapezoid(power_spectrum[idx], frequencies[idx])
 
         # Calculate power in each frequency band
         vlf_power = band_power(freqs, power, vlf_band)
