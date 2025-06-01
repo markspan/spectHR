@@ -83,11 +83,12 @@ class MainWindow(QMainWindow):
 
         # Action to open the Documentation site
         self.ui.actionDocumentation.triggered.connect(
-            lambda: webbrowser.open("https://github.com/markspan/spectHR/blob/test/readme.MD"))  
+            lambda: webbrowser.open("https://github.com/markspan/spectHR/blob/test/readme.MD"))
         self.ui.actionDocumentation.setShortcut("Ctrl+D")
-        self.ui.actionDocumentation.setStatusTip("Open the spectHR documentation")
-        self.ui.actionDocumentation.setToolTip("Open the spectHR documentation")
-
+        self.ui.actionDocumentation.setStatusTip(
+            "Open the spectHR documentation")
+        self.ui.actionDocumentation.setToolTip(
+            "Open the spectHR documentation")
 
         # Connect the customContextMenuRequested signal to a slot
         self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)

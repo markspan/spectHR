@@ -12,6 +12,7 @@ def rmssd(ibi):
         return np.nan
     return 1000.0 * rmssd
 
+
 def crmssd(ibi):
     try:
         ibi = np.asarray(ibi)
@@ -21,6 +22,7 @@ def crmssd(ibi):
         # Return NaN if division by zero occurs
         return np.nan
     return crmssd
+
 
 def sdnn(ibi):
     ibi = np.asarray(ibi)

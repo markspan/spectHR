@@ -63,4 +63,3 @@ def PopulateTree(treewidget, workspace):
                 QTreeWidgetItem(parent, [fname])
         treewidget.addTopLevelItem(parent)
     treewidget.expandAll()
-    

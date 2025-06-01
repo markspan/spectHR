@@ -130,12 +130,12 @@ class ParametersPlotWidget(QWidget):
                 if isinstance(data.iloc[i, j], str):
                     # If the data is a string, set it directly
                     self.table_widget.setItem(
-                        i, j, QTableWidgetItem(data.iloc[i, j]))  
+                        i, j, QTableWidgetItem(data.iloc[i, j]))
                 elif isinstance(data.iloc[i, j], (np.int64)):
                     # If the data is an integer, set it directly
                     self.table_widget.setItem(
                         i, j, QTableWidgetItem(str(data.iloc[i, j])))
-                else: 
+                else:
                     self.table_widget.setItem(
                         i, j, QTableWidgetItem(str(format(data.iloc[i, j], '.4f'))))
 

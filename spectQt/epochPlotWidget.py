@@ -46,7 +46,8 @@ class EpochPlotWidget(QWidget):
         self.fig = plt.figure()
         self.ax = plt.gca()
         self.canvas = FigureCanvas(self.fig)
-        plt.close(self.fig)  # Close the figure to prevent it from displaying immediately
+        # Close the figure to prevent it from displaying immediately
+        plt.close(self.fig)
         self.setVisible(False)
 
         # Set up the layout
