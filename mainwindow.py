@@ -1,5 +1,5 @@
-import sys
 import json
+import sys
 import webbrowser
 
 import pandas as pd
@@ -220,6 +220,7 @@ class MainWindow(QMainWindow):
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
         cs.classify(self.dataset)
+        self.dataset.save()  # Save the reclassified dataset
         QApplication.restoreOverrideCursor()
         self.show_preprocessing_plot(self.dataset)
 
@@ -233,17 +234,22 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         self.dataset = cs.calcPeaks(self.dataset)
         QApplication.restoreOverrideCursor()
+        self.dataset.save()  # Save the retriggered dataset
         self.show_preprocessing_plot(self.dataset)
 
     def clean(self):
         """
         Clean up the raw ECG signal.
         """
+        if self.dataset is None:
+            return
+
         QApplication.setOverrideCursor(Qt.WaitCursor)
         self.dataset = cs.ecgArtifactDetection(
             self.dataset, par={'dtw_thresh': 100000})
         QApplication.restoreOverrideCursor()
         self.dataset = cs.calcPeaks(self.dataset)
+        self.dataset.save()  # Save the cleaned dataset
         self.show_preprocessing_plot(self.dataset)
 
     def reload(self, item):
@@ -254,7 +260,8 @@ class MainWindow(QMainWindow):
             item: The selected item in the tree view.
         """
         self.dataset = spQt.PreProcessFile(
-            self.workspace, item.text(0), reset=True, border=False)
+            self.workspace, item.text(0), reset=True, border=True)
+        self.dataset.save()
         self.show_preprocessing_plot(self.dataset)
 
     def invert(self):
