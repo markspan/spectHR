@@ -25,12 +25,12 @@ def PreProcessFile(workspace, file_path, reset=False, border=True):
     if hasattr(dataset, 'ecg') and hasattr(dataset, 'has_ecg') and dataset.has_ecg:
         if (border):
             dataset = cs.borderData(dataset)
-            # Apply a high-pass filter to remove baseline drift
-            dataset = cs.filterECGData(
-                dataset, {"filterType": "highpass", "cutoff": 1})
+        # Apply a high-pass filter to remove baseline drift
+        dataset = cs.filterECGData(
+            dataset, {"filterType": "highpass", "cutoff": 1})
 
-            # Compute R-peaks only if not already present
-            if not hasattr(dataset, 'RTops'):
-                dataset = cs.calcPeaks(dataset)
+        # Compute R-peaks only if not already present
+        if not hasattr(dataset, 'RTops'):
+            dataset = cs.calcPeaks(dataset)
 
     return dataset
