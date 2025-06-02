@@ -1,14 +1,11 @@
 import os
 
-import pandas as pd
 import numpy as np
-
+import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame,
     QHBoxLayout,
     QPushButton,
-    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -111,33 +108,33 @@ class ParametersPlotWidget(QWidget):
                 dataset.descriptives_values, dataset.psd_values, on='epoch', how='outer')
 
         # Populate the table
-        data = dataset.descriptives_values
+        self.data = dataset.descriptives_values
         # Ensure 'epoch' is the first column
-        columns = ['epoch'] + [col for col in data.columns if col != 'epoch']
-        data = data[columns]
+        columns = ['epoch'] + [col for col in self.data.columns if col != 'epoch']
+        self.data = self.data[columns]
 
         self.table_widget.clear()
         # Set the number of rows and columns
-        self.table_widget.setRowCount(data.shape[0])
-        self.table_widget.setColumnCount(data.shape[1])
+        self.table_widget.setRowCount(self.data.shape[0])
+        self.table_widget.setColumnCount(self.data.shape[1])
 
         # Set the table headers
-        self.table_widget.setHorizontalHeaderLabels(data.columns)
+        self.table_widget.setHorizontalHeaderLabels(self.data.columns)
 
         # Populate the table with data
-        for i in range(data.shape[0]):
-            for j in range(data.shape[1]):
-                if isinstance(data.iloc[i, j], str):
+        for i in range(self.data.shape[0]):
+            for j in range(self.data.shape[1]):
+                if isinstance(self.data.iloc[i, j], str):
                     # If the data is a string, set it directly
                     self.table_widget.setItem(
-                        i, j, QTableWidgetItem(data.iloc[i, j]))
-                elif isinstance(data.iloc[i, j], (np.int64)):
+                        i, j, QTableWidgetItem(self.data.iloc[i, j]))
+                elif isinstance(self.data.iloc[i, j], (np.int64)):
                     # If the data is an integer, set it directly
                     self.table_widget.setItem(
-                        i, j, QTableWidgetItem(str(data.iloc[i, j])))
+                        i, j, QTableWidgetItem(str(self.data.iloc[i, j])))
                 else:
                     self.table_widget.setItem(
-                        i, j, QTableWidgetItem(str(format(data.iloc[i, j], '.4f'))))
+                        i, j, QTableWidgetItem(str(format(self.data.iloc[i, j], '.3f'))))
 
         # Resize columns to fit content
         self.table_widget.resizeColumnsToContents()
@@ -162,8 +159,16 @@ class ParametersPlotWidget(QWidget):
         df = pd.DataFrame(data)
 
         # Save the DataFrame to a CSV file
-        df.to_csv(os.path.splitext(self.dataset.filename)[
-                  0] + '.csv', index=False, header=self.get_table_headers())
+        csvfilename = os.path.join(self.dataset.workspace["OutputDirectory"],
+                                   os.path.splitext(self.dataset.filename)[0] + '.csv')
+        
+        self.data['Subject'] = os.path.splitext(self.dataset.filename)[0]
+        # Specify the new order of columns
+        new_column_order = ['Subject'] + [col for col in self.data.columns if col != 'Subject']
+
+        # Reorder the DataFrame
+        self.data = self.data[new_column_order]
+        self.data.to_csv(csvfilename , index=False, header=True)
 
     def get_table_headers(self):
         """

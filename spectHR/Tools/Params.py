@@ -17,7 +17,7 @@ def crmssd(ibi):
     try:
         ibi = np.asarray(ibi)
         crmssd = rmssd(ibi)
-        crmssd = crmssd / np.mean(ibi)
+        crmssd = crmssd / np.nanmean(ibi)
     except ZeroDivisionError:
         # Return NaN if division by zero occurs
         return np.nan
