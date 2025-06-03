@@ -489,11 +489,17 @@ class SpectHRDataset:
 
         # Identify ECG stream automatically if not provided:
         if ecg_index is None:
-            ecg_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith(
-                'ECG') and d['info']['effective_srate'] > 0), None)
-            if ecg_index is None:
+            ecg_index = [i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith(
+                'ECG') and d['info']['effective_srate'] > 0]
+            if not ecg_index:
                 logger.info("There is no stream named 'Polar'")
-
+            elif len(ecg_index) > 1:
+                dialog = cs.ChannelSelect(len(ecg_index))
+                if dialog.exec():
+                    selected_channel = dialog.get_selected_channel()
+                    ecg_index = ecg_index[selected_channel]
+            else:
+                ecg_index = ecg_index[0]
         # Identify accelerometer stream for breathing automatically if not provided
         if br_index is None:
             br_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith(

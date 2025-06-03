@@ -2,8 +2,8 @@ import json
 import os
 import sys
 from pathlib import Path
-from platformdirs import user_documents_path
 
+from platformdirs import user_documents_path
 from PySide6.QtWidgets import QTreeWidgetItem
 
 
@@ -49,7 +49,7 @@ def PopulateTree(treewidget, workspace):
         "RR Text Files": "*.txt"
     }
 
-    treewidget.setHeaderLabels(["File Name"])
+    treewidget.setHeaderLabels(["WorkSpace Data"])
     for label, pattern in categories.items():
 
         parent = QTreeWidgetItem([label])
