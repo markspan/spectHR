@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QComboBox, QDialog, QLabel, QPushButton, QVBoxLayo
 
 
 class ChannelSelect(QDialog):
-    def __init__(self, nchannels=4):
+    def __init__(self, channelnames):
         super().__init__()
 
         self.setWindowTitle("Channel Selector")
@@ -19,8 +19,8 @@ class ChannelSelect(QDialog):
 
         # Create a QComboBox and populate it with items
         self.combo_box = QComboBox()
-        for i in range(nchannels):
-            self.combo_box.addItem(f"Channel {i + 1}")  
+        for i in channelnames:
+            self.combo_box.addItem(f"{i}")
 
         # Connect the currentIndexChanged signal to a slot
         self.combo_box.currentIndexChanged.connect(self.on_channel_selected)
@@ -40,4 +40,4 @@ class ChannelSelect(QDialog):
 
     def get_selected_channel(self):
         # Return the currently selected channel
-        return self.combo_box.currentIndex()-1
+        return self.combo_box.currentIndex()

@@ -494,12 +494,15 @@ class SpectHRDataset:
             if not ecg_index:
                 logger.info("There is no stream named 'Polar'")
             elif len(ecg_index) > 1:
-                dialog = cs.ChannelSelect(len(ecg_index))
+                # Extract the 'name' fields from the specified indices
+                channelnames = [rawdata[i]['info']['name'][0] for i in ecg_index]
+                dialog = cs.ChannelSelect(channelnames)
                 if dialog.exec():
                     selected_channel = dialog.get_selected_channel()
                     ecg_index = ecg_index[selected_channel]
             else:
                 ecg_index = ecg_index[0]
+                
         # Identify accelerometer stream for breathing automatically if not provided
         if br_index is None:
             br_index = next((i for i, d in enumerate(rawdata) if d['info']['type'][0].startswith(
