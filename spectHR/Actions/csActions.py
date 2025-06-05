@@ -365,8 +365,8 @@ def borderData(DataSet, par=None):
     # Ensure that events exist in the DataSet
     if DS.events is not None and not DS.events.empty:
         # Get the first and last event timestamps
-        first_event_time = DS.events['time'].iloc[0]-1
-        last_event_time = DS.events['time'].iloc[-1]+1
+        first_event_time = DS.events['time'].iloc[0] - 1
+        last_event_time = DS.events['time'].iloc[-1] + 1 + 600  # Adding 10 minutes to the last event time
 
         # Slice TimeSeries based on the first and last event times
         mask = (DS.ecg.time >= first_event_time) & (

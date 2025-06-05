@@ -148,7 +148,8 @@ class EpochPlotWidget(QWidget):
         self.ax.grid(axis="y", linestyle="-", alpha=0.7)
 
         # Set x-axis limits
-        self.ax.set_xlim([min(start_times) - 1, max(end_times) + 1])
+        #self.ax.set_xlim([min(start_times) - 1, max(end_times) + 1])
+        self.ax.set_xlim(dataset.ecg.time.iloc[0], dataset.ecg.time.iloc[-1])
         self.ax.set_ylim([-1, len(epoch_names)])
 
         # Connect event handlers
