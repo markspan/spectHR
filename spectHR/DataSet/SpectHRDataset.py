@@ -512,8 +512,10 @@ class SpectHRDataset:
 
         # Identify event stream automatically if not provided
         if event_index is None:
-            event_index = [i for i, d in enumerate(
-                rawdata) if 'Markers' in d['info']['type']]
+            event_index = [
+                i for i, d in enumerate(rawdata)
+                if 'Markers' in d['info']['type'] and not d['info']['name'][0].startswith('cam')
+            ]
             if event_index is None:
                 logger.info("There is no stream of type 'Markers'")
 
