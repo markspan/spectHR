@@ -1,10 +1,14 @@
 import json
+import pickle
 import sys
 import webbrowser
 
+import neurokit2 as nk
+import numpy as np
 import pandas as pd
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QFile, Qt
 from PySide6.QtGui import QAction, QFont
+from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -13,11 +17,12 @@ from PySide6.QtWidgets import (
     QMenu,
     QVBoxLayout,
 )
+from scipy.interpolate import interp1d
 
 import spectHR as cs
 import spectQt as spQt
-from ui_form import Ui_MainWindow
 
+#from ui_form import Ui_MainWindow
 
 class MainWindow(QMainWindow):
     """
@@ -52,10 +57,19 @@ class MainWindow(QMainWindow):
         Initialize the MainWindow, set up the UI, load the workspace,
         and connect signals to event handlers.
         """
-        super().__init__()
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
+        super(MainWindow, self).__init__()
 
+        # Load the UI file
+        ui_file = QFile("form.ui")
+        if not ui_file.open(QFile.ReadOnly):
+            print("Cannot open UI file:", ui_file.errorString())
+            sys.exit(-1)
+
+        loader = QUiLoader()
+        self.ui = loader.load(ui_file)
+        ui_file.close()
+        self.setCentralWidget(self.ui)
+        
         self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
         self.setWindowTitle("spectHR - ECG Preprocessing")
         self.resize(1920, 800)
@@ -89,6 +103,9 @@ class MainWindow(QMainWindow):
             "Open the spectHR documentation")
         self.ui.actionDocumentation.setToolTip(
             "Open the spectHR documentation")
+
+        self.ui.actionExport_to_CSV.triggered.connect(self.ExportToCSV)
+        self.ui.actionExport_to_CSV.setShortcut("Ctrl+E")
 
         # Connect the customContextMenuRequested signal to a slot
         self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -134,6 +151,55 @@ class MainWindow(QMainWindow):
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
         self.dataset = None  # Initialize dataset placeholder
 
+    def ExportToCSV(self):
+        """
+        Export the currently selected dataset to a CSV file.
+        """
+        if self.dataset is None:
+            return
+
+        # Prompt the user for a file name
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save File", "", "Pickle Files (*.pkl);;All Files (*)")
+        if not file_path:
+            return
+
+        try:
+            ecgdata = self.dataset.ecg.level.to_numpy()
+            ecgtime = self.dataset.ecg.time.to_numpy()
+            srate = self.dataset.ecg.srate
+            # Create a new time array for the upsampled data
+            new_time = np.linspace(ecgtime[0], ecgtime[-1], num=int(len(ecgtime) * 2000.0 // srate))
+            # Interpolate the ECG level data to the new time array
+            interp_func = interp1d(ecgtime, ecgdata, kind='linear')
+            ecg = interp_func(new_time)
+            RTops = self.dataset.RTops.time
+            rpeaks = np.searchsorted(new_time, RTops)
+            info = {"ECG_R_Peaks": rpeaks}
+
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            signals, info = nk.ecg_process(ecg, sampling_rate=2000)
+            QApplication.restoreOverrideCursor()
+
+            if 'ECG_R_Peaks' in signals.columns:
+                data = signals['ECG_R_Peaks']
+                del signals['ECG_R_Peaks']
+                data = data*0
+                data[rpeaks] = 1
+                signals['ECG_R_Peaks'] = data
+            # Create a dictionary to store the upsampled data and R-peak indices
+            data_to_export = {
+                'signals': signals,
+                'r_peak_indices': rpeaks,
+            }
+
+            # Save the data to a .pkl file
+            with open(file_path, 'wb') as file:
+                pickle.dump(data_to_export, file)
+                
+        except Exception as e:
+            print(f"Error saving to pkl: {e}")
+            
     def OpenWorkSpace(self):
         """
         Open a JSON workspace file, holding the directories.

@@ -227,8 +227,8 @@ border-radius: 1px;
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>98</width>
-                 <height>28</height>
+                 <width>436</width>
+                 <height>461</height>
                 </rect>
                </property>
                <property name="sizePolicy">
@@ -279,7 +279,7 @@ border-radius: 1px;
      <x>0</x>
      <y>0</y>
      <width>1137</width>
-     <height>33</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menufile">
@@ -290,6 +290,8 @@ border-radius: 1px;
     <addaction name="separator"/>
     <addaction name="actionEdit_Workspace"/>
     <addaction name="actionSave_Workspace"/>
+    <addaction name="separator"/>
+    <addaction name="actionExport_to_CSV"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -364,6 +366,11 @@ border-radius: 1px;
   <action name="actionDocumentation">
    <property name="text">
     <string>Documentation</string>
+   </property>
+  </action>
+  <action name="actionExport_to_CSV">
+   <property name="text">
+    <string>Export to CSV (nk2)</string>
    </property>
   </action>
  </widget>
