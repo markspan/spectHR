@@ -2,6 +2,7 @@ import json
 import pickle
 import sys
 import webbrowser
+from matplotlib import pyplot as plt
 
 import neurokit2 as nk
 import numpy as np
@@ -104,8 +105,8 @@ class MainWindow(QMainWindow):
         self.ui.actionDocumentation.setToolTip(
             "Open the spectHR documentation")
 
-        self.ui.actionExport_to_CSV.triggered.connect(self.ExportToCSV)
-        self.ui.actionExport_to_CSV.setShortcut("Ctrl+E")
+        self.ui.actionExport_to_NeuroKit.triggered.connect(self.ExportToNK2)
+        self.ui.actionExport_to_NeuroKit.setShortcut("Ctrl+E")
 
         # Connect the customContextMenuRequested signal to a slot
         self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -151,7 +152,7 @@ class MainWindow(QMainWindow):
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
         self.dataset = None  # Initialize dataset placeholder
 
-    def ExportToCSV(self):
+    def ExportToNK2(self):
         """
         Export the currently selected dataset to a CSV file.
         """
@@ -175,18 +176,27 @@ class MainWindow(QMainWindow):
             ecg = interp_func(new_time)
             RTops = self.dataset.RTops.time
             rpeaks = np.searchsorted(new_time, RTops)
-            info = {"ECG_R_Peaks": rpeaks}
-
+            # Create a DataFrame for the ECG signal
+            # in neurokit, the r-tops need to be in the same time base as the ECG signal.
+            # To make more precise, we upsample the ECG signal to 2000 Hz
             QApplication.setOverrideCursor(Qt.WaitCursor)
             signals, info = nk.ecg_process(ecg, sampling_rate=2000)
-            QApplication.restoreOverrideCursor()
 
+            # Add the R-peaks to the signals DataFrame
+            # if they are there already (always?) remove them
+            # and add the cleaned up version again
             if 'ECG_R_Peaks' in signals.columns:
-                data = signals['ECG_R_Peaks']
                 del signals['ECG_R_Peaks']
-                data = data*0
-                data[rpeaks] = 1
-                signals['ECG_R_Peaks'] = data
+            data = signals['ECG_Clean'] * 0
+            data[rpeaks] = 1
+            signals['ECG_R_Peaks'] = data
+            # plt in a seperate window:
+            #plt.figure(figsize=(12, 6))
+            #plt.title("ECG Signal with R-peaks")    
+            plt.ion()
+            nk.ecg_plot(signals, info ={'sampling_rate': 2000})
+            plt.ioff()
+            QApplication.restoreOverrideCursor()
             # Create a dictionary to store the upsampled data and R-peak indices
             data_to_export = {
                 'signals': signals,
