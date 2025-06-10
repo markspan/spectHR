@@ -1,16 +1,14 @@
-import pickle
-
 import matplotlib.pyplot as plt
 import neurokit2 as nk
 
-file_path = 'DATA2.pkl'
-# Load your data from the .pkl file
-with open(file_path, 'rb') as f:
-    data = pickle.load(f)
+file_path = '.\\data\\1404251data.xdf'
+data, header = nk.read_xdf(file_path)
 
-# Plot the ECG data with R-peaks
-nk.ecg_plot(data['signals'], info={'sampling_rate': 2000})
+signals, info = nk.eda_process(data["Aux13"], sampling_rate=4000)
+info = {'sampling_rate': 4000 }
+nk.eda_plot(signals, info=info)
 plt.show()
-a = nk.ecg_intervalrelated(data['signals'], sampling_rate=2000)
-print(a)
+signals, info = nk.eda_process(data["Bip12"], sampling_rate=4000)
+nk.eda_plot(signals, info=info)
+plt.show()
 a=3
