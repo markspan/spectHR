@@ -1,1 +1,0 @@
-import spectHR.install_notebook

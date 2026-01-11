@@ -1,18 +1,17 @@
 {
-  // Use the virtual environment in .venv/
-  "python.defaultInterpreterPath": ".venv\\Scripts\\python.exe",
-  // Enable and configure formatters and linters
-  "python.formatting.provider": "black",
-  "editor.formatOnSave": true,
-  // Linting tools
-  "python.linting.enabled": true,
-  "python.linting.flake8Enabled": true,
-  "python.linting.mypyEnabled": true,
-  // Optional: auto-import sorting
-  "editor.codeActionsOnSave": {
-    "source.organizeImports": "explicit"
+  // Interpreter (already correct)
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  // Disable ALL Python-based formatters
+  "python.formatting.provider": "none",
+  "black-formatter.enable": false,
+  "autopep8.enable": false,
+  // Use Ruff for formatting
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff"
   },
-  // Optional: reduce VS Code's automatic updates noise for environments
-  "python.analysis.autoSearchPaths": true,
-  "python.analysis.useLibraryCodeForTypes": true
+  // Optional but recommended
+  "editor.formatOnSave": true,
+  "python-envs.defaultEnvManager": "ms-python.python:venv",
+  "python-envs.defaultPackageManager": "ms-python.python:pip",
+  "python-envs.pythonProjects": []
 }
