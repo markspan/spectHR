@@ -1,35 +1,35 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
-build/
-wheels/
-*.egg-info
+*.py[cod]
+*.pyo
 
 # Virtual environments
-.venv
-*.pkl
-/cache
-MyWorkSpace.json
-DefaultWorkSpace.json
-*.csv
-ui_form2.py
-dist/SpectHR.exe
-tester.py
-test.py
-/dist
-*.csv
-*.csv
-nffreader.py
-testnff.py
-AT100.EVT
-AT100.nff
-AT4019.INF
-AT4019.EVT
-AT4019.nff
-BMT101.nff
-JD1342.evt
-nlr.evt
-nlr.nff
-pp0072.evt
-pp0072.nff
-data/1404251data.xdf
+.venv/
+venv/
+env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# VS Code
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# PyInstaller / Nuitka output
+*.spec
+*.exe
+*.bin
+*.manifest
+*.dll
+
+# Backup
+*.bak
+*.old
+
+# Logs
+*.log
