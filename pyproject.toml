@@ -35,7 +35,7 @@ dev = [
 ]
 
 [tool.setuptools.packages]
-find = { where = ["src"] , include = ["spectHR*", "spectUI*"]}
+find = { where = ["src"] , include = ["spectUI*", "spectHR*"]}
 
 [project.urls]
 Homepage = "https://github.com/MarkSpan/spectHR"

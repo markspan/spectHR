@@ -1,1 +1,0 @@
- nuitka .\src\spectUI\MainWindow.py --standalone --onefile --assume-yes-for-downloads --enable-plugin=pyside6 --include-package=spectHR --include-package=spectUI --output-filename=spectHR.exe --include-data-dir=.\src\spectUI\resources=resources --windows-icon-from-ico=spectHR.ico

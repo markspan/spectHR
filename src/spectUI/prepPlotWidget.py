@@ -476,7 +476,7 @@ class PrepPlotWidget(QWidget):
                 1,
                 figsize=figsize,
                 sharex=False,
-                gridspec_kw={"height_ratios": [6, 1, 1]},
+                gridspec_kw={"height_ratios": [9, 4, 1]},
             )
             self.ax_ecg, self.ax_br, self.ax_overview = ax_ecg, ax_br, ax_overview
         else:
@@ -834,6 +834,39 @@ class PrepPlotWidget(QWidget):
         if ax is self.ax_br:
             return "br"
         return None
+    def _autoscale_visible_y(self, ax: Axes) -> None:
+        """
+        Autoscale y-axis using only data visible in the current x-window.
+        """
+        assert self.data is not None
+        assert self.data.view is not None
+
+        x0, x1 = self.data.view.x_min, self.data.view.x_max
+
+        if ax is self.ax_ecg:
+            ts = self.ecg_series
+        elif ax is self.ax_br:
+            ts = self.breathing_series
+            if ts is None:
+                return
+        else:
+            return
+
+        mask = (ts.times >= x0) & (ts.times <= x1)
+        if not np.any(mask):
+            return
+
+        y = ts.values[mask]
+        ymin, ymax = float(np.min(y)), float(np.max(y))
+
+        # Avoid zero-height ranges
+        if ymin == ymax:
+            eps = 1e-6 if ymin == 0 else abs(ymin) * 1e-3
+            ymin -= eps
+            ymax += eps
+
+        ax.autoscale(enable=False, axis="y")
+        ax.set_ylim(ymin, ymax)
 
     def _on_key_press(self, event) -> None:
         if event.inaxes is None or self.data is None:
@@ -854,6 +887,10 @@ class PrepPlotWidget(QWidget):
             ystate.ymin = None
             ystate.ymax = None
             self.redraw()
+            return
+        elif event.key == "=":
+            self._autoscale_visible_y(ax)
+            self.canvas.draw_idle()
             return
 
         # Ensure manual mode
