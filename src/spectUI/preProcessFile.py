@@ -33,9 +33,7 @@ def PreProcessFile(workspace, file_path, reset=False, border=False):
 
         logger.debug("Normalizing single-band ECG dataset into band_map")
 
-        dataset.band_map = {
-            "ecg": {"ecg": "ecg"}
-        }
+        dataset.band_map = {"ecg": {"ecg": "ecg"}}
         dataset.active_band = "ecg"
 
     # ------------------------------------------------------------
@@ -72,4 +70,3 @@ def PreProcessFile(workspace, file_path, reset=False, border=False):
     # Restore original band (important for UI consistency)
     dataset.active_band = original_band or bands[0]
     return dataset
-
