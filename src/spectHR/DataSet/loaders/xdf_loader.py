@@ -12,6 +12,7 @@ from spectHR.Tools.Logger import logger
 # INTERNAL: 3-axis Respiration signal computation
 # ------------------------------------------------------------
 
+
 def _compute_RSP_signal(acc: np.ndarray, fs: float) -> np.ndarray:
     """
     Extract a respiratory signal from Nx3 accelerometer data.
@@ -20,8 +21,8 @@ def _compute_RSP_signal(acc: np.ndarray, fs: float) -> np.ndarray:
     from scipy.signal import butter, filtfilt
 
     NYQUIST = 0.5 * fs
-    GRAVITY_CUTOFF = 0.04   # Hz
-    NOISE_CUTOFF   = 0.5    # Hz
+    GRAVITY_CUTOFF = 0.04  # Hz
+    NOISE_CUTOFF = 0.5  # Hz
     ORDER = 2
 
     # Gravity filtering
@@ -41,6 +42,7 @@ def _compute_RSP_signal(acc: np.ndarray, fs: float) -> np.ndarray:
 # ------------------------------------------------------------
 # XDF LOADER
 # ------------------------------------------------------------
+
 
 @register_loader(".xdf")
 def load_xdf(physiodata, filename: str, **kwargs) -> None:
@@ -63,8 +65,8 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
     device_counter = {}  # device_prefix → index starting at 1
 
     for stream in streams:
-        info  = stream.get("info", {})
-        name  = str(info.get("name", [""])[0])
+        info = stream.get("info", {})
+        name = str(info.get("name", [""])[0])
         stype = str(info.get("type", [""])[0])
         logger.debug(f"{name} (type={stype})")
         try:
@@ -73,7 +75,7 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
             srate = 0.0
 
         name_lower = name.lower()
-        is_polar   = name_lower.startswith("polar")
+        is_polar = name_lower.startswith("polar")
 
         # ------------------------------------------------------------
         # MARKER STREAMS
@@ -101,7 +103,7 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
 
         # Now we know: this is POLAR data
         times = np.asarray(stream["time_stamps"], dtype=float)
-        data  = np.asarray(stream["time_series"], dtype=float)
+        data = np.asarray(stream["time_series"], dtype=float)
         physiodata.has_ecg = True
         # Ensure 2-D shape
         if data.ndim == 1:
@@ -114,8 +116,8 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
         if device_prefix not in device_counter:
             device_counter[device_prefix] = len(device_counter) + 1
 
-        #idx = device_counter[device_prefix]
-        #suffix = "" if idx == 1 else f"-{idx}"
+        # idx = device_counter[device_prefix]
+        # suffix = "" if idx == 1 else f"-{idx}"
         suffix = f"-[{device_prefix[-8:]}]"
 
         # ------------------------------------------------------------
@@ -145,16 +147,16 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
             fs = 1.0 / np.mean(diffs)
 
             RSP = _compute_RSP_signal(data, fs)
-            bp_name   = f"RSP{suffix}"
+            bp_name = f"RSP{suffix}"
             physiodata.timeseries[bp_name] = TimeSeries(times, RSP)
             logger.info(f"Loaded Respiration signal → {bp_name}")
-
 
     if not physiodata.timeseries:
         logger.warning("No usable Polar time series found.")
     else:
         _index_polar_bands(physiodata)
         logger.info("indexed the bands")
+
 
 def _index_polar_bands(dataset):
     bands = {}
