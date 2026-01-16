@@ -11,7 +11,6 @@ This file is independent and can be imported anywhere.
 
 from __future__ import annotations
 from typing import Callable, Dict
-import numpy as np
 
 
 # ---------------------------------------------------------
@@ -68,10 +67,7 @@ class HRVMetric:
         Returns a dictionary: metric_name → metric_value (float)
         """
         metrics = self.get_metric_functions()
-        return {
-            name: float(fn(self))
-            for name, fn in metrics.items()
-        }
+        return {name: float(fn(self)) for name, fn in metrics.items()}
 
     # ===== EPOCH TABLE =====
     def metric_table_epoch(self, starttime: float, endtime: float) -> dict:
@@ -84,12 +80,11 @@ class HRVMetric:
             dict: metric_name → metric_value
         """
         if not hasattr(self, "view"):
-            raise AttributeError("Class inheriting HRVMetricMixin must implement .view(start, end).")
+            raise AttributeError(
+                "Class inheriting HRVMetricMixin must implement .view(start, end)."
+            )
 
         view = self.view(starttime, endtime)
         metrics = self.get_metric_functions()
 
-        return {
-            name: float(fn(view))
-            for name, fn in metrics.items()
-        }
+        return {name: float(fn(view)) for name, fn in metrics.items()}

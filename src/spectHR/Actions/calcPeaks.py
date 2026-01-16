@@ -7,7 +7,6 @@ import scipy.signal as signal
 
 from spectHR.Actions.BaseAction import BaseAction
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
-from spectHR.Actions.ibiClassify import ibiClassify
 from spectHR.Tools.Logger import logger
 
 
@@ -27,7 +26,7 @@ class CalcPeaks(BaseAction):
     ---------
     - First call for a band creates a new CardioSeries
     - Subsequent calls replace peaks only inside the target window
-    - Epoch-aware replacement is preserved
+    - Window / epoch semantics are preserved
     """
 
     @classmethod
@@ -48,7 +47,7 @@ class CalcPeaks(BaseAction):
         min_peak_distance_ms
             Minimum distance between peaks
         classify
-            Whether to run ibiClassify afterwards
+            Whether to classify IBIs afterwards
 
         Returns
         -------
@@ -59,7 +58,7 @@ class CalcPeaks(BaseAction):
         ts, physiodata = cls.resolve_timeseries(target)
 
         if physiodata is None:
-            raise RuntimeError("calcPeaks requires PhysioData context")
+            raise RuntimeError("CalcPeaks requires PhysioData context")
 
         if physiodata.active_band is None:
             raise RuntimeError("No active ECG band selected")
@@ -97,9 +96,7 @@ class CalcPeaks(BaseAction):
 
         if locs.size == 0:
             logger.warning(f"No R-peaks found for band '{band}'")
-            return physiodata.hrv_map.get(
-                band, CardioSeries(np.array([], dtype=float))
-            )
+            return physiodata.hrv_map.get(band, CardioSeries(np.array([], dtype=float)))
 
         # --------------------------------------------------
         # Sub-sample peak timing correction
@@ -120,43 +117,25 @@ class CalcPeaks(BaseAction):
         vmin, vmax = cls._infer_view_bounds(ts, new_times)
 
         # --------------------------------------------------
-        # First HRV for this band
+        # Create or update CardioSeries
         # --------------------------------------------------
         if band not in physiodata.hrv_map:
             hrv = CardioSeries(new_times)
             hrv._pd = physiodata
             physiodata.hrv_map[band] = hrv
-
-            if classify:
-                ibiClassify(hrv)
-
-            logger.info(
-                f"Detected {len(hrv.times)} R-peaks for band '{band}'"
+        else:
+            hrv = physiodata.hrv_map[band]
+            hrv.replace_times_in_window(
+                new_times=new_times,
+                start=vmin,
+                end=vmax,
             )
-            return hrv
 
         # --------------------------------------------------
-        # Replace peaks inside window
+        # Classify IBIs (domain logic)
         # --------------------------------------------------
-        hrv = physiodata.hrv_map[band]
-
-        keep = (hrv.times < vmin) | (hrv.times > vmax)
-
-        kept_times = hrv.times[keep]
-        kept_labels = hrv.labels[keep]
-
-        new_labels = np.full(new_times.shape, "N", dtype=object)
-
-        all_times = np.concatenate([kept_times, new_times])
-        all_labels = np.concatenate([kept_labels, new_labels])
-
-        order = np.argsort(all_times)
-
-        hrv.times = all_times[order]
-        hrv.labels = all_labels[order]
-
         if classify:
-            ibiClassify(hrv)
+            hrv.classify_ibi()
 
         logger.info(
             f"Updated R-peaks for band '{band}' "

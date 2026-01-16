@@ -235,7 +235,7 @@ class MainWindow(QMainWindow):
         context_menu.addAction(reload_action)
         context_menu.addAction(invert_action)
         context_menu.addAction(retrigger_action)
-        context_menu.addAction(classify_action)
+        # context_menu.addAction(classify_action)
         # Show the context menu at the requested position
         context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
 
@@ -296,6 +296,7 @@ class MainWindow(QMainWindow):
 
         self.dataset["ecg"].timeseries.flip()
         cs.Actions.calcPeaks(self.dataset)
+
         self.dataset.save(self.savename)  # Save the inverted dataset
         self.show_preprocessing_plot(self.dataset)
 
