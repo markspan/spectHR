@@ -371,7 +371,10 @@ class MainWindow(QMainWindow):
             else:
                 dataset = spQt.PreProcessFile(self.workspace, filename)
                 if dataset.active_band is None:
-                    dataset.active_band = next(iter(dataset.band_map))
+                    try:
+                        dataset.active_band = next(iter(dataset.band_map))
+                    except StopIteration:
+                        dataset.active_band = None
                 dataset.save(self.savename)
 
             # Detect Polar band IDs from timeseries names
@@ -414,6 +417,15 @@ class MainWindow(QMainWindow):
             # Single band → behave exactly as before
             # --------------------------------------------------
             self.dataset = dataset
+            if not hasattr(self.dataset, "has_ecg"):
+                self.dataset.has_ecg = False
+                QMessageBox.critical(
+                    self,
+                    "No ECG Data",
+                    "The selected file has no ECG data.Please select another file.",
+                )
+                return
+
             if dataset.has_ecg:
                 self.show_preprocessing_plot(self.dataset)
                 self.ui.Views.setTabVisible(0, True)
