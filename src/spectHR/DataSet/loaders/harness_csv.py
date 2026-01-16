@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import csv
+from pathlib import Path
+
 import numpy as np
-import pandas as pd
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
@@ -32,58 +34,84 @@ def load_harness_raw_csv(
     logger.info(f"Loading raw Harness CSV: {filename}")
 
     # ------------------------------------------------------------
-    # READ CSV
+    # READ CSV (stdlib)
     # ------------------------------------------------------------
-    try:
-        df = pd.read_csv(filename, sep=",")
-    except Exception as exc:
-        raise IOError(f"Failed to read Harness CSV: {filename}") from exc
+    with open(filename, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = [c.strip() for c in reader.fieldnames or []]
 
-    df.columns = df.columns.str.strip()
+        if "ECG Data" not in fieldnames or "ms" not in fieldnames:
+            raise ValueError("CSV does not match expected Harness format")
 
-    if "ECG Data" not in df or "ms" not in df:
-        raise ValueError("CSV does not match expected Harness format")
+        rows = list(reader)
 
     physiodata.has_ecg = True
 
     # ------------------------------------------------------------
-    # ECG VALUES
+    # EXTRACT COLUMNS
     # ------------------------------------------------------------
-    ecg = df["ECG Data"].replace(-1, np.nan).astype("float32") * 40.0
+    def parse_float(x):
+        try:
+            v = float(x)
+            return np.nan if v == -1 else v
+        except Exception:
+            return np.nan
+
+    ecg = (
+        np.array(
+            [parse_float(r["ECG Data"]) for r in rows],
+            dtype=float,
+        )
+        * 40.0
+    )
+
+    ms = np.array(
+        [parse_float(r["ms"]) for r in rows],
+        dtype=float,
+    )
 
     # ------------------------------------------------------------
-    # TIMESTAMPS (ms → s, interpolate, resample)
+    # INTERPOLATE TIMESTAMPS (linear)
     # ------------------------------------------------------------
-    ms = df["ms"].replace(-1, np.nan).astype(float)
-    ms = ms.interpolate(method="linear")
+    valid = np.isfinite(ms)
+    if not np.any(valid):
+        raise ValueError("Invalid timestamps in Harness CSV")
 
-    times = ms.to_numpy(dtype=float) / 1000.0
+    ms_interp = np.copy(ms)
+    ms_interp[~valid] = np.interp(
+        np.flatnonzero(~valid),
+        np.flatnonzero(valid),
+        ms[valid],
+    )
+
+    times = ms_interp / 1000.0
 
     # ---- infer uniform sampling grid via median Δt ----
     diffs = np.diff(times[np.isfinite(times)])
-    if len(diffs) == 0:
+    if diffs.size == 0:
         raise ValueError("Invalid timestamps in Harness CSV")
 
     dt = float(np.median(diffs))
     n = len(times)
-
     times = np.arange(0.0, dt * n, dt, dtype=float)
 
     # ------------------------------------------------------------
-    # POLARITY HEURISTIC (unchanged logic, safer slicing)
+    # POLARITY HEURISTIC
     # ------------------------------------------------------------
     if flip == "auto":
         n = len(ecg)
         i0 = n // 3
         i1 = 2 * n // 3
 
-        seg = ecg.iloc[i0:i1]
-        magic = abs(seg.mean() - seg.min()) / abs(seg.mean() - seg.max())
+        seg = ecg[i0:i1]
+        seg = seg[np.isfinite(seg)]
 
-        logger.debug(f"ECG polarity heuristic (magic={magic:.3f})")
+        if seg.size:
+            magic = abs(seg.mean() - seg.min()) / abs(seg.mean() - seg.max())
+            logger.debug(f"ECG polarity heuristic (magic={magic:.3f})")
 
-        if magic > 1.5:
-            ecg = -ecg
+            if magic > 1.5:
+                ecg = -ecg
 
     elif flip is True:
         ecg = -ecg
@@ -101,7 +129,7 @@ def load_harness_raw_csv(
 
     physiodata.timeseries[ecg_name] = TimeSeries(
         times,
-        ecg.to_numpy(dtype=float),
+        ecg,
     )
 
     logger.info(f"Loaded ECG → {ecg_name}")

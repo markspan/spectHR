@@ -1,9 +1,9 @@
 # CardioSeries.py
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Dict
+from typing import TYPE_CHECKING, List, Dict, Any
 import numpy as np
-import pandas as pd
+
 from scipy.signal import welch
 from scipy.interpolate import interp1d
 from scipy.stats import chi2
@@ -437,24 +437,30 @@ class CardioSeries(HRVMetric):
         hf = self.hf_power()
         return lf / hf if hf > 0 else np.nan
 
-    def hrv_epoch_table(self, physiodata: PhysioData) -> pd.DataFrame:
-        rows: List[Dict[str, float]] = []
+    def hrv_epoch_table(self, physiodata: PhysioData) -> dict[str, dict[str, Any]]:
+        """
+        Return HRV metrics per active epoch.
+
+        Returns
+        -------
+        dict
+            {epoch_label: {metric_name: value}}
+        """
+        table: dict[str, dict[str, Any]] = {}
+
         for label, ep in physiodata.epochs.items():
-            if ep.active:
-                rows.append(
-                    {"epoch": label, **self.metric_table_epoch(ep.start, ep.end)}
-                )
+            if not ep.active:
+                continue
 
-        df = pd.DataFrame(rows).set_index("epoch")
+            metrics = self.metric_table_epoch(ep.start, ep.end)
 
-        if hasattr(self, "METRIC_ORDER"):
-            cols = [c for c in self.METRIC_ORDER if c in df.columns]
-            df = df[cols]
+            # Enforce column order if defined
+            if hasattr(self, "METRIC_ORDER"):
+                metrics = {k: metrics.get(k) for k in self.METRIC_ORDER if k in metrics}
 
-        if "count" in df.columns:
-            df["count"] = df["count"].astype("Int64")
+            table[label] = metrics
 
-        return df
+        return table
 
     def _band_power_exact(
         self,

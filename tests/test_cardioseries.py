@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import pytest
 
 from spectHR.DataSet.Series.CardioSeries import CardioSeries, CardioSeriesView
@@ -9,6 +8,7 @@ from spectHR.DataSet.Epoch import Epoch
 # ---------------------------------------------------------
 # Minimal PhysioData stub (only what CardioSeries uses)
 # ---------------------------------------------------------
+
 
 class DummyPhysioData:
     def __init__(self):
@@ -23,6 +23,7 @@ class DummyPhysioData:
 # Fixtures
 # ---------------------------------------------------------
 
+
 @pytest.fixture
 def cardio():
     times = np.array([0.0, 1.0, 2.0, 3.1, 4.0, 5.2, 6.0, 7.0])
@@ -34,6 +35,7 @@ def cardio():
 # ---------------------------------------------------------
 # IBI
 # ---------------------------------------------------------
+
 
 def test_ibi_computation(cardio):
     ibi = cardio.ibi
@@ -50,6 +52,7 @@ def test_ibi_single_value():
 # ---------------------------------------------------------
 # View semantics
 # ---------------------------------------------------------
+
 
 def test_epoch_getitem(cardio):
     view = cardio["rest"]
@@ -80,6 +83,7 @@ def test_view_method(cardio):
 # HRV metrics
 # ---------------------------------------------------------
 
+
 def test_metric_table(cardio):
     table = cardio.metric_table()
     assert isinstance(table, dict)
@@ -108,6 +112,7 @@ def test_metrics_insufficient_data():
 # ---------------------------------------------------------
 # Welch PSD
 # ---------------------------------------------------------
+
 
 def test_welch_psd_empty():
     cs = CardioSeries(np.array([0.0]))
@@ -142,6 +147,7 @@ def test_welch_psd_with_ci_empty():
 # Band power
 # ---------------------------------------------------------
 
+
 def test_band_power_empty():
     cs = CardioSeries(np.array([0.0]))
     freqs, power = cs.welch_psd()
@@ -152,6 +158,7 @@ def test_band_power_empty():
 # ---------------------------------------------------------
 # Epoch HRV table
 # ---------------------------------------------------------
+
 
 def test_hrv_epoch_table(cardio):
     df = cardio.hrv_epoch_table(cardio._pd)
@@ -170,6 +177,7 @@ def test_hrv_epoch_table_column_order(cardio):
 # ---------------------------------------------------------
 # CardioSeriesView specifics
 # ---------------------------------------------------------
+
 
 def test_view_inherits_pd(cardio):
     view = cardio["rest"]
