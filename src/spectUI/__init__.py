@@ -1,7 +1,6 @@
 # spectUI/__init__.py
 
 from spectUI.workSpace import LoadWorkspace, PopulateTree
-from spectUI.preProcessFile import PreProcessFile
 from spectUI.prepPlotWidget import PrepPlotWidget
 from spectUI.epochPlotWidget import EpochPlotWidget
 from spectUI.hrPlotWidget import HRPlotWidget

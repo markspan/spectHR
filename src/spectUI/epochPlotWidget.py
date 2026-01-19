@@ -7,16 +7,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QInputDialog
+from spectHR.DataSet.Epoch import Epoch
 
 import numpy as np
-
-
-@dataclass
-class Epoch:
-    active: bool
-    start: float
-    end: float
-
 
 class EpochPlotWidget(QWidget):
     """

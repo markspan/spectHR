@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 import numpy as np
+import scipy.signal as signal
 
 from spectHR.Tools.Logger import logger
 
@@ -38,7 +39,80 @@ class TimeSeries:
         """Invert the signal values in place."""
         logger.info("Flipping TimeSeries values.")
         self.values = -self.values
+    
+    def filter(
+        self,
+        *,
+        filter_type: str = "highpass",
+        cutoff: float = 0.1,
+        order: int | None = None,
+        inplace: bool = True,
+    ) -> TimeSeries:
+        """
+        Apply a zero-phase Butterworth filter to the signal.
 
+        Parameters
+        ----------
+        filter_type : {"lowpass", "highpass"}
+            Type of Butterworth filter.
+        cutoff : float
+            Cutoff frequency in Hz.
+        order : int | None
+            If None, estimate order using buttord; otherwise use explicitly.
+        inplace : bool
+            If True, modify this TimeSeries in place.
+            If False, return a filtered copy.
+
+        Returns
+        -------
+        TimeSeries
+            Filtered TimeSeries (self or a copy).
+        """
+        if self.srate is None:
+            raise ValueError("Cannot filter TimeSeries with unknown sampling rate.")
+
+        if filter_type not in ("lowpass", "highpass"):
+            raise ValueError("filter_type must be 'lowpass' or 'highpass'")
+
+        srate = float(self.srate)
+        nyq = 0.5 * srate
+        norm_cutoff = cutoff / nyq
+
+        if not 0.0 < norm_cutoff < 1.0:
+            raise ValueError("Cutoff frequency must be between 0 and Nyquist.")
+
+        # --------------------------------------------------
+        # Filter design
+        # --------------------------------------------------
+        if order is None:
+            passband = norm_cutoff * 1.1
+            stopband = norm_cutoff / 1.5
+            N, wn = signal.buttord(passband, stopband, gpass=1, gstop=5)
+        else:
+            N = int(order)
+            wn = norm_cutoff
+
+        btype = "low" if filter_type == "lowpass" else "high"
+        b, a = signal.butter(N, wn, btype=btype, analog=False)
+
+        logger.info(
+            f"Filtering TimeSeries ({btype} Butterworth): "
+            f"N={N}, cutoff={cutoff} Hz, srate={srate:.2f} Hz"
+        )
+
+        # --------------------------------------------------
+        # Apply filter
+        # --------------------------------------------------
+        values = self.values.astype(float)
+        filtered = signal.filtfilt(b, a, values)
+
+        if inplace:
+            self.values[:] = filtered
+            return self
+
+        # Copy semantics
+        return TimeSeries(self.times.copy(), filtered)
+    
     def __getitem__(self, idx):
         """
         Non-epoch slicing. Returns raw value(s) only.

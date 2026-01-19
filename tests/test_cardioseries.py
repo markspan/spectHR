@@ -32,7 +32,7 @@ def cardio():
 
 
 # ---------------------------------------------------------
-# IBI
+# IBI computation
 # ---------------------------------------------------------
 
 def test_ibi_computation(cardio):
@@ -47,8 +47,24 @@ def test_ibi_single_value():
     assert cs.ibi.size == 0
 
 
+def test_ibi_times_unchanged_after_classification(cardio):
+    t0 = cardio.times.copy()
+    cardio.classify_ibi()
+    np.testing.assert_allclose(cardio.times, t0)
+
+
+def test_tl_ibi_becomes_nan():
+    # IBI = 9s → TL → NaN
+    times = np.array([0.0, 1.0, 10.0])
+    cs = CardioSeries(times)
+    cs.classify_ibi(Tmax=5.0)
+
+    assert cs.labels[1] == "TL"
+    assert np.isnan(cs.ibi[1])
+
+
 # ---------------------------------------------------------
-# View semantics
+# View semantics (epoch + window)
 # ---------------------------------------------------------
 
 def test_epoch_getitem(cardio):
@@ -88,6 +104,7 @@ def test_metric_table(cardio):
     assert "rmssd" in table
     for v in table.values():
         assert isinstance(v, float)
+        assert not np.isinf(v)
 
 
 def test_metric_table_epoch(cardio):
@@ -185,4 +202,6 @@ def test_view_ibi(cardio):
 
 def test_view_repr(cardio):
     view = cardio["rest"]
-    assert "CardioSeriesView" in repr(view)
+    r = repr(view)
+    assert "CardioSeriesView" in r
+    assert "start" in r or "[" in r

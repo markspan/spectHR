@@ -18,12 +18,9 @@ from PySide6.QtWidgets import (
 )
 
 from pathlib import Path
-
-import spectHR as cs
-from spectHR.Actions.calcPeaks import calcPeaks
-from spectHR.Actions.ibiClassify import ibiClassify
 from spectHR.DataSet.Epoch import Epoch
-
+from spectHR.DataSet.PhysioData import PhysioData
+from spectHR.DataSet.Series import CardioSeries
 import spectUI as spQt
 from spectHR.Tools.Logger import logger
 
@@ -223,52 +220,79 @@ class MainWindow(QMainWindow):
         reload_action = QAction("Reload Raw", self)
         invert_action = QAction("Invert ECG Polarity", self)
         retrigger_action = QAction("Retrigger ECG", self)
-        classify_action = QAction("(Re-)Classify RTops", self)
-
+        
         # Connect the actions to their respective functions
         reload_action.triggered.connect(lambda: self.reload(item))
         invert_action.triggered.connect(self.invert)
         retrigger_action.triggered.connect(self.retrigger)
-        classify_action.triggered.connect(self.reClassify)
-
+        
         # Add the actions to the context menu
         context_menu.addAction(reload_action)
         context_menu.addAction(invert_action)
         context_menu.addAction(retrigger_action)
-        context_menu.addAction(classify_action)
         # Show the context menu at the requested position
         context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
 
-    def reClassify(self):
-        """
-        Reclassify the R-peaks in the ECG signal and update the preprocessing plot.
-        """
-        if self.dataset is None:
-            return
-
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        ibiClassify(self.dataset.rtops)
-        self.dataset.save(self.savename)  # Save the reclassified dataset
-        QApplication.restoreOverrideCursor()
-        self.show_preprocessing_plot(self.dataset)
-
-    def retrigger(self):
+    def retrigger(self,
+                *,
+                min_peak_distance_ms: float = 300.0,
+                classify: bool = True,
+    ) -> None:
         """
         Retrigger the ECG signal by recalculating the R-peaks and updating the preprocessing plot.
         """
         if self.dataset is None:
             return
-
+        if self.dataset.active_band is None:
+            raise RuntimeError("No active band selected")
+        
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        self.dataset.rtops = None  # Clear existing RTops to force retriggering
+
+        # Resolve ECG for active band
+        ecg_accessor = self.dataset["ecg"]
+        ecg_ts = ecg_accessor.timeseries
+
+        # Ensure CardioSeries exists
+        cs = CardioSeries.from_timeseries(
+            ecg_ts,
+            min_peak_distance_ms=min_peak_distance_ms,
+            classify=False,
+        )
+        import numpy as np
+        cs.times=np.array([np.nan])
+        cs.labels=np.array(['TL'])
+        cs._pd = self.dataset
+        cs._stream = ecg_accessor
+  
+        self.dataset.hrv_map[self.dataset.active_band] = cs
+
+        # --------------------------------------------------
+        # Epoch-wise replacement
+        # --------------------------------------------------
         for key, epoch in self.dataset.epochs.items():
-            if epoch.active:
-                logger.info(f"Retriggering epoch: {key}")
-                calcPeaks(
-                    self.dataset["ecg"][key],
-                    min_peak_distance_ms=300.0,
-                    classify=True,
-                )
+            if not epoch.active:
+                continue
+
+            # ECG restricted to epoch
+            ecg_view = ecg_ts.view(epoch.start, epoch.end)
+
+            cs.replace_from_timeseries(
+                ecg_view,
+                start=epoch.start,
+                end=epoch.end,
+                min_peak_distance_ms=min_peak_distance_ms,
+                classify=False,  # classify once globally
+            )
+
+        # --------------------------------------------------
+        # Global classification (once!)
+        # --------------------------------------------------
+        if classify:
+            cs.classify_ibi()
+
+        # --------------------------------------------------
+        # Update UI
+        # --------------------------------------------------
 
         QApplication.restoreOverrideCursor()
         self.dataset.save(self.savename)  # Save the retriggered dataset
@@ -281,10 +305,9 @@ class MainWindow(QMainWindow):
         Args:
             item: The selected item in the tree view.
         """
-        self.dataset = spQt.PreProcessFile(
-            self.workspace, item.text(0), reset=True, border=False
-        )
-        self.dataset.save(self.savename)  # Save the reloaded dataset
+        import os
+        self.dataset.save(self.savename) 
+        os.replace(self.savename, "LASTDELETED.pkl")
         self.show_preprocessing_plot(self.dataset)
 
     def invert(self):
@@ -295,7 +318,7 @@ class MainWindow(QMainWindow):
             return
 
         self.dataset["ecg"].timeseries.flip()
-        cs.Actions.calcPeaks(self.dataset)
+        self.dataset.preprocess_ecg()
         self.dataset.save(self.savename)  # Save the inverted dataset
         self.show_preprocessing_plot(self.dataset)
 
@@ -368,7 +391,12 @@ class MainWindow(QMainWindow):
                 with open(self.savename, "rb") as f:
                     dataset = pickle.load(f)
             else:
-                dataset = spQt.PreProcessFile(self.workspace, filename)
+                dataset = PhysioData(
+                    Path(self.workspace["DataDirectory"]) / (
+                    Path(filename))
+                )
+
+                dataset.preprocess_ecg()
                 if dataset.active_band is None:
                     dataset.active_band = next(iter(dataset.band_map))
                 dataset.save(self.savename)
