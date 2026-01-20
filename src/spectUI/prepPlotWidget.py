@@ -28,6 +28,7 @@ from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries, CardioSeriesView
 from spectUI.LineHandler import LineHandler
 
+
 # ======================================================================
 # View state & helpers
 # ======================================================================
@@ -37,11 +38,13 @@ class AxisYState:
     ymin: Optional[float] = None
     ymax: Optional[float] = None
 
+
 @dataclass
 class ViewState:
     """
     Holds the current x-range and drag state for the widget.
     """
+
     x_min: float
     x_max: float
 
@@ -49,17 +52,18 @@ class ViewState:
     initial_xmin: Optional[float] = None
     initial_xmax: Optional[float] = None
 
-    y: dict[str, AxisYState] = field(default_factory=lambda: {
-        "ecg": AxisYState(),
-        "br": AxisYState(),
-    })
+    y: dict[str, AxisYState] = field(
+        default_factory=lambda: {
+            "ecg": AxisYState(),
+            "br": AxisYState(),
+        }
+    )
 
     def width(self) -> float:
         return self.x_max - self.x_min
 
     def center(self) -> float:
         return 0.5 * (self.x_min + self.x_max)
-
 
 
 class RTopController:
@@ -105,6 +109,14 @@ class RTopController:
     # Editing operations
     # ------------------------------------------------------------------
     def move(self, old_t: float, new_t: float) -> None:
+        times = self.rtops.times.copy()
+        idx = self._closest_idx(old_t)
+        times[idx] = float(new_t)
+        times = np.sort(times)
+
+        self.rtops.replace_times_exact(times)
+
+    def move2(self, old_t: float, new_t: float) -> None:
         """
         Move the closest R-top around old_t to new_t (in seconds),
         and keep series sorted.
@@ -113,7 +125,7 @@ class RTopController:
         self.rtops.times[idx] = float(new_t)
         self._sort_by_time()
 
-    def add(self, t: float, label: str = "N") -> None:
+    def add2(self, t: float, label: str = "N") -> None:
         """
         Insert a new R-top at time t with label (default: "N").
         """
@@ -124,7 +136,19 @@ class RTopController:
         self.rtops.labels = np.concatenate([lab_arr, np.array([label], dtype=object)])
         self._sort_by_time()
 
+    def add(self, t: float, label: str = "N") -> None:
+        times = np.append(self.rtops.times, float(t))
+        times = np.sort(times)
+
+        self.rtops.replace_times_exact(times)
+
     def delete(self, t: float) -> None:
+        idx = self._closest_idx(t)
+        times = np.delete(self.rtops.times, idx)
+
+        self.rtops.replace_times_exact(times)
+
+    def delete2(self, t: float) -> None:
         """
         Delete the R-top closest to t.
         """
@@ -205,6 +229,7 @@ class OverviewWindow:
 # PrepPlotWidget (UI + plotting)
 # ======================================================================
 
+
 class PrepPlotWidget(QWidget):
     """
     Interactive ECG pre-processing widget.
@@ -255,7 +280,7 @@ class PrepPlotWidget(QWidget):
         self._mpl_cid_move: Optional[int] = None
         self._mpl_cid_release: Optional[int] = None
         self._mpl_cid_key_press: Optional[int] = None
-    
+
         # R-top color mapping
         self.RTopColors = {
             "N": "blue",
@@ -263,6 +288,7 @@ class PrepPlotWidget(QWidget):
             "S": "magenta",
             "TL": "orange",
             "SL": "turquoise",
+            "T": "slategrey",
             "SNS": "lightseagreen",
         }
 
@@ -330,7 +356,9 @@ class PrepPlotWidget(QWidget):
                 icon = qta.icon(icon_name)
                 if rotate:
                     pixmap = icon.pixmap(QSize(48, 48))
-                    transform = QTransform().rotate(rotate if isinstance(rotate, int) else 0)
+                    transform = QTransform().rotate(
+                        rotate if isinstance(rotate, int) else 0
+                    )
                     rotated_pixmap = pixmap.transformed(transform)
                     icon = QIcon(rotated_pixmap)
                 btn.setIcon(icon)
@@ -351,14 +379,22 @@ class PrepPlotWidget(QWidget):
                 btn.setToolTip(tooltip)
             return btn
 
-        begin = make_btn("fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start")
+        begin = make_btn(
+            "fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"
+        )
         left = make_btn("fa6s.backward", self.pan_left, tooltip="Pan Left")
-        prev = make_btn("fa6s.square-caret-left", self.prev, tooltip="Previous non-normal R-top")
+        prev = make_btn(
+            "fa6s.square-caret-left", self.prev, tooltip="Previous non-normal R-top"
+        )
         zoom_in = make_btn("ei.zoom-in", self.zoom_in, tooltip="Zoom In")
         zoom_out = make_btn("ei.zoom-out", self.zoom_out, tooltip="Zoom Out")
-        nxt = make_btn("fa6s.square-caret-right", self.next, tooltip="Next non-normal R-top")
+        nxt = make_btn(
+            "fa6s.square-caret-right", self.next, tooltip="Next non-normal R-top"
+        )
         right = make_btn("fa6s.forward", self.pan_right, tooltip="Pan Right")
-        end = make_btn("fa6s.right-to-bracket", self.go_to_end, rotate=False, tooltip="Goto End")
+        end = make_btn(
+            "fa6s.right-to-bracket", self.go_to_end, rotate=False, tooltip="Goto End"
+        )
 
         nav_layout = QHBoxLayout()
         nav_layout.setContentsMargins(0, 0, 0, 0)
@@ -420,7 +456,7 @@ class PrepPlotWidget(QWidget):
         plt.ioff()  # No blocking windows
 
         # Determine initial window
-        if not hasattr(data, 'has_ecg') or data.has_ecg:
+        if not hasattr(data, "has_ecg") or data.has_ecg:
             ecg = self.ecg_series
             x_min_default = float(ecg.times.min())
             x_max_default = float(ecg.times.max())
@@ -508,7 +544,7 @@ class PrepPlotWidget(QWidget):
         """
         # Hide toolbar/header for embedded use
         self.fig.canvas.toolbar_visible = False  # type: ignore[attr-defined]
-        self.fig.canvas.header_visible = False   # type: ignore[attr-defined]
+        self.fig.canvas.header_visible = False  # type: ignore[attr-defined]
         self.fig.tight_layout()
 
         # Rebuild Qt canvas
@@ -537,12 +573,20 @@ class PrepPlotWidget(QWidget):
         if self._mpl_cid_release is not None:
             self.fig.canvas.mpl_disconnect(self._mpl_cid_release)
 
-        self._mpl_cid_press = self.fig.canvas.mpl_connect("button_press_event", self._on_press)
-        self._mpl_cid_move = self.fig.canvas.mpl_connect("motion_notify_event", self._on_motion)
-        self._mpl_cid_release = self.fig.canvas.mpl_connect("button_release_event", self._on_release)
-        # for zooming: 
-        self._mpl_cid_key_press = self.fig.canvas.mpl_connect("key_press_event", self._on_key_press)
-    
+        self._mpl_cid_press = self.fig.canvas.mpl_connect(
+            "button_press_event", self._on_press
+        )
+        self._mpl_cid_move = self.fig.canvas.mpl_connect(
+            "motion_notify_event", self._on_motion
+        )
+        self._mpl_cid_release = self.fig.canvas.mpl_connect(
+            "button_release_event", self._on_release
+        )
+        # for zooming:
+        self._mpl_cid_key_press = self.fig.canvas.mpl_connect(
+            "key_press_event", self._on_key_press
+        )
+
     # ==============================================================
     # Rendering pipeline
     # ==============================================================
@@ -604,7 +648,9 @@ class PrepPlotWidget(QWidget):
         assert self.ax_ecg is not None
         assert self.data.view is not None
 
-        rt_view = self.rtop_ctrl.window_view(self.data.view.x_min - 1, self.data.view.x_max + 1)
+        rt_view = self.rtop_ctrl.window_view(
+            self.data.view.x_min - 1, self.data.view.x_max + 1
+        )
 
         times = rt_view.times
         labels = rt_view.labels
@@ -676,7 +722,6 @@ class PrepPlotWidget(QWidget):
         if not ystate.auto and ystate.ymin is not None:
             self.ax_br.set_ylim(ystate.ymin, ystate.ymax)
 
-
     def _draw_overview(self) -> None:
         """
         Draw the overview ECG plot and its draggable window rectangle.
@@ -687,12 +732,11 @@ class PrepPlotWidget(QWidget):
         assert self.data.view is not None
 
         ecg = self.ecg_series
-        
+
         # Redraw the overview axis completely.
         self.ax_overview.clear()
         self.ax_overview.plot(
-            ecg.times, ecg.values,
-            linewidth=0.25, alpha=0.5, color="green"
+            ecg.times, ecg.values, linewidth=0.25, alpha=0.5, color="green"
         )
         self.ax_overview.set_title("")
         self.ax_overview.set_yticks([])
@@ -766,7 +810,9 @@ class PrepPlotWidget(QWidget):
         """
         assert self.data.view is not None
         width = self.data.view.width()
-        new_min, new_max = self._constrained_window(self.data.view.x_min - width, self.data.view.x_max - width)
+        new_min, new_max = self._constrained_window(
+            self.data.view.x_min - width, self.data.view.x_max - width
+        )
         self._set_window(new_min, new_max)
 
     def pan_right(self) -> None:
@@ -775,7 +821,9 @@ class PrepPlotWidget(QWidget):
         """
         assert self.data.view is not None
         width = self.data.view.width()
-        new_min, new_max = self._constrained_window(self.data.view.x_min + width, self.data.view.x_max + width)
+        new_min, new_max = self._constrained_window(
+            self.data.view.x_min + width, self.data.view.x_max + width
+        )
         self._set_window(new_min, new_max)
 
     def go_to_start(self) -> None:
@@ -834,6 +882,7 @@ class PrepPlotWidget(QWidget):
         if ax is self.ax_br:
             return "br"
         return None
+
     def _autoscale_visible_y(self, ax: Axes) -> None:
         """
         Autoscale y-axis using only data visible in the current x-window.
@@ -984,7 +1033,11 @@ class PrepPlotWidget(QWidget):
             return
 
         if event.inaxes is self.ax_overview and self.data.view.drag_mode is not None:
-            if event.xdata is None or self.data.view.initial_xmin is None or self.data.view.initial_xmax is None:
+            if (
+                event.xdata is None
+                or self.data.view.initial_xmin is None
+                or self.data.view.initial_xmax is None
+            ):
                 return
 
             width = self.data.view.initial_xmax - self.data.view.initial_xmin
@@ -995,7 +1048,9 @@ class PrepPlotWidget(QWidget):
                 x_min = self.data.view.x_min
                 x_max = max(event.xdata, self.data.view.x_min + 0.1)
             else:  # center
-                dx = event.xdata - 0.5 * (self.data.view.initial_xmin + self.data.view.initial_xmax)
+                dx = event.xdata - 0.5 * (
+                    self.data.view.initial_xmin + self.data.view.initial_xmax
+                )
                 x_min = self.data.view.initial_xmin + dx
                 x_max = self.data.view.initial_xmax + dx
 

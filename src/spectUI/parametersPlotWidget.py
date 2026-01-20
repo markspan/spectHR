@@ -1,7 +1,8 @@
 from pathlib import Path
 
+import csv
 import numpy as np
-import pandas as pd
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
 
 class ParametersPlotWidget(QWidget):
     """
@@ -28,7 +30,7 @@ class ParametersPlotWidget(QWidget):
         The button to save the table data.
     """
 
-    def __init__(self,  parent=None):
+    def __init__(self, parent=None):
         """
         Initialize the ParametersPlotWidget and its layout components.
 
@@ -37,7 +39,7 @@ class ParametersPlotWidget(QWidget):
         """
         super().__init__(parent)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setWindowTitle('Parameters Plot')
+        self.setWindowTitle("Parameters Plot")
 
         # Create a QTableWidget
         self.table_widget = QTableWidget()
@@ -65,47 +67,75 @@ class ParametersPlotWidget(QWidget):
         self.csvfile = Path(workspace["OutputDirectory"]) / f"{dataset.basename}.csv"
         self.setFocus()
 
-        # Base HRV table (index = epoch)
-        df = self.dataset.hrv.hrv_epoch_table(self.dataset)
+        # Get epoch → metrics table (no pandas)
+        table = self.dataset.hrv.hrv_epoch_table(self.dataset)
+        # table: dict[str, dict[str, Any]]
 
-        # Ensure index is a column (epoch)
-        df = df.reset_index()
-
-        # Insert subject column FIRST
         subject = getattr(dataset, "basename", None)
-        df.insert(0, "Subject", subject)
 
-        self.data = df
+        # Determine column order
+        # Start with Subject + Epoch, then metric names
+        metric_names = []
+        for metrics in table.values():
+            for k in metrics.keys():
+                if k not in metric_names:
+                    metric_names.append(k)
+
+        headers = ["Subject", "Epoch", *metric_names]
+
+        # Build row-oriented data
+        rows = []
+        for epoch, metrics in table.items():
+            row = {
+                "Subject": subject,
+                "Epoch": epoch,
+            }
+            for k in metric_names:
+                row[k] = metrics.get(k)
+            rows.append(row)
+
+        self.headers = headers
+        self.rows = rows  # store for saving later
+
+        # -----------------------------
+        # Populate QTableWidget
+        # -----------------------------
         self.table_widget.clear()
-        # Set the number of rows and columns
-        self.table_widget.setRowCount(self.data.shape[0])
-        self.table_widget.setColumnCount(self.data.shape[1])
+        self.table_widget.setRowCount(len(rows))
+        self.table_widget.setColumnCount(len(headers))
+        self.table_widget.setHorizontalHeaderLabels(headers)
 
-        # Set the table headers
-        self.table_widget.setHorizontalHeaderLabels(self.data.columns)
+        for i, row in enumerate(rows):
+            for j, key in enumerate(headers):
+                val = row.get(key)
 
-        # Populate the table with data
-        for i in range(self.data.shape[0]):
-            for j in range(self.data.shape[1]):
-                if isinstance(self.data.iloc[i, j], str):
-                    # If the data is a string, set it directly
-                    self.table_widget.setItem(
-                        i, j, QTableWidgetItem(self.data.iloc[i, j]))
-                elif isinstance(self.data.iloc[i, j], (int, np.integer)):
-                    # If the data is an integer, set it directly
-                    self.table_widget.setItem(
-                        i, j, QTableWidgetItem(str(self.data.iloc[i, j])))
+                if val is None:
+                    text = ""
+                elif isinstance(val, str):
+                    text = val
+                elif isinstance(val, (int, np.integer)):
+                    text = str(int(val))
+                elif isinstance(val, (float, np.floating)):
+                    if not np.isfinite(val):
+                        text = ""
+                    elif float(val).is_integer():
+                        text = str(int(val))
+                    else:
+                        text = f"{val:.5f}"
                 else:
-                    self.table_widget.setItem(
-                        i, j, QTableWidgetItem(str(format(self.data.iloc[i, j], '.5f'))))
+                    text = str(val)
 
-        # Resize columns to fit content
+                self.table_widget.setItem(i, j, QTableWidgetItem(text))
+
         self.table_widget.resizeColumnsToContents()
 
     def save_data(self):
         # self.data already has correct columns & order
-        self.data.to_csv(self.csvfile, index=False)
-
+        with open(self.csvfile, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=self.headers)
+            writer.writeheader()
+            for row in self.rows:
+                writer.writerow(row)
 
     def get_table_headers(self):
         """
@@ -114,11 +144,11 @@ class ParametersPlotWidget(QWidget):
         Returns:
             list: A list of headers including 'Subject' as the first header.
         """
-        headers = ['Subject']
+        headers = ["Subject"]
         for col in range(self.table_widget.columnCount()):
             header_item = self.table_widget.horizontalHeaderItem(col)
             if header_item is not None:
                 headers.append(header_item.text())
             else:
-                headers.append(f'Column {col+1}')
+                headers.append(f"Column {col + 1}")
         return headers

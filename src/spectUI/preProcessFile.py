@@ -20,7 +20,8 @@ def PreProcessFile(workspace, file_path, reset=False, border=False):
     # Load dataset
     # ------------------------------------------------------------
     dataset = PhysioData(Path(workspace["DataDirectory"]) / file_path)
-    if dataset.has_ecg == False:
+
+    if not hasattr(dataset, "has_ecg") or dataset.has_ecg == False:
         return dataset
     # ------------------------------------------------------------
     # Normalize single-band datasets into band_map
