@@ -399,10 +399,11 @@ class MainWindow(QMainWindow):
                     Path(self.workspace["DataDirectory"]) / (
                     Path(filename))
                 )
-
-                dataset.preprocess_ecg()
-                if dataset.active_band is None:
-                    dataset.active_band = next(iter(dataset.band_map))
+                if dataset.has_ecg:
+                    dataset.preprocess_ecg()
+                    if dataset.active_band is None:
+                        dataset.active_band = next(iter(dataset.band_map))
+                
                 dataset.save(self.savename)
 
             # Detect Polar band IDs from timeseries names
