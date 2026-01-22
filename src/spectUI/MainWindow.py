@@ -307,8 +307,12 @@ class MainWindow(QMainWindow):
         """
         import os
         self.dataset.save(self.savename) 
-        os.replace(self.savename, "LASTDELETED.pkl")
-        self.show_preprocessing_plot(self.dataset)
+        backup = Path(self.workspace["CacheDirectory"]) / (
+                "LASTDELETED.pkl"
+            )
+        os.replace(self.savename, backup)
+        self.on_file_selection()
+        #self.show_preprocessing_plot(self.dataset)
 
     def invert(self):
         """
