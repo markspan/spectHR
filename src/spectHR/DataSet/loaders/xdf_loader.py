@@ -127,7 +127,12 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
             values = data[:, 0] if data.ndim == 2 else data
             ecg_name = f"ecg{suffix}"
             physiodata.timeseries[ecg_name] = TimeSeries(times, values)
-            logger.info(f"Loaded ECG → {ecg_name}")
+            polarity = physiodata.timeseries[ecg_name].detect_ecg_polarity()
+            if polarity == "inverted":
+                physiodata.timeseries[ecg_name].flip()
+                logger.info(f"Loaded ECG → {ecg_name}, detected polarity: {polarity}, corrected polarity")
+            else:
+                logger.info(f"Loaded ECG → {ecg_name}, detected polarity: {polarity}")
             continue
 
         # ------------------------------------------------------------

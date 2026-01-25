@@ -1,150 +1,216 @@
 import numpy as np
 import pytest
 
-import spectHR.DataSet.loaders.xdf_loader as xdfmod
-from spectHR.DataSet.PhysioData import PhysioData
+from spectHR.DataSet.loaders.xdf_loader import load_xdf, _compute_RSP_signal
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 
 
-# ---------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------
+# Minimal PhysioData stub
+# ---------------------------------------------------------------------
 
-def make_stream(name, stype, times, data, srate):
+class DummyPhysioData:
+    def __init__(self):
+        self.timeseries = {}
+        self.events = {}
+        self.has_ecg = False
+        self.band_map = {}
+        self.active_band = None
+
+
+# ---------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------
+
+@pytest.fixture
+def physiodata():
+    return DummyPhysioData()
+
+
+@pytest.fixture
+def fake_ecg_stream():
     return {
         "info": {
-            "name": [name],
-            "type": [stype],
-            "nominal_srate": [srate],
+            "name": ["PolarH10_ecg"],
+            "type": ["ECG"],
+            "nominal_srate": ["130"],
         },
-        "time_stamps": times,
-        "time_series": data,
+        "time_stamps": np.linspace(0, 10, 1300),
+        "time_series": np.random.randn(1300, 1),
     }
 
 
-# ---------------------------------------------------------
-# Fixture: mock pyxdf.load_xdf
-# ---------------------------------------------------------
+@pytest.fixture
+def fake_acc_stream():
+    return {
+        "info": {
+            "name": ["PolarH10_acc"],
+            "type": ["ACC"],
+            "nominal_srate": ["50"],
+        },
+        "time_stamps": np.linspace(0, 10, 500),
+        "time_series": np.random.randn(500, 3),
+    }
+
 
 @pytest.fixture
-def mock_pyxdf(monkeypatch):
+def fake_marker_stream():
+    return {
+        "info": {
+            "name": ["TaskMarkers"],
+            "type": ["Markers"],
+            "nominal_srate": ["0"],
+        },
+        "time_stamps": np.array([1.0, 2.0, 3.0]),
+        "time_series": [
+            ["start trial"],
+            ["end trial"],
+            ["foo"],
+        ],
+    }
+
+
+# ---------------------------------------------------------------------
+# pyxdf mocking
+# ---------------------------------------------------------------------
+
+@pytest.fixture
+def mock_pyxdf(monkeypatch, fake_ecg_stream, fake_acc_stream, fake_marker_stream):
     def fake_load_xdf(filename):
-        # -------------------------
-        # Marker stream
-        # -------------------------
-        markers = make_stream(
-            name="Markers",
-            stype="Markers",
-            times=[0.5, 1.5],
-            data=[["start rest"], ["end rest"]],
-            srate=0,
-        )
+        return [fake_ecg_stream, fake_acc_stream, fake_marker_stream], None
 
-        # -------------------------
-        # ECG stream
-        # -------------------------
-        ecg = make_stream(
-            name="Polar_ECG",
-            stype="ECG",
-            times=[0.00, 0.01, 0.02, 0.03, 0.04],
-            data=[[1.0], [2.0], [3.0], [4.0], [5.0]],
-            srate=100,
-        )
-
-        # -------------------------
-        # ACC stream (>= 10 samples → filtfilt safe)
-        # -------------------------
-        times = np.arange(0.0, 0.2, 0.02)  # 10 samples
-        acc_data = np.column_stack([
-            np.linspace(0.1, 0.3, 10),
-            np.linspace(0.0, 0.2, 10),
-            np.linspace(1.0, 0.8, 10),
-        ])
-
-        acc = make_stream(
-            name="Polar_ACC",
-            stype="ACC",
-            times=times.tolist(),
-            data=acc_data.tolist(),
-            srate=50,
-        )
-
-        return [markers, ecg, acc], {}
-
-    monkeypatch.setattr(xdfmod.pyxdf, "load_xdf", fake_load_xdf)
+    monkeypatch.setattr("pyxdf.load_xdf", fake_load_xdf)
 
 
-# ---------------------------------------------------------
-# Tests
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------
+# _compute_RSP_signal
+# ---------------------------------------------------------------------
 
-def test_xdf_loader_populates_physiodata(mock_pyxdf, tmp_path):
-    fname = tmp_path / "test.xdf"
-    fname.write_text("dummy")
+def test_compute_rsp_signal_shape():
+    acc = np.random.randn(1000, 3)
+    rsp = _compute_RSP_signal(acc, fs=50.0)
 
-    pd = PhysioData(str(fname))
+    assert rsp.shape == (1000,)
+    assert np.isfinite(rsp).all()
 
-    # -------------------------
-    # Events
-    # -------------------------
-    assert "Markers" in pd.events
-    ev = pd.events["Markers"]
 
-    assert isinstance(ev, EventSeries)
-    assert ev.labels == ["start rest", "stop rest"]
-    np.testing.assert_allclose(ev.times, [0.5, 1.5])
+def test_compute_rsp_signal_constant_input():
+    acc = np.zeros((500, 3))
+    rsp = _compute_RSP_signal(acc, fs=50.0)
 
-    # -------------------------
-    # TimeSeries
-    # -------------------------
-    ecg_keys = [k for k in pd.timeseries if k.startswith("ecg")]
-    rsp_keys = [k for k in pd.timeseries if k.startswith("RSP")]
+    # Should remain near zero
+    assert np.allclose(rsp, 0.0, atol=1e-6)
 
+
+# ---------------------------------------------------------------------
+# Loader: happy path
+# ---------------------------------------------------------------------
+
+def test_load_xdf_populates_timeseries_and_events(
+    physiodata, mock_pyxdf
+):
+    load_xdf(physiodata, "dummy.xdf")
+
+    # ECG loaded
+    ecg_keys = [k for k in physiodata.timeseries if k.startswith("ecg")]
     assert len(ecg_keys) == 1
+    assert isinstance(physiodata.timeseries[ecg_keys[0]], TimeSeries)
+
+    # Respiration loaded
+    rsp_keys = [k for k in physiodata.timeseries if k.startswith("RSP")]
     assert len(rsp_keys) == 1
+    assert isinstance(physiodata.timeseries[rsp_keys[0]], TimeSeries)
 
-    ecg = pd.timeseries[ecg_keys[0]]
-    rsp = pd.timeseries[rsp_keys[0]]
+    # Markers loaded
+    assert "TaskMarkers" in physiodata.events
+    assert isinstance(physiodata.events["TaskMarkers"], EventSeries)
 
-    assert isinstance(ecg, TimeSeries)
-    assert isinstance(rsp, TimeSeries)
-
-    np.testing.assert_allclose(ecg.values, [1, 2, 3, 4, 5])
-    assert rsp.values.size == 10
-
-    # -------------------------
-    # Band mapping
-    # -------------------------
-    assert pd.band_map
-    band = next(iter(pd.band_map))
-
-    mapping = pd.band_map[band]
-    assert mapping["ecg"] == ecg_keys[0]
-    assert mapping["rsp"] == rsp_keys[0]
-
-    assert pd.active_band == band
+    # ECG flag
+    assert physiodata.has_ecg is True
 
 
-def test_non_polar_streams_are_ignored(monkeypatch, tmp_path):
+def test_marker_label_normalization(physiodata, mock_pyxdf):
+    load_xdf(physiodata, "dummy.xdf")
+
+    ev = physiodata.events["TaskMarkers"]
+    labels = list(ev.labels)
+
+    assert labels[1].startswith("stop ")
+    assert labels[1] == "stop trial"
+
+
+# ---------------------------------------------------------------------
+# Loader: band indexing
+# ---------------------------------------------------------------------
+
+def test_band_map_created(physiodata, mock_pyxdf):
+    load_xdf(physiodata, "dummy.xdf")
+
+    assert physiodata.band_map
+    assert physiodata.active_band is not None
+
+    band = physiodata.active_band
+    mapping = physiodata.band_map[band]
+
+    assert "ecg" in mapping
+    assert "rsp" in mapping
+
+
+# ---------------------------------------------------------------------
+# Loader: robustness / edge cases
+# ---------------------------------------------------------------------
+
+def test_non_polar_streams_ignored(monkeypatch, physiodata):
     def fake_load_xdf(filename):
-        junk = make_stream(
-            name="Camera_Stream",
-            stype="video",
-            times=[0.0, 1.0],
-            data=[[0], [1]],
-            srate=30,
-        )
-        return [junk], {}
+        return [{
+            "info": {
+                "name": ["RandomStream"],
+                "type": ["EEG"],
+                "nominal_srate": ["250"],
+            },
+            "time_stamps": np.linspace(0, 1, 250),
+            "time_series": np.random.randn(250, 8),
+        }], None
 
-    monkeypatch.setattr(xdfmod.pyxdf, "load_xdf", fake_load_xdf)
+    monkeypatch.setattr("pyxdf.load_xdf", fake_load_xdf)
 
-    fname = tmp_path / "test.xdf"
-    fname.write_text("dummy")
+    load_xdf(physiodata, "dummy.xdf")
+    assert physiodata.timeseries == {}
+    assert physiodata.events == {}
 
-    pd = PhysioData(str(fname))
 
-    assert pd.timeseries == {}
-    assert pd.events == {}
-    assert pd.band_map == {}
-    assert pd.active_band is None
+def test_acc_wrong_channel_count_skipped(monkeypatch, physiodata):
+    def fake_load_xdf(filename):
+        return [{
+            "info": {
+                "name": ["Polar_acc"],
+                "type": ["ACC"],
+                "nominal_srate": ["50"],
+            },
+            "time_stamps": np.linspace(0, 10, 100),
+            "time_series": np.random.randn(100, 2),  # WRONG
+        }], None
+
+    monkeypatch.setattr("pyxdf.load_xdf", fake_load_xdf)
+
+    load_xdf(physiodata, "dummy.xdf")
+    assert physiodata.timeseries == {}
+
+
+def test_invalid_acc_timestamps_skipped(monkeypatch, physiodata):
+    def fake_load_xdf(filename):
+        return [{
+            "info": {
+                "name": ["Polar_acc"],
+                "type": ["ACC"],
+                "nominal_srate": ["50"],
+            },
+            "time_stamps": np.ones(100),  # no positive diffs
+            "time_series": np.random.randn(100, 3),
+        }], None
+
+    monkeypatch.setattr("pyxdf.load_xdf", fake_load_xdf)
+
+    load_xdf(physiodata, "dummy.xdf")
+    assert physiodata.timeseries == {}

@@ -259,39 +259,39 @@ class CardioSeries(HRVMetric):
         max_ibi_sec: float = 2.0,
     ) -> None:
         """
-        Classify IBIs using rolling mean/standard deviation thresholds.
+        Classify inter-beat intervals (IBIs) using local statistics and heuristics.
 
-        This method labels each IBI (interval) using a robust-ish local statistic:
-        - Compute rolling mean/std over a centered window of length `window_length`
-        - Define lower/upper bounds: mean ± `n_std` * std
-        - Classify each IBI against these bounds and additional rules
+        This method assigns a label to each IBI (aligned to `self.ibi` indexing)
+        based on deviations from local or global statistics.
+
+        Classification strategy
+        -----------------------
+        1. IBIs are derived from `self.ibi`, which intentionally includes a trailing
+        NaN to preserve alignment with R-peak times.
+        2. Degenerate IBIs (NaN or <= 0) are immediately labeled "T".
+        3. For statistical classification:
+        - If the number of intervals is smaller than `window_length`,
+            rolling statistics are not meaningful; global mean/std are used.
+        - Otherwise, centered rolling mean/std are computed using a sliding window.
+        4. IBIs are labeled pointwise using mean ± n_std * std thresholds.
+        5. Sequence heuristics are applied afterward to detect specific patterns.
 
         Labels produced
         ---------------
         - "N"   : normal
-        - "L"   : long IBI (above local upper bound)
-        - "S"   : short IBI (below local lower bound)
+        - "L"   : long IBI (above threshold)
+        - "S"   : short IBI (below threshold)
         - "TL"  : too long IBI (> max_ibi_sec)
-        - "SL"  : short-then-long pattern (sequence heuristic)
-        - "SNS" : short-normal-short pattern (sequence heuristic)
-        - "T"   : invalid/degenerate IBI (NaN or <= 0)
-
-        Parameters
-        ----------
-        window_length:
-            Centered rolling window size (odd is typical). Larger values yield smoother
-            local estimates but may blur short-lived dynamics.
-        n_std:
-            Threshold multiplier for defining short/long outliers relative to local std.
-        max_ibi_sec:
-            Hard ceiling for an IBI in seconds. Values above this are labeled "TL".
+        - "SL"  : short-then-long pattern
+        - "SNS" : short-normal-short pattern
+        - "T"   : degenerate / invalid interval
 
         Notes
         -----
-        - Labels align with `ibi` indexing (see class docstring).
-        - The method operates in-place, mutating `self.labels`.
-        - Degenerate IBIs (NaN or <= 0) are labeled "T" and excluded from thresholding.
-        - The sequence heuristics ("SL", "SNS") overwrite earlier pointwise labels.
+        - This method mutates `self.labels` in place.
+        - The final (trailing) IBI is never meaningfully classified but is kept
+        for alignment consistency.
+        - All numerical edge cases are handled explicitly to avoid RuntimeWarnings.
         """
         ibi_sec = self.ibi
         labels = self.labels
@@ -301,19 +301,64 @@ class CardioSeries(HRVMetric):
             return
 
         # --------------------------------------------------
-        # Degenerate IBIs
+        # Step 1: mark degenerate IBIs
         # --------------------------------------------------
         degenerate_mask = np.isnan(ibi_sec) | (ibi_sec <= 0)
         labels[degenerate_mask] = "T"
 
         # --------------------------------------------------
-        # Rolling statistics (centered window)
+        # Step 2: prepare IBI array for statistics
         # --------------------------------------------------
-        # Pad using edge values to preserve length and avoid boundary shrinkage.
-        half_window = window_length // 2
-        ibi_padded = np.pad(ibi_sec, (half_window, half_window), mode="edge")
+        # NOTE:
+        # `ibi` ends with a trailing NaN by design (alignment).
+        # For statistical computations only, we replace that NaN
+        # with the last valid IBI so that padding does not create
+        # all-NaN rolling windows.
+        ibi_for_stats = ibi_sec.astype(float, copy=True)
+        if ibi_for_stats.size >= 2 and np.isnan(ibi_for_stats[-1]):
+            ibi_for_stats[-1] = ibi_for_stats[-2]
 
-        windows = np.lib.stride_tricks.sliding_window_view(ibi_padded, window_length)
+        # --------------------------------------------------
+        # Step 3: short-series fallback (no rolling window)
+        # --------------------------------------------------
+        valid_mask = ~np.isnan(ibi_for_stats)
+
+        if not np.any(valid_mask):
+            # No valid IBIs to classify; all are degenerate
+            # Labels have already been set to "T"
+            return
+
+        if n_intervals < window_length:
+            mean = np.nanmean(ibi_for_stats)
+            std = np.nanstd(ibi_for_stats)
+
+            lower_bound = mean - n_std * std
+            upper_bound = mean + n_std * std
+
+            for i in range(n_intervals):
+                if labels[i] == "T":
+                    continue
+                if ibi_sec[i] > max_ibi_sec:
+                    labels[i] = "TL"
+                elif ibi_sec[i] > upper_bound:
+                    labels[i] = "L"
+                elif ibi_sec[i] < lower_bound:
+                    labels[i] = "S"
+                else:
+                    labels[i] = "N"
+
+            return
+
+        # --------------------------------------------------
+        # Step 4: rolling statistics (centered window)
+        # --------------------------------------------------
+        half_window = window_length // 2
+        ibi_padded = np.pad(ibi_for_stats, (half_window, half_window), mode="edge")
+
+        windows = np.lib.stride_tricks.sliding_window_view(
+            ibi_padded, window_length
+        )
+
         local_mean = np.nanmean(windows, axis=1)[:n_intervals]
         local_std = np.nanstd(windows, axis=1)[:n_intervals]
 
@@ -321,12 +366,11 @@ class CardioSeries(HRVMetric):
         upper_bound = local_mean + n_std * local_std
 
         # --------------------------------------------------
-        # Pointwise classification
+        # Step 5: pointwise classification
         # --------------------------------------------------
         for i in range(n_intervals):
             if labels[i] == "T":
                 continue
-
             if ibi_sec[i] > max_ibi_sec:
                 labels[i] = "TL"
             elif ibi_sec[i] > upper_bound[i]:
@@ -337,7 +381,7 @@ class CardioSeries(HRVMetric):
                 labels[i] = "N"
 
         # --------------------------------------------------
-        # Sequence pattern heuristics
+        # Step 6: sequence heuristics
         # --------------------------------------------------
         for i in range(n_intervals - 1):
             if labels[i] == "S" and labels[i + 1] == "L":
@@ -348,7 +392,7 @@ class CardioSeries(HRVMetric):
                 labels[i] = "SNS"
 
         # --------------------------------------------------
-        # Logging summary
+        # Step 7: logging summary
         # --------------------------------------------------
         unique, counts = np.unique(labels, return_counts=True)
         summary = dict(zip(unique, counts))

@@ -35,6 +35,122 @@ class TimeSeries:
         if self.times.shape[0] != self.values.shape[0]:
             raise ValueError("TimeSeries times and values must have same length.")
 
+    def detect_ecg_polarity(
+        self,
+        bandpass: tuple[float, float] = (5.0, 20.0),
+        min_peak_distance: float = 0.25,
+        return_debug: bool = False,
+    ) -> str | tuple[str, dict]:
+        """
+        Determine whether an ECG signal is correctly oriented or inverted.
+
+        Parameters
+        ----------
+        
+        bandpass : tuple[float, float], optional
+            Bandpass filter (Hz) used to emphasize QRS complexes.
+        min_peak_distance : float, optional
+            Minimum distance between peaks (seconds).
+        return_debug : bool, optional
+            If True, also return a dictionary with diagnostic metrics.
+
+        Returns
+        -------
+        polarity : {"normal", "inverted"}
+            Estimated ECG polarity.
+        debug : dict, optional
+            Diagnostic metrics used for the decision.
+
+        Notes
+        -----
+        This method is intentionally conservative and robust:
+        - No single heuristic determines polarity.
+        - Designed for experimental ECG data with artifacts.
+        """
+        fs = self.srate
+        ecg = self.values.copy()
+
+        if ecg.ndim != 1:
+            raise ValueError("ECG signal must be 1D")
+
+        ecg = np.asarray(ecg, dtype=float)
+        ecg = ecg[ecg.size // 4 : -ecg.size // 4] if ecg.size > 100 else ecg
+        ecg -= np.nanmedian(ecg)
+
+        # ------------------------------------------------------------------
+        # 1. Bandpass filter (QRS emphasis)
+        # ------------------------------------------------------------------
+        nyq = 0.5 * fs
+        b, a = signal.butter(
+            3,
+            [bandpass[0] / nyq, bandpass[1] / nyq],
+            btype="bandpass",
+        )
+        ecg_f = signal.filtfilt(b, a, ecg)
+
+        # ------------------------------------------------------------------
+        # 2. Peak polarity dominance
+        # ------------------------------------------------------------------
+        distance_samples = int(min_peak_distance * fs)
+
+        pos_peaks, pos_props = signal.find_peaks(
+            ecg_f,
+            distance=distance_samples,
+            prominence=np.std(ecg_f),
+        )
+
+        neg_peaks, neg_props = signal.find_peaks(
+            -ecg_f,
+            distance=distance_samples,
+            prominence=np.std(ecg_f),
+        )
+
+        pos_prom = np.sum(pos_props["prominences"]) if len(pos_peaks) else 0.0
+        neg_prom = np.sum(neg_props["prominences"]) if len(neg_peaks) else 0.0
+
+        peak_score = pos_prom - neg_prom
+
+        # ------------------------------------------------------------------
+        # 3. Upper vs lower envelope energy
+        # ------------------------------------------------------------------
+        analytic = signal.hilbert(ecg_f)
+        envelope = np.abs(analytic)
+
+        upper_energy = np.mean(envelope[ecg_f > 0]) if np.any(ecg_f > 0) else 0.0
+        lower_energy = np.mean(envelope[ecg_f < 0]) if np.any(ecg_f < 0) else 0.0
+
+        envelope_score = upper_energy - lower_energy
+
+        # ------------------------------------------------------------------
+        # 4. Extrema asymmetry
+        # ------------------------------------------------------------------
+        p95 = np.percentile(ecg_f, 95)
+        p05 = np.percentile(ecg_f, 5)
+
+        extrema_score = p95 + p05  # positive if upper tail dominates
+
+        # ------------------------------------------------------------------
+        # 5. Aggregate decision
+        # ------------------------------------------------------------------
+        total_score = (
+            1.0 * peak_score +
+            0.8 * envelope_score +
+            0.5 * extrema_score
+        )
+
+        polarity = "normal" if total_score < 0 else "inverted"
+
+        debug = dict(
+            peak_score=peak_score,
+            envelope_score=envelope_score,
+            extrema_score=extrema_score,
+            total_score=total_score,
+            n_pos_peaks=len(pos_peaks),
+            n_neg_peaks=len(neg_peaks),
+        )
+
+        return (polarity, debug) if return_debug else polarity
+
     def flip(self) -> None:
         """Invert the signal values in place."""
         logger.info("Flipping TimeSeries values.")

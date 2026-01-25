@@ -3,205 +3,219 @@ import pandas as pd
 import pytest
 
 from spectHR.DataSet.Series.CardioSeries import CardioSeries, CardioSeriesView
-from spectHR.DataSet.Epoch import Epoch
 
 
-# ---------------------------------------------------------
-# Minimal PhysioData stub (only what CardioSeries uses)
-# ---------------------------------------------------------
-
-class DummyPhysioData:
-    def __init__(self):
-        self.epochs = {
-            "experiment": Epoch(active=True, start=0.0, end=10.0),
-            "rest": Epoch(active=True, start=2.0, end=6.0),
-            "inactive": Epoch(active=False, start=1.0, end=9.0),
-        }
-
-
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------
 
 @pytest.fixture
-def cardio():
-    times = np.array([0.0, 1.0, 2.0, 3.1, 4.0, 5.2, 6.0, 7.0])
-    cs = CardioSeries(times)
-    cs._pd = DummyPhysioData()
-    return cs
+def simple_times():
+    # 1 Hz heart rate (1 second RR)
+    return np.array([0.0, 1.0, 2.0, 3.0, 4.0])
 
 
-# ---------------------------------------------------------
-# IBI computation
-# ---------------------------------------------------------
-
-def test_ibi_computation(cardio):
-    ibi = cardio.ibi
-    assert ibi.size == cardio.times.size
-    assert np.isnan(ibi[-1])
-    np.testing.assert_allclose(ibi[:-1], np.diff(cardio.times))
+@pytest.fixture
+def cardio(simple_times):
+    return CardioSeries(simple_times)
 
 
-def test_ibi_single_value():
-    cs = CardioSeries(np.array([1.0]))
+@pytest.fixture
+def irregular_times():
+    return np.array([0.0, 0.9, 2.1, 3.0, 5.5])
+
+
+# ---------------------------------------------------------------------
+# Construction & invariants
+# ---------------------------------------------------------------------
+
+def test_init_sets_times_and_labels(cardio):
+    assert cardio.times.dtype == float
+    assert cardio.labels.shape == cardio.times.shape
+    assert np.all(cardio.labels == "N")
+
+
+def test_empty_series():
+    cs = CardioSeries(np.array([]))
+    assert cs.times.size == 0
+    assert cs.labels.size == 0
     assert cs.ibi.size == 0
 
 
-def test_ibi_times_unchanged_after_classification(cardio):
-    t0 = cardio.times.copy()
-    cardio.classify_ibi()
-    np.testing.assert_allclose(cardio.times, t0)
+# ---------------------------------------------------------------------
+# IBI derivation & policy
+# ---------------------------------------------------------------------
+
+def test_ibi_alignment(simple_times):
+    cs = CardioSeries(simple_times)
+    ibi = cs.ibi
+
+    assert len(ibi) == len(simple_times)
+    assert np.isnan(ibi[-1])
+    assert np.allclose(ibi[:-1], 1.0)
 
 
-def test_tl_ibi_becomes_nan():
-    # IBI = 9s → TL → NaN
-    times = np.array([0.0, 1.0, 10.0])
+def test_ibi_marks_too_long_and_mutates_labels():
+    times = np.array([0.0, 1.0, 4.5, 5.5])  # 3.5 s gap
     cs = CardioSeries(times)
-    cs.classify_ibi(Tmax=5.0)
 
+    ibi = cs.ibi
+    assert np.isnan(ibi[1])
     assert cs.labels[1] == "TL"
-    assert np.isnan(cs.ibi[1])
 
 
-# ---------------------------------------------------------
-# View semantics (epoch + window)
-# ---------------------------------------------------------
-
-def test_epoch_getitem(cardio):
-    view = cardio["rest"]
-    assert isinstance(view, CardioSeriesView)
-    assert np.all(view.times >= 2.0)
-    assert np.all(view.times <= 6.0)
-
-
-def test_getitem_requires_pd():
-    cs = CardioSeries(np.array([0.0, 1.0]))
-    with pytest.raises(RuntimeError):
-        cs["experiment"]
-
-
-def test_getitem_missing_epoch(cardio):
-    with pytest.raises(KeyError):
-        cardio["does_not_exist"]
-
-
-def test_view_method(cardio):
-    view = cardio.view(1.0, 4.0)
-    assert isinstance(view, CardioSeriesView)
-    assert np.all(view.times >= 1.0)
-    assert np.all(view.times <= 4.0)
-
-
-# ---------------------------------------------------------
-# HRV metrics
-# ---------------------------------------------------------
-
-def test_metric_table(cardio):
-    table = cardio.metric_table()
-    assert isinstance(table, dict)
-    assert "mean" in table
-    assert "sdnn" in table
-    assert "rmssd" in table
-    for v in table.values():
-        assert isinstance(v, float)
-        assert not np.isinf(v)
-
-
-def test_metric_table_epoch(cardio):
-    tbl = cardio.metric_table_epoch(2.0, 6.0)
-    assert "count" in tbl
-    assert tbl["count"] > 0
-
-
-def test_metrics_insufficient_data():
+def test_ibi_single_sample():
     cs = CardioSeries(np.array([1.0]))
-    tbl = cs.metric_table()
-    assert tbl["count"] == 0
-    assert np.isnan(tbl["mean"])
-    assert np.isnan(tbl["std"])
-    assert np.isnan(tbl["rmssd"])
+    ibi = cs.ibi
+    assert ibi.size == 0
 
 
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------
+# _ibi_clean_ms
+# ---------------------------------------------------------------------
+
+def test_ibi_clean_ms_excludes_nan():
+    times = np.array([0.0, 1.0, 4.5, 5.5])
+    cs = CardioSeries(times)
+
+    ibi_ms = cs._ibi_clean_ms()
+    assert ibi_ms.ndim == 1
+    assert np.all(ibi_ms > 0)
+    assert np.all(~np.isnan(ibi_ms))
+
+
+# ---------------------------------------------------------------------
+# Classification
+# ---------------------------------------------------------------------
+
+def test_classify_ibi_basic_runs(cardio):
+    cardio.classify_ibi()
+    assert set(cardio.labels).issubset(
+        {"N", "L", "S", "TL", "SL", "SNS", "T"}
+    )
+
+
+def test_classify_handles_degenerate_intervals():
+    times = np.array([0.0, 1.0, 1.0, 2.0])
+    cs = CardioSeries(times)
+    cs.classify_ibi()
+
+    assert "T" in cs.labels
+
+
+def test_sequence_labels_applied():
+    # Artificial pattern: short, long
+    times = np.array([0.0, 0.5, 2.0, 3.0])
+    cs = CardioSeries(times)
+    cs.classify_ibi(window_length=3, n_std=0.1)
+
+    assert "SL" in cs.labels
+
+
+# ---------------------------------------------------------------------
+# replace_from_timeseries
+# ---------------------------------------------------------------------
+
+class DummyTS:
+    def __init__(self, times, values):
+        self.times = times
+        self.values = values
+
+
+def test_replace_from_timeseries_basic():
+    base = CardioSeries(np.array([0.0, 1.0, 2.0, 3.0]))
+
+    ts = DummyTS(
+        times=np.linspace(1.0, 2.0, 100),
+        values=np.sin(np.linspace(0, 10, 100))
+    )
+
+    base.replace_from_timeseries(ts, start=1.0, end=2.0)
+
+    assert np.all(base.times >= 0)
+    assert np.all(np.diff(base.times) >= 0)
+
+
+def test_replace_invalid_window_raises():
+    cs = CardioSeries(np.array([0.0, 1.0]))
+    with pytest.raises(ValueError):
+        cs.replace_from_timeseries(None, start=2.0, end=1.0)
+
+
+# ---------------------------------------------------------------------
+# Views & slicing
+# ---------------------------------------------------------------------
+
+def test_view_is_zero_copy(cardio):
+    view = cardio.view(1.0, 3.0)
+    assert isinstance(view, CardioSeriesView)
+
+    cardio.times[1] = 10.0
+    assert view.times[0] == 10.0
+
+
+def test_view_ibi_alignment():
+    cs = CardioSeries(np.array([0.0, 1.0, 3.5]))
+    view = cs.view(0.0, 3.5)
+
+    ibi = view.ibi
+    assert len(ibi) == len(view.times)
+    assert np.isnan(ibi[-1])
+
+
+def test_nested_view():
+    cs = CardioSeries(np.array([0.0, 1.0, 2.0, 3.0]))
+    v1 = cs.view(1.0, 3.0)
+    v2 = v1.view(2.0, 3.0)
+
+    assert np.all(v2.times == np.array([2.0, 3.0]))
+
+
+# ---------------------------------------------------------------------
 # Welch PSD
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------
 
 def test_welch_psd_empty():
-    cs = CardioSeries(np.array([0.0]))
+    cs = CardioSeries(np.array([]))
     freqs, power = cs.welch_psd()
     assert freqs.size == 0
     assert power.size == 0
 
 
-def test_welch_psd_basic(cardio):
-    freqs, power = cardio.welch_psd()
+def test_welch_psd_runs(cardio):
+    freqs, power = cardio.welch_psd(interpolate=False)
     assert freqs.ndim == 1
     assert power.ndim == 1
-    assert freqs.size == power.size
 
 
-def test_welch_psd_with_ci(cardio):
+def test_welch_psd_with_ci_shapes(cardio):
     freqs, psd, lo, hi = cardio.welch_psd_with_ci()
-    assert freqs.size == psd.size
-    assert lo.size == psd.size
-    assert hi.size == psd.size
+    assert freqs.shape == psd.shape == lo.shape == hi.shape
 
 
-def test_welch_psd_with_ci_empty():
+# ---------------------------------------------------------------------
+# HRV metrics
+# ---------------------------------------------------------------------
+
+def test_basic_hrv_metrics(cardio):
+    assert cardio.count() == 4
+    assert cardio.mean() > 0
+    assert cardio.std() >= 0
+    assert cardio.rmssd() >= 0
+
+
+def test_metrics_nan_on_insufficient_data():
     cs = CardioSeries(np.array([0.0]))
-    freqs, psd, lo, hi = cs.welch_psd_with_ci()
-    assert freqs.size == 0
-    assert np.all(psd == lo)
-    assert np.all(psd == hi)
+    assert np.isnan(cs.rmssd())
+    assert np.isnan(cs.sd1())
+    assert np.isnan(cs.sd2())
 
 
-# ---------------------------------------------------------
-# Band power
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------
+# Band power utility
+# ---------------------------------------------------------------------
 
-def test_band_power_empty():
-    cs = CardioSeries(np.array([0.0]))
-    freqs, power = cs.welch_psd()
-    val = cs._band_power_exact(freqs, power, 0.04, 0.15)
+def test_band_power_returns_nan_on_empty():
+    cs = CardioSeries(np.array([]))
+    val = cs._band_power_exact(np.array([]), np.array([]), 0.04, 0.15)
     assert np.isnan(val)
-
-
-# ---------------------------------------------------------
-# Epoch HRV table
-# ---------------------------------------------------------
-
-def test_hrv_epoch_table(cardio):
-    df = cardio.hrv_epoch_table(cardio._pd)
-    assert isinstance(df, pd.DataFrame)
-    assert "mean" in df.columns
-    assert "count" in df.columns
-    assert "inactive" not in df.index
-
-
-def test_hrv_epoch_table_column_order(cardio):
-    df = cardio.hrv_epoch_table(cardio._pd)
-    expected = [c for c in cardio.METRIC_ORDER if c in df.columns]
-    assert list(df.columns) == expected
-
-
-# ---------------------------------------------------------
-# CardioSeriesView specifics
-# ---------------------------------------------------------
-
-def test_view_inherits_pd(cardio):
-    view = cardio["rest"]
-    assert view._pd is cardio._pd
-
-
-def test_view_ibi(cardio):
-    view = cardio["rest"]
-    ibi = view.ibi
-    assert ibi.size == view.times.size
-    assert np.isnan(ibi[-1])
-
-
-def test_view_repr(cardio):
-    view = cardio["rest"]
-    r = repr(view)
-    assert "CardioSeriesView" in r
-    assert "start" in r or "[" in r

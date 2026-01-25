@@ -7,7 +7,8 @@ from typing import Any, Dict
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
-from spectHR.DataSet.Epoch import Epoch
+from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
+from spectHR.DataSet.Epoch import Epoch, Phase  
 from spectHR.DataSet.loaders import get_loader
 from spectHR.DataSet.StreamAccessor import StreamAccessor
 from spectHR.Tools.Logger import logger
@@ -44,11 +45,14 @@ class PhysioData:
         # Core containers (always defined)
         self.timeseries: Dict[str, TimeSeries] = {}
         self.events: Dict[str, EventSeries] = {}
+
         self.epochs: Dict[str, Epoch] = {}
+        self.phases: dict[str, Phase] = {}
 
         self.band_map: dict[str, dict[str, str]] = {}
         self.active_band: str | None = None
         self.hrv_map: dict[str, CardioSeries] = {}
+        self.rsp_map: dict[str, RespirationSeries] = {}
 
         # Load using registered loader
         loader = get_loader(filename)
@@ -211,7 +215,7 @@ class PhysioData:
         1. Filter ECG TimeSeries
         2. Detect R-peaks
         3. Create or update CardioSeries
-
+        4. Create or update RespirationSeries
         All operations are in-place.
         """
 
@@ -229,7 +233,7 @@ class PhysioData:
             logger.info(f"Preprocessing ECG band '{band}'")
 
             ecg_ts = self["ecg"].timeseries
-
+            
             # 1. Filtering
             ecg_ts.filter(
                 filter_type=filter_type,
@@ -250,12 +254,51 @@ class PhysioData:
                 cs._stream = band
                 self.hrv_map[band] = cs
             else:
-                cs.from_timeseries(
+                cs.replace_from_timeseries(
                     ecg_ts,
                     min_peak_distance_ms=min_peak_distance_ms,
                     classify=classify,
                 )
+            # --- RESPIRATION preprocessing (new) ---
+            try:
+                rsp_ts = self["rsp"].timeseries
+            except KeyError:
+                rsp_ts = None
 
+            if rsp_ts is not None:
+                resp = RespirationSeries.from_timeseries(rsp_ts)
+                resp._pd = self
+                resp._stream = band
+                self.rsp_map[band] = resp
+
+                # --------------------------------------------------
+                # Derive Phase objects from RespirationSeries
+                # --------------------------------------------------
+                if rsp_ts is not None and resp is not None and len(resp) > 0:
+
+                    inh_intervals = [
+                        (s, e)
+                        for s, e, lab in zip(resp.starts, resp.ends, resp.labels)
+                        if lab == "INH"
+                    ]
+
+                    exh_intervals = [
+                        (s, e)
+                        for s, e, lab in zip(resp.starts, resp.ends, resp.labels)
+                        if lab == "EXH"
+                    ]
+
+                    # Store band-specific phases (namespaced)
+                    self.phases[f"inh-{band}"] = Phase(
+                        active=True,
+                        intervals=inh_intervals,
+                    )
+
+                    self.phases[f"exh-{band}"] = Phase(
+                        active=True,
+                        intervals=exh_intervals,
+                    )
+                    
         self.active_band = original_band or bands[0]
 
     # ------------------------------------------------------------
