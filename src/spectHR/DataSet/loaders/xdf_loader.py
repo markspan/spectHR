@@ -13,30 +13,199 @@ from spectHR.Tools.Logger import logger
 # ------------------------------------------------------------
 
 
-def _compute_RSP_signal(acc: np.ndarray, fs: float) -> np.ndarray:
+def _compute_RSP_signal(
+    acc: np.ndarray,
+    fs: float,
+    *,
+    # Gravity / orientation tracking (very low frequency)
+    gravity_cutoff_hz: float = 0.04,
+    gravity_order: int = 2,
+    # Respiration band (typical adult: ~0.1–0.7 Hz; tune to your paradigm)
+    rsp_band_hz: tuple[float, float] = (0.10, 0.70),
+    rsp_order: int = 4,
+    # Robustness
+    winsorize_z: float | None = 8.0,
+    nan_policy: str = "interp",
+    # Output scaling
+    zscore: bool = True,
+    return_diagnostics: bool = False,
+) -> np.ndarray | tuple[np.ndarray, dict]:
     """
-    Extract a respiratory signal from Nx3 accelerometer data.
-    Identical to your previous implementation.
+    Extract a respiration surrogate signal from Nx3 chest-belt accelerometer data.
+
+    Pipeline
+    --------
+    1) Robust cleanup (NaNs, extreme spikes)
+    2) Estimate gravity via low-pass and subtract (linear acceleration)
+    3) Bandpass linear acceleration to respiration band
+    4) PCA (first principal component) on bandpassed 3D signal to obtain a 1D respiration surrogate
+    5) Optional z-score normalization
+
+    Parameters
+    ----------
+    acc:
+        Array shaped (N, 3). Units do not matter (g or m/s^2) as long as consistent.
+    fs:
+        Sampling rate in Hz.
+    gravity_cutoff_hz:
+        Low-pass cutoff for gravity/orientation estimate. Lower => smoother orientation tracking.
+        0.02–0.08 Hz are typical for chest belts.
+    rsp_band_hz:
+        Bandpass (low, high) in Hz for respiration motion.
+    gravity_order, rsp_order:
+        Butterworth filter orders. We use SOS + filtfilt for stability/zero-phase.
+    winsorize_z:
+        If not None: clip each axis to median ± winsorize_z * MAD-based sigma (robust).
+        Helps with bumps/impacts.
+    nan_policy:
+        "interp" to linearly interpolate NaNs per axis; "raise" to error; "omit" to fill with 0.
+    zscore:
+        If True, return a standardized signal (mean 0, std 1).
+    return_diagnostics:
+        If True, also return a dict with intermediate info (PC vector, explained variance, etc.).
+
+    Returns
+    -------
+    rsp:
+        1D numpy array (N,) respiration surrogate.
+    diagnostics (optional):
+        Dict with keys: "pc1", "explained_var", "gravity", "lin_acc", "band3".
+
+    Notes
+    -----
+    - If the belt orientation changes slowly, gravity removal + PCA is generally robust.
+    - If there are large posture changes, consider segment-wise PCA (e.g., per epoch) using the same code.
     """
-    from scipy.signal import butter, filtfilt
+    acc = np.asarray(acc, dtype=float)
+    if acc.ndim != 2 or acc.shape[1] != 3:
+        raise ValueError(f"`acc` must have shape (N, 3). Got {acc.shape}.")
+    if fs <= 0:
+        raise ValueError("`fs` must be > 0.")
 
-    NYQUIST = 0.5 * fs
-    GRAVITY_CUTOFF = 0.04  # Hz
-    NOISE_CUTOFF = 0.5  # Hz
-    ORDER = 2
+    # ---------- helpers ----------
+    def _interp_nans(x: np.ndarray) -> np.ndarray:
+        if not np.isnan(x).any():
+            return x
+        n = x.size
+        idx = np.arange(n)
+        good = ~np.isnan(x)
+        if good.sum() < 2:
+            # not enough data to interpolate meaningfully
+            return np.zeros_like(x)
+        return np.interp(idx, idx[good], x[good])
 
-    # Gravity filtering
-    b_grav, a_grav = butter(ORDER, GRAVITY_CUTOFF / NYQUIST, btype="low")
-    acc = acc.copy()
-    for axis in range(3):
-        acc[:, axis] -= filtfilt(b_grav, a_grav, acc[:, axis])
+    def _robust_winsorize_axis(x: np.ndarray, z: float) -> np.ndarray:
+        # robust sigma via MAD
+        med = np.median(x)
+        mad = np.median(np.abs(x - med))
+        # 1.4826 * MAD ≈ std for normal
+        sigma = 1.4826 * mad if mad > 0 else np.std(x)
+        if sigma <= 0:
+            return x
+        lo = med - z * sigma
+        hi = med + z * sigma
+        return np.clip(x, lo, hi)
 
-    # Dynamic norm
-    dyn = np.linalg.norm(acc, axis=1)
+    def _butter_sos(kind: str, cutoff, order: int):
+        from scipy.signal import butter
 
-    # Noise filtering
-    b_noise, a_noise = butter(ORDER, NOISE_CUTOFF / NYQUIST, btype="low")
-    return filtfilt(b_noise, a_noise, dyn)
+        nyq = 0.5 * fs
+        if kind == "low":
+            wn = float(cutoff) / nyq
+            if not (0 < wn < 1):
+                raise ValueError("gravity_cutoff_hz must be between 0 and Nyquist.")
+            return butter(order, wn, btype="low", output="sos")
+        elif kind == "band":
+            lo, hi = cutoff
+            lo = float(lo) / nyq
+            hi = float(hi) / nyq
+            if not (0 < lo < hi < 1):
+                raise ValueError(
+                    "rsp_band_hz must be within (0, Nyquist) and low < high."
+                )
+            return butter(order, [lo, hi], btype="bandpass", output="sos")
+        else:
+            raise ValueError("Unsupported filter kind.")
+
+    def _sos_filtfilt(sos, x: np.ndarray) -> np.ndarray:
+        from scipy.signal import sosfiltfilt
+
+        # sosfiltfilt will complain if too short; fail gracefully
+        if x.size < max(3 * (sos.shape[0] * 2 + 1), 15):
+            # fallback: no filtering (or you could do sosfilt)
+            return x.copy()
+        return sosfiltfilt(sos, x)
+
+    # ---------- 1) NaNs + winsorize ----------
+    acc2 = acc.copy()
+    for k in range(3):
+        if nan_policy == "interp":
+            acc2[:, k] = _interp_nans(acc2[:, k])
+        elif nan_policy == "omit":
+            acc2[:, k] = np.nan_to_num(acc2[:, k], nan=0.0)
+        elif nan_policy == "raise":
+            if np.isnan(acc2[:, k]).any():
+                raise ValueError(
+                    "NaNs present in acc; set nan_policy='interp' or 'omit'."
+                )
+        else:
+            raise ValueError("nan_policy must be 'interp', 'omit', or 'raise'.")
+
+    if winsorize_z is not None:
+        z = float(winsorize_z)
+        for k in range(3):
+            acc2[:, k] = _robust_winsorize_axis(acc2[:, k], z)
+
+    # ---------- 2) gravity estimate + removal ----------
+    sos_g = _butter_sos("low", gravity_cutoff_hz, gravity_order)
+    gravity = np.column_stack([_sos_filtfilt(sos_g, acc2[:, k]) for k in range(3)])
+    lin_acc = acc2 - gravity
+
+    # ---------- 3) bandpass to respiration band ----------
+    sos_rsp = _butter_sos("band", rsp_band_hz, rsp_order)
+    band3 = np.column_stack([_sos_filtfilt(sos_rsp, lin_acc[:, k]) for k in range(3)])
+
+    # ---------- 4) PCA on bandpassed 3D signal ----------
+    # Center
+    X = band3 - band3.mean(axis=0, keepdims=True)
+
+    # Covariance + eigendecomposition (3x3 => cheap, stable)
+    C = (X.T @ X) / max(X.shape[0] - 1, 1)
+    evals, evecs = np.linalg.eigh(C)  # ascending
+    order = np.argsort(evals)[::-1]
+    evals = evals[order]
+    evecs = evecs[:, order]
+    pc1 = evecs[:, 0]
+
+    rsp = X @ pc1
+
+    # Optional: enforce consistent sign (purely cosmetic)
+    # Make rsp positively correlated with the axis that has largest loading magnitude
+    main_axis = int(np.argmax(np.abs(pc1)))
+    if np.corrcoef(rsp, X[:, main_axis])[0, 1] < 0:
+        rsp = -rsp
+        pc1 = -pc1
+
+    # ---------- 5) scale ----------
+    if zscore:
+        s = np.std(rsp)
+        rsp = (rsp - np.mean(rsp)) / (s if s > 0 else 1.0)
+
+    if not return_diagnostics:
+        return rsp
+
+    explained = float(evals[0] / evals.sum()) if evals.sum() > 0 else 0.0
+    diag = {
+        "pc1": pc1,  # 3-vector loadings
+        "explained_var": explained,  # fraction of variance explained by PC1 in band
+        "gravity": gravity,  # Nx3
+        "lin_acc": lin_acc,  # Nx3
+        "band3": band3,  # Nx3
+        "main_axis": main_axis,
+        "rsp_band_hz": rsp_band_hz,
+        "gravity_cutoff_hz": gravity_cutoff_hz,
+    }
+    return rsp, diag
 
 
 # ------------------------------------------------------------
@@ -53,7 +222,7 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
         - *_acc → compute RSP + store ACC raw
 
     Markers:
-        - stype contains "markers"
+        - stype contains "markers" or "event"
         - skip if name starts with "cam"
         - normalize "end <label>" → "stop <label>"
 
@@ -80,7 +249,9 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
         # ------------------------------------------------------------
         # MARKER STREAMS
         # ------------------------------------------------------------
-        if ("markers" in stype.lower()) and not name_lower.startswith("cam"):
+        if (
+            "event" in stype.lower() or "marker" in stype.lower()
+        ) and not name_lower.startswith("cam"):
             raw_times = np.asarray(stream["time_stamps"], dtype=float)
             raw_labels = []
 
@@ -130,7 +301,9 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
             polarity = physiodata.timeseries[ecg_name].detect_ecg_polarity()
             if polarity == "inverted":
                 physiodata.timeseries[ecg_name].flip()
-                logger.info(f"Loaded ECG → {ecg_name}, detected polarity: {polarity}, corrected polarity")
+                logger.info(
+                    f"Loaded ECG → {ecg_name}, detected polarity: {polarity}, corrected polarity"
+                )
             else:
                 logger.info(f"Loaded ECG → {ecg_name}, detected polarity: {polarity}")
             continue

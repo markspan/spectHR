@@ -1,5 +1,5 @@
 {
     "DataDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData",
-    "CacheDirectory": "G:/My Drive/Kim",
-    "OutputDirectory": "C:\\Users\\P154492\\Documents\\spectHR\\export"
+    "CacheDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/cache",
+    "OutputDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/export"
 }
