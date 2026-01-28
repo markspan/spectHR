@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=False, slots=False)
 class Epoch:
     """
     Single contiguous time interval used for segmentation/analysis.

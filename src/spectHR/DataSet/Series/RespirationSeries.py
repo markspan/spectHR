@@ -3,11 +3,10 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 import numpy as np
-from dataclasses import dataclass
-from typing import Iterable
+
 
 from spectHR.Tools.Logger import logger
-
+from scipy.signal import butter, sosfiltfilt, savgol_filter, find_peaks
 
 class RespirationSeries:
     """
@@ -55,126 +54,198 @@ class RespirationSeries:
     # ------------------------------------------------------------------
     # Construction
     # ------------------------------------------------------------------
-
     @classmethod
     def from_timeseries(
         cls,
         rsp,
         *,
-        min_phase_duration: float = 0.3,
+        # 0) mandatory prefilter on raw signal
+        prefilter_cutoff_hz: float = 0.25,
+        prefilter_order: int = 16,
+        # 1) segmentation constraints
+        min_phase_duration: float = 2,
+        # 2) smoothing/derivative support (post-prefilter)
         smooth: bool = True,
-        smoothing_window: int = 5,
+        smoothing_window: int = 31,
+        polyorder: int = 3,
+        # 3) peak detection robustness
+        prominence: float | None = None,
+        prominence_rel: float = 0.55,
+        min_amplitude: float | None = None,
     ) -> "RespirationSeries":
         """
-        Derive inhalation and exhalation phases from a respiration TimeSeries.
+        Robust inhale/exhale segmentation using extrema (troughs/peaks).
 
-        Parameters
-        ----------
-        rsp:
-            Respiration TimeSeries providing:
-                - rsp.times  : 1D array of timestamps (seconds)
-                - rsp.values : 1D array of respiration samples
-        min_phase_duration:
-            Minimum allowed duration (seconds) for a phase.
-            Shorter phases are discarded as noise.
-        smooth:
-            If True, apply light smoothing before differentiation.
-        smoothing_window:
-            Window length (samples) for moving-average smoothing.
-            Must be odd.
+        Pipeline
+        --------
+        0) Low-pass filter RAW signal at `prefilter_cutoff_hz` (default 2 Hz)
+        1) Optional Savitzky–Golay smoothing (preserves extrema well)
+        2) Detect peaks and troughs using prominence + minimum distance
+        3) Enforce alternation of extrema
+        4) Build phases:
+            trough -> peak : INH
+            peak  -> trough: EXH
 
-        Returns
-        -------
-        RespirationSeries
-            Series containing inhalation and exhalation phases.
-
-        Notes
-        -----
-        - Phase boundaries are detected using zero-crossings of the
-          first derivative (velocity-based segmentation).
-        - This is robust to baseline drift and amplitude scaling.
-        - Phase type is determined by the *mean derivative sign*
-          within each interval.
+        Assumptions
+        -----------
+        - `rsp.times` are monotonic increasing (implied by your TimeSeries contract).
+        - `rsp.values` are finite (NaNs will reduce robustness; pre-clean upstream if needed).
         """
         times = np.asarray(rsp.times, dtype=float)
         values = np.asarray(rsp.values, dtype=float)
 
-        if times.size < 3:
+        n = times.size
+        if n < 5:
             logger.warning("RSP TimeSeries too short for respiration phase extraction.")
-            return cls([], [], [])
+            return cls(np.asarray([]), np.asarray([]), np.asarray([], dtype=object))
 
-        # ------------------------------------------------------------
-        # Optional smoothing
-        # ------------------------------------------------------------
-        y = values.copy()
-
-        if smooth and smoothing_window >= 3:
-            if smoothing_window % 2 == 0:
-                raise ValueError("smoothing_window must be odd")
-
-            kernel = np.ones(smoothing_window, dtype=float) / smoothing_window
-            y = np.convolve(y, kernel, mode="same")
-
-        # ------------------------------------------------------------
-        # First derivative (respiratory velocity)
-        # ------------------------------------------------------------
+        # Robust fs estimate
         dt = np.diff(times)
-        dt[dt <= 0] = np.nan  # guard against non-monotonic timestamps
-
-        dy = np.diff(y)
-        velocity = dy / dt
-
-        # Align velocity to sample indices
-        velocity = np.concatenate(([velocity[0]], velocity))
-
-        # ------------------------------------------------------------
-        # Detect zero-crossings of velocity
-        # ------------------------------------------------------------
-        sign = np.sign(velocity)
-        sign[sign == 0] = np.nan
-
-        crossings = np.where(np.diff(sign) != 0)[0] + 1
-
-        if crossings.size < 2:
-            logger.warning("No respiration phase boundaries detected.")
-            return cls([], [], [])
+        dt = dt[(dt > 0) & np.isfinite(dt)]
+        if dt.size == 0:
+            logger.warning("Invalid timestamps (non-increasing or non-finite).")
+            return cls(np.asarray([]), np.asarray([]), np.asarray([], dtype=object))
+        fs = 1.0 / float(np.median(dt))
+        nyq = 0.5 * fs
 
         # ------------------------------------------------------------
-        # Build phases
+        # 0) Prefilter raw signal (low-pass at 2 Hz by default)
+        # ------------------------------------------------------------
+        y0 = values.astype(float, copy=True)
+
+        # Guard cutoff against Nyquist
+        fc = float(prefilter_cutoff_hz)
+        fc = min(fc, 0.95 * nyq)
+        if fc <= 0:
+            raise ValueError("prefilter_cutoff_hz must be > 0.")
+
+        sos = butter(int(prefilter_order), fc / nyq, btype="low", output="sos")
+        # sosfiltfilt needs some length; if too short, fall back gracefully
+        if y0.size >= max(3 * (2 * sos.shape[0] + 1), 15):
+            y_lp = sosfiltfilt(sos, y0)
+        else:
+            y_lp = y0
+
+        # ------------------------------------------------------------
+        # 1) Optional Savitzky–Golay smoothing (post-prefilter)
+        # ------------------------------------------------------------
+        if smooth:
+            w = int(smoothing_window)
+            if w < 5:
+                w = 5
+            if w % 2 == 0:
+                w += 1
+            if w >= y_lp.size:
+                w = y_lp.size - 1 if (y_lp.size - 1) % 2 == 1 else y_lp.size - 2
+                w = max(w, 5)
+
+            p = int(polyorder)
+            p = min(p, w - 2)
+            p = max(p, 2)
+
+            y = savgol_filter(y_lp, window_length=w, polyorder=p, mode="interp")
+        else:
+            y = y_lp
+
+        # ------------------------------------------------------------
+        # 2) Peak/trough detection parameters
+        # ------------------------------------------------------------
+        min_dist_samples = int(max(1, round(min_phase_duration * fs)))
+
+        if prominence is None:
+            # Robust scale via MAD
+            med = np.median(y)
+            mad = np.median(np.abs(y - med))
+            sigma = 1.4826 * mad if mad > 0 else float(np.std(y))
+            if sigma <= 0:
+                logger.warning("RSP signal is near-constant; cannot extract phases.")
+                return cls(np.asarray([]), np.asarray([]), np.asarray([], dtype=object))
+            prominence = float(prominence_rel * sigma)
+
+        peaks, _ = find_peaks(y, distance=min_dist_samples, prominence=prominence)
+        troughs, _ = find_peaks(-y, distance=min_dist_samples, prominence=prominence)
+
+        if peaks.size == 0 or troughs.size == 0:
+            logger.warning("No reliable peaks/troughs detected for respiration segmentation.")
+            return cls(np.asarray([]), np.asarray([]), np.asarray([], dtype=object))
+
+        # ------------------------------------------------------------
+        # 3) Merge extrema and enforce alternation
+        # ------------------------------------------------------------
+        extrema_idx = np.concatenate([peaks, troughs])
+        extrema_typ = np.concatenate([np.ones(peaks.size, dtype=int), -np.ones(troughs.size, dtype=int)])
+
+        order = np.argsort(extrema_idx)
+        extrema_idx = extrema_idx[order]
+        extrema_typ = extrema_typ[order]
+
+        keep_pos = [0]
+        for k in range(1, extrema_idx.size):
+            prev = keep_pos[-1]
+            if extrema_typ[k] != extrema_typ[prev]:
+                keep_pos.append(k)
+                continue
+
+            i_prev = int(extrema_idx[prev])
+            i_cur = int(extrema_idx[k])
+
+            # For peaks keep higher; for troughs keep lower
+            if extrema_typ[k] == 1:
+                better = (y[i_cur] > y[i_prev])
+            else:
+                better = (y[i_cur] < y[i_prev])
+
+            if better:
+                keep_pos[-1] = k
+
+        extrema_idx = extrema_idx[keep_pos]
+        extrema_typ = extrema_typ[keep_pos]
+
+        if extrema_idx.size < 2:
+            return cls(np.asarray([]), np.asarray([]), np.asarray([], dtype=object))
+
+        # ------------------------------------------------------------
+        # 4) Build phases between consecutive extrema
         # ------------------------------------------------------------
         starts: list[float] = []
         ends: list[float] = []
         labels: list[str] = []
 
-        for i in range(len(crossings) - 1):
-            i0 = crossings[i]
-            i1 = crossings[i + 1]
+        for i in range(extrema_idx.size - 1):
+            i0 = int(extrema_idx[i])
+            i1 = int(extrema_idx[i + 1])
 
-            t0 = times[i0]
-            t1 = times[i1]
+            t0 = float(times[i0])
+            t1 = float(times[i1])
 
-            duration = t1 - t0
-            if duration < min_phase_duration:
+            dur = t1 - t0
+            if dur < min_phase_duration:
                 continue
 
-            mean_velocity = np.nanmean(velocity[i0:i1])
+            amp = float(abs(y[i1] - y[i0]))
+            if (min_amplitude is not None) and (amp < float(min_amplitude)):
+                continue
 
-            label = "INH" if mean_velocity > 0 else "EXH"
+            if extrema_typ[i] == -1 and extrema_typ[i + 1] == 1:
+                lab = "INH"  # trough -> peak
+            elif extrema_typ[i] == 1 and extrema_typ[i + 1] == -1:
+                lab = "EXH"  # peak -> trough
+            else:
+                continue
 
             starts.append(t0)
             ends.append(t1)
-            labels.append(label)
+            labels.append(lab)
 
         if not starts:
-            logger.warning("All detected respiration phases rejected by duration threshold.")
-            return cls([], [], [])
+            logger.warning("All detected respiration phases rejected (duration/amplitude thresholds).")
+            return cls(np.asarray([]), np.asarray([]), np.asarray([], dtype=object))
 
         return cls(
             np.asarray(starts, dtype=float),
             np.asarray(ends, dtype=float),
             np.asarray(labels, dtype=object),
         )
-
     # ------------------------------------------------------------------
     # Convenience / inspection
     # ------------------------------------------------------------------

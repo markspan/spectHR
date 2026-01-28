@@ -119,8 +119,8 @@ class HRPlotWidget(QWidget):
 
         # Plot axes
         self.ax_heartrate: Optional[Axes] = None
-        self.ax_br: Optional[Axes] = None
         self.ax_overview: Optional[Axes] = None
+        self._ax_br_twin: Optional[Axes] = None  # breathing overlay axis (twinx)
 
         # State
         self.data: Optional[PhysioData] = None
@@ -150,6 +150,60 @@ class HRPlotWidget(QWidget):
         self.setLayout(layout)
 
         self.setVisible(False)
+
+
+    def _has_resp_phases(self) -> bool:
+        """
+        True iff PhysioData carries Phase intervals for the active band.
+        """
+        if self.data is None:
+            return False
+        phases = getattr(self.data, "phases", None)
+        band = getattr(self.data, "active_band", None)
+        if not isinstance(phases, dict) or band is None:
+            return False
+        return (f"inh-{band}" in phases) or (f"exh-{band}" in phases)
+
+
+    def _draw_phase_backgrounds(
+        self,
+        ax: Axes,
+        *,
+        phase_prefix: str,
+        color: str = "#ADD8E6",
+        alpha: float = 0.25,
+    ) -> None:
+        """
+        Draw Phase interval backgrounds (axvspan) for the active band.
+
+        Does nothing if:
+        - no self.data
+        - no self.data.phases
+        - no self.data.active_band
+        - phase missing or inactive
+        """
+        if self.data is None:
+            return
+
+        phases = getattr(self.data, "phases", None)
+        band = getattr(self.data, "active_band", None)
+        if not isinstance(phases, dict) or band is None:
+            return
+
+        key = f"{phase_prefix}-{band}"
+        phase = phases.get(key)
+        if phase is None or not getattr(phase, "active", False):
+            return
+
+        for start, end in getattr(phase, "intervals", []):
+            ax.axvspan(
+                float(start),
+                float(end),
+                color=color,
+                alpha=alpha,
+                zorder=0,     # behind line plots
+                linewidth=0,
+            )
 
     # ==============================================================
     # Convenience properties
@@ -318,10 +372,10 @@ class HRPlotWidget(QWidget):
             self.data.view = ViewState(x_min=xmin, x_max=xmax)
 
         # Create or reuse figure/axes
-        if fig is None and self.hrfig is None:
+        if fig is None:
             self._create_figure_and_axes()
         else:
-            #self.hrfig = fig 
+            self.hrfig = fig
             self._reuse_axes_from_figure()
 
         self._setup_matplotlib_canvas()
@@ -338,41 +392,30 @@ class HRPlotWidget(QWidget):
 
     def _create_figure_and_axes(self) -> None:
         """
-        Create new Matplotlib figure and axes based on whether RSP is present.
+        Create a compact figure with:
+        - main heartrate axis
+        - overview axis
+        Breathing (if available) is rendered via twinx() on the main axis.
         """
-        figsize = (15, 3)
-        if self.has_breathing:
-            self.hrfig, (ax_heartrate, ax_br, ax_overview) = plt.subplots(
-                3,
-                1,
-                figsize=figsize,
-                sharex=False,
-                gridspec_kw={"height_ratios": [6, 1, 1]},
-            )
-            self.ax_heartrate, self.ax_br, self.ax_overview = ax_heartrate, ax_br, ax_overview
-        else:
-            self.hrfig, (ax_heartrate, ax_overview) = plt.subplots(
-                2,
-                1,
-                figsize=figsize,
-                sharex=False,
-                gridspec_kw={"height_ratios": [4, 1]},
-            )
-            self.ax_heartrate, self.ax_br, self.ax_overview = ax_heartrate, None, ax_overview
+        self.hrfig, (ax_hr, ax_overview) = plt.subplots(
+            2,
+            1,
+            figsize=(15, 3),
+            sharex=False,
+            gridspec_kw={"height_ratios": [5, 1]},
+        )
+
+        self.ax_heartrate = ax_hr
+        self.ax_overview = ax_overview
+        
 
     def _reuse_axes_from_figure(self) -> None:
-        """
-        Reuse existing figure's axes (if caller passed a figure).
-        """
         axes = self.hrfig.axes
-        if len(axes) == 3:
-            self.ax_heartrate, self.ax_br, self.ax_overview = axes
-        elif len(axes) == 2:
-            self.ax_heartrate, self.ax_overview = axes
-            self.ax_br = None
+        if len(axes) >= 2:
+            self.ax_heartrate = axes[0]
+            self.ax_overview = axes[-1]
         else:
             self._create_figure_and_axes()
-            #raise RuntimeError("Unexpected number of axes in provided figure.")
 
     def _setup_matplotlib_canvas(self) -> None:
         """
@@ -411,24 +454,39 @@ class HRPlotWidget(QWidget):
     # ==============================================================
     # Rendering pipeline
     # ==============================================================
+    @staticmethod
+    def _style_axis_clean(ax: Axes) -> None:
+        """Hide y-axis and remove left/right/top spines (borders)."""
+        ax.get_yaxis().set_visible(False)
+        ax.spines["left"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["top"].set_visible(False)
+
+
+    @staticmethod
+    def _set_time_axis(ax: Axes, x_min: float, x_max: float, *, show_xlabel: bool) -> None:
+        """Set x-limits, ticks, and optionally the x-axis label."""
+        ax.set_xlim(x_min, x_max)
+
+        width = max(x_max - x_min, 1e-6)
+        tdisp = round(math.log10(width), 0)
+        major = math.pow(10, tdisp - 1)
+
+        ax.xaxis.set_major_locator(MultipleLocator(major))
+        ax.xaxis.set_minor_locator(MultipleLocator(major / 5.0))
+
+        if show_xlabel:
+            ax.set_xlabel("Time (seconds)")
+        else:
+            ax.set_xlabel("")
 
     def redraw(self) -> None:
-        """
-        Redraw all plots (Heartrate, breathing, overview).
-        """
-        assert self.data.view is not None
+        assert self.data is not None and self.data.view is not None
         assert self.ax_heartrate is not None
         assert self.ax_overview is not None
-        assert self.data is not None
 
-        # Heartrate main plot
         self._draw_heartrate()
-
-        # Breathing
-        if self.ax_br is not None:
-            self._draw_breathing()
-
-        # Overview plot
+        self._draw_breathing()   # <-- always call; it will no-op if no breathing
         self._draw_overview()
 
         self.canvas.draw_idle()
@@ -441,33 +499,71 @@ class HRPlotWidget(QWidget):
         heartrate = self.data["heartrate"].timeseries
 
         self.ax_heartrate.clear()
-        self.ax_heartrate.plot(heartrate.times, heartrate.values, color="red", linewidth=0.8, alpha=1.0)
-
-        self._style_axis_no_y(self.ax_heartrate)
-        self._set_time_axis(self.ax_heartrate, self.data.view.x_min, self.data.view.x_max)
-
-        if self.ax_br is not None:
-            # Hide x-axis on Heartrate when breathing plot is below
-            self.ax_heartrate.get_xaxis().set_visible(False)
-            self.ax_heartrate.spines["bottom"].set_visible(False)
-            self.ax_heartrate.set_xlabel("")
+        self.ax_heartrate.plot(heartrate.times, heartrate.values, color="red", linewidth=2, alpha=1.0)
+        # title
+        self.ax_heartrate.set_title("Heartrate Signal")
+        self._style_axis_clean(self.ax_heartrate)
+        self._set_time_axis(self.ax_heartrate, self.data.view.x_min, self.data.view.x_max, show_xlabel=False)
 
     def _draw_breathing(self) -> None:
         """
-        Draw breathing signal if present.
+        Draw breathing signal as a twin y-axis overlay on the heartrate axis.
+
+        Behavior
+        --------
+        - If no breathing series exists, remove any previous twin axis and return.
+        - Otherwise, rebuild the twin axis on each redraw (robust).
         """
-        assert self.ax_br is not None
-        assert self.data.view is not None
+        assert self.ax_heartrate is not None
+        assert self.data is not None and self.data.view is not None
 
         ts = self.breathing_series
+
+        # Remove old twin axis to avoid stacking
+        if self._ax_br_twin is not None:
+            try:
+                self._ax_br_twin.remove()
+            except Exception:
+                pass
+            self._ax_br_twin = None
+
         if ts is None:
-            self.ax_br.clear()
             return
 
-        self.ax_br.clear()
-        self.ax_br.plot(ts.times, ts.values, color="green", linewidth=0.8, alpha=1.0)
-        self._style_axis_no_y(self.ax_br)
-        self._set_time_axis(self.ax_br, self.data.view.x_min, self.data.view.x_max)
+        ax_hr = self.ax_heartrate
+        self._ax_br_twin = ax_hr.twinx()
+
+        
+        # Optional: phase shading on the HR axis (or on ax_br; pick one)
+        if self._has_resp_phases():
+            self._draw_phase_backgrounds(
+                ax_hr,
+                phase_prefix="inh",
+                color="#ADD8E6",
+                alpha=0.25,
+            )
+
+        self._ax_br_twin.plot(
+            ts.times,
+            ts.values,
+            color="green",
+            linewidth=0.5,
+            alpha=0.3,
+            zorder=1,
+        )
+
+        self._ax_br_twin.set_xlim(self.data.view.x_min, self.data.view.x_max)
+
+        # Make breathing subtle
+        self._ax_br_twin.tick_params(axis="y", colors="green", labelsize=8)
+        self._ax_br_twin.spines["right"].set_alpha(0.3)
+        self._ax_br_twin.set_ylabel("Breathing", color="green", fontsize=8)
+
+        # Keep behind the HR trace
+        self._ax_br_twin.set_zorder(0)
+        self._style_axis_clean(self._ax_br_twin)   # removes top/left/right spines too
+        # and typically you do NOT want an x-label on the twin axis:
+        self._ax_br_twin.set_xlabel("")
 
     def _draw_overview(self) -> None:
         """
@@ -484,11 +580,10 @@ class HRPlotWidget(QWidget):
         self.ax_overview.clear()
         self.ax_overview.plot(
             heartrate.times, heartrate.values,
-            linewidth=0.25, alpha=0.5, color="green"
+            linewidth=0.25, alpha=1, color="green"
         )
-        self.ax_overview.set_title("")
-        self.ax_overview.set_yticks([])
-        self._style_axis_no_y(self.ax_overview)
+        self._style_axis_clean(self.ax_overview)
+        self._set_time_axis(self.ax_overview, float(heartrate.times.min()), float(heartrate.times.max()), show_xlabel=True)
 
         # Recreate the rectangle every time — most robust behaviour.
         y0, y1 = self.ax_overview.get_ylim()
@@ -699,16 +794,3 @@ class HRPlotWidget(QWidget):
         ax.spines["left"].set_visible(False)
         ax.spines["top"].set_visible(False)
 
-    @staticmethod
-    def _set_time_axis(ax: Axes, x_min: float, x_max: float) -> None:
-        """
-        Configure the x-axis of a time-based plot with nice tick spacing.
-        """
-        ax.set_xlim(x_min, x_max)
-        # Avoid log10 of 0 or negative ranges
-        width = max(x_max - x_min, 1e-6)
-        tdisp = round(math.log10(width), 0)
-        major = math.pow(10, tdisp - 1)
-        ax.set_xlabel("Time (seconds)")
-        ax.xaxis.set_major_locator(MultipleLocator(major))
-        ax.xaxis.set_minor_locator(MultipleLocator(major / 5.0))

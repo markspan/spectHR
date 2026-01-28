@@ -254,11 +254,21 @@ class PhysioData:
                 cs._stream = band
                 self.hrv_map[band] = cs
             else:
-                cs.replace_from_timeseries(
-                    ecg_ts,
-                    min_peak_distance_ms=min_peak_distance_ms,
-                    classify=classify,
-                )
+                for name, epoch in self.epochs.items():
+                    if not epoch.active:
+                        continue
+                    if not epoch.is_valid:
+                        continue
+
+                    start, end = epoch.bounds   # (start, end)
+
+                    cs.replace_from_timeseries(
+                        ecg_ts,
+                        start=start,
+                        end=end,
+                        min_peak_distance_ms=min_peak_distance_ms,
+                        classify=classify,
+                    )
             # --- RESPIRATION preprocessing (new) ---
             try:
                 rsp_ts = self["rsp"].timeseries
@@ -266,6 +276,7 @@ class PhysioData:
                 rsp_ts = None
 
             if rsp_ts is not None:
+                logger.info(f"Preprocessing RESP band '{band}'")
                 resp = RespirationSeries.from_timeseries(rsp_ts)
                 resp._pd = self
                 resp._stream = band
