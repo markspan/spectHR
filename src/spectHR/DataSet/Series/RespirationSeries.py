@@ -3,10 +3,9 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 import numpy as np
-
-
 from spectHR.Tools.Logger import logger
-from scipy.signal import butter, sosfiltfilt, savgol_filter, find_peaks
+from scipy.signal import butter, sosfiltfilt, savgol_filter, find_peaks, buttord
+
 
 class RespirationSeries:
     """
@@ -60,8 +59,8 @@ class RespirationSeries:
         rsp,
         *,
         # 0) mandatory prefilter on raw signal
-        prefilter_cutoff_hz: float = 0.25,
-        prefilter_order: int = 16,
+        prefilter_cutoff_hz: float = 2,
+        prefilter_order: int | None = None,
         # 1) segmentation constraints
         min_phase_duration: float = 2,
         # 2) smoothing/derivative support (post-prefilter)
@@ -93,7 +92,17 @@ class RespirationSeries:
         """
         times = np.asarray(rsp.times, dtype=float)
         values = np.asarray(rsp.values, dtype=float)
+        fs = np.nanmean(1.0 / np.diff(times))
 
+        if prefilter_order is None:
+            prefilter_order, wn = buttord(
+                prefilter_cutoff_hz * 0.9,
+                prefilter_cutoff_hz * 1.1,
+                1.0,
+                7,
+                analog=False,
+                fs=fs,
+            )
         n = times.size
         if n < 5:
             logger.warning("RSP TimeSeries too short for respiration phase extraction.")
@@ -118,7 +127,7 @@ class RespirationSeries:
         fc = min(fc, 0.95 * nyq)
         if fc <= 0:
             raise ValueError("prefilter_cutoff_hz must be > 0.")
-
+        logger.debug(f"RSP prefilter: low-pass {fc:.2f} Hz, order {prefilter_order}")
         sos = butter(int(prefilter_order), fc / nyq, btype="low", output="sos")
         # sosfiltfilt needs some length; if too short, fall back gracefully
         if y0.size >= max(3 * (2 * sos.shape[0] + 1), 15):
@@ -166,14 +175,18 @@ class RespirationSeries:
         troughs, _ = find_peaks(-y, distance=min_dist_samples, prominence=prominence)
 
         if peaks.size == 0 or troughs.size == 0:
-            logger.warning("No reliable peaks/troughs detected for respiration segmentation.")
+            logger.warning(
+                "No reliable peaks/troughs detected for respiration segmentation."
+            )
             return cls(np.asarray([]), np.asarray([]), np.asarray([], dtype=object))
 
         # ------------------------------------------------------------
         # 3) Merge extrema and enforce alternation
         # ------------------------------------------------------------
         extrema_idx = np.concatenate([peaks, troughs])
-        extrema_typ = np.concatenate([np.ones(peaks.size, dtype=int), -np.ones(troughs.size, dtype=int)])
+        extrema_typ = np.concatenate(
+            [np.ones(peaks.size, dtype=int), -np.ones(troughs.size, dtype=int)]
+        )
 
         order = np.argsort(extrema_idx)
         extrema_idx = extrema_idx[order]
@@ -191,9 +204,9 @@ class RespirationSeries:
 
             # For peaks keep higher; for troughs keep lower
             if extrema_typ[k] == 1:
-                better = (y[i_cur] > y[i_prev])
+                better = y[i_cur] > y[i_prev]
             else:
-                better = (y[i_cur] < y[i_prev])
+                better = y[i_cur] < y[i_prev]
 
             if better:
                 keep_pos[-1] = k
@@ -238,7 +251,9 @@ class RespirationSeries:
             labels.append(lab)
 
         if not starts:
-            logger.warning("All detected respiration phases rejected (duration/amplitude thresholds).")
+            logger.warning(
+                "All detected respiration phases rejected (duration/amplitude thresholds)."
+            )
             return cls(np.asarray([]), np.asarray([]), np.asarray([], dtype=object))
 
         return cls(
@@ -246,6 +261,7 @@ class RespirationSeries:
             np.asarray(ends, dtype=float),
             np.asarray(labels, dtype=object),
         )
+
     # ------------------------------------------------------------------
     # Convenience / inspection
     # ------------------------------------------------------------------
@@ -274,16 +290,15 @@ class RespirationSeries:
 
     def __repr__(self) -> str:
         return f"RespirationSeries(n={len(self)})"
-    
+
     def view(self, starttime: float, endtime: float) -> RespirationSeriesView:
-        idx = np.where(
-            (self.starts >= starttime) & (self.ends <= endtime)
-        )[0]
+        idx = np.where((self.starts >= starttime) & (self.ends <= endtime))[0]
         view = RespirationSeriesView(self, idx)
         view._pd = self._pd
         view._stream = self._stream
         view._epoch = None
         return view
+
 
 class RespirationSeriesView(RespirationSeries):
     """
@@ -382,9 +397,7 @@ class RespirationSeriesView(RespirationSeries):
             If the requested epoch does not exist.
         """
         if self._pd is None:
-            raise RuntimeError(
-                "RespirationSeriesView is not connected to PhysioData."
-            )
+            raise RuntimeError("RespirationSeriesView is not connected to PhysioData.")
         if epoch_label not in self._pd.epochs:
             raise KeyError(f"No epoch '{epoch_label}' in PhysioData.")
 

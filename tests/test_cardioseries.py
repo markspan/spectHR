@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import pytest
 
 from spectHR.DataSet.Series.CardioSeries import CardioSeries, CardioSeriesView
@@ -8,6 +7,7 @@ from spectHR.DataSet.Series.CardioSeries import CardioSeries, CardioSeriesView
 # ---------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------
+
 
 @pytest.fixture
 def simple_times():
@@ -29,6 +29,7 @@ def irregular_times():
 # Construction & invariants
 # ---------------------------------------------------------------------
 
+
 def test_init_sets_times_and_labels(cardio):
     assert cardio.times.dtype == float
     assert cardio.labels.shape == cardio.times.shape
@@ -45,6 +46,7 @@ def test_empty_series():
 # ---------------------------------------------------------------------
 # IBI derivation & policy
 # ---------------------------------------------------------------------
+
 
 def test_ibi_alignment(simple_times):
     cs = CardioSeries(simple_times)
@@ -74,6 +76,7 @@ def test_ibi_single_sample():
 # _ibi_clean_ms
 # ---------------------------------------------------------------------
 
+
 def test_ibi_clean_ms_excludes_nan():
     times = np.array([0.0, 1.0, 4.5, 5.5])
     cs = CardioSeries(times)
@@ -88,11 +91,10 @@ def test_ibi_clean_ms_excludes_nan():
 # Classification
 # ---------------------------------------------------------------------
 
+
 def test_classify_ibi_basic_runs(cardio):
     cardio.classify_ibi()
-    assert set(cardio.labels).issubset(
-        {"N", "L", "S", "TL", "SL", "SNS", "T"}
-    )
+    assert set(cardio.labels).issubset({"N", "L", "S", "TL", "SL", "SNS", "T"})
 
 
 def test_classify_handles_degenerate_intervals():
@@ -116,6 +118,7 @@ def test_sequence_labels_applied():
 # replace_from_timeseries
 # ---------------------------------------------------------------------
 
+
 class DummyTS:
     def __init__(self, times, values):
         self.times = times
@@ -126,8 +129,7 @@ def test_replace_from_timeseries_basic():
     base = CardioSeries(np.array([0.0, 1.0, 2.0, 3.0]))
 
     ts = DummyTS(
-        times=np.linspace(1.0, 2.0, 100),
-        values=np.sin(np.linspace(0, 10, 100))
+        times=np.linspace(1.0, 2.0, 100), values=np.sin(np.linspace(0, 10, 100))
     )
 
     base.replace_from_timeseries(ts, start=1.0, end=2.0)
@@ -145,6 +147,7 @@ def test_replace_invalid_window_raises():
 # ---------------------------------------------------------------------
 # Views & slicing
 # ---------------------------------------------------------------------
+
 
 def test_view_is_zero_copy(cardio):
     view = cardio.view(1.0, 3.0)
@@ -175,6 +178,7 @@ def test_nested_view():
 # Welch PSD
 # ---------------------------------------------------------------------
 
+
 def test_welch_psd_empty():
     cs = CardioSeries(np.array([]))
     freqs, power = cs.welch_psd()
@@ -197,6 +201,7 @@ def test_welch_psd_with_ci_shapes(cardio):
 # HRV metrics
 # ---------------------------------------------------------------------
 
+
 def test_basic_hrv_metrics(cardio):
     assert cardio.count() == 4
     assert cardio.mean() > 0
@@ -214,6 +219,7 @@ def test_metrics_nan_on_insufficient_data():
 # ---------------------------------------------------------------------
 # Band power utility
 # ---------------------------------------------------------------------
+
 
 def test_band_power_returns_nan_on_empty():
     cs = CardioSeries(np.array([]))

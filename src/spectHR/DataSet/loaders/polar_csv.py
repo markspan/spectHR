@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
+import csv
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
@@ -32,15 +32,20 @@ def load_polar_raw_csv(
     # READ CSV
     # ------------------------------------------------------------
     try:
-        df = pd.read_csv(filename, sep=";")
+        with open(filename, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f, delimiter=";")
+            cols = reader.fieldnames or []
+            rows = list(reader)
     except Exception as exc:
         raise IOError(f"Failed to read Polar CSV: {filename}") from exc
 
-    if "ecg [uV]" not in df or "timestamp [ms]" not in df:
+    if "ecg [uV]" not in cols or "timestamp [ms]" not in cols:
         raise ValueError("CSV does not look like a Polar raw ECG export")
 
-    times = df["timestamp [ms]"].to_numpy(dtype=float) / 1000.0
-    values = df["ecg [uV]"].to_numpy(dtype=float)
+    times = np.array([r["timestamp [ms]"] for r in rows], dtype=float) / 1000.0
+    values = np.array([r["ecg [uV]"] for r in rows], dtype=float)
+    # times = df["timestamp [ms]"].to_numpy(dtype=float) / 1000.0
+    # values = df["ecg [uV]"].to_numpy(dtype=float)
     diffs = np.diff(times)
     fs = 1.0 / np.mean(diffs[diffs > 0])
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from scipy.interpolate import interp1d
 import numpy as np
-import pandas as pd
+import csv
+
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
@@ -35,28 +37,36 @@ def load_harness_raw_csv(
     # READ CSV
     # ------------------------------------------------------------
     try:
-        df = pd.read_csv(filename, sep=",")
+        with open(filename, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f, delimiter=",")
+            cols = reader.fieldnames or []
+            rows = list(reader)
     except Exception as exc:
         raise IOError(f"Failed to read Harness CSV: {filename}") from exc
 
-    df.columns = df.columns.str.strip()
-
-    if "ECG Data" not in df or "ms" not in df:
+    if "ECG Data" not in cols or "ms" not in cols:
         raise ValueError("CSV does not match expected Harness format")
 
+    ms = np.array([r["ms"] for r in rows], dtype=float) / 1000.0
+    ecg = np.array([r["ECG Data"] for r in rows], dtype=float)
     physiodata.has_ecg = True
 
     # ------------------------------------------------------------
     # ECG VALUES
     # ------------------------------------------------------------
-    ecg = df["ECG Data"].replace(-1, np.nan).astype("float32") * 40.0
+    ecg = np.where(ecg == -1, np.nan, ecg).astype(float) * 40.0
 
     # ------------------------------------------------------------
     # TIMESTAMPS (ms → s, interpolate, resample)
     # ------------------------------------------------------------
-    ms = df["ms"].replace(-1, np.nan).astype(float)
-    ms = ms.interpolate(method="linear")
+    ms = np.where(ms == -1, np.nan, ms).astype(float)
+    x = np.arange(ms.size)
+    mask = np.isfinite(ms)
 
+    f = interp1d(
+        x[mask], ms[mask], kind="linear", bounds_error=False, fill_value=np.nan
+    )
+    ms = f(x)
     times = ms.to_numpy(dtype=float) / 1000.0
 
     # ---- infer uniform sampling grid via median Δt ----
@@ -77,7 +87,7 @@ def load_harness_raw_csv(
         i0 = n // 3
         i1 = 2 * n // 3
 
-        seg = ecg.iloc[i0:i1]
+        seg = ecg[i0:i1]
         magic = abs(seg.mean() - seg.min()) / abs(seg.mean() - seg.max())
 
         logger.debug(f"ECG polarity heuristic (magic={magic:.3f})")
@@ -101,7 +111,7 @@ def load_harness_raw_csv(
 
     physiodata.timeseries[ecg_name] = TimeSeries(
         times,
-        ecg.to_numpy(dtype=float),
+        ecg,
     )
 
     logger.info(f"Loaded ECG → {ecg_name}")

@@ -1,11 +1,9 @@
 # CardioSeries.py
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 
 import scipy.signal as signal
 from scipy.interpolate import interp1d
@@ -66,10 +64,23 @@ class CardioSeries(HRVMetric):
     """
 
     METRIC_ORDER = [
-        "count", "mean", "median", "min", "max", "std",
-        "rmssd", "sdnn", "sdsd",
-        "sd1", "sd2", "sd_ratio", "ellipse_area",
-        "vlf_power", "lf_power", "hf_power", "lf_hf_ratio",
+        "count",
+        "mean",
+        "median",
+        "min",
+        "max",
+        "std",
+        "rmssd",
+        "sdnn",
+        "sdsd",
+        "sd1",
+        "sd2",
+        "sd_ratio",
+        "ellipse_area",
+        "vlf_power",
+        "lf_power",
+        "hf_power",
+        "lf_hf_ratio",
     ]
 
     def __init__(self, times: np.ndarray):
@@ -148,7 +159,9 @@ class CardioSeries(HRVMetric):
         time_deltas = np.diff(times)
         time_deltas = time_deltas[time_deltas > 0]
         if time_deltas.size == 0:
-            raise ValueError("Cannot estimate sampling rate from ECG times (no positive deltas).")
+            raise ValueError(
+                "Cannot estimate sampling rate from ECG times (no positive deltas)."
+            )
 
         sampling_rate_hz = 1.0 / float(np.mean(time_deltas))
 
@@ -180,10 +193,14 @@ class CardioSeries(HRVMetric):
         post_values = values[np.clip(peak_indices + 1, 0, values.size - 1)]
         peak_values = values[peak_indices]
 
-        local_contrast = np.maximum(np.abs(peak_values - pre_values), np.abs(post_values - peak_values))
+        local_contrast = np.maximum(
+            np.abs(peak_values - pre_values), np.abs(post_values - peak_values)
+        )
         local_contrast[local_contrast == 0] = 1e-12
 
-        correction_sec = (post_values - pre_values) / sampling_rate_hz / (2.0 * local_contrast)
+        correction_sec = (
+            (post_values - pre_values) / sampling_rate_hz / (2.0 * local_contrast)
+        )
         peak_times = times[peak_indices] + correction_sec
 
         # --------------------------------------------------
@@ -355,9 +372,7 @@ class CardioSeries(HRVMetric):
         half_window = window_length // 2
         ibi_padded = np.pad(ibi_for_stats, (half_window, half_window), mode="edge")
 
-        windows = np.lib.stride_tricks.sliding_window_view(
-            ibi_padded, window_length
-        )
+        windows = np.lib.stride_tricks.sliding_window_view(ibi_padded, window_length)
 
         local_mean = np.nanmean(windows, axis=1)[:n_intervals]
         local_std = np.nanstd(windows, axis=1)[:n_intervals]
@@ -666,7 +681,7 @@ class CardioSeries(HRVMetric):
         # Align times to IBI samples used (ibi_ms excludes NaNs; we approximate by slicing)
         # This is consistent with the original design but is a simplification:
         # if many NaNs exist, `times[:ibi_ms.size]` may not correspond exactly.
-        ibi_times = self.times[:ibi_ms.size]
+        ibi_times = self.times[: ibi_ms.size]
 
         if interpolate:
             try:
@@ -836,37 +851,58 @@ class CardioSeries(HRVMetric):
     # Epoch aggregation
     # ---------------------------------------------------------------------
 
-    def hrv_epoch_table(self, physiodata: PhysioData) -> pd.DataFrame:
+    def hrv_epoch_table(
+        self,
+        physiodata: "PhysioData",
+    ) -> Tuple[np.ndarray, List[str], np.ndarray]:
         """
-        Compute an HRV metric table for all active epochs in a PhysioData instance.
-
-        Parameters
-        ----------
-        physiodata:
-            `PhysioData` containing an `.epochs` mapping of epoch objects
-            with `.start`, `.end`, and `.active` attributes.
+        NumPy replacement for the pandas HRV epoch table.
 
         Returns
         -------
-        pandas.DataFrame
-            Index: epoch label
-            Columns: HRV metrics (ordered by `METRIC_ORDER` if present)
+        labels : np.ndarray (n_epochs,), dtype=object
+            Epoch labels (row index equivalent).
+        cols : list[str]
+            Column names (metrics), ordered by METRIC_ORDER when present.
+        values : np.ndarray (n_epochs, n_metrics), dtype=float64
+            Metric values, NaN for missing.
         """
+        labels_list: List[Any] = []
         rows: List[Dict[str, float]] = []
+
         for label, ep in physiodata.epochs.items():
             if getattr(ep, "active", False):
-                rows.append({"epoch": label, **self.metric_table_epoch(ep.start, ep.end)})
+                labels_list.append(label)
+                rows.append(self.metric_table_epoch(ep.start, ep.end))
 
-        df = pd.DataFrame(rows).set_index("epoch")
+        if not rows:
+            return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
 
+        # Determine columns
+        keys = set().union(*(d.keys() for d in rows))
         if hasattr(self, "METRIC_ORDER"):
-            cols = [c for c in self.METRIC_ORDER if c in df.columns]
-            df = df[cols]
+            cols = [c for c in self.METRIC_ORDER if c in keys]
+            # keep any "extra" metrics at the end (stable, predictable)
+            extras = sorted(keys - set(cols))
+            cols.extend(extras)
+        else:
+            cols = sorted(keys)
 
-        if "count" in df.columns:
-            df["count"] = df["count"].astype("Int64")
+        col_idx = {c: j for j, c in enumerate(cols)}
+        values = np.full((len(rows), len(cols)), np.nan, dtype=float)
 
-        return df
+        for i, d in enumerate(rows):
+            for k, v in d.items():
+                j = col_idx.get(k)
+                if j is not None:
+                    values[i, j] = float(v)
+
+        labels = np.asarray(labels_list, dtype=object)
+
+        # If you want integer "count": keep it float here; cast later when displaying.
+        # (NumPy can't do pandas-style nullable Int64 cleanly without a mask.)
+
+        return labels, cols, values
 
     # ---------------------------------------------------------------------
     # Internal utilities
