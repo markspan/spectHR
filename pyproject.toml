@@ -30,7 +30,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
-    "nuitka",
 ]
 
 [tool.setuptools.packages]
