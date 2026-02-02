@@ -158,9 +158,10 @@ class PoincarePlotWidget(QWidget):
             try:
                 visible = cb.isChecked()
                 self.dataset.epochs[name].active = visible
-                self.scatter_handles[name].set_visible(visible)
+                if self.scatter_handles[name] is not None:
+                    self.scatter_handles[name].set_visible(visible)
                 self.ellipse_handles[name].set_visible(visible)
-            except KeyError or AttributeError:
+            except (KeyError, AttributeError):
                 self.scatter_handles[name] = None
                 self.ellipse_handles[name] = None
 
