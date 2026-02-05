@@ -217,7 +217,6 @@ def _compute_RSP_signal(
 def load_xdf(physiodata, filename: str, **kwargs) -> None:
     """
     Timeseries:
-        - Only load streams whose name.lower().startswith("polar")
         - *_ecg → ECG time series
         - *_acc → compute RSP + store ACC raw
 
@@ -244,7 +243,7 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
             srate = 0.0
 
         name_lower = name.lower()
-        is_polar = name_lower.startswith("polar")
+        is_polar = stype.upper() == "ECG" or stype.upper() == "ACCELEROMETER"
 
         # ------------------------------------------------------------
         # MARKER STREAMS
