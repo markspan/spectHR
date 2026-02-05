@@ -227,7 +227,7 @@ jobs:
             exit 1
           fi
 
-          # Base Nuitka args matching your command (minus OS-specific flags)
+          # Base Nuitka args matching your command (minus OS-specific flags)!
           COMMON_ARGS=(
             "$ENTRY"
             --standalone
