@@ -10,17 +10,16 @@ permissions:
   contents: write
 
 env:
-  # Choose one supported by your pyproject (>=3.10,<3.14).
   PYTHON_VERSION: "3.12"
 
-  # Your entry point (from your Nuitka command)
+  # Your entry point
   ENTRYPOINT: "src/spectUI/MainWindow.py"
 
   # Your resources include
   RESOURCES_SRC_DIR: "src/spectUI/resources"
   RESOURCES_DST_DIR: "resources"
 
-  # Windows icon (source of truth; used on Windows and converted on macOS)
+  # Windows icon (Windows only)
   WIN_ICON_ICO: "spectHR.ico"
 
 jobs:
@@ -45,14 +44,13 @@ jobs:
           import os, re
           from pathlib import Path
 
-          tag = os.environ["GITHUB_REF_NAME"]  # e.g. "bump" or "bump-0.2.3"
+          tag = os.environ["GITHUB_REF_NAME"]  # "bump" or "bump-0.2.3"
           pyproj = Path("pyproject.toml")
           if not pyproj.exists():
             raise SystemExit("pyproject.toml not found at repo root")
 
           txt = pyproj.read_text(encoding="utf-8")
 
-          # Find [project] table block
           mproj = re.search(r"(?ms)^\[project\]\s*(.*?)(?=^\[|\Z)", txt)
           if not mproj:
             raise SystemExit("No [project] table found in pyproject.toml")
@@ -65,7 +63,6 @@ jobs:
           current_raw = mver.group(1).strip()
 
           def normalize_xy_to_xyz(v: str) -> str:
-            # Accept X.Y by treating as X.Y.0
             parts = v.split(".")
             if len(parts) == 2 and all(p.isdigit() for p in parts):
               return f"{parts[0]}.{parts[1]}.0"
@@ -85,31 +82,22 @@ jobs:
             base = normalize_xy_to_xyz(current_raw)
             if not is_stable_xyz(base):
               raise SystemExit(
-                f"Auto patch bump requires stable X.Y.Z (or X.Y). "
-                f"Current pyproject version is '{current_raw}'. "
-                f"Use explicit tag bump-<version> for pre-releases (e.g. bump-0.2.3rc1)."
+                f"Auto patch bump requires stable X.Y.Z (or X.Y). Current is '{current_raw}'. "
+                f"Use explicit bump-<version> for pre-releases."
               )
             version = bump_patch(base)
           elif tag.startswith("bump-"):
             version = tag[len("bump-"):]
-            # Allow semver-ish including prerelease/build metadata.
             if not re.match(r"^[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z]+)*$", version):
               raise SystemExit(f"Explicit bump tag not valid enough: '{tag}'")
-            # Normalize X.Y -> X.Y.0 for consistency in releases
             version = normalize_xy_to_xyz(version)
           else:
             raise SystemExit(f"Unexpected tag: {tag}")
 
           release_tag = f"v{version}"
 
-          # Write outputs for GitHub Actions
           out_path = Path(os.environ["GITHUB_OUTPUT"])
           out_path.write_text(out_path.read_text() + f"version={version}\nrelease_tag={release_tag}\n", encoding="utf-8")
-
-          print(f"Tag: {tag}")
-          print(f"pyproject current: {current_raw}")
-          print(f"release version: {version}")
-          print(f"release tag: {release_tag}")
           PY
 
       - name: Bump pyproject.toml [project].version to target version
@@ -141,7 +129,6 @@ jobs:
 
           new_txt = txt[:mproj.start()] + new_block + txt[mproj.end():]
           path.write_text(new_txt, encoding="utf-8")
-          print(f"Set pyproject.toml [project].version = {version}")
           PY
 
       - name: Commit bump and push to default branch; create vX.Y.Z tag
@@ -215,7 +202,7 @@ jobs:
             libfontconfig1 \
             libfreetype6 \
             libnss3 \
-            libasound2 \
+            libasound2t64 \
             fonts-dejavu-core
 
       - name: Install project + Nuitka
@@ -225,10 +212,10 @@ jobs:
           python -m pip install .
           python -m pip install nuitka
 
-      - name: Build with Nuitka (your flags; platform-specific output)
+      - name: Build (Windows / Linux onefile, macOS app bundle then zip)
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           VERSION="${{ needs.prepare.outputs.version }}"
           OUTDIR="dist/${{ runner.os }}"
@@ -237,18 +224,10 @@ jobs:
           ENTRY="${{ env.ENTRYPOINT }}"
           if [ ! -f "$ENTRY" ]; then
             echo "Entry not found: $ENTRY"
-            echo "Repo root:"
-            ls -la
-            echo "src/:"
-            ls -la src || true
             exit 1
           fi
 
-          if [ ! -f "${{ env.WIN_ICON_ICO }}" ]; then
-            echo "Missing icon file: ${{ env.WIN_ICON_ICO }} (place it in repo root)"
-            exit 1
-          fi
-
+          # Base Nuitka args matching your command (minus OS-specific flags)
           COMMON_ARGS=(
             "$ENTRY"
             --standalone
@@ -260,87 +239,59 @@ jobs:
             --output-dir="$OUTDIR"
           )
 
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            python -m nuitka \
-              "${COMMON_ARGS[@]}" \
-              --onefile \
-              --windows-icon-from-ico="${{ env.WIN_ICON_ICO }}" \
-              --output-filename="spectHR-Windows-v$VERSION.exe"
+          case "${{ runner.os }}" in
+            Windows)
+              if [ ! -f "${{ env.WIN_ICON_ICO }}" ]; then
+                echo "Missing icon file: ${{ env.WIN_ICON_ICO }} (repo root)"
+                exit 1
+              fi
 
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            # macOS: convert spectHR.ico -> spectHR.icns, build .app, then zip it.
-            python -m pip install -q pillow
+              python -m nuitka \
+                "${COMMON_ARGS[@]}" \
+                --onefile \
+                --windows-icon-from-ico="${{ env.WIN_ICON_ICO }}" \
+                --output-filename="spectHR-Windows-v$VERSION.exe"
+              ;;
 
-            ICO_PATH="${{ env.WIN_ICON_ICO }}" python - <<'PY'
-            from PIL import Image
-            import os
+            macOS)
+              # Build a macOS .app bundle (no icon conversion, no extra tooling)
+              python -m nuitka \
+                "${COMMON_ARGS[@]}" \
+                --macos-create-app-bundle \
+                --macos-app-name="spectHR" \
+                --output-filename="spectHR"
 
-            ico_path = os.environ["ICO_PATH"]
-            out_png = "icon_1024.png"
+              # Rename the produced .app and zip it (zip is what we upload)
+              APP_PATH="$(find "$OUTDIR" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+              if [ -z "${APP_PATH:-}" ]; then
+                echo "No .app produced in $OUTDIR"
+                ls -la "$OUTDIR"
+                exit 1
+              fi
 
-            im = Image.open(ico_path)
+              APP_NAME="spectHR-macOS-v$VERSION.app"
+              mv "$APP_PATH" "$OUTDIR/$APP_NAME"
 
-            # ICO can contain multiple sizes; choose the largest available frame.
-            sizes = []
-            for frame in range(getattr(im, "n_frames", 1)):
-              try:
-                im.seek(frame)
-                sizes.append((im.size[0] * im.size[1], frame, im.size))
-              except Exception:
-                pass
+              (
+                cd "$OUTDIR"
+                ZIP_NAME="spectHR-macOS-v$VERSION.zip"
+                /usr/bin/zip -r "$ZIP_NAME" "$APP_NAME"
+                rm -rf "$APP_NAME"
+              )
+              ;;
 
-            if not sizes:
-              raise SystemExit("Could not read any frames from ICO")
+            Linux)
+              python -m nuitka \
+                "${COMMON_ARGS[@]}" \
+                --onefile \
+                --output-filename="spectHR-Linux-v$VERSION"
+              ;;
 
-            _, best_frame, best_size = sorted(sizes, reverse=True)[0]
-            im.seek(best_frame)
-            im.convert("RGBA").save(out_png, format="PNG")
-            print(f"Extracted {out_png} from {ico_path} (frame {best_frame}, size {best_size})")
-            PY
-
-            ICONSET="spectHR.iconset"
-            mkdir -p "$ICONSET"
-
-            /usr/bin/sips -z 16 16     icon_1024.png --out "$ICONSET/icon_16x16.png" >/dev/null
-            /usr/bin/sips -z 32 32     icon_1024.png --out "$ICONSET/icon_16x16@2x.png" >/dev/null
-            /usr/bin/sips -z 32 32     icon_1024.png --out "$ICONSET/icon_32x32.png" >/dev/null
-            /usr/bin/sips -z 64 64     icon_1024.png --out "$ICONSET/icon_32x32@2x.png" >/dev/null
-            /usr/bin/sips -z 128 128   icon_1024.png --out "$ICONSET/icon_128x128.png" >/dev/null
-            /usr/bin/sips -z 256 256   icon_1024.png --out "$ICONSET/icon_128x128@2x.png" >/dev/null
-            /usr/bin/sips -z 256 256   icon_1024.png --out "$ICONSET/icon_256x256.png" >/dev/null
-            /usr/bin/sips -z 512 512   icon_1024.png --out "$ICONSET/icon_256x256@2x.png" >/dev/null
-            /usr/bin/sips -z 512 512   icon_1024.png --out "$ICONSET/icon_512x512.png" >/dev/null
-            /usr/bin/sips -z 1024 1024 icon_1024.png --out "$ICONSET/icon_512x512@2x.png" >/dev/null
-
-            /usr/bin/iconutil -c icns "$ICONSET" -o "spectHR.icns"
-
-            if [ ! -f "spectHR.icns" ]; then
-              echo "Failed to generate spectHR.icns"
+            *)
+              echo "Unsupported OS: ${{ runner.os }}"
               exit 1
-            fi
-
-            python -m nuitka \
-              "${COMMON_ARGS[@]}" \
-              --macos-create-app-bundle \
-              --macos-app-icon="spectHR.icns" \
-              --macos-app-name="spectHR" \
-              --output-filename="spectHR"
-
-            APP="$(ls -d "$OUTDIR"/*.app | head -n 1)"
-            APP_NAME="spectHR-macOS-v$VERSION.app"
-            mv "$APP" "$OUTDIR/$APP_NAME"
-
-            cd "$OUTDIR"
-            ZIP_NAME="spectHR-macOS-v$VERSION.zip"
-            /usr/bin/zip -r "$ZIP_NAME" "$APP_NAME"
-            rm -rf "$APP_NAME"
-
-          else
-            python -m nuitka \
-              "${COMMON_ARGS[@]}" \
-              --onefile \
-              --output-filename="spectHR-Linux-v$VERSION"
-          fi
+              ;;
+          esac
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
