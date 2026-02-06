@@ -205,7 +205,7 @@ jobs:
           python -m pip install .
           python -m pip install nuitka zstandard
 
-      - name: Build and package ONE release file per OS
+      - name: Build + package (Windows/Linux onefile; macOS .app + iconset -> icns -> zip)
         shell: bash
         run: |
           set -euo pipefail
@@ -243,27 +243,15 @@ jobs:
                 --onefile \
                 --windows-icon-from-ico="${{ env.WIN_ICON_ICO }}" \
                 --output-filename="spectHR.exe"
-
-              ( cd "$OUTDIR" && python - <<'PY'
-import zipfile, os
-zip_name = f"spectHR-Windows-v{os.environ['VERSION']}.zip"
-with zipfile.ZipFile(zip_name, "w", compression=zipfile.ZIP_DEFLATED) as z:
-    z.write("spectHR.exe")
-print("Created", zip_name)
-PY
-              )
-              rm -f "$OUTDIR/spectHR.exe"
               ;;
 
             macOS)
-              # Build spectHR.icns from your committed iconset folder
               if [ ! -d "spectHR.iconset" ]; then
                 echo "Missing folder: spectHR.iconset (expected in repo root)"
                 exit 1
               fi
 
               /usr/bin/iconutil -c icns "spectHR.iconset" -o "spectHR.icns"
-
               if [ ! -f "spectHR.icns" ]; then
                 echo "Failed to create spectHR.icns from spectHR.iconset"
                 exit 1
@@ -275,19 +263,6 @@ PY
                 --macos-app-name="spectHR" \
                 --macos-app-icon="spectHR.icns" \
                 --output-filename="spectHR"
-
-              APP_PATH="$(find "$OUTDIR" -maxdepth 1 -type d -name "*.app" | head -n 1)"
-              if [ -z "${APP_PATH:-}" ]; then
-                echo "No .app produced in $OUTDIR"
-                ls -la "$OUTDIR"
-                exit 1
-              fi
-
-              APP_NAME="spectHR-macOS-v$VERSION.app"
-              mv "$APP_PATH" "$OUTDIR/$APP_NAME"
-
-              ( cd "$OUTDIR" && /usr/bin/zip -r "spectHR-macOS-v$VERSION.zip" "$APP_NAME" )
-              rm -rf "$OUTDIR/$APP_NAME"
               ;;
 
             Linux)
@@ -295,9 +270,6 @@ PY
                 "${COMMON_ARGS[@]}" \
                 --onefile \
                 --output-filename="spectHR-Linux-v$VERSION"
-
-              ( cd "$OUTDIR" && tar -czf "spectHR-Linux-v$VERSION.tar.gz" "spectHR-Linux-v$VERSION" )
-              rm -f "$OUTDIR/spectHR-Linux-v$VERSION"
               ;;
 
             *)
@@ -308,7 +280,59 @@ PY
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
 
-      - name: Upload artifact (only the packaged file)
+      - name: Package Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ needs.prepare.outputs.version }}"
+          $outdir  = "dist/Windows"
+          if (!(Test-Path "$outdir/spectHR.exe")) { throw "Missing $outdir/spectHR.exe" }
+
+          $zip = "$outdir/spectHR-Windows-v$version.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "$outdir/spectHR.exe" -DestinationPath $zip
+          Remove-Item "$outdir/spectHR.exe" -Force
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.version }}"
+          OUTDIR="dist/macOS"
+
+          APP_PATH="$(find "$OUTDIR" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+          if [ -z "${APP_PATH:-}" ]; then
+            echo "No .app produced in $OUTDIR"
+            ls -la "$OUTDIR"
+            exit 1
+          fi
+
+          APP_NAME="spectHR-macOS-v$VERSION.app"
+          mv "$APP_PATH" "$OUTDIR/$APP_NAME"
+
+          ( cd "$OUTDIR" && /usr/bin/zip -r "spectHR-macOS-v$VERSION.zip" "$APP_NAME" )
+          rm -rf "$OUTDIR/$APP_NAME"
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.version }}"
+          OUTDIR="dist/Linux"
+
+          BIN="$OUTDIR/spectHR-Linux-v$VERSION"
+          if [ ! -f "$BIN" ]; then
+            echo "Missing $BIN"
+            ls -la "$OUTDIR"
+            exit 1
+          fi
+
+          ( cd "$OUTDIR" && tar -czf "spectHR-Linux-v$VERSION.tar.gz" "spectHR-Linux-v$VERSION" )
+          rm -f "$BIN"
+
+      - name: Upload artifact (only packaged files)
         uses: actions/upload-artifact@v4
         with:
           name: spectHR-${{ runner.os }}-v${{ needs.prepare.outputs.version }}
