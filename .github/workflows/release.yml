@@ -12,14 +12,11 @@ permissions:
 env:
   PYTHON_VERSION: "3.12"
 
-  # Your entry point
   ENTRYPOINT: "src/spectUI/MainWindow.py"
 
-  # Your resources include
   RESOURCES_SRC_DIR: "src/spectUI/resources"
   RESOURCES_DST_DIR: "resources"
 
-  # Windows icon (Windows only)
   WIN_ICON_ICO: "spectHR.ico"
 
 jobs:
@@ -44,13 +41,12 @@ jobs:
           import os, re
           from pathlib import Path
 
-          tag = os.environ["GITHUB_REF_NAME"]  # "bump" or "bump-0.2.3"
+          tag = os.environ["GITHUB_REF_NAME"]
           pyproj = Path("pyproject.toml")
           if not pyproj.exists():
             raise SystemExit("pyproject.toml not found at repo root")
 
           txt = pyproj.read_text(encoding="utf-8")
-
           mproj = re.search(r"(?ms)^\[project\]\s*(.*?)(?=^\[|\Z)", txt)
           if not mproj:
             raise SystemExit("No [project] table found in pyproject.toml")
@@ -87,15 +83,13 @@ jobs:
               )
             version = bump_patch(base)
           elif tag.startswith("bump-"):
-            version = tag[len("bump-"):]
-            if not re.match(r"^[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z]+)*$", version):
+            version = normalize_xy_to_xyz(tag[len("bump-"):])
+            if not re.match(r"^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$", version):
               raise SystemExit(f"Explicit bump tag not valid enough: '{tag}'")
-            version = normalize_xy_to_xyz(version)
           else:
             raise SystemExit(f"Unexpected tag: {tag}")
 
           release_tag = f"v{version}"
-
           out_path = Path(os.environ["GITHUB_OUTPUT"])
           out_path.write_text(out_path.read_text() + f"version={version}\nrelease_tag={release_tag}\n", encoding="utf-8")
           PY
@@ -127,8 +121,7 @@ jobs:
           if n != 1:
             raise SystemExit("Could not replace [project].version exactly once")
 
-          new_txt = txt[:mproj.start()] + new_block + txt[mproj.end():]
-          path.write_text(new_txt, encoding="utf-8")
+          path.write_text(txt[:mproj.start()] + new_block + txt[mproj.end():], encoding="utf-8")
           PY
 
       - name: Commit bump and push to default branch; create vX.Y.Z tag
@@ -205,14 +198,14 @@ jobs:
             libasound2t64 \
             fonts-dejavu-core
 
-      - name: Install project + Nuitka
+      - name: Install project + Nuitka tooling
         shell: bash
         run: |
           python -m pip install --upgrade pip
           python -m pip install .
           python -m pip install nuitka zstandard
 
-      - name: Build (Windows / Linux onefile, macOS app bundle then zip)
+      - name: Build and package ONE release file per OS
         shell: bash
         run: |
           set -euo pipefail
@@ -227,7 +220,6 @@ jobs:
             exit 1
           fi
 
-          # Base Nuitka args matching your command (minus OS-specific flags)!
           COMMON_ARGS=(
             "$ENTRY"
             --standalone
@@ -250,18 +242,40 @@ jobs:
                 "${COMMON_ARGS[@]}" \
                 --onefile \
                 --windows-icon-from-ico="${{ env.WIN_ICON_ICO }}" \
-                --output-filename="spectHR-Windows-v$VERSION.exe"
+                --output-filename="spectHR.exe"
+
+              ( cd "$OUTDIR" && python - <<'PY'
+import zipfile, os
+zip_name = f"spectHR-Windows-v{os.environ['VERSION']}.zip"
+with zipfile.ZipFile(zip_name, "w", compression=zipfile.ZIP_DEFLATED) as z:
+    z.write("spectHR.exe")
+print("Created", zip_name)
+PY
+              )
+              rm -f "$OUTDIR/spectHR.exe"
               ;;
 
             macOS)
-              # Build a macOS .app bundle (no icon conversion, no extra tooling)
+              # Build spectHR.icns from your committed iconset folder
+              if [ ! -d "spectHR.iconset" ]; then
+                echo "Missing folder: spectHR.iconset (expected in repo root)"
+                exit 1
+              fi
+
+              /usr/bin/iconutil -c icns "spectHR.iconset" -o "spectHR.icns"
+
+              if [ ! -f "spectHR.icns" ]; then
+                echo "Failed to create spectHR.icns from spectHR.iconset"
+                exit 1
+              fi
+
               python -m nuitka \
                 "${COMMON_ARGS[@]}" \
                 --macos-create-app-bundle \
                 --macos-app-name="spectHR" \
+                --macos-app-icon="spectHR.icns" \
                 --output-filename="spectHR"
 
-              # Rename the produced .app and zip it (zip is what we upload)
               APP_PATH="$(find "$OUTDIR" -maxdepth 1 -type d -name "*.app" | head -n 1)"
               if [ -z "${APP_PATH:-}" ]; then
                 echo "No .app produced in $OUTDIR"
@@ -272,12 +286,8 @@ jobs:
               APP_NAME="spectHR-macOS-v$VERSION.app"
               mv "$APP_PATH" "$OUTDIR/$APP_NAME"
 
-              (
-                cd "$OUTDIR"
-                ZIP_NAME="spectHR-macOS-v$VERSION.zip"
-                /usr/bin/zip -r "$ZIP_NAME" "$APP_NAME"
-                rm -rf "$APP_NAME"
-              )
+              ( cd "$OUTDIR" && /usr/bin/zip -r "spectHR-macOS-v$VERSION.zip" "$APP_NAME" )
+              rm -rf "$OUTDIR/$APP_NAME"
               ;;
 
             Linux)
@@ -285,6 +295,9 @@ jobs:
                 "${COMMON_ARGS[@]}" \
                 --onefile \
                 --output-filename="spectHR-Linux-v$VERSION"
+
+              ( cd "$OUTDIR" && tar -czf "spectHR-Linux-v$VERSION.tar.gz" "spectHR-Linux-v$VERSION" )
+              rm -f "$OUTDIR/spectHR-Linux-v$VERSION"
               ;;
 
             *)
@@ -292,12 +305,16 @@ jobs:
               exit 1
               ;;
           esac
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
 
-      - name: Upload artifact
+      - name: Upload artifact (only the packaged file)
         uses: actions/upload-artifact@v4
         with:
           name: spectHR-${{ runner.os }}-v${{ needs.prepare.outputs.version }}
-          path: dist/${{ runner.os }}/*
+          path: |
+            dist/${{ runner.os }}/*.zip
+            dist/${{ runner.os }}/*.tar.gz
 
   release:
     needs: [prepare, build]
@@ -315,4 +332,5 @@ jobs:
           name: ${{ needs.prepare.outputs.release_tag }}
           generate_release_notes: true
           files: |
-            artifacts/**/*
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
