@@ -356,6 +356,75 @@ The plot also allows for selecting relevant epochs in the data. In the standard 
 ## Contributing
 If you'd like to contribute to spectHR, feel free to fork the repository and submit pull requests. Please ensure that your code follows the existing style and includes appropriate tests.
 
+## Using the release on macOS:
+
+spectHR – Installation on macOS
+System requirements
+
+- macOS 11 (Big Sur) or newer
+- Intel or Apple Silicon (M1/M2/M3)
+- No Python installation required
+
+### Step 1 — Download
+
+Go to GitHub → Releases
+Download:
+
+spectHR-macOS-vX.Y.Z.zip
+
+Double-click the .zip file
+→ this extracts spectHR.app
+
+### Step 2 — Move to Applications
+
+Drag spectHR.app to:
+
+/Applications
+(This avoids permission and security issues.)
+
+### Step 3 — First launch (important)
+
+Because the app is not signed by Apple, macOS will block it the first time.
+This is expected behaviour.
+
+#### Option A — Finder (recommended)
+
+Open /Applications
+Right-click on spectHR.app
+Choose Open
+Click Open again
+➡️ The app will start and work normally from now on.
+
+#### Option B — System Settings
+
+If Option A does not work:
+Try opening spectHR.app once (so macOS registers the block)
+Open System Settings → Privacy & Security
+At the bottom, you will see:
+“spectHR was blocked…”
+Click Open Anyway
+Confirm
+
+#### Option C — Terminal (always works)
+
+If macOS keeps blocking the app:
+Open Terminal
+Run:
+
+Bash
+xattr -dr com.apple.quarantine /Applications/spectHR.app
+Close Terminal
+Open spectHR.app normally
+➡️ This removes the quarantine flag macOS applies to downloaded apps.
+
+### Updating spectHR
+Download the new .zip
+Replace the old spectHR.app in /Applications
+No reinstallation needed
+
+
+
+
 ## License
 spectHR is released under the GNU License. See the LICENSE file for more details.
 Add short info (at least mantion) the ibiseries plot. Inform on the option to add epochs, generally bring up-to-date. The audience for the docs are scientists that use the program, not programmers, We do hop the can contribute, so info in programming must be informative.
