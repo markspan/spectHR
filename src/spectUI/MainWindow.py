@@ -1,6 +1,16 @@
 import json
 import pickle
 import sys
+import os
+
+# Force Matplotlib to use the Qt backend inside a PySide6 app (macOS-safe)
+os.environ.setdefault("MPLBACKEND", "QtAgg")
+
+import matplotlib
+
+matplotlib.use("QtAgg", force=True)
+
+import matplotlib.pyplot as plt
 import webbrowser
 
 from PySide6.QtCore import QFile, Qt
@@ -220,12 +230,12 @@ class MainWindow(QMainWindow):
         reload_action = QAction("Reload Raw", self)
         invert_action = QAction("Invert ECG Polarity", self)
         retrigger_action = QAction("Retrigger ECG", self)
-        
+
         # Connect the actions to their respective functions
         reload_action.triggered.connect(lambda: self.reload(item))
         invert_action.triggered.connect(self.invert)
         retrigger_action.triggered.connect(self.retrigger)
-        
+
         # Add the actions to the context menu
         context_menu.addAction(reload_action)
         context_menu.addAction(invert_action)
@@ -233,10 +243,11 @@ class MainWindow(QMainWindow):
         # Show the context menu at the requested position
         context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
 
-    def retrigger(self,
-                *,
-                min_peak_distance_ms: float = 300.0,
-                classify: bool = True,
+    def retrigger(
+        self,
+        *,
+        min_peak_distance_ms: float = 300.0,
+        classify: bool = True,
     ) -> None:
         """
         Retrigger the ECG signal by recalculating the R-peaks and updating the preprocessing plot.
@@ -245,7 +256,7 @@ class MainWindow(QMainWindow):
             return
         if self.dataset.active_band is None:
             raise RuntimeError("No active band selected")
-        
+
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         # Resolve ECG for active band
@@ -259,11 +270,12 @@ class MainWindow(QMainWindow):
             classify=False,
         )
         import numpy as np
-        cs.times=np.array([np.nan])
-        cs.labels=np.array(['TL'])
+
+        cs.times = np.array([np.nan])
+        cs.labels = np.array(["TL"])
         cs._pd = self.dataset
         cs._stream = ecg_accessor
-  
+
         self.dataset.hrv_map[self.dataset.active_band] = cs
 
         # --------------------------------------------------
@@ -306,13 +318,12 @@ class MainWindow(QMainWindow):
             item: The selected item in the tree view.
         """
         import os
-        self.dataset.save(self.savename) 
-        backup = Path(self.workspace["CacheDirectory"]) / (
-                "LASTDELETED.pkl"
-            )
+
+        self.dataset.save(self.savename)
+        backup = Path(self.workspace["CacheDirectory"]) / ("LASTDELETED.pkl")
         os.replace(self.savename, backup)
         self.on_file_selection()
-        #self.show_preprocessing_plot(self.dataset)
+        # self.show_preprocessing_plot(self.dataset)
 
     def invert(self):
         """
@@ -396,14 +407,13 @@ class MainWindow(QMainWindow):
                     dataset = pickle.load(f)
             else:
                 dataset = PhysioData(
-                    Path(self.workspace["DataDirectory"]) / (
-                    Path(filename))
+                    Path(self.workspace["DataDirectory"]) / (Path(filename))
                 )
                 if dataset.has_ecg:
                     dataset.preprocess_ecg()
                     if dataset.active_band is None:
                         dataset.active_band = next(iter(dataset.band_map))
-                
+
                 dataset.save(self.savename)
 
             # Detect Polar band IDs from timeseries names
