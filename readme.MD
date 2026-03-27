@@ -37,6 +37,8 @@
 
 ## Overview
 
+![spectHR](images/MainWindow.PNG)
+
 **spectHR** is an interactive desktop application for Heart Rate Variability (HRV) analysis. It provides a graphical interface built with Qt and Matplotlib for exploring, preprocessing, and analyzing ECG-derived HRV data. The application is designed for researchers and students who need a hands-on, visual workflow — no programming required to use it.
 
 The project consists of two layers:
@@ -44,7 +46,7 @@ The project consists of two layers:
 - **spectHR** — the analysis library (`src/spectHR/`). Handles data loading, signal processing, R-peak detection, IBI classification, and HRV metric computation.
 - **spectUI** — the Qt application (`src/spectUI/`). Provides the interactive GUI built on top of the library.
 
-![spectHR architecture](specthr_architecture.svg)
+![spectHR architecture](images/specthr_architecture.svg)
 
 ## Features
 
