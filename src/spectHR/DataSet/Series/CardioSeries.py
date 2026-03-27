@@ -1,10 +1,14 @@
 # CardioSeries.py
 from __future__ import annotations
-from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
+
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, runtime_checkable
+from typing import Protocol
+
 import numpy as np
 import scipy.signal as signal
 from scipy.interpolate import interp1d
 from scipy.stats import chi2
+
 from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 from spectHR.Tools.Logger import logger
 
@@ -12,54 +16,52 @@ if TYPE_CHECKING:
     from spectHR.DataSet.PhysioData import PhysioData
 
 
-class CardioSeries(HRVMetric):
+# ======================================================================
+# Protocol — for type annotations where either owner or view is accepted
+# ======================================================================
+
+
+@runtime_checkable
+class CardioSeriesLike(Protocol):
     """
-    Container for R-peak times and per-interval labels, with HRV metric methods.
+    Structural protocol satisfied by both CardioSeries and CardioSeriesView.
 
-    Conceptual model
-    ----------------
-    A `CardioSeries` represents a sequence of R-peak timestamps (seconds, dataset
-    time base). From these timestamps, inter-beat intervals (IBIs; i.e., RR intervals)
-    are derived on demand.
+    Use this as a type annotation wherever a function accepts either a full
+    CardioSeries or an epoch/time-range view of one.
 
-    This class intentionally stores:
-    - `times`: R-peak times (float seconds)
-    - `labels`: per-interval labels (object array of strings), aligned to `ibi` indexing.
+    Example
+    -------
+    def compute_metrics(series: CardioSeriesLike) -> dict: ...
+    """
 
-    Important alignment detail
-    --------------------------
-    `ibi` is derived as `np.diff(times)` plus a trailing NaN so that:
-        len(ibi) == len(times)
+    @property
+    def times(self) -> np.ndarray: ...
+    @property
+    def labels(self) -> np.ndarray: ...
+    @property
+    def ibi(self) -> np.ndarray: ...
+    def _ibi_clean_ms(self) -> np.ndarray: ...
+    def welch_psd(self, **kwargs) -> Tuple[np.ndarray, np.ndarray]: ...
+    def view(self, starttime: float, endtime: float) -> "CardioSeriesLike": ...
 
-    This means:
-    - `ibi[i]` corresponds to the interval between `times[i]` and `times[i+1]`
-    - `labels[i]` labels that interval
-    - the final element `ibi[-1]` is `NaN` and `labels[-1]` is present but usually ignored
 
-    Label lifecycle
-    ---------------
-    All label assignment is the sole responsibility of `classify_ibi()`.
-    The `ibi` property is a pure computation and never mutates labels.
-    Call `classify_ibi()` after any mutation to `times` to keep labels consistent.
+# ======================================================================
+# Shared mixin — metric computation shared by owner and view
+# ======================================================================
 
-    Integration with PhysioData and views
-    -------------------------------------
-    - This class can optionally be linked to a `PhysioData` instance via `_pd`.
-    - Epoch slicing is supported via `__getitem__`, returning a zero-copy
-      `CardioSeriesView` that carries identity metadata: `_pd`, `_stream`, `_epoch`.
 
-    Notes on mutability
-    -------------------
-    - `times` and `labels` are mutable arrays.
-    - Methods like `replace_from_timeseries` mutate in-place.
-    - Views (`CardioSeriesView`) are zero-copy and therefore reflect parent mutations.
+class CardioMetricsMixin(HRVMetric):
+    """
+    Mixin providing HRV metric computation for any object that exposes:
+    - times  : np.ndarray (property or attribute)
+    - labels : np.ndarray (property or attribute)
+    - ibi    : np.ndarray (property)
 
-    Attributes
-    ----------
-    times: 1D array of R-peak times in seconds.
-    labels: 1D array of labels aligned to `ibi` indexing (same length as `times`).
-    _pd: Optional `PhysioData` linkage used for epoch slicing (`__getitem__`).
-    _stream: Optional identifier for the originating stream/band.
+    Both CardioSeries (data owner) and CardioSeriesView (zero-copy view)
+    inherit from this mixin so they share an identical metric implementation
+    without either class depending on the other.
+
+    Methods here never mutate labels or times.
     """
 
     METRIC_ORDER = [
@@ -82,166 +84,18 @@ class CardioSeries(HRVMetric):
         "lf_hf_ratio",
     ]
 
-    def __init__(self, times: np.ndarray):
-        """
-        Parameters
-        ----------
-        times:
-            R-peak times in seconds. Will be converted to float numpy array.
-        """
-        self.times = np.asarray(times, dtype=float)
-        self.labels = np.full(self.times.shape, "N", dtype=object)
-        # Assigned externally (e.g., by PhysioData integration)
-        self._pd: Optional[PhysioData] = None
-        # Optional identity for this series (useful if multiple bands)
-        self._stream: Optional[str] = None
-
-    # ---------------------------------------------------------------------
-    # Construction / detection
-    # ---------------------------------------------------------------------
-
-    @classmethod
-    def from_timeseries(
-        cls,
-        ts,
-        *,
-        min_peak_distance_ms: float = 300.0,
-        classify: bool = True,
-    ) -> "CardioSeries":
-        """
-        Detect R-peaks from an ECG TimeSeries and construct a CardioSeries.
-
-        This is a convenience constructor that:
-        1) estimates sampling rate from `ts.times`
-        2) detects candidate peaks using `scipy.signal.find_peaks`
-        3) applies a simple sub-sample timing correction
-        4) initializes labels to "N"
-        5) optionally classifies IBIs via :meth:`classify_ibi`
-
-        Parameters
-        ----------
-        ts:
-            ECG time series object providing:
-            - `ts.times`: 1D array of timestamps in seconds
-            - `ts.values`: 1D array of ECG samples (same length as times)
-        min_peak_distance_ms:
-            Minimum expected R-R distance in milliseconds; converted to a minimum
-            number of samples for `find_peaks(distance=...)`.
-        classify:
-            If True, run :meth:`classify_ibi` after peak detection.
-
-        Returns
-        -------
-        CardioSeries
-            New instance with detected `times` and initialized `labels`.
-
-        Notes
-        -----
-        - The peak detection threshold used here is a heuristic:
-              median(values) + 1.5 * std(values)
-          This may not generalize to all ECG preprocessing pipelines.
-        - For very short or invalid time bases, peak detection is skipped or
-          a ValueError is raised.
-        """
-        times = np.asarray(ts.times, dtype=float)
-        values = np.asarray(ts.values, dtype=float)
-
-        if times.size < 2 or values.size < 2:
-            logger.warning("ECG TimeSeries too short for peak detection.")
-            return cls(np.array([], dtype=float))
-
-        # --------------------------------------------------
-        # Sampling rate estimation (robust to duplicates/non-monotonic samples)
-        # --------------------------------------------------
-        time_deltas = np.diff(times)
-        time_deltas = time_deltas[time_deltas > 0]
-        if time_deltas.size == 0:
-            raise ValueError(
-                "Cannot estimate sampling rate from ECG times (no positive deltas)."
-            )
-        sampling_rate_hz = 1.0 / float(np.mean(time_deltas))
-
-        # --------------------------------------------------
-        # Peak detection
-        # --------------------------------------------------
-        min_distance_samples = int((min_peak_distance_ms / 1000.0) * sampling_rate_hz)
-        min_distance_samples = max(1, min_distance_samples)
-
-        # Heuristic amplitude threshold
-        peak_height_threshold = float(np.median(values) + 1.5 * np.std(values))
-
-        peak_indices, _ = signal.find_peaks(
-            values,
-            height=peak_height_threshold,
-            distance=min_distance_samples,
-        )
-
-        if peak_indices.size == 0:
-            logger.warning("No R-peaks detected.")
-            return cls(np.array([], dtype=float))
-
-        # --------------------------------------------------
-        # Sub-sample peak timing correction
-        # --------------------------------------------------
-        # A lightweight correction based on local neighborhood slope/contrast.
-        # This is not a full parabolic interpolation; it is a pragmatic adjustment.
-        pre_values = values[np.clip(peak_indices - 1, 0, values.size - 1)]
-        post_values = values[np.clip(peak_indices + 1, 0, values.size - 1)]
-        peak_values = values[peak_indices]
-        local_contrast = np.maximum(
-            np.abs(peak_values - pre_values), np.abs(post_values - peak_values)
-        )
-        local_contrast[local_contrast == 0] = 1e-12
-        correction_sec = (
-            (post_values - pre_values) / sampling_rate_hz / (2.0 * local_contrast)
-        )
-        peak_times = times[peak_indices] + correction_sec
-
-        # --------------------------------------------------
-        # Build CardioSeries
-        # --------------------------------------------------
-        series = cls(np.asarray(peak_times, dtype=float))
-        series.labels[:] = "N"
-
-        if classify:
-            series.classify_ibi()
-        return series
-
-    # ---------------------------------------------------------------------
-    # Derived signals / helpers
-    # ---------------------------------------------------------------------
-
-    @property
-    def ibi(self) -> np.ndarray:
-        """
-        Inter-beat intervals (IBIs) derived from R-peak times in seconds.
-
-        Returns
-        -------
-        np.ndarray
-            1D array of IBIs in seconds, with a trailing NaN to keep alignment:
-                len(ibi) == len(times)
-
-        Notes
-        -----
-        This property is a **pure computation** — it never mutates `self.labels`.
-        All label assignment is the responsibility of :meth:`classify_ibi`.
-
-        Call `classify_ibi()` after any mutation to `times` to keep labels
-        consistent with the current IBI values.
-        """
-        if self.times.size < 2:
-            return np.asarray([], dtype=float)
-        return np.concatenate([np.diff(self.times), np.array([np.nan], dtype=float)])
+    # ------------------------------------------------------------------
+    # Core helper — shared by all metric methods
+    # ------------------------------------------------------------------
 
     def _ibi_clean_ms(self) -> np.ndarray:
         """
-        Return valid IBI values in milliseconds for use in HRV metric calculations.
+        Return valid IBI values in milliseconds for HRV metric calculations.
 
         Excludes:
         - NaN values (trailing alignment NaN, missing data)
         - Intervals labeled "TL" (too long; likely artifacts)
-        - Intervals labeled "T" (degenerate; zero or negative)
+        - Intervals labeled "T"  (degenerate; zero or negative)
 
         Returns
         -------
@@ -254,371 +108,9 @@ class CardioSeries(HRVMetric):
         valid = ~np.isnan(ibi_sec) & (self.labels != "TL") & (self.labels != "T")
         return 1000.0 * ibi_sec[valid]
 
-    # ---------------------------------------------------------------------
-    # Classification
-    # ---------------------------------------------------------------------
-
-    def classify_ibi(
-        self,
-        *,
-        window_length: int = 51,
-        n_std: float = 4.0,
-        max_ibi_sec: float = 2.0,
-    ) -> None:
-        """
-        Classify inter-beat intervals (IBIs) using local statistics and heuristics.
-
-        This is the **sole method responsible for mutating `self.labels`**. It
-        should be called after any change to `self.times`.
-
-        Classification strategy
-        -----------------------
-        1. IBIs are derived from `self.ibi` (pure computation, no side effects).
-        2. Degenerate IBIs (NaN or <= 0) are labeled "T".
-        3. IBIs exceeding `max_ibi_sec` are labeled "TL" (artifact / too long).
-           These are excluded from the rolling statistics in subsequent steps.
-        4. For the remaining intervals:
-           - If the series is shorter than `window_length`, global mean/std are used.
-           - Otherwise, centered rolling mean/std are computed using a sliding window.
-        5. IBIs are labeled pointwise using mean ± n_std * std thresholds.
-        6. Sequence heuristics are applied afterward to detect specific patterns.
-
-        Labels produced
-        ---------------
-        - "N"   : normal
-        - "L"   : long IBI (above upper threshold)
-        - "S"   : short IBI (below lower threshold)
-        - "TL"  : too long IBI (> max_ibi_sec); excluded from statistics
-        - "SL"  : short-then-long pattern
-        - "SNS" : short-normal-short pattern
-        - "T"   : degenerate / invalid interval (NaN or <= 0)
-
-        Notes
-        -----
-        - This method mutates `self.labels` in place.
-        - The final (trailing) IBI is never meaningfully classified but is kept
-          for alignment consistency.
-        - All numerical edge cases are handled explicitly to avoid RuntimeWarnings.
-        """
-        ibi_sec = self.ibi  # pure computation — no label side effects
-        labels = self.labels
-        n_intervals = ibi_sec.size
-
-        if n_intervals == 0:
-            return
-
-        # --------------------------------------------------
-        # Step 1: mark degenerate and too-long IBIs
-        # --------------------------------------------------
-        # Degenerate: NaN (including the trailing alignment NaN) or non-positive
-        degenerate_mask = np.isnan(ibi_sec) | (ibi_sec <= 0)
-        labels[degenerate_mask] = "T"
-
-        # Too long: exceeds the absolute maximum regardless of local statistics.
-        # This check uses the raw ibi_sec values (not NaN-substituted), so it
-        # correctly identifies artifact intervals before statistics are computed.
-        tl_mask = ibi_sec > max_ibi_sec
-        labels[tl_mask] = "TL"
-
-        # --------------------------------------------------
-        # Step 2: prepare IBI array for statistics
-        # --------------------------------------------------
-        # Exclude degenerate AND too-long intervals from rolling statistics so
-        # that artifacts do not distort the local mean/std thresholds.
-        # Replace them with NaN; fill the trailing NaN with the last valid value
-        # so that edge-padding in the rolling window doesn't create all-NaN windows.
-        ibi_for_stats = ibi_sec.astype(float, copy=True)
-        ibi_for_stats[degenerate_mask | tl_mask] = np.nan
-
-        if ibi_for_stats.size >= 2 and np.isnan(ibi_for_stats[-1]):
-            last_valid = ibi_for_stats[~np.isnan(ibi_for_stats)]
-            if last_valid.size > 0:
-                ibi_for_stats[-1] = last_valid[-1]
-
-        # --------------------------------------------------
-        # Step 3: short-series fallback (no rolling window)
-        # --------------------------------------------------
-        valid_mask = ~np.isnan(ibi_for_stats)
-        if not np.any(valid_mask):
-            # No classifiable IBIs remain (all degenerate or too long).
-            return
-
-        if n_intervals < window_length:
-            mean = np.nanmean(ibi_for_stats)
-            std = np.nanstd(ibi_for_stats)
-            lower_bound = mean - n_std * std
-            upper_bound = mean + n_std * std
-            for i in range(n_intervals):
-                if labels[i] in ("T", "TL"):
-                    continue
-                if ibi_sec[i] > upper_bound:
-                    labels[i] = "L"
-                elif ibi_sec[i] < lower_bound:
-                    labels[i] = "S"
-                else:
-                    labels[i] = "N"
-            return
-
-        # --------------------------------------------------
-        # Step 4: rolling statistics (centered window)
-        # --------------------------------------------------
-        half_window = window_length // 2
-        ibi_padded = np.pad(ibi_for_stats, (half_window, half_window), mode="edge")
-        windows = np.lib.stride_tricks.sliding_window_view(ibi_padded, window_length)
-        local_mean = np.nanmean(windows, axis=1)[:n_intervals]
-        local_std = np.nanstd(windows, axis=1)[:n_intervals]
-        lower_bound = local_mean - n_std * local_std
-        upper_bound = local_mean + n_std * local_std
-
-        # --------------------------------------------------
-        # Step 5: pointwise classification
-        # --------------------------------------------------
-        for i in range(n_intervals):
-            if labels[i] in ("T", "TL"):
-                continue
-            if ibi_sec[i] > upper_bound[i]:
-                labels[i] = "L"
-            elif ibi_sec[i] < lower_bound[i]:
-                labels[i] = "S"
-            else:
-                labels[i] = "N"
-
-        # --------------------------------------------------
-        # Step 6: sequence heuristics
-        # --------------------------------------------------
-        for i in range(n_intervals - 1):
-            if labels[i] == "S" and labels[i + 1] == "L":
-                labels[i] = "SL"
-
-        for i in range(n_intervals - 2):
-            if labels[i] == "S" and labels[i + 1] == "N" and labels[i + 2] == "S":
-                labels[i] = "SNS"
-
-        # --------------------------------------------------
-        # Step 7: logging summary
-        # --------------------------------------------------
-        unique, counts = np.unique(labels, return_counts=True)
-        summary = dict(zip(unique, counts))
-        logger.info(f"IBI classification summary (n_IBI={n_intervals}):")
-        for label, count in summary.items():
-            logger.info(f"  {label}: {count}")
-
-    # ---------------------------------------------------------------------
-    # Editing / replacement
-    # ---------------------------------------------------------------------
-
-    def replace_from_timeseries(
-        self,
-        ts,
-        *,
-        start: float,
-        end: float,
-        min_peak_distance_ms: float = 300.0,
-        classify: bool = True,
-    ) -> None:
-        """
-        Re-detect R-peaks from an ECG TimeSeries (or view) and replace peaks in a window.
-
-        This method is designed for interactive editing workflows:
-        - Keep R-peaks outside [start, end]
-        - Replace (remove and reinsert) R-peaks inside [start, end] with newly detected peaks
-        - Set labels for replaced peaks to "N"
-        - Optionally re-run global IBI classification
-
-        Parameters
-        ----------
-        ts:
-            ECG signal, possibly already restricted to an epoch.
-            Must provide `.times` and `.values`.
-        start:
-            Start time of the replacement window (seconds, dataset time base).
-        end:
-            End time of the replacement window (seconds, dataset time base).
-        min_peak_distance_ms:
-            Minimum expected R-R distance used during peak detection.
-        classify:
-            If True, run :meth:`classify_ibi` once after the merge.
-
-        Raises
-        ------
-        ValueError
-            If start >= end.
-
-        Notes
-        -----
-        - If there are no existing peaks, this method behaves like replacing everything.
-        - If no new peaks are found in the window, the old peaks are still removed.
-          This supports "clear this epoch/window" semantics.
-        """
-        if start >= end:
-            raise ValueError("replace_from_timeseries: start must be < end")
-
-        # No existing peaks -> just rebuild
-        if self.times.size == 0:
-            new_series = CardioSeries.from_timeseries(
-                ts,
-                min_peak_distance_ms=min_peak_distance_ms,
-                classify=classify,
-            )
-            self.times = new_series.times
-            self.labels = new_series.labels
-            return
-
-        # Detect new peaks (do not classify yet; do it once after merging)
-        new_series = CardioSeries.from_timeseries(
-            ts,
-            min_peak_distance_ms=min_peak_distance_ms,
-            classify=False,
-        )
-        new_times = new_series.times
-        new_labels = np.full(new_times.shape, "N", dtype=object)
-
-        # Keep old peaks outside window
-        keep_mask = (self.times < start) | (self.times > end)
-        kept_times = self.times[keep_mask]
-        kept_labels = self.labels[keep_mask]
-
-        # Merge and sort
-        merged_times = np.concatenate([kept_times, new_times])
-        merged_labels = np.concatenate([kept_labels, new_labels])
-
-        if merged_times.size == 0:
-            self.times = merged_times
-            self.labels = merged_labels
-            return
-
-        order = np.argsort(merged_times)
-        self.times = merged_times[order]
-        self.labels = merged_labels[order]
-
-        if classify:
-            self.classify_ibi()
-
-    # ---------------------------------------------------------------------
-    # Views / slicing
-    # ---------------------------------------------------------------------
-
-    def __getitem__(self, epoch_label: str) -> "CardioSeriesView":
-        """
-        Return an epoch view using PhysioData.epochs.
-
-        Parameters
-        ----------
-        epoch_label:
-            Name/key of the epoch in `self._pd.epochs`.
-
-        Returns
-        -------
-        CardioSeriesView
-            Zero-copy view containing indices within the epoch.
-
-        Raises
-        ------
-        RuntimeError
-            If this CardioSeries is not linked to a PhysioData instance.
-        KeyError
-            If the requested epoch does not exist.
-        """
-        if self._pd is None:
-            raise RuntimeError(
-                "CardioSeries is not connected to a PhysioData instance. "
-                "Assign CardioSeries._pd = physiodata."
-            )
-        if epoch_label not in self._pd.epochs:
-            raise KeyError(f"No epoch '{epoch_label}' in PhysioData.")
-        ep = self._pd.epochs[epoch_label]
-        idx = np.where((self.times >= ep.start) & (self.times <= ep.end))[0]
-        view = CardioSeriesView(self, idx)
-        view._pd = self._pd
-        view._stream = self._stream
-        view._epoch = epoch_label
-        return view
-
-    def view(self, starttime: float, endtime: float) -> "CardioSeriesView":
-        """
-        Create an identity-neutral view by time range.
-
-        Parameters
-        ----------
-        starttime:
-            Start time in seconds (inclusive).
-        endtime:
-            End time in seconds (inclusive).
-
-        Returns
-        -------
-        CardioSeriesView
-            Zero-copy view with propagated `_pd` and `_stream` metadata;
-            `_epoch` is None.
-        """
-        idx = np.where((self.times >= starttime) & (self.times <= endtime))[0]
-        view = CardioSeriesView(self, idx)
-        view._pd = self._pd
-        view._stream = self._stream
-        view._epoch = None
-        return view
-
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Frequency domain
-    # ---------------------------------------------------------------------
-
-    def welch_psd_with_ci(
-        self,
-        *,
-        fs: float = 4.0,
-        nperseg: int = 256,
-        noverlap: int = 128,
-        window: str = "hamming",
-        interpolate: bool = True,
-        alpha: float = 0.05,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Compute Welch PSD of the IBI series with chi-square confidence intervals.
-
-        Parameters
-        ----------
-        fs:
-            Resampling frequency (Hz) used for interpolating uneven IBIs to a
-            uniform grid.
-        nperseg:
-            Segment length for Welch.
-        noverlap:
-            Overlap between segments.
-        window:
-            Welch window function name (passed to SciPy).
-        interpolate:
-            If True, interpolate the IBI series onto a uniform time grid at `fs`.
-        alpha:
-            Significance level for the (1-alpha) confidence interval.
-
-        Returns
-        -------
-        freqs, psd, ci_lower, ci_upper:
-            Arrays of frequencies, PSD estimate, and lower/upper confidence bounds.
-
-        Notes
-        -----
-        - The degrees-of-freedom estimate used here is a heuristic based on segment
-          count. If you require exact CI calibration, compute effective DOF based on
-          window and overlap.
-        """
-        freqs, psd = self.welch_psd(
-            fs=fs,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            window=window,
-            interpolate=interpolate,
-        )
-        if freqs.size == 0:
-            return freqs, psd, psd, psd
-
-        step = nperseg - noverlap
-        # Heuristic segment count; kept consistent with original code intent.
-        n_segments = max(1, int(np.floor((psd.size * step) / nperseg)))
-        nu = 2 * n_segments  # DOF approximation
-        ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
-        ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
-        return freqs, psd, ci_lower, ci_upper
+    # ------------------------------------------------------------------
 
     def welch_psd(
         self,
@@ -652,24 +144,17 @@ class CardioSeries(HRVMetric):
         -------
         freqs, power:
             Arrays of frequencies and power spectral density values.
-
-        Failure modes
-        -------------
-        Returns empty arrays if:
-        - There are no usable IBI samples
-        - Interpolation fails due to insufficient times or numerical issues
+            Empty arrays are returned if there are no usable IBI samples or
+            if interpolation fails.
         """
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size == 0:
             return np.ndarray(0), np.ndarray(0)
 
-        # Adapt segment sizes to short signals
         if ibi_ms.size < nperseg:
             nperseg = ibi_ms.size
             noverlap = int(ibi_ms.size / 2) if ibi_ms.size >= 2 else 0
 
-        # Align times to IBI samples used (ibi_ms excludes NaNs and artifacts;
-        # we approximate by slicing — consistent with the original design).
         ibi_times = self.times[: ibi_ms.size]
 
         if interpolate:
@@ -696,15 +181,71 @@ class CardioSeries(HRVMetric):
         )
         return freqs, power
 
-    # ---------------------------------------------------------------------
-    # HRV metrics
-    # ---------------------------------------------------------------------
+    def welch_psd_with_ci(
+        self,
+        *,
+        fs: float = 4.0,
+        nperseg: int = 256,
+        noverlap: int = 128,
+        window: str = "hamming",
+        interpolate: bool = True,
+        alpha: float = 0.05,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Compute Welch PSD with chi-square confidence intervals.
+
+        Returns
+        -------
+        freqs, psd, ci_lower, ci_upper
+        """
+        freqs, psd = self.welch_psd(
+            fs=fs,
+            nperseg=nperseg,
+            noverlap=noverlap,
+            window=window,
+            interpolate=interpolate,
+        )
+        if freqs.size == 0:
+            return freqs, psd, psd, psd
+
+        step = nperseg - noverlap
+        n_segments = max(1, int(np.floor((psd.size * step) / nperseg)))
+        nu = 2 * n_segments
+        ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
+        ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
+        return freqs, psd, ci_lower, ci_upper
+
+    def _band_power_exact(
+        self,
+        freqs: np.ndarray,
+        power: np.ndarray,
+        f0: float,
+        f1: float,
+    ) -> float:
+        """
+        Band power by trapezoidal integration with endpoint interpolation.
+        Returns NaN if inputs are empty or the band contains no frequencies.
+        Output is scaled by 1000.0.
+        """
+        if freqs.size == 0:
+            return np.nan
+        mask = (freqs > f0) & (freqs < f1)
+        if not np.any(mask):
+            return np.nan
+        p0 = np.interp(f0, freqs, power)
+        p1 = np.interp(f1, freqs, power)
+        f_band = np.concatenate(([f0], freqs[mask], [f1]))
+        p_band = np.concatenate(([p0], power[mask], [p1]))
+        return float(1000.0 * np.trapezoid(p_band, f_band))
+
+    # ------------------------------------------------------------------
+    # HRV metrics — discovered automatically via @hrv_metric
+    # ------------------------------------------------------------------
 
     @hrv_metric
     def count(self) -> int:
-        """Number of valid IBIs (ms) after NaN and artifact removal."""
-        ibi_ms = self._ibi_clean_ms()
-        return int(ibi_ms.size)
+        """Number of valid IBIs after NaN and artifact removal."""
+        return int(self._ibi_clean_ms().size)
 
     @hrv_metric
     def mean(self) -> float:
@@ -738,16 +279,12 @@ class CardioSeries(HRVMetric):
 
     @hrv_metric
     def rmssd(self) -> float:
-        """
-        Root mean square of successive differences (RMSSD) in ms.
-
-        Computed as: sqrt(mean(diff(IBI_ms)^2))
-        """
+        """Root mean square of successive differences (ms)."""
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 2:
             return np.nan
-        successive_diffs_ms = np.diff(ibi_ms)
-        return float(np.sqrt(np.mean(successive_diffs_ms * successive_diffs_ms)))
+        d = np.diff(ibi_ms)
+        return float(np.sqrt(np.mean(d * d)))
 
     @hrv_metric
     def sdnn(self) -> float:
@@ -757,103 +294,418 @@ class CardioSeries(HRVMetric):
 
     @hrv_metric
     def sdsd(self) -> float:
-        """SDSD (ms): standard deviation of successive differences of IBI."""
+        """SDSD (ms): standard deviation of successive differences."""
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 2:
             return np.nan
-        successive_diffs_ms = np.diff(ibi_ms)
-        return float(np.std(successive_diffs_ms))
+        return float(np.std(np.diff(ibi_ms)))
 
     @hrv_metric
     def sd1(self) -> float:
-        """
-        SD1 (ms) of the Poincaré plot.
-
-        SD1 reflects short-term variability and is computed from:
-            (IBI[i] - IBI[i+1]) / sqrt(2)
-        """
+        """SD1 (ms) — short-term Poincaré variability."""
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 2:
             return np.nan
-        x1, x2 = ibi_ms[:-1], ibi_ms[1:]
-        transverse = (x1 - x2) / np.sqrt(2.0)
-        return float(np.std(transverse))
+        return float(np.std((ibi_ms[:-1] - ibi_ms[1:]) / np.sqrt(2.0)))
 
     @hrv_metric
     def sd2(self) -> float:
-        """
-        SD2 (ms) of the Poincaré plot.
-
-        SD2 reflects longer-term variability and is computed from:
-            (IBI[i] + IBI[i+1]) / sqrt(2)
-        """
+        """SD2 (ms) — long-term Poincaré variability."""
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 2:
             return np.nan
-        x1, x2 = ibi_ms[:-1], ibi_ms[1:]
-        longitudinal = (x1 + x2) / np.sqrt(2.0)
-        return float(np.std(longitudinal))
+        return float(np.std((ibi_ms[:-1] + ibi_ms[1:]) / np.sqrt(2.0)))
 
     @hrv_metric
     def sd_ratio(self) -> float:
         """SD1/SD2 ratio (dimensionless)."""
-        sd1_ms, sd2_ms = self.sd1(), self.sd2()
-        if np.isnan(sd1_ms) or np.isnan(sd2_ms) or sd2_ms == 0:
+        s1, s2 = self.sd1(), self.sd2()
+        if np.isnan(s1) or np.isnan(s2) or s2 == 0:
             return np.nan
-        return float(sd1_ms / sd2_ms)
+        return float(s1 / s2)
 
     @hrv_metric
     def ellipse_area(self) -> float:
-        """Area of the Poincaré ellipse (π * SD1 * SD2) in ms²."""
-        sd1_ms, sd2_ms = self.sd1(), self.sd2()
-        if np.isnan(sd1_ms) or np.isnan(sd2_ms):
+        """Area of the Poincaré ellipse (π · SD1 · SD2) in ms²."""
+        s1, s2 = self.sd1(), self.sd2()
+        if np.isnan(s1) or np.isnan(s2):
             return np.nan
-        return float(np.pi * sd1_ms * sd2_ms)
+        return float(np.pi * s1 * s2)
 
     @hrv_metric
     def vlf_power(self) -> float:
-        """VLF band power from Welch PSD (units scaled by 1000 per original code)."""
+        """VLF band power (0.003–0.04 Hz) from Welch PSD."""
         freqs, power = self.welch_psd()
         return self._band_power_exact(freqs, power, 0.003, 0.04)
 
     @hrv_metric
     def lf_power(self) -> float:
-        """LF band power from Welch PSD (units scaled by 1000 per original code)."""
+        """LF band power (0.04–0.15 Hz) from Welch PSD."""
         freqs, power = self.welch_psd()
         return self._band_power_exact(freqs, power, 0.04, 0.15)
 
     @hrv_metric
     def hf_power(self) -> float:
-        """HF band power from Welch PSD (units scaled by 1000 per original code)."""
+        """HF band power (0.15–0.40 Hz) from Welch PSD."""
         freqs, power = self.welch_psd()
         return self._band_power_exact(freqs, power, 0.15, 0.4)
 
     @hrv_metric
     def lf_hf_ratio(self) -> float:
         """LF/HF ratio (dimensionless)."""
-        lf = self.lf_power()
-        hf = self.hf_power()
+        lf, hf = self.lf_power(), self.hf_power()
         return float(lf / hf) if hf > 0 else np.nan
 
-    # ---------------------------------------------------------------------
+
+# ======================================================================
+# CardioSeries — data owner
+# ======================================================================
+
+
+class CardioSeries(CardioMetricsMixin):
+    """
+    Container for R-peak times and per-interval labels, with HRV metric methods.
+
+    Conceptual model
+    ----------------
+    A CardioSeries owns a sequence of R-peak timestamps (seconds, dataset time
+    base). Inter-beat intervals (IBIs) are derived on demand from those times.
+
+    Data arrays
+    -----------
+    times:  1D float array of R-peak times in seconds.
+    labels: 1D object array of per-interval labels (same length as times).
+            Alignment: labels[i] describes the interval between times[i] and
+            times[i+1]. The final element is present for alignment but unused.
+
+    Label lifecycle
+    ---------------
+    All label assignment is the sole responsibility of classify_ibi().
+    The ibi property is a pure computation and never mutates labels.
+    Call classify_ibi() after any mutation to times.
+
+    Relationship to views
+    ---------------------
+    CardioSeries.view() and CardioSeries.__getitem__() return CardioSeriesView
+    objects. Views do NOT inherit from CardioSeries — they use composition and
+    share metric methods via CardioMetricsMixin. Use CardioSeriesLike for type
+    annotations where either is acceptable.
+    """
+
+    def __init__(self, times: np.ndarray) -> None:
+        self.times = np.asarray(times, dtype=float)
+        self.labels = np.full(self.times.shape, "N", dtype=object)
+        self._pd: Optional["PhysioData"] = None
+        self._stream: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # Construction / detection
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_timeseries(
+        cls,
+        ts,
+        *,
+        min_peak_distance_ms: float = 300.0,
+        classify: bool = True,
+    ) -> "CardioSeries":
+        """
+        Detect R-peaks from an ECG TimeSeries and construct a CardioSeries.
+
+        Steps
+        -----
+        1. Estimate sampling rate from ts.times
+        2. Detect candidate peaks with scipy.signal.find_peaks
+        3. Apply a lightweight sub-sample timing correction
+        4. Initialise labels to "N"
+        5. Optionally classify IBIs via classify_ibi()
+
+        Parameters
+        ----------
+        ts:
+            ECG time series with .times and .values attributes.
+        min_peak_distance_ms:
+            Minimum expected R-R distance in milliseconds.
+        classify:
+            If True, run classify_ibi() after peak detection.
+        """
+        times = np.asarray(ts.times, dtype=float)
+        values = np.asarray(ts.values, dtype=float)
+
+        if times.size < 2 or values.size < 2:
+            logger.warning("ECG TimeSeries too short for peak detection.")
+            return cls(np.array([], dtype=float))
+
+        time_deltas = np.diff(times)
+        time_deltas = time_deltas[time_deltas > 0]
+        if time_deltas.size == 0:
+            raise ValueError(
+                "Cannot estimate sampling rate from ECG times (no positive deltas)."
+            )
+        sampling_rate_hz = 1.0 / float(np.mean(time_deltas))
+
+        min_distance_samples = max(
+            1, int((min_peak_distance_ms / 1000.0) * sampling_rate_hz)
+        )
+        peak_height_threshold = float(np.median(values) + 1.5 * np.std(values))
+
+        peak_indices, _ = signal.find_peaks(
+            values,
+            height=peak_height_threshold,
+            distance=min_distance_samples,
+        )
+
+        if peak_indices.size == 0:
+            logger.warning("No R-peaks detected.")
+            return cls(np.array([], dtype=float))
+
+        pre_values = values[np.clip(peak_indices - 1, 0, values.size - 1)]
+        post_values = values[np.clip(peak_indices + 1, 0, values.size - 1)]
+        peak_values = values[peak_indices]
+        local_contrast = np.maximum(
+            np.abs(peak_values - pre_values),
+            np.abs(post_values - peak_values),
+        )
+        local_contrast[local_contrast == 0] = 1e-12
+        correction_sec = (
+            (post_values - pre_values) / sampling_rate_hz / (2.0 * local_contrast)
+        )
+        peak_times = times[peak_indices] + correction_sec
+
+        series = cls(np.asarray(peak_times, dtype=float))
+        series.labels[:] = "N"
+        if classify:
+            series.classify_ibi()
+        return series
+
+    # ------------------------------------------------------------------
+    # IBI — pure computation, no side effects
+    # ------------------------------------------------------------------
+
+    @property
+    def ibi(self) -> np.ndarray:
+        """
+        Inter-beat intervals in seconds, with a trailing NaN for alignment.
+
+        len(ibi) == len(times). ibi[i] is the interval between times[i] and
+        times[i+1]. The final element is always NaN.
+
+        This property is a pure computation — it never mutates self.labels.
+        Call classify_ibi() after any mutation to times.
+        """
+        if self.times.size < 2:
+            return np.asarray([], dtype=float)
+        return np.concatenate([np.diff(self.times), np.array([np.nan], dtype=float)])
+
+    # ------------------------------------------------------------------
+    # Classification — sole owner of label state
+    # ------------------------------------------------------------------
+
+    def classify_ibi(
+        self,
+        *,
+        window_length: int = 51,
+        n_std: float = 4.0,
+        max_ibi_sec: float = 2.0,
+    ) -> None:
+        """
+        Classify IBIs and assign labels. This is the sole method that mutates
+        self.labels. Call it after any change to self.times.
+
+        Labels produced
+        ---------------
+        "N"   — normal
+        "L"   — long (above rolling upper threshold)
+        "S"   — short (below rolling lower threshold)
+        "TL"  — too long (> max_ibi_sec); excluded from statistics
+        "SL"  — short-then-long pattern
+        "SNS" — short-normal-short pattern
+        "T"   — degenerate (NaN or <= 0)
+
+        Parameters
+        ----------
+        window_length:
+            Size of the centered rolling window (beats) for local mean/std.
+        n_std:
+            Threshold multiplier: mean ± n_std × std defines S/L boundaries.
+        max_ibi_sec:
+            Absolute ceiling; any IBI above this is labeled TL before rolling
+            statistics are computed, so artifacts do not distort thresholds.
+        """
+        ibi_sec = self.ibi  # pure, no side effects
+        labels = self.labels
+        n = ibi_sec.size
+
+        if n == 0:
+            return
+
+        # Step 1: degenerate and too-long
+        degenerate = np.isnan(ibi_sec) | (ibi_sec <= 0)
+        labels[degenerate] = "T"
+        too_long = ibi_sec > max_ibi_sec
+        labels[too_long] = "TL"
+
+        # Step 2: IBI array for statistics (exclude T and TL)
+        ibi_stats = ibi_sec.astype(float, copy=True)
+        ibi_stats[degenerate | too_long] = np.nan
+        if ibi_stats.size >= 2 and np.isnan(ibi_stats[-1]):
+            last_valid = ibi_stats[~np.isnan(ibi_stats)]
+            if last_valid.size > 0:
+                ibi_stats[-1] = last_valid[-1]
+
+        if not np.any(~np.isnan(ibi_stats)):
+            return
+
+        # Step 3: short-series fallback
+        if n < window_length:
+            mean = np.nanmean(ibi_stats)
+            std = np.nanstd(ibi_stats)
+            lo, hi = mean - n_std * std, mean + n_std * std
+            for i in range(n):
+                if labels[i] in ("T", "TL"):
+                    continue
+                labels[i] = "L" if ibi_sec[i] > hi else "S" if ibi_sec[i] < lo else "N"
+            return
+
+        # Step 4: rolling statistics
+        half = window_length // 2
+        padded = np.pad(ibi_stats, (half, half), mode="edge")
+        windows = np.lib.stride_tricks.sliding_window_view(padded, window_length)
+        local_mean = np.nanmean(windows, axis=1)[:n]
+        local_std = np.nanstd(windows, axis=1)[:n]
+        lo = local_mean - n_std * local_std
+        hi = local_mean + n_std * local_std
+
+        # Step 5: pointwise classification
+        for i in range(n):
+            if labels[i] in ("T", "TL"):
+                continue
+            labels[i] = (
+                "L" if ibi_sec[i] > hi[i] else "S" if ibi_sec[i] < lo[i] else "N"
+            )
+
+        # Step 6: sequence heuristics
+        for i in range(n - 1):
+            if labels[i] == "S" and labels[i + 1] == "L":
+                labels[i] = "SL"
+        for i in range(n - 2):
+            if labels[i] == "S" and labels[i + 1] == "N" and labels[i + 2] == "S":
+                labels[i] = "SNS"
+
+        # Step 7: summary
+        unique, counts = np.unique(labels, return_counts=True)
+        logger.info(f"IBI classification summary (n_IBI={n}):")
+        for lab, cnt in zip(unique, counts):
+            logger.info(f"  {lab}: {cnt}")
+
+    # ------------------------------------------------------------------
+    # Editing / replacement
+    # ------------------------------------------------------------------
+
+    def replace_from_timeseries(
+        self,
+        ts,
+        *,
+        start: float,
+        end: float,
+        min_peak_distance_ms: float = 300.0,
+        classify: bool = True,
+    ) -> None:
+        """
+        Re-detect R-peaks inside [start, end] and merge with peaks outside.
+
+        Designed for interactive editing: keeps R-peaks outside the window,
+        replaces those inside with freshly detected ones, then optionally
+        re-runs global classification.
+        """
+        if start >= end:
+            raise ValueError("replace_from_timeseries: start must be < end")
+
+        if self.times.size == 0:
+            new = CardioSeries.from_timeseries(
+                ts, min_peak_distance_ms=min_peak_distance_ms, classify=classify
+            )
+            self.times = new.times
+            self.labels = new.labels
+            return
+
+        new = CardioSeries.from_timeseries(
+            ts, min_peak_distance_ms=min_peak_distance_ms, classify=False
+        )
+        new_labels = np.full(new.times.shape, "N", dtype=object)
+
+        keep = (self.times < start) | (self.times > end)
+        merged_times = np.concatenate([self.times[keep], new.times])
+        merged_labels = np.concatenate([self.labels[keep], new_labels])
+
+        if merged_times.size == 0:
+            self.times = merged_times
+            self.labels = merged_labels
+            return
+
+        order = np.argsort(merged_times)
+        self.times = merged_times[order]
+        self.labels = merged_labels[order]
+
+        if classify:
+            self.classify_ibi()
+
+    # ------------------------------------------------------------------
+    # Views / slicing
+    # ------------------------------------------------------------------
+
+    def __getitem__(self, epoch_label: str) -> "CardioSeriesView":
+        """
+        Return an epoch-restricted view using PhysioData.epochs.
+
+        Raises
+        ------
+        RuntimeError
+            If this CardioSeries is not linked to a PhysioData instance.
+        KeyError
+            If the requested epoch does not exist.
+        """
+        if self._pd is None:
+            raise RuntimeError(
+                "CardioSeries is not connected to a PhysioData instance. "
+                "Assign CardioSeries._pd = physiodata."
+            )
+        if epoch_label not in self._pd.epochs:
+            raise KeyError(f"No epoch '{epoch_label}' in PhysioData.")
+        ep = self._pd.epochs[epoch_label]
+        idx = np.where((self.times >= ep.start) & (self.times <= ep.end))[0]
+        view = CardioSeriesView(self, idx)
+        view._pd = self._pd
+        view._stream = self._stream
+        view._epoch = epoch_label
+        return view
+
+    def view(self, starttime: float, endtime: float) -> "CardioSeriesView":
+        """Return a zero-copy view restricted to [starttime, endtime]."""
+        idx = np.where((self.times >= starttime) & (self.times <= endtime))[0]
+        v = CardioSeriesView(self, idx)
+        v._pd = self._pd
+        v._stream = self._stream
+        v._epoch = None
+        return v
+
+    # ------------------------------------------------------------------
     # Epoch aggregation
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     def hrv_epoch_table(
         self,
         physiodata: "PhysioData",
     ) -> Tuple[np.ndarray, List[str], np.ndarray]:
         """
-        NumPy replacement for the pandas HRV epoch table.
+        Compute all HRV metrics for every active epoch in physiodata.
 
         Returns
         -------
-        labels : np.ndarray (n_epochs,), dtype=object
-            Epoch labels (row index equivalent).
-        cols : list[str]
-            Column names (metrics), ordered by METRIC_ORDER when present.
-        values : np.ndarray (n_epochs, n_metrics), dtype=float64
-            Metric values, NaN for missing.
+        labels : np.ndarray  (n_epochs,)  — epoch names
+        cols   : list[str]               — metric names in METRIC_ORDER
+        values : np.ndarray  (n_epochs, n_metrics)  — float64, NaN for missing
         """
         labels_list: List[Any] = []
         rows: List[Dict[str, float]] = []
@@ -866,14 +718,9 @@ class CardioSeries(HRVMetric):
         if not rows:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
 
-        # Determine columns
         keys = set().union(*(d.keys() for d in rows))
-        if hasattr(self, "METRIC_ORDER"):
-            cols = [c for c in self.METRIC_ORDER if c in keys]
-            extras = sorted(keys - set(cols))
-            cols.extend(extras)
-        else:
-            cols = sorted(keys)
+        cols = [c for c in self.METRIC_ORDER if c in keys]
+        cols.extend(sorted(keys - set(cols)))
 
         col_idx = {c: j for j, c in enumerate(cols)}
         values = np.full((len(rows), len(cols)), np.nan, dtype=float)
@@ -883,89 +730,50 @@ class CardioSeries(HRVMetric):
                 if j is not None:
                     values[i, j] = float(v)
 
-        labels = np.asarray(labels_list, dtype=object)
-        return labels, cols, values
+        return np.asarray(labels_list, dtype=object), cols, values
 
-    # ---------------------------------------------------------------------
-    # Internal utilities
-    # ---------------------------------------------------------------------
-
-    def _band_power_exact(
-        self,
-        freqs: np.ndarray,
-        power: np.ndarray,
-        f0: float,
-        f1: float,
-    ) -> float:
-        """
-        Compute band power by trapezoidal integration with endpoint interpolation.
-
-        Parameters
-        ----------
-        freqs:
-            Frequency axis (Hz), as returned by Welch.
-        power:
-            PSD values aligned to `freqs`.
-        f0, f1:
-            Band edges (Hz). Integration is performed over (f0, f1) with
-            endpoints included via linear interpolation.
-
-        Returns
-        -------
-        float
-            Band power scaled by 1000.0 to preserve the original code's output
-            scale. Returns NaN if inputs are empty or if the band contains no
-            frequencies.
-        """
-        if freqs.size == 0:
-            return np.nan
-        mask = (freqs > f0) & (freqs < f1)
-        if not np.any(mask):
-            return np.nan
-        p0 = np.interp(f0, freqs, power)
-        p1 = np.interp(f1, freqs, power)
-        f_band = np.concatenate(([f0], freqs[mask], [f1]))
-        p_band = np.concatenate(([p0], power[mask], [p1]))
-        return float(1000.0 * np.trapezoid(p_band, f_band))
+    def __repr__(self) -> str:
+        return f"CardioSeries(n={self.times.size}, stream={self._stream!r})"
 
 
-class CardioSeriesView(CardioSeries):
+# ======================================================================
+# CardioSeriesView — zero-copy view, composition not inheritance
+# ======================================================================
+
+
+class CardioSeriesView(CardioMetricsMixin):
     """
     Zero-copy view into a parent CardioSeries.
 
-    A `CardioSeriesView` does not own data arrays. Instead, it carries:
-    - `_parent`: reference to the parent `CardioSeries`
-    - `_idx`: integer indices into the parent arrays
+    Uses composition: holds a reference to the parent and an index array.
+    Does NOT inherit from CardioSeries — it cannot own data, classify IBIs,
+    or replace peaks. Methods that only make sense on the full series
+    (classify_ibi, replace_from_timeseries, from_timeseries, hrv_epoch_table)
+    are deliberately absent.
+
+    All HRV metric methods are inherited from CardioMetricsMixin and operate
+    correctly on the view's times and labels.
+
+    Use CardioSeriesLike for type annotations where either a CardioSeries or a
+    CardioSeriesView may be passed.
 
     Identity metadata
     -----------------
-    Views may carry additional identity metadata for downstream logic/UI:
-    - `_pd`: PhysioData linkage (propagated from parent)
-    - `_stream`: stream/band identifier
-    - `_epoch`: epoch label for views produced by epoch slicing (`__getitem__`)
-
-    Notes on behavior
-    -----------------
-    - Mutations to the parent's `times` or `labels` are reflected in the view.
-    - View-level methods that require contiguous numeric arrays may create a
-      temporary `CardioSeries` copy (e.g., Welch PSD).
+    _pd     : PhysioData linkage (propagated from parent)
+    _stream : band / stream identifier
+    _epoch  : epoch label (set when produced by CardioSeries.__getitem__)
     """
 
-    def __init__(self, parent: CardioSeries, indices: np.ndarray):
-        """
-        Parameters
-        ----------
-        parent:
-            The parent `CardioSeries` instance.
-        indices:
-            Indices into the parent arrays that define the view.
-        """
+    def __init__(self, parent: CardioSeries, indices: np.ndarray) -> None:
         self._parent = parent
         self._idx = np.asarray(indices, dtype=int)
-        # Identity metadata (assigned by parent/view logic)
-        self._pd: Optional[PhysioData] = parent._pd
+        self._pd: Optional["PhysioData"] = parent._pd
         self._stream: Optional[str] = parent._stream
         self._epoch: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # Data interface (composition, not ownership)
+    # ------------------------------------------------------------------
 
     @property
     def times(self) -> np.ndarray:
@@ -980,61 +788,26 @@ class CardioSeriesView(CardioSeries):
     @property
     def ibi(self) -> np.ndarray:
         """
-        View-local IBIs (seconds), aligned to view `times`.
-
-        Returns
-        -------
-        np.ndarray
-            IBIs derived from the view's `times`, with a trailing NaN to keep
-            alignment (len == len(times)).
-
-        Notes
-        -----
-        Pure computation — no label mutations. Consistent with the parent's
-        `ibi` property contract.
+        IBIs in seconds derived from this view's times, with a trailing NaN.
+        Pure computation — never mutates parent labels.
         """
         t = self.times
         if t.size < 2:
             return np.asarray([np.nan], dtype=float)
         return np.concatenate([np.diff(t), np.array([np.nan], dtype=float)])
 
+    # ------------------------------------------------------------------
+    # Slicing
+    # ------------------------------------------------------------------
+
     def view(self, starttime: float, endtime: float) -> "CardioSeriesView":
-        """
-        Create a sub-view from this view by time range.
-
-        Parameters
-        ----------
-        starttime:
-            Start time in seconds (inclusive).
-        endtime:
-            End time in seconds (inclusive).
-
-        Returns
-        -------
-        CardioSeriesView
-            Sub-view referencing the same parent.
-        """
+        """Create a sub-view restricted to [starttime, endtime]."""
         mask = (self.times >= starttime) & (self.times <= endtime)
-        sub_view = CardioSeriesView(self._parent, self._idx[mask])
-        sub_view._pd = self._pd
-        sub_view._stream = self._stream
-        sub_view._epoch = None
-        return sub_view
-
-    def welch_psd(self, **kwargs):
-        """
-        Compute Welch PSD for this view.
-
-        Implementation detail
-        ---------------------
-        Welch expects a contiguous numeric series. This method constructs a
-        temporary `CardioSeries` from the view's `times` and delegates to the
-        parent implementation.
-        """
-        tmp = CardioSeries(self.times)
-        tmp._pd = self._pd
-        tmp._stream = self._stream
-        return tmp.welch_psd(**kwargs)
+        sub = CardioSeriesView(self._parent, self._idx[mask])
+        sub._pd = self._pd
+        sub._stream = self._stream
+        sub._epoch = None
+        return sub
 
     def __repr__(self) -> str:
         return (

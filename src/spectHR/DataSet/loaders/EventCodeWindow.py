@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+
 class EventCodeWindow(QDialog):
     # Define a signal to emit the selected start and stop codes
     codes_selected = Signal(list, list)
@@ -86,7 +87,7 @@ class EventCodeWindow(QDialog):
         """Populate the all codes list with unique event codes."""
         for code in self.unique_event_codes:
             n = self.event_codes.count(code)
-            self.all_codes_list.addItem(str(f'{code} ({n})'))
+            self.all_codes_list.addItem(str(f"{code} ({n})"))
 
     def move_to_start(self):
         """Move selected items from all codes list to start codes list."""
@@ -103,9 +104,23 @@ class EventCodeWindow(QDialog):
         self.update_ok_button_state()
 
     def update_ok_button_state(self):
-        """Enable the OK button if the number of start and stop codes are equal."""
+        """Enable the OK button if the total appearances of start codes
+        equals the total appearances of stop codes."""
+
+        def total_appearances(listwidget):
+            total = 0
+            for i in range(listwidget.count()):
+                text = listwidget.item(i).text()
+                try:
+                    total += int(text.split("(")[1].rstrip(")"))
+                except (IndexError, ValueError):
+                    total += 1
+            return total
+
         self.ok_button.setEnabled(
-            self.start_codes_list.count() == self.stop_codes_list.count())
+            total_appearances(self.start_codes_list)
+            == total_appearances(self.stop_codes_list)
+        )
 
     def on_fullepoch(self):
         self.codes_selected.emit([], [])
@@ -113,12 +128,16 @@ class EventCodeWindow(QDialog):
 
     def on_ok(self):
         """Handle the OK button click event."""
-        start_codes = [int(self.start_codes_list.item(i).text().split(' ', 1)[0])
-                       for i in range(self.start_codes_list.count())]
-        stop_codes = [int(self.stop_codes_list.item(i).text().split(' ', 1)[0])
-                      for i in range(self.stop_codes_list.count())]
+        start_codes = [
+            int(self.start_codes_list.item(i).text().split(" ", 1)[0])
+            for i in range(self.start_codes_list.count())
+        ]
+        stop_codes = [
+            int(self.stop_codes_list.item(i).text().split(" ", 1)[0])
+            for i in range(self.stop_codes_list.count())
+        ]
 
-    # store on instance
+        # store on instance
         self.start_codes = start_codes
         self.stop_codes = stop_codes
         # Emit the selected start and stop codes
