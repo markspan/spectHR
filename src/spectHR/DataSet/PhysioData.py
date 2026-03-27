@@ -231,7 +231,7 @@ class PhysioData:
         for band in bands:
             self.active_band = band
             logger.info(f"Preprocessing ECG band '{band}'")
-
+            self.has_ecg = True
             ecg_ts = self["ecg"].timeseries
 
             # 1. Filtering

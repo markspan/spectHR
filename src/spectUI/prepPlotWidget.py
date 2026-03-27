@@ -1,7 +1,6 @@
 """
 spectUI.PrepPlotWidget
 ======================
-
 Interactive ECG pre-processing and annotation widget for the spectHR/spectUI ecosystem.
 
 This module provides a Qt widget that embeds a Matplotlib figure for:
@@ -30,22 +29,18 @@ A `PhysioData` instance is expected to provide:
 - data["ecg"].timeseries : TimeSeries
     * `.times`: 1D float array (seconds)
     * `.values`: 1D float array (signal units)
-
 - data.timeseries : Dict[str, TimeSeries]
     * Optional breathing signals exist and are identified by name.startswith("RSP")
       (the first matching series is used)
-
 - data.hrv : Optional[CardioSeries]
     * R-peak times and labels; used for editing/visualization
-
 - data.epochs : Dict[str, Epoch-like]
     Each epoch object must provide:
-        * `active: bool`
-        * `start: float` (seconds)
-        * `end: float` (seconds)
+    * `active: bool`
+    * `start: float` (seconds)
+    * `end: float` (seconds)
     Optionally:
-        * `is_valid: bool` (if present, epochs with is_valid=False are ignored)
-
+    * `is_valid: bool` (if present, epochs with is_valid=False are ignored)
 - data.view : ViewState
     This widget will attach `data.view` if not present.
 
@@ -85,7 +80,6 @@ from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries, CardioSeriesView
 from spectUI.LineHandler import LineHandler
 
-
 # ======================================================================
 # Type aliases
 # ======================================================================
@@ -93,10 +87,10 @@ from spectUI.LineHandler import LineHandler
 TimeSeconds = float
 EpochName = str
 
-
 # ======================================================================
 # View state & helpers
 # ======================================================================
+
 
 @dataclass
 class AxisYState:
@@ -111,6 +105,7 @@ class AxisYState:
     ymin, ymax:
         Manual limits when auto is False.
     """
+
     auto: bool = True
     ymin: Optional[float] = None
     ymax: Optional[float] = None
@@ -130,19 +125,19 @@ class ViewState:
     initial_xmin, initial_xmax:
         Window boundaries captured at drag start.
     y:
-        Per-signal y axis state.
-        Keys used here: 'ecg', 'br'
+        Per-signal y axis state. Keys used here: 'ecg', 'br'
     """
+
     x_min: TimeSeconds
     x_max: TimeSeconds
-
     drag_mode: Optional[str] = None
     initial_xmin: Optional[TimeSeconds] = None
     initial_xmax: Optional[TimeSeconds] = None
-
-    y: Dict[str, AxisYState] = field(default_factory=lambda: {
-        "br": AxisYState(),
-    })
+    y: Dict[str, AxisYState] = field(
+        default_factory=lambda: {
+            "br": AxisYState(),
+        }
+    )
 
     def width(self) -> TimeSeconds:
         """Return width of the visible x window."""
@@ -157,6 +152,7 @@ class ViewState:
 # Epoch rendering helper (reusable)
 # ======================================================================
 
+
 def draw_interval_arrows(
     *,
     ax: Axes,
@@ -165,22 +161,22 @@ def draw_interval_arrows(
     lane_step: float = 0.03,
     color: str = "green",
     mutation_scale: float = 18.0,
-    linewidth: float = .5,
+    linewidth: float = 0.5,
     fontsize: float = 8.0,
 ) -> None:
     """
     Draw horizontally stacked interval arrows with centered labels.
 
-    Overlapping intervals are assigned to separate "lanes" (rows) so that arrows
-    do not share the same y-position.
+    Overlapping intervals are assigned to separate "lanes" (rows) so that
+    arrows do not share the same y-position.
 
     Parameters
     ----------
     ax:
         Target axis (ECG axis).
     intervals:
-        Iterable of (name, x0, x1) tuples in seconds. Caller is expected to have
-        clipped intervals to view range if desired.
+        Iterable of (name, x0, x1) tuples in seconds. Caller is expected to
+        have clipped intervals to view range if desired.
     base_y:
         First lane y position, in axis coordinates (fraction).
     lane_step:
@@ -188,8 +184,8 @@ def draw_interval_arrows(
     color:
         Arrow and text color.
     mutation_scale:
-        Arrow head size in display units (points). This is the Matplotlib control
-        that most closely maps to "pixel-ish" sizing.
+        Arrow head size in display units (points). This is the Matplotlib
+        control that most closely maps to "pixel-ish" sizing.
     linewidth:
         Arrow line width.
     fontsize:
@@ -201,7 +197,6 @@ def draw_interval_arrows(
 
     # lane_ends holds the last end-time assigned per lane (in data units)
     lane_ends: List[TimeSeconds] = []
-
     for name, x0, x1 in intervals_sorted:
         # Find first lane that does not overlap
         lane_idx = None
@@ -210,13 +205,11 @@ def draw_interval_arrows(
                 lane_idx = i
                 lane_ends[i] = x1
                 break
-
         if lane_idx is None:
             lane_idx = len(lane_ends)
             lane_ends.append(x1)
 
         y = base_y + lane_idx * lane_step
-
         arrow = FancyArrowPatch(
             (x0, y),
             (x1, y),
@@ -228,7 +221,6 @@ def draw_interval_arrows(
             clip_on=False,
         )
         ax.add_patch(arrow)
-
         ax.text(
             0.5 * (x0 + x1),
             y,
@@ -252,11 +244,15 @@ def draw_interval_arrows(
 # R-top controller
 # ======================================================================
 
+
 class RTopController:
     """
     Encapsulates all mutations & queries on a CardioSeries (R-top data).
 
     This class is purely about *data*: no plotting, no Qt.
+
+    After any mutation to R-peak times, `classify_ibi()` is called
+    automatically so that labels always reflect the current IBI values.
     """
 
     def __init__(self, rtops: CardioSeries) -> None:
@@ -296,33 +292,52 @@ class RTopController:
     def move(self, old_t: float, new_t: float) -> None:
         """
         Move the closest R-top around old_t to new_t (seconds).
+
+        Reclassifies all IBIs after the move so that label colours
+        reflect the updated intervals immediately on redraw.
         """
         idx = self._closest_idx(old_t)
         self.rtops.times[idx] = float(new_t)
         self._sort_by_time()
+        self.rtops.classify_ibi()  # labels must reflect the new IBI values
 
     def add(self, t: float, label: str = "N") -> None:
         """
         Insert a new R-top at time t with label.
+
+        Reclassifies all IBIs after insertion so that the new interval
+        and its neighbours are correctly labelled.
 
         Parameters
         ----------
         t:
             Time in seconds.
         label:
-            Label string (default: "N").
+            Initial label string (default: "N"). Will be overwritten by
+            classification unless the series is too short to classify.
         """
-        self.rtops.times = np.concatenate([self.rtops.times, np.array([t], dtype=float)])
-        self.rtops.labels = np.concatenate([self.rtops.labels, np.array([label], dtype=object)])
+        self.rtops.times = np.concatenate(
+            [self.rtops.times, np.array([t], dtype=float)]
+        )
+        self.rtops.labels = np.concatenate(
+            [self.rtops.labels, np.array([label], dtype=object)]
+        )
         self._sort_by_time()
+        self.rtops.classify_ibi()  # labels must reflect the new IBI values
 
     def delete(self, t: float) -> None:
-        """Delete the R-top closest to t."""
+        """
+        Delete the R-top closest to t.
+
+        Reclassifies all IBIs after deletion so that the merged interval
+        is correctly labelled.
+        """
         idx = self._closest_idx(t)
         mask = np.ones(self.rtops.times.shape[0], dtype=bool)
         mask[idx] = False
         self.rtops.times = self.rtops.times[mask]
         self.rtops.labels = self.rtops.labels[mask]
+        self.rtops.classify_ibi()  # labels must reflect the merged interval
 
     def next_non_normal(self, after_time: float) -> Optional[float]:
         """
@@ -353,10 +368,11 @@ class RTopController:
 # Overview window
 # ======================================================================
 
+
 class OverviewWindow:
     """
-    Manages the overview rectangle that indicates the current zoom
-    window in the overview Axes.
+    Manages the overview rectangle that indicates the current zoom window
+    in the overview Axes.
     """
 
     def __init__(self, ax: Axes, x_min: float, x_max: float) -> None:
@@ -396,6 +412,7 @@ class OverviewWindow:
 # ======================================================================
 # PrepPlotWidget (UI + plotting)
 # ======================================================================
+
 
 class PrepPlotWidget(QWidget):
     """
@@ -474,7 +491,6 @@ class PrepPlotWidget(QWidget):
         layout.addWidget(self.canvas)
         layout.addWidget(self.navigation_bar)
         self.setLayout(layout)
-
         self.setVisible(False)
 
     # ------------------------------------------------------------------
@@ -518,7 +534,6 @@ class PrepPlotWidget(QWidget):
     def _compact_layout(self) -> None:
         """
         Reduce vertical spacing between subplots.
-
         Call after axes exist and after major labels are configured.
         """
         self.fig.subplots_adjust(
@@ -526,7 +541,7 @@ class PrepPlotWidget(QWidget):
             right=0.995,
             top=0.9,
             bottom=0.05,
-            hspace=0.08,   # tight
+            hspace=0.08,  # tight
         )
 
     def _create_navigation_bar(self) -> QWidget:
@@ -550,12 +565,13 @@ class PrepPlotWidget(QWidget):
                 icon = qta.icon(icon_name)
                 if rotate:
                     pixmap = icon.pixmap(QSize(48, 48))
-                    transform = QTransform().rotate(rotate if isinstance(rotate, int) else 0)
+                    transform = QTransform().rotate(
+                        rotate if isinstance(rotate, int) else 0
+                    )
                     rotated_pixmap = pixmap.transformed(transform)
                     icon = QIcon(rotated_pixmap)
                 btn.setIcon(icon)
                 btn.setIconSize(QSize(48, 48))
-
             btn.setFlat(True)
             btn.setStyleSheet(
                 """
@@ -572,14 +588,22 @@ class PrepPlotWidget(QWidget):
                 btn.setToolTip(tooltip)
             return btn
 
-        begin = make_btn("fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start")
+        begin = make_btn(
+            "fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"
+        )
         left = make_btn("fa6s.backward", self.pan_left, tooltip="Pan Left")
-        prev = make_btn("fa6s.square-caret-left", self.prev, tooltip="Previous non-normal R-top")
+        prev = make_btn(
+            "fa6s.square-caret-left", self.prev, tooltip="Previous non-normal R-top"
+        )
         zoom_in = make_btn("ei.zoom-in", self.zoom_in, tooltip="Zoom In")
         zoom_out = make_btn("ei.zoom-out", self.zoom_out, tooltip="Zoom Out")
-        nxt = make_btn("fa6s.square-caret-right", self.next, tooltip="Next non-normal R-top")
+        nxt = make_btn(
+            "fa6s.square-caret-right", self.next, tooltip="Next non-normal R-top"
+        )
         right = make_btn("fa6s.forward", self.pan_right, tooltip="Pan Right")
-        end = make_btn("fa6s.right-to-bracket", self.go_to_end, rotate=False, tooltip="Goto End")
+        end = make_btn(
+            "fa6s.right-to-bracket", self.go_to_end, rotate=False, tooltip="Goto End"
+        )
 
         nav_layout = QHBoxLayout()
         nav_layout.setContentsMargins(0, 0, 0, 0)
@@ -631,7 +655,9 @@ class PrepPlotWidget(QWidget):
         self.data = data
 
         # Attach R-top controller if available
-        self.rtop_ctrl = RTopController(data.hrv) if getattr(data, "hrv", None) is not None else None
+        self.rtop_ctrl = (
+            RTopController(data.hrv) if getattr(data, "hrv", None) is not None else None
+        )
 
         self.setVisible(True)
         plt.ioff()  # avoid pop-up windows
@@ -640,7 +666,6 @@ class PrepPlotWidget(QWidget):
         ecg = self.ecg_series
         x_min_default = float(np.min(ecg.times))
         x_max_default = float(np.max(ecg.times))
-
         xmin = float(x_min) if x_min is not None else x_min_default
         xmax = float(x_max) if x_max is not None else x_max_default
 
@@ -698,7 +723,6 @@ class PrepPlotWidget(QWidget):
     def _reuse_axes_from_figure(self) -> None:
         """
         Reuse existing figure's axes (if caller passed a figure).
-
         Expected:
         - 2 axes: ECG and overview
         """
@@ -706,7 +730,9 @@ class PrepPlotWidget(QWidget):
         if len(axes) == 2:
             self.ax_ecg, self.ax_overview = axes
         else:
-            raise RuntimeError("Unexpected number of axes in provided figure; expected 2 (ECG + overview).")
+            raise RuntimeError(
+                "Unexpected number of axes in provided figure; expected 2 (ECG + overview)."
+            )
 
     def _setup_matplotlib_canvas(self) -> None:
         """
@@ -719,7 +745,7 @@ class PrepPlotWidget(QWidget):
         # Hide toolbar/header for embedded use (safe if attributes exist)
         try:
             self.fig.canvas.toolbar_visible = False  # type: ignore[attr-defined]
-            self.fig.canvas.header_visible = False   # type: ignore[attr-defined]
+            self.fig.canvas.header_visible = False  # type: ignore[attr-defined]
         except Exception:
             pass
 
@@ -751,10 +777,18 @@ class PrepPlotWidget(QWidget):
         if self._mpl_cid_key_press is not None:
             self.fig.canvas.mpl_disconnect(self._mpl_cid_key_press)
 
-        self._mpl_cid_press = self.fig.canvas.mpl_connect("button_press_event", self._on_press)
-        self._mpl_cid_move = self.fig.canvas.mpl_connect("motion_notify_event", self._on_motion)
-        self._mpl_cid_release = self.fig.canvas.mpl_connect("button_release_event", self._on_release)
-        self._mpl_cid_key_press = self.fig.canvas.mpl_connect("key_press_event", self._on_key_press)
+        self._mpl_cid_press = self.fig.canvas.mpl_connect(
+            "button_press_event", self._on_press
+        )
+        self._mpl_cid_move = self.fig.canvas.mpl_connect(
+            "motion_notify_event", self._on_motion
+        )
+        self._mpl_cid_release = self.fig.canvas.mpl_connect(
+            "button_release_event", self._on_release
+        )
+        self._mpl_cid_key_press = self.fig.canvas.mpl_connect(
+            "key_press_event", self._on_key_press
+        )
 
     # ------------------------------------------------------------------
     # Rendering pipeline
@@ -771,17 +805,13 @@ class PrepPlotWidget(QWidget):
 
         # ECG is the base layer
         self._draw_ecg()
-
         # Epoch annotations in axis coords above the ECG (must be after ECG clears)
         self._draw_epochs()
-
         # Breathing overlay (twinx) is drawn after ECG so it can be stacked "under" ECG
         self._draw_breathing()
-
         # R-tops and IBI arrows should be on top of everything
         if self.rtop_ctrl is not None:
             self._draw_rtops_and_ibis()
-
         # Overview plot last
         self._draw_overview()
 
@@ -795,8 +825,8 @@ class PrepPlotWidget(QWidget):
         ---------
         - ECG y-scaling is always automatic (no manual zoom or pan).
         - Keyboard y-controls never affect ECG.
-        - After autoscaling, the visible y-range is shifted upward
-        to visually separate ECG from annotations and breathing.
+        - After autoscaling, the visible y-range is shifted upward to visually
+          separate ECG from annotations and breathing.
         """
         assert self.ax_ecg is not None
         assert self.data is not None
@@ -834,7 +864,7 @@ class PrepPlotWidget(QWidget):
         # Breathing present → lift ECG upward
         # ------------------------------------------------------------
         self.ax_ecg.relim()
-        self.ax_ecg.autoscale(enable=True, axis="y")  # <-- correct API
+        self.ax_ecg.autoscale(enable=True, axis="y")
 
         # ------------------------------------------------------------------
         # Shift ECG upward for visual separation
@@ -846,7 +876,6 @@ class PrepPlotWidget(QWidget):
             self.ax_ecg.set_ylim(y0 - dy, y1 - dy)
 
         # If breathing exists below, hide ECG x-axis
-        # (use ax_br if you are not using twinx; use your own flag accordingly)
         if getattr(self, "_ax_br_twin", None) is not None:
             self.ax_ecg.get_xaxis().set_visible(False)
             self.ax_ecg.spines["bottom"].set_visible(False)
@@ -879,13 +908,14 @@ class PrepPlotWidget(QWidget):
 
         ax_ecg = self.ax_ecg
         self._ax_br_twin = ax_ecg.twinx()
-        #--------------------------------------------------------------
+
         self._draw_phase_backgrounds(
             self.ax_ecg,
             phase_prefix="inh",
             color="#ADD8E6",
             alpha=0.25,
         )
+
         ax_br = self._ax_br_twin
         ax_br.plot(
             ts.times,
@@ -935,31 +965,26 @@ class PrepPlotWidget(QWidget):
         """
         if self.data is None or not hasattr(self.data, "phases"):
             return
-
         band = self.data.active_band
         if band is None:
             return
-
         key = f"{phase_prefix}-{band}"
         phase = self.data.phases.get(key)
-
         if phase is None or not phase.active:
             return
-
         for start, end in phase.intervals:
             ax.axvspan(
                 start,
                 end,
                 color=color,
                 alpha=alpha,
-                zorder=0,      # behind signals
+                zorder=0,  # behind signals
                 linewidth=0,
             )
 
     def _draw_epochs(self) -> None:
         """
         Draw dataset epochs as stacked horizontal arrows above the ECG plot.
-
         Overlapping epochs are placed on separate vertical lanes.
         """
         assert self.ax_ecg is not None
@@ -972,21 +997,15 @@ class PrepPlotWidget(QWidget):
         x_view_min, x_view_max = self.data.view.x_min, self.data.view.x_max
 
         visible: List[Tuple[EpochName, TimeSeconds, TimeSeconds]] = []
-
         for name, ep in self.data.epochs.items():
-            # Active check (required)
             if not getattr(ep, "active", False):
                 continue
-
-            # Optional is_valid support (your earlier code used this)
             if hasattr(ep, "is_valid") and not getattr(ep, "is_valid", True):
                 continue
-
             x0 = max(float(ep.start), x_view_min)
             x1 = min(float(ep.end), x_view_max)
             if x1 <= x0:
                 continue
-
             visible.append((name, x0, x1))
 
         if not visible:
@@ -999,7 +1018,7 @@ class PrepPlotWidget(QWidget):
             lane_step=0.03,
             color="green",
             mutation_scale=18.0,
-            linewidth=.5,
+            linewidth=0.5,
             fontsize=8.0,
         )
 
@@ -1023,7 +1042,6 @@ class PrepPlotWidget(QWidget):
             self.data.view.x_min - 1,
             self.data.view.x_max + 1,
         )
-
         times = rt_view.times
         labels = rt_view.labels
         ibi = rt_view.ibi  # last is NaN
@@ -1047,12 +1065,11 @@ class PrepPlotWidget(QWidget):
         # --------------------------------------------------
         # IBI arrows + labels (AXIS coordinates)
         # --------------------------------------------------
-        y_axis = .985  # axis fraction, slightly above ECG trace
+        y_axis = 0.985  # axis fraction, slightly above ECG trace
 
         for i in range(times.size):
             if i >= ibi.size:
                 continue
-
             ibi_val = float(ibi[i])
             if np.isnan(ibi_val) or ibi_val <= 0.0:
                 continue
@@ -1113,7 +1130,6 @@ class PrepPlotWidget(QWidget):
         assert self.data is not None and self.data.view is not None
 
         ecg = self.ecg_series
-
         self.ax_overview.clear()
         self.ax_overview.plot(
             ecg.times,
@@ -1149,7 +1165,6 @@ class PrepPlotWidget(QWidget):
         global_min = float(np.min(ecg.times))
         global_max = float(np.max(ecg.times))
         width = x_max - x_min
-
         x_min = max(global_min, x_min)
         x_max = min(global_max, x_min + width)
         return x_min, x_max
@@ -1182,14 +1197,18 @@ class PrepPlotWidget(QWidget):
         """Pan window left by one window width."""
         assert self.data is not None and self.data.view is not None
         width = self.data.view.width()
-        new_min, new_max = self._constrained_window(self.data.view.x_min - width, self.data.view.x_max - width)
+        new_min, new_max = self._constrained_window(
+            self.data.view.x_min - width, self.data.view.x_max - width
+        )
         self._set_window(new_min, new_max)
 
     def pan_right(self) -> None:
         """Pan window right by one window width."""
         assert self.data is not None and self.data.view is not None
         width = self.data.view.width()
-        new_min, new_max = self._constrained_window(self.data.view.x_min + width, self.data.view.x_max + width)
+        new_min, new_max = self._constrained_window(
+            self.data.view.x_min + width, self.data.view.x_max + width
+        )
         self._set_window(new_min, new_max)
 
     def go_to_start(self) -> None:
@@ -1239,11 +1258,9 @@ class PrepPlotWidget(QWidget):
         Returns
         -------
         Optional[str]
-            "ecg" for the main ECG axis,
-            "br"  for the breathing overlay axis,
-            None  otherwise.
+            "ecg" for the main ECG axis, "br" for the breathing overlay axis,
+            None otherwise.
         """
-
         if ax is self._ax_br_twin:
             return "br"
         return None
@@ -1251,11 +1268,9 @@ class PrepPlotWidget(QWidget):
     def _autoscale_visible_y(self, ax: Axes) -> None:
         """
         Autoscale y-axis using only data visible in the current x-window.
-
         This is used for '=' key.
         """
         assert self.data is not None and self.data.view is not None
-
         x0, x1 = self.data.view.x_min, self.data.view.x_max
 
         if ax is self.ax_ecg:
@@ -1270,15 +1285,12 @@ class PrepPlotWidget(QWidget):
         mask = (ts.times >= x0) & (ts.times <= x1)
         if not np.any(mask):
             return
-
         y = ts.values[mask]
         ymin, ymax = float(np.min(y)), float(np.max(y))
-
         if ymin == ymax:
             eps = 1e-6 if ymin == 0 else abs(ymin) * 1e-3
             ymin -= eps
             ymax += eps
-
         ax.autoscale(enable=False, axis="y")
         ax.set_ylim(ymin, ymax)
 
@@ -1297,11 +1309,10 @@ class PrepPlotWidget(QWidget):
     def _on_key_press(self, event) -> None:
         """
         Keyboard handling for y-axis scaling:
-
         - SPACE: reset y autoscale for the hovered axis (ECG or breathing)
-        - '='   : autoscale y based on visible x window
-        - '+'   : zoom y in
-        - '-'   : zoom y out
+        - '='  : autoscale y based on visible x window
+        - '+'  : zoom y in
+        - '-'  : zoom y out
         - up/down: pan y
         """
         if self.data is None or self.data.view is None:
@@ -1310,13 +1321,11 @@ class PrepPlotWidget(QWidget):
         ax = self._active_y_axis(event)
         if ax is None:
             return
-
         key = self._axis_key(ax)
         if key is None:
             return
 
         ystate = self.data.view.y[key]
-        
         ax = event.inaxes
 
         if event.key == " ":
@@ -1349,31 +1358,19 @@ class PrepPlotWidget(QWidget):
             if ax is self.ax_ecg:
                 # ECG: no y-zoom
                 return
-
-            # Ensure manual mode
             if ystate.auto:
                 y0, y1 = ax.get_ylim()
                 ystate.auto = False
                 ystate.ymin = y0
                 ystate.ymax = y1
-
             ymin = ystate.ymin
             ymax = ystate.ymax
             height = ymax - ymin
-
             if height <= 0:
                 return
-
-            # Zoom factor
-            if event.key == "+":
-                scale = 0.8   # zoom in
-            else:
-                scale = 1.25  # zoom out
-
-            # Anchor ymin, scale only upward
+            scale = 0.8 if event.key == "+" else 1.25
             new_height = height * scale
             ystate.ymax = ymin + new_height
-
             self.redraw()
             return
 
@@ -1384,7 +1381,6 @@ class PrepPlotWidget(QWidget):
             shift = 0.15 * height
         else:
             return
-
         ystate.ymin += shift
         ystate.ymax += shift
         self.redraw()
@@ -1392,7 +1388,6 @@ class PrepPlotWidget(QWidget):
     def _on_press(self, event) -> None:
         """
         Matplotlib mouse press callback.
-
         - If click on overview: start dragging window.
         - If in Add mode and on ECG axis: add a new R-top at click time.
         """
@@ -1406,7 +1401,6 @@ class PrepPlotWidget(QWidget):
             self.data.view.initial_xmin = self.data.view.x_min
             self.data.view.initial_xmax = self.data.view.x_max
             width = self.data.view.width()
-
             if abs(event.xdata - self.data.view.x_min) < 0.3 * width:
                 self.data.view.drag_mode = "left"
             elif abs(event.xdata - self.data.view.x_max) < 0.3 * width:
@@ -1427,7 +1421,6 @@ class PrepPlotWidget(QWidget):
     def _on_motion(self, event) -> None:
         """
         Matplotlib mouse motion callback.
-
         - Tracks hovered axis (for key interactions)
         - Updates overview window rectangle during drag
         """
@@ -1440,9 +1433,12 @@ class PrepPlotWidget(QWidget):
             return
 
         if event.inaxes is self.ax_overview and self.data.view.drag_mode is not None:
-            if event.xdata is None or self.data.view.initial_xmin is None or self.data.view.initial_xmax is None:
+            if (
+                event.xdata is None
+                or self.data.view.initial_xmin is None
+                or self.data.view.initial_xmax is None
+            ):
                 return
-
             width = self.data.view.initial_xmax - self.data.view.initial_xmin
             if self.data.view.drag_mode == "left":
                 x_min = min(event.xdata, self.data.view.x_max - 0.1)
@@ -1451,22 +1447,25 @@ class PrepPlotWidget(QWidget):
                 x_min = self.data.view.x_min
                 x_max = max(event.xdata, self.data.view.x_min + 0.1)
             else:
-                dx = event.xdata - 0.5 * (self.data.view.initial_xmin + self.data.view.initial_xmax)
+                dx = event.xdata - 0.5 * (
+                    self.data.view.initial_xmin + self.data.view.initial_xmax
+                )
                 x_min = self.data.view.initial_xmin + dx
                 x_max = self.data.view.initial_xmax + dx
-
             x_min, x_max = self._constrained_window(x_min, x_max)
             self.data.view.x_min = x_min
             self.data.view.x_max = x_max
-
             if self.overview_window is not None:
                 self.overview_window.set_window(x_min, x_max)
-
             self.canvas.draw_idle()
 
     def _on_release(self, event) -> None:
         """Finish overview dragging and redraw full plot."""
-        if event.inaxes is self.ax_overview and self.data is not None and self.data.view is not None:
+        if (
+            event.inaxes is self.ax_overview
+            and self.data is not None
+            and self.data.view is not None
+        ):
             self.data.view.drag_mode = None
             self.redraw()
 
@@ -1475,7 +1474,7 @@ class PrepPlotWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _on_line_drag(self, old_x: float, new_x: float) -> None:
-        """Called when a R-top line is dragged."""
+        """Called when a R-top line is dragged to a new position."""
         if self.rtop_ctrl is None:
             return
         self.rtop_ctrl.move(old_x, new_x)
@@ -1494,7 +1493,7 @@ class PrepPlotWidget(QWidget):
 
     @staticmethod
     def _style_axis_clean(ax: Axes) -> None:
-        """Hide y-axis and unnecessary spines.""" 
+        """Hide y-axis and unnecessary spines."""
         ax.get_yaxis().set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)

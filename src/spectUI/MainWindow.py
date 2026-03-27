@@ -455,7 +455,7 @@ class MainWindow(QMainWindow):
             # Single band → behave exactly as before
             # --------------------------------------------------
             self.dataset = dataset
-            if dataset.has_ecg:
+            if hasattr(dataset, "has_ecg") and dataset.has_ecg:
                 self.show_preprocessing_plot(self.dataset)
                 self.ui.Views.setTabVisible(0, True)
             else:
