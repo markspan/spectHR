@@ -1,365 +1,319 @@
 > **⚠️ CAUTION:**
-> <p style="color: red;">This project is work in progress. It can not be used for data analysis yet. Breathing and blood pressure data are totally untested/not yet implemented.</p>
-- [spectHR: An Interactive Heart Rate Variability (HRV) Analysis Tool](#specthr-an-interactive-heart-rate-variability-hrv-analysis-tool)
+> This project is a work in progress. Blood pressure analysis is not yet implemented. Breathing signal extraction and visualization are functional but should be treated as experimental.
+
+---
+
+- [spectHR: An Interactive HRV Analysis Tool](#specthr-an-interactive-hrv-analysis-tool)
   - [Overview](#overview)
   - [Features](#features)
   - [How It Works](#how-it-works)
     - [Inputs](#inputs)
     - [Workflow](#workflow)
     - [Outputs](#outputs)
-- [spectHR - Cardiovascular Spectral Analysis Toolkit](#specthr---cardiovascular-spectral-analysis-toolkit)
-  - [Features](#features-1)
-  - [Breathing Signal Extraction](#breathing-signal-extraction)
-    - [Method Overview](#method-overview)
-    - [Assumptions](#assumptions)
-    - [Requirements](#requirements)
-    - [Parameters used in the classification:](#parameters-used-in-the-classification)
-      - [Tw (Window Size):](#tw-window-size)
-      - [Nsd (Number of Standard Deviations):](#nsd-number-of-standard-deviations)
-      - [Tmax (Maximum Interval Threshold):](#tmax-maximum-interval-threshold)
-    - [How These Parameters Influence the Function](#how-these-parameters-influence-the-function)
-      - [Calculation of Dynamic Thresholds:](#calculation-of-dynamic-thresholds)
-      - [Absolute Threshold (Tmax):](#absolute-threshold-tmax)
-      - [Impact on Classification:](#impact-on-classification)
-      - [Summary of Parameter Roles](#summary-of-parameter-roles)
-    - [Available Modes](#available-modes)
-  - [Poincaré Plots](#poincaré-plots)
-    - [How It Works](#how-it-works-1)
-    - [Key Features](#key-features)
-    - [Parameters Calculated from Poincaré Plots](#parameters-calculated-from-poincaré-plots)
-      - [SD1 (Short-term Variability)](#sd1-short-term-variability)
-      - [SD2 (Long-term Variability)](#sd2-long-term-variability)
-      - [SD2/SD1 Ratio](#sd2sd1-ratio)
-      - [Ellipse Fitting](#ellipse-fitting)
-    - [Interpretation of Poincaré Plots](#interpretation-of-poincaré-plots)
-  - [Power Spectral Density (PSD)](#power-spectral-density-psd)
-    - [Welch’s Method for Power Spectral Density (PSD)](#welchs-method-for-power-spectral-density-psd)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [The Application Tabs in Detail](#the-application-tabs-in-detail)
+  - [PreProcessing Tab](#preprocessing-tab)
+  - [IBI Series Tab](#ibi-series-tab)
+  - [Poincaré Tab](#poincaré-tab)
+  - [Epochs Tab](#epochs-tab)
+  - [PSD Tab](#psd-tab)
+  - [Parameters Tab](#parameters-tab)
+- [Data Formats](#data-formats)
+- [IBI Classification](#ibi-classification)
+  - [Labels](#labels)
+  - [Classification Parameters](#classification-parameters)
+- [Breathing Signal Extraction](#breathing-signal-extraction)
+- [Poincaré Plots](#poincaré-plots)
+- [Power Spectral Density (PSD)](#power-spectral-density-psd)
+- [Installation and Running](#installation-and-running)
+  - [Windows](#windows)
+  - [macOS](#macos)
+- [Workspace Configuration](#workspace-configuration)
+- [Contributing](#contributing)
+- [License](#license)
 
-# spectHR: An Interactive Heart Rate Variability (HRV) Analysis Tool
+---
+
+# spectHR: An Interactive HRV Analysis Tool
 
 ## Overview
 
-The **spectHR program** is an interactive tool designed to assist in the analysis of heart rate variability (HRV) data. It provides a graphical user interface (GUI) using Qt to explore, preprocess, and visualize HRV data. The app organizes its features into multiple tabs, each focusing on a specific aspect of HRV analysis.
+**spectHR** is an interactive desktop application for Heart Rate Variability (HRV) analysis. It provides a graphical interface built with Qt and Matplotlib for exploring, preprocessing, and analyzing ECG-derived HRV data. The application is designed for researchers and students who need a hands-on, visual workflow — no programming required to use it.
 
-I will try to convey information here, hoping others can extend the capabilities of the program. 
+The project consists of two layers:
+
+- **spectHR** — the analysis library (`src/spectHR/`). Handles data loading, signal processing, R-peak detection, IBI classification, and HRV metric computation.
+- **spectUI** — the Qt application (`src/spectUI/`). Provides the interactive GUI built on top of the library.
 
 ## Features
 
-1. **PreProcessing Tab**
-   - Provides tools to preprocess HRV data, such as cleaning and inspecting inter-beat intervals (IBI).
-   - Displays a customizable GUI for manipulating the dataset.
-
-2. **IBI series Tab**
-   - Visualizes the IBI as heartrate data.
-
-3. **Poincare Tab**
-   - Visualizes HRV data using Poincaré plots, which highlight the relationships between successive IBIs.
-   - Ideal for assessing nonlinear dynamics in heart rate data.
-
-4. **Descriptives Tab**
-   - Computes detailed descriptive statistics for IBIs, grouped by epochs.
-   - Includes metrics such as mean, standard deviation, RMSSD, SDNN, SD1, SD2, and others.
-   - Integrates power spectral density (PSD) results into the statistics, if available.
-
-5. **PSD Tab**
-   - Uses Welch's method to compute power spectral density (PSD) for HRV data.
-   - Groups PSD results by epochs, providing insights into the frequency domain features of HRV.
-
-6. **Epochs Tab**
-   - Visualizes epochs of HRV data using a Gantt chart.
-   - Offers a clear representation of time-based data segmentation.
+- **Multiple file formats** — reads LabStreamingLayer `.xdf` files, Polar `.txt` exports, and CARSPAN `.evt`/`.nff` files.
+- **Automatic ECG polarity detection** — the app detects whether the ECG signal is inverted and corrects it automatically on load.
+- **Interactive R-peak editing** — drag, add, or remove individual R-peaks (R-tops) directly on the ECG plot.
+- **Breathing signal extraction** — a respiration surrogate is derived from the Polar H10's 3-axis accelerometer via PCA and overlaid on the ECG and heart rate plots.
+- **Epoch-based analysis** — all analyses are segmented by named time epochs. Epochs are built automatically from event markers, or can be added, renamed, and adjusted manually.
+- **Full HRV metric suite** — time-domain (RMSSD, SDNN, SD1, SD2, …) and frequency-domain (VLF, LF, HF power) metrics per epoch.
+- **Multiple simultaneous devices** — supports recordings from more than one Polar H10 at the same time. Each device's ECG and respiration data are indexed as separate "bands."
+- **Caching** — processed datasets are saved as `.pkl` files so reopening a file is instant.
 
 ## How It Works
 
 ### Inputs
-- **Dataset**: The app requires a dataset containing HRV-related data, such as IBIs, epochs, and other time-series information. This dataset is expected to support operations defined in the spectHR library.
+
+A dataset is loaded from a supported file format. It must contain at least an ECG time series. Marker/event streams are optional but enable automatic epoch construction.
 
 ### Workflow
-1. **Launch the App**
 
-2. **Switch Between Tabs**
-   Navigate through tabs to explore different aspects of HRV analysis. The selected tab dynamically updates its content:
-   - Preprocessing tools in the **PreProcessing** tab.
-   - IBISeries tools in the **IBISeries** tab.
-   - Poincaré plot in the **Poincare** tab.
-   - Statistical summaries in the **Descriptives** tab.
-   - PSD analysis in the **PSD** tab.
-   - Epoch visualizations in the **Epochs** tab.
+1. **Configure a workspace** — a JSON file that points to your data directory, cache directory, and output directory. The app opens with a default workspace; you can open or edit your own via the File menu.
+2. **Select a file** from the file tree on the left. The app loads (or retrieves from cache), preprocesses the ECG, detects R-peaks, extracts the breathing signal if accelerometer data is available, and displays the results.
+3. **Inspect and correct R-peaks** in the PreProcessing tab. Use Drag / Add / Remove mode to fix any mis-detections.
+4. **Review the heart rate series** in the IBI Series tab.
+5. **Explore HRV dynamics** in the Poincaré, PSD, and Parameters tabs.
+6. **Adjust epoch boundaries** in the Epochs tab by dragging the edges of epoch bars.
+7. **Export results** — click Save in the Parameters tab to write a CSV file to the configured output directory.
 
-3. **Real-Time Updates**
-   The app dynamically updates visualizations and calculations as you interact with each tab. Outputs are recalculated and displayed in real-time.
-
-4. **Data Saving**
-   Changes to the dataset, such as computed statistics or PSD values, are saved automatically.
+All edits are saved automatically to the cache file when you switch tabs or select a new file.
 
 ### Outputs
-- Visualizations (e.g., plots, charts) for exploring HRV dynamics.
-- Computed metrics and summaries for HRV data.
-- Processed datasets ready for further analysis.
 
-This tool is ideal for researchers, clinicians, and students who work with HRV data and require an interactive, user-friendly interface for their analyses.
-
-# spectHR - Cardiovascular Spectral Analysis Toolkit
-
-spectHR is a Python library designed for interactive analysis of time series data, particularly focused on ECG and breathing patterns. The library provides tools for detecting peaks (R-tops) in ECG data, spectral analysis, and interactive visualization of time series data. It includes various modes for modifying, selecting, and analyzing R-tops and other key events in the data.
-
-## Features
-- **Reads XDF**: It reads [labstreaminglayers](https://github.com/sccn/labstreaminglayer) .XDF files. the ECG stream is detected if its label contains 'polar'. Generally for use with the PolarBand H10 and the
-[PolarGUI](https://github.com/markspan/PolarBand2lsl) application. Markers are ready from a seperate stream, and should follow the patterns start label and end label to mark an epoch (named 'label').
-- **Also reads .txt files:** from the app of POLAR. Ref. the example file.
-- **Also reads CARSPAN .evt files:** Again, ref the example file. If there is a NFF file with the same name, it will load the channel named 'ECG' from it.
-- **ECG and Breathing Pattern Analysis**: Process and analyze time series data, including ECG and breathing patterns.
-- **Peak Detection (R-tops)**: Automatically detect R-top times in ECG signals.
-- **Interactive Plotting**: Use draggable vertical lines to visualize and manipulate R-tops within a plot.
-- **Zoom and Epoch Selection**: Interactively zoom into regions of interest and select epochs for marking.
-- **Spectral Analysis**: Perform cardiovascular spectral analysis to study heart rate variability and other metrics.
-
-## Breathing Signal Extraction
-
-This application includes functionality for estimating a breathing-related signal from raw 3-axis accelerometer data, such as that provided by the Polar H10 chest strap. The method is designed to isolate slow, periodic motion associated with breathing while minimizing the influence of gravitational and high-frequency components.
-
-### Method Overview
-
-The breathing signal is extracted using a two-stage filtering process applied to the accelerometer data:
-
-1. **Gravity Removal**
-   A low-pass Butterworth filter with a cutoff frequency of 0.04 Hz is applied separately to each accelerometer axis to estimate the quasi-static gravitational component. This estimated gravity signal is then subtracted from each axis to isolate dynamic movement.
-
-2. **Dynamic Acceleration Norm**
-   After gravity removal, the norm (Euclidean magnitude) of the dynamic acceleration vector is computed across the three axes. This produces a single scalar time series representing overall movement.
-
-3. **Low-Pass Filtering for Breathing Signal**
-   To isolate breathing-related motion, a second low-pass Butterworth filter (cutoff 0.5 Hz) is applied to the dynamic acceleration norm. The resulting signal contains slow fluctuations likely associated with the respiratory cycle.
-
-### Assumptions
-
-- Input accelerometer data is sampled at 200 Hz.
-- Data is expected in the shape (N, 3) corresponding to [X, Y, Z] axes.
-- The subject wears the device in a stable orientation on the torso.
-
-### Requirements
-When using the pulled github code:
-- Python 3.7+
-
-**The release should work without any additional requirements. The executabe works only on Windows.**
-
-
-```python
-DataSet = cs.calcPeaks(DataSet)
-```
-
-This function systematically classifies Inter-Beat Intervals (IBIs) derived from R-top times in an ECG dataset based on statistical thresholds. Each classification captures specific temporal characteristics or patterns in the intervals between successive heartbeats:
-
-- "N" (Normal): IBIs that fall within the expected range, determined by a rolling average and a standard deviation envelope (lower and higher thresholds). These intervals represent the individual's typical cardiac rhythm, without deviations beyond defined statistical boundaries.
-
-
-- "S" (Short): An IBI is labeled as "Short" if it is significantly smaller than the lower threshold (lower). This classification highlights faster-than-usual intervals that deviate from the individual's baseline rhythm.
-
-
-- "L" (Long): IBIs exceeding the upper threshold (higher) are categorized as "Long." These represent slower-than-usual intervals, reflecting a departure from the individual's expected rhythm.
-
-
-- "TL" (Too Long): An IBI is marked as "Too Long" if it surpasses an absolute duration threshold (Tmax), signifying intervals that are exceptionally prolonged and may indicate abnormalities or measurement artifacts.
-
-
-- "SL" (Short-Long): This classification identifies a specific pattern where a "Short" IBI is immediately followed by a "Long" IBI. Such sequences may indicate variability in cardiac timing, often observed in transitional patterns or measurement noise.
-
-
-- "SNS" (Short-Normal-Short): This label applies to a sequence of three consecutive IBIs, where a "Short" IBI is followed by a "Normal" IBI, then another "Short" IBI. This pattern highlights irregularities interspersed with typical intervals.
-
-
-The algorithm calculates a moving average and standard deviation of IBIs over a sliding time window (Tw), defining dynamic, individual-specific thresholds for classifying deviations. Each IBI is assessed against these thresholds and assigned an appropriate label. Subsequent steps ensure detection of sequential patterns like "SL" and "SNS," enhancing the granularity of the classification.
-
-The function also provides a summary of detected classifications, logging the frequency of each label. This systematic approach helps identify deviations from regular heartbeat intervals and potential artifacts, supporting detailed analysis of ECG data.
-
-### Parameters used in the classification:
-
-#### Tw (Window Size):
-
-Description: Specifies the size of the rolling window (in beats) used to calculate the moving average (avIBIr) and standard deviation (SDavIBIr) of the Inter-Beat Intervals (IBIs).
-
-Usage:
-
-Affects the dynamic thresholds (lower and higher) by smoothing the IBIs over a range defined by this window.
-
-Larger values of Tw create smoother thresholds but may overlook short-term variability, while smaller values result in more sensitive thresholds that reflect short-term changes.
-
-Default: **Tw = 51.**
-
-#### Nsd (Number of Standard Deviations):
-
-Description: Determines the multiplier for the standard deviation when calculating the dynamic thresholds (lower and higher) for classifying IBIs as "Short" (S) or "Long" (L).
-
-Usage:
-
-Affects the boundaries of normal IBIs:
-
-The thresholds are calculated as:
-
-$$(lower,upper) = \overline{IBI} ± (\mathbf{Nsd}\times SD(IBI))$$
-
-Higher values of Nsd result in wider thresholds, reducing sensitivity to variations, while lower values make the classification more sensitive to smaller deviations.
-
-Default: **Nsd = 4.**
-
-#### Tmax (Maximum Interval Threshold):
-
-Description: Sets an absolute upper limit (in seconds) for classifying IBIs as "Too Long" (TL).
-
-Usage:
-
-Any IBI exceeding this value is immediately labeled as "Too Long," irrespective of the dynamic thresholds (higher and lower).
-
-Provides a fixed boundary to capture extreme outliers that may indicate significant irregularities or artifacts in the data.
-
-Default: **Tmax = 5.**
-
-### How These Parameters Influence the Function
-
-#### Calculation of Dynamic Thresholds:
-
-The rolling window size (Tw) and standard deviation multiplier (Nsd) work together to create individual-specific thresholds. These thresholds adapt to the temporal variability of the IBIs, classifying deviations as either "Short" (S) or "Long" (L).
-
-#### Absolute Threshold (Tmax):
-
-Serves as an override for dynamic thresholds by assigning the "Too Long" (TL) label to any IBI that exceeds this fixed value. This ensures extreme outliers are captured even if they fall within the dynamic thresholds.
-
-#### Impact on Classification:
-
-Dynamic Adjustments: The combination of Tw and Nsd tailors the classification to the individual's data, ensuring the function is sensitive to relative changes while minimizing false positives.
-
-Outlier Detection: Tmax ensures robustness by capturing exceptionally long intervals, regardless of variability in the moving averages.
-
-#### Summary of Parameter Roles
-
-This parameter structure allows flexibility in adapting the function to different datasets and use cases, balancing sensitivity and robustness in IBI classification.
-
-### Available Modes
-
-- Drag: Move the vertical lines (R-tops) along the x-axis to adjust detection.
-- Remove: Select and remove individual R-tops by clicking on the lines.
-- Add: Add a new R-top at a specific location on the plot.
-
-This will allow you to interact with the ECG plot, dragging R-top lines and updating the dataset accordingly.
-
-## Poincaré Plots
-
-Poincaré plots are widely used tools for visualizing and analyzing heart rate variability (HRV) from ECG data. They provide a two-dimensional representation of consecutive inter-beat intervals (IBIs), where each interval is plotted against the subsequent one.
-
-In spectHR, Poincaré plots help assess the regularity and variability of the heart rhythm and provide quantifiable measures that describe short-term and long-term HRV.
-
-### How It Works
-
-Given a sequence of inter-beat intervals (IBI):
-
-$$IBI_1, IBI_2, IBI_3, \dots, IBI_n$$
-
-Then:
-
-$$(IBI_i, IBI_{i+1})$$
-
-creates a scatter plot where the x-axis represents  (current interval) and the y-axis represents  (next interval).
-
-### Key Features
-
-- Scatter Visualization: Visualizes the beat-to-beat dynamics of the cardiac rhythm.
-
-- Shape Analysis: The distribution and clustering of points provide insights into autonomic nervous system regulation.
-
-- Quantitative Measures: Calculates specific parameters describing the spread and organization of points.
+- Interactive visualizations across all tabs.
+- HRV metric tables per epoch, exportable as CSV.
+- The `.pkl` cache file (can be reloaded later for further analysis).
 
 ---
 
-### Parameters Calculated from Poincaré Plots
+# The Application Tabs in Detail
 
-#### SD<sub>1</sub> (Short-term Variability)
+## PreProcessing Tab
 
-SD<sub>1</sub> measures the standard deviation of points perpendicular to the line of identity ().
+The central workspace for ECG quality control.
 
-Represents short-term HRV, reflecting beat-to-beat variability.
+The tab shows two stacked plots:
 
-Formula:
+- **Main ECG plot** (upper, larger) — the raw ECG signal in red, with detected R-peaks shown as colour-coded vertical lines. Lines are coloured by their IBI classification label (see [IBI Classification](#ibi-classification) below). IBI durations in milliseconds are annotated as arrows between adjacent R-peaks. If a breathing signal is available, it is overlaid as a green trace on a secondary y-axis. Time epochs are shown as horizontal arrows above the plot.
+- **Overview strip** (lower, smaller) — a thumbnail of the full ECG recording with a blue rectangle indicating the current zoom window. Drag the rectangle to navigate.
 
-$$SD_1 = \sqrt{\frac{1}{2}\text{Var}(IBI_{i+1} - IBI_i)}$$ 
+**Navigation bar** buttons (left to right): go to start · pan left · jump to previous abnormal R-peak · zoom in · zoom out · jump to next abnormal R-peak · pan right · go to end.
 
-#### SD<sub>2</sub> (Long-term Variability)
+**Editing modes** — select from the dropdown at the top of the tab:
 
-SD<sub>2</sub> measures the standard deviation of points along the line of identity ().
+| Mode | What it does |
+|------|-------------|
+| Drag | Click and drag a vertical R-peak line to adjust its time position. |
+| Remove | Click a line to delete that R-peak. |
+| Add | Click anywhere on the ECG to insert a new R-peak at that time. |
 
-Represents long-term HRV, capturing overall variability of the IBIs.
+**Right-click menu on a file** in the tree panel provides three additional actions:
 
-Formula:
+| Action | Effect |
+|--------|--------|
+| Reload Raw | Discards the cache and reprocesses the raw file from scratch. |
+| Invert ECG Polarity | Flips the ECG signal vertically and reruns peak detection. Useful if automatic polarity detection was incorrect. |
+| Retrigger ECG | Reruns automatic R-peak detection on the current ECG without reloading the raw file. |
 
-$$SD_2 = \sqrt{2 \cdot \text{Var}(IBI_i) - \frac{1}{2} \text{Var}(IBI_{i+1} - IBI_i)}$$ 
+## IBI Series Tab
 
-#### SD<sub>2</sub>/SD<sub>1</sub> Ratio
+Displays the heart rate over time in beats per minute (bpm), derived from the R-peak times.
 
-The ratio between SD<sub>1</sub> and SD<sub>2</sub> is used to analyze the balance between short-term and long-term HRV.
+Heart rate is computed as 60 / IBI at each R-peak, plotted at the midpoint of each inter-beat interval. The same navigation bar as in the PreProcessing tab is available for zooming and panning. If breathing data is present, it is overlaid as a semi-transparent green trace.
 
-$$ SD_{ratio} = \frac{SD_2}{SD_1}$$ 
+## Poincaré Tab
 
-#### Ellipse Fitting
+Displays a Poincaré (return map) scatter plot: each point represents a pair of consecutive IBIs — IBI(n) on the x-axis and IBI(n+1) on the y-axis.
 
-The Poincaré plot can be approximated by an ellipse centered on the line of identity.
+Each epoch is plotted in a distinct colour, with an SD1/SD2 confidence ellipse overlaid. Epoch visibility is controlled by checkboxes on the right side of the tab. Hovering over a point (click to pin the tooltip) shows the two IBI values and the timestamp of that R-peak.
 
-SD<sub>1</sub> corresponds to the width of the ellipse (short axis).
+See [Poincaré Plots](#poincaré-plots) for metric definitions.
 
-SD<sub>2</sub> corresponds to the length of the ellipse (long axis).
-The area of the ellipse is often calculated as:
+## Epochs Tab
 
-$$	\text{Area} = \pi \cdot SD_1 \cdot SD_2$$
+A Gantt-style chart showing all active epochs as horizontal bars.
 
----
+- **Drag the left or right edge** of an epoch bar to adjust its start or end time.
+- **Click a y-axis label** (epoch name) to rename it. Enter an empty name to delete the epoch.
+- **Add a new epoch** via the menu: Actions → Add Epoch. You will be prompted for a name; the new epoch spans the full recording and can be trimmed by dragging its edges.
 
-### Interpretation of Poincaré Plots
+Epoch changes immediately affect all other tabs and all metric calculations.
 
-- Tight Clustering Around Identity Line: Indicates low HRV and reduced autonomic regulation (e.g., under stress or disease states).
+## PSD Tab
 
-- Elliptical Shape with Large Spread: Suggests healthy HRV with dynamic autonomic modulation.
+Shows one Power Spectral Density plot per active epoch, stacked vertically in a scrollable panel. All epoch plots share the same y-axis scale so epochs can be compared at a glance.
 
-- SD<sub>1</sub> and SD<sub>2</sub> do not provide new information compared to SDNN and RMSSD!
+PSD is estimated using Welch's method on the IBI series, interpolated to a uniform 4 Hz grid. Confidence intervals are shown as shaded bands. See [Power Spectral Density](#power-spectral-density-psd) for parameter details.
 
-- (x,y) points that are topographically district, could be an *indication* of a mis-trigger of the r-top.
+## Parameters Tab
 
-## Power Spectral Density (PSD) 
-### Welch’s Method for Power Spectral Density (PSD)
+A spreadsheet showing all HRV metrics for each epoch. Columns include:
 
-The PSD is estimated using Welch’s method, which divides the signal into overlapping segments, applies a window function to each, computes their periodograms, and averages them to reduce variance.
+- Subject (filename stem) and epoch name
+- Time-domain: count, mean, median, min, max, std, RMSSD, SDNN, SDSD, SD1, SD2, SD2/SD1 ratio, ellipse area
+- Frequency-domain: VLF power, LF power, HF power, LF/HF ratio
 
-Default parameters used:
-
-- `fs = 4` (sampling frequency in Hz)
-
-- `nperseg = 256` (length of each segment)
-
-- `noverlap = 128` (number of points to overlap between segments)
-
-- `window = 'hamming'` (window function)
-
-- `nfft = 1024` (number of FFT points)
-
-- `interp_kind = 'linear'` (interpolation method for missing data)
-
-- `interpolate = True` (whether to interpolate missing data points)
-
-- `logscale = False` (linear or logarithmic PSD scale)
-
-For full details, see the [scipy.signal.welch](https://scipy.github.io/devdocs/reference/generated/scipy.signal.welch.html) documentation.
+Click **Save** to export the table as a CSV file to the configured output directory.
 
 ---
 
-This will display a scatter plot of  vs  and compute SD<sub>1</sub>, SD<sub>2</sub>, and SD<sub>1</sub>/SD<sub>2</sub> ratio, along with other descriptive statistics.
-The plot also allows for selecting relevant epochs in the data. In the standard views of the data in the library, these selections are upheld.
+# Data Formats
 
-## Contributing
-If you'd like to contribute to spectHR, feel free to fork the repository and submit pull requests. Please ensure that your code follows the existing style and includes appropriate tests.
+## XDF (LabStreamingLayer)
 
-## Using the release on macOS:
+spectHR reads `.xdf` files produced by the [LabStreamingLayer](https://github.com/sccn/labstreaminglayer) framework. It identifies streams as follows:
 
-spectHR – Installation on macOS
-System requirements
+- **ECG stream** — detected by stream type `ECG`. Designed for use with the [Polar H10](https://www.polar.com/en/sensors/h10-heart-rate-sensor) via the [PolarBand2lsl](https://github.com/markspan/PolarBand2lsl) companion application.
+- **Accelerometer stream** — detected by stream type `ACCELEROMETER`. The 3-axis data is used to derive the breathing signal. Also produced by PolarBand2lsl.
+- **Marker/event streams** — detected by stream type containing `marker` or `event` (camera streams are excluded). Markers trigger automatic epoch construction.
+
+**Marker convention** — markers should follow the pattern `start <label>` to open an epoch and `stop <label>` or `end <label>` to close it. For example, a marker `start baseline` followed later by `stop baseline` creates an epoch called `baseline`. If a `stop` marker is missing, the epoch runs to the end of the recording.
+
+**Multiple devices** — if two Polar H10 units are recorded simultaneously, their streams are indexed as separate bands identified by the last 8 characters of the stream name. In the file tree, the dataset node expands into individual band nodes; selecting one plots that device's data.
+
+## Polar .txt
+
+The plain-text export format from the Polar app. Refer to the example file in `ExampleData/` for the expected column layout.
+
+## CARSPAN .evt / .nff
+
+CARSPAN event files are supported. If an `.nff` file with the same base name exists in the same directory, spectHR loads the channel named `ECG` from it.
+
+---
+
+# IBI Classification
+
+After R-peak detection, each inter-beat interval is classified automatically. The algorithm uses a centered rolling window to compute a local mean and standard deviation of IBIs, then labels each interval relative to those local statistics.
+
+## Labels
+
+| Label | Meaning | Colour in plot |
+|-------|---------|----------------|
+| N | Normal — within mean ± Nsd × SD | Blue |
+| S | Short — below the lower threshold | Magenta |
+| L | Long — above the upper threshold | Cyan |
+| TL | Too Long — exceeds the absolute maximum (2 s) | Orange |
+| SL | Short-Long pattern — an S immediately followed by an L | Turquoise |
+| SNS | Short-Normal-Short pattern | Light sea green |
+| T | Degenerate interval (NaN or ≤ 0) | — |
+
+## Classification Parameters
+
+These parameters can be adjusted by calling `classify_ibi()` programmatically (see [Contributing](#contributing)):
+
+### Window size (`window_length`)
+
+The number of beats in the centered rolling window used to compute the local mean and standard deviation.
+
+- Larger values → smoother thresholds, less sensitive to transient changes.
+- Smaller values → thresholds that track short-term rhythm shifts more closely.
+
+Default: **51 beats**
+
+### Number of standard deviations (`n_std`)
+
+Multiplier applied to the local standard deviation when computing the S/L boundaries:
+
+$$(\text{lower}, \text{upper}) = \overline{\text{IBI}} \pm (n\_\text{std} \times \text{SD}(\text{IBI}))$$
+
+Default: **4**
+
+### Maximum IBI (`max_ibi_sec`)
+
+An absolute hard ceiling. Any IBI above this value is labeled `TL` regardless of the rolling thresholds.
+
+Default: **2.0 seconds**
+
+---
+
+# Breathing Signal Extraction
+
+When a Polar H10 accelerometer stream is present, spectHR derives a respiration surrogate signal from the 3-axis chest-belt data. The pipeline is:
+
+1. **Robust pre-cleaning** — NaN values are interpolated per axis; extreme spikes are clipped using a robust MAD-based threshold.
+2. **Gravity removal** — a low-pass Butterworth filter (cutoff 0.04 Hz, estimated from timestamps) is applied to estimate the quasi-static gravitational component. This is subtracted from the raw signal to isolate dynamic movement.
+3. **Respiration bandpass** — the linear acceleration is bandpassed to the respiration band (0.10–0.70 Hz), retaining the motion frequencies typical of adult breathing.
+4. **PCA projection** — Principal Component Analysis is applied to the bandpassed 3-axis signal. The first principal component, which captures the dominant axis of breathing motion, is extracted as a single 1D signal. This approach is robust to variations in device orientation.
+5. **Z-score normalisation** — the resulting signal is standardised (mean 0, std 1) for display.
+
+The breathing signal is overlaid in green on the PreProcessing and IBI Series plots. Inhalation phases (trough to peak in the breathing signal) are shaded in light blue.
+
+**Note:** The sampling rate is estimated from the timestamps and is not assumed to be a fixed value. Data shape must be (N, 3) for three axes.
+
+---
+
+# Poincaré Plots
+
+A Poincaré plot maps each IBI against the one that follows it. For a sequence of intervals IBI₁, IBI₂, …, IBIₙ, the plot shows the point cloud (IBIᵢ, IBIᵢ₊₁).
+
+The spread of this cloud in two directions yields complementary HRV measures:
+
+### SD1 — short-term variability
+
+SD1 is the standard deviation perpendicular to the line of identity and reflects beat-to-beat variability:
+
+$$\text{SD}_1 = \sqrt{\frac{1}{2}\,\text{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+
+### SD2 — long-term variability
+
+SD2 is the standard deviation along the line of identity and reflects overall IBI variability:
+
+$$\text{SD}_2 = \sqrt{2\,\text{Var}(\text{IBI}_i) - \frac{1}{2}\,\text{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+
+### SD2/SD1 ratio
+
+$$\text{SD}_\text{ratio} = \frac{\text{SD}_2}{\text{SD}_1}$$
+
+### Ellipse area
+
+The Poincaré point cloud is approximated by an ellipse centred on the line of identity, with SD1 as the short axis and SD2 as the long axis:
+
+$$\text{Area} = \pi \cdot \text{SD}_1 \cdot \text{SD}_2$$
+
+### Interpretation
+
+- **Tight cluster along the identity line** — low HRV; typical of high sympathetic tone, stress, or pathological states.
+- **Broad ellipse with roughly equal SD1 and SD2** — healthy, balanced autonomic regulation.
+- **Points far from the main cluster** — may indicate mis-detected R-tops. These are worth inspecting in the PreProcessing tab.
+
+Note: SD1 and SD2 carry overlapping information with RMSSD and SDNN respectively; they do not add independent information but offer a useful visual summary.
+
+---
+
+# Power Spectral Density (PSD)
+
+The IBI series is resampled to a uniform time grid using linear interpolation, then Welch's method is applied to estimate the power spectral density.
+
+Default parameters:
+
+| Parameter | Value |
+|-----------|-------|
+| Resampling frequency (`fs`) | 4 Hz |
+| Segment length (`nperseg`) | 256 samples |
+| Overlap (`noverlap`) | 128 samples |
+| Window function | Hamming |
+| FFT length (`nfft`) | 1024 |
+
+Frequency bands:
+
+| Band | Range |
+|------|-------|
+| VLF (Very Low Frequency) | 0.003–0.04 Hz |
+| LF (Low Frequency) | 0.04–0.15 Hz |
+| HF (High Frequency) | 0.15–0.40 Hz |
+
+Band power is computed by trapezoidal integration with linear interpolation at the band edges. Confidence intervals are estimated using a chi-square approximation.
+
+For short epochs, segment length and overlap are automatically reduced to fit the available data.
+
+See the [scipy.signal.welch](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.welch.html) documentation for full technical details.
+
+---
+
+# Installation and Running
+
+## Windows
+
+Download `spectHR-Windows-vX.Y.Z.zip` from the [Releases](https://github.com/markspan/spectHR/releases) page, extract, and run `spectHR.exe`. No Python installation is required.
+
+## macOS
+
+### System requirements
 
 - macOS 11 (Big Sur) or newer
 - Intel or Apple Silicon (M1/M2/M3)
@@ -367,64 +321,110 @@ System requirements
 
 ### Step 1 — Download
 
-Go to GitHub → Releases
-Download:
-
-spectHR-macOS-vX.Y.Z.zip
-
-Double-click the .zip file
-→ this extracts spectHR.app
+Go to [Releases](https://github.com/markspan/spectHR/releases) and download `spectHR-macOS-vX.Y.Z.zip`. Double-click the `.zip` file to extract `spectHR.app`.
 
 ### Step 2 — Move to Applications
 
-Drag spectHR.app to:
+Drag `spectHR.app` to `/Applications`. This avoids permission issues with running apps from the Downloads folder.
 
-/Applications
-(This avoids permission and security issues.)
+### Step 3 — First launch
 
-### Step 3 — First launch (important)
+Because the app is not signed by Apple, macOS will block it the first time. Choose one of the following:
 
-Because the app is not signed by Apple, macOS will block it the first time.
-This is expected behaviour.
+**Option A — Finder (recommended)**
 
-#### Option A — Finder (recommended)
+1. Open `/Applications`
+2. Right-click `spectHR.app` → choose **Open**
+3. Click **Open** in the dialog
 
-Open /Applications
-Right-click on spectHR.app
-Choose Open
-Click Open again
-➡️ The app will start and work normally from now on.
+The app will run normally from this point on.
 
-#### Option B — System Settings
+**Option B — System Settings**
 
-If Option A does not work:
-Try opening spectHR.app once (so macOS registers the block)
-Open System Settings → Privacy & Security
-At the bottom, you will see:
-“spectHR was blocked…”
-Click Open Anyway
-Confirm
+1. Try opening `spectHR.app` once (so macOS registers the block)
+2. Open **System Settings → Privacy & Security**
+3. Near the bottom you will see: *"spectHR was blocked…"* — click **Open Anyway**
 
-#### Option C — Terminal (always works)
+**Option C — Terminal (always works)**
 
-If macOS keeps blocking the app:
-Open Terminal
-Run:
-
-Bash
+```bash
 xattr -dr com.apple.quarantine /Applications/spectHR.app
-Close Terminal
-Open spectHR.app normally
-➡️ This removes the quarantine flag macOS applies to downloaded apps.
+```
 
-### Updating spectHR
-Download the new .zip
-Replace the old spectHR.app in /Applications
-No reinstallation needed
+Then open `spectHR.app` normally.
 
+### Updating
 
+Download the new `.zip`, replace `spectHR.app` in `/Applications`. No reinstallation needed.
 
+---
+
+# Workspace Configuration
+
+spectHR uses a JSON workspace file to locate your files. The default workspace is loaded on startup. You can open, edit, or save workspaces via the **File** menu.
+
+A workspace file has three keys:
+
+```json
+{
+    "DataDirectory": "/path/to/your/raw/data",
+    "CacheDirectory": "/path/to/cache",
+    "OutputDirectory": "/path/to/csv/output"
+}
+```
+
+- **DataDirectory** — where spectHR looks for `.xdf`, `.txt`, and `.evt` files. All files in this directory are listed in the file tree.
+- **CacheDirectory** — where processed datasets are saved as `.pkl` files for fast reloading.
+- **OutputDirectory** — where CSV exports from the Parameters tab are written.
+
+---
+
+# Contributing
+
+spectHR is written in pure Python. The library layer (`src/spectHR/`) and the UI layer (`src/spectUI/`) are kept deliberately separate so the analysis code can be used independently of the GUI.
+
+### Key classes for contributors
+
+| Class | File | Role |
+|-------|------|------|
+| `PhysioData` | `DataSet/PhysioData.py` | Central data container; owns all time series, epochs, and derived data |
+| `CardioSeries` | `DataSet/Series/CardioSeries.py` | R-peak times, IBI classification, all HRV metric methods |
+| `TimeSeries` | `DataSet/Series/TimeSeries.py` | Raw 1-D time series with filtering and polarity detection |
+| `RespirationSeries` | `DataSet/Series/RespirationSeries.py` | Detected inhalation/exhalation phase intervals |
+| `Epoch` | `DataSet/Epoch.py` | Single named time interval with helper methods |
+| `HRVMetric` | `DataSet/HRVMetrics.py` | Base class; the `@hrv_metric` decorator auto-registers metrics |
+| Loaders | `DataSet/loaders/` | File-format readers registered by extension via `@register_loader` |
+
+### Adding a new HRV metric
+
+Decorate a method with `@hrv_metric` in `CardioSeries` and it will automatically appear in the Parameters table and CSV export:
+
+```python
+from spectHR.DataSet.HRVMetrics import hrv_metric
+
+@hrv_metric
+def my_metric(self) -> float:
+    ibi_ms = self._ibi_clean_ms()
+    return float(np.something(ibi_ms))
+```
+
+### Adding a new file format
+
+Create a new loader module in `src/spectHR/DataSet/loaders/` and decorate the loader function:
+
+```python
+from spectHR.DataSet.loaders.registry import register_loader
+
+@register_loader(".myext")
+def load_myext(physiodata, filename: str, **kwargs) -> None:
+    # populate physiodata.timeseries, physiodata.events, etc.
+    ...
+```
+
+Please ensure contributions follow the existing code style and include appropriate tests. Fork the repository and open a pull request with a clear description of the change.
+
+---
 
 ## License
-spectHR is released under the GNU License. See the LICENSE file for more details.
-Add short info (at least mantion) the ibiseries plot. Inform on the option to add epochs, generally bring up-to-date. The audience for the docs are scientists that use the program, not programmers, We do hop the can contribute, so info in programming must be informative.
+
+spectHR is released under the GNU LGPL-2.1 license. See the [LICENSE](LICENSE) file for details.
