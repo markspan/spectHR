@@ -144,7 +144,7 @@ class WelchPSDPlotWidget(QWidget):
             f_band = np.concatenate(([f0], freqs[mask], [f1]))
             p_band = np.concatenate(([p0], power[mask], [p1]))
 
-            band_power = 1000.0 * np.trapezoid(p_band, f_band)
+            band_power = np.trapezoid(p_band, f_band)
 
             ax.fill_between(
                 f_band,
