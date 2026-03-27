@@ -236,7 +236,7 @@ class CardioMetricsMixin(HRVMetric):
         p1 = np.interp(f1, freqs, power)
         f_band = np.concatenate(([f0], freqs[mask], [f1]))
         p_band = np.concatenate(([p0], power[mask], [p1]))
-        return float(1000.0 * np.trapezoid(p_band, f_band))
+        return float(np.trapezoid(p_band, f_band))
 
     # ------------------------------------------------------------------
     # HRV metrics — discovered automatically via @hrv_metric
