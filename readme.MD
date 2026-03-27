@@ -162,8 +162,8 @@ Click **Save** to export the table as a CSV file to the configured output direct
 
 spectHR reads `.xdf` files produced by the [LabStreamingLayer](https://github.com/sccn/labstreaminglayer) framework. It identifies streams as follows:
 
-- **ECG stream** — detected by stream type `ECG`. Designed for use with the [Polar H10](https://www.polar.com/en/sensors/h10-heart-rate-sensor) via the [PolarBand2lsl](https://github.com/markspan/PolarBand2lsl) companion application.
-- **Accelerometer stream** — detected by stream type `ACCELEROMETER`. The 3-axis data is used to derive the breathing signal. Also produced by PolarBand2lsl.
+- **ECG stream** — detected by stream type `ECG`. Designed for use with the [Polar H10](https://www.polar.com/en/sensors/h10-heart-rate-sensor) via the [PolarBLE](https://github.com/markspan/PolarBLE) companion application.
+- **Accelerometer stream** — detected by stream type `ACCELEROMETER`. The 3-axis data is used to derive the breathing signal. Also produced by [PolarBLE](https://github.com/markspan/PolarBLE).
 - **Marker/event streams** — detected by stream type containing `marker` or `event` (camera streams are excluded). Markers trigger automatic epoch construction.
 
 **Marker convention** — markers should follow the pattern `start <label>` to open an epoch and `stop <label>` or `end <label>` to close it. For example, a marker `start baseline` followed later by `stop baseline` creates an epoch called `baseline`. If a `stop` marker is missing, the epoch runs to the end of the recording.
