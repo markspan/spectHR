@@ -403,7 +403,15 @@ class MainWindow(QMainWindow):
 
             # Load dataset (cached or fresh)
             if Path(self.savename).exists():
-                dataset = PhysioData(self.savename)
+                with open(self.savename, "rb") as f:
+                    dataset = pickle.load(f)
+                # Guard against stale pickles that pre-date preprocessing
+                if not dataset.hrv_map or dataset.active_band is None:
+                    if getattr(dataset, "has_ecg", False):
+                        dataset.preprocess_ecg()
+                    if dataset.active_band is None and dataset.band_map:
+                        dataset.active_band = next(iter(dataset.band_map))
+                    dataset.save(self.savename)
             else:
                 dataset = PhysioData(
                     Path(self.workspace["DataDirectory"]) / (Path(filename))
@@ -509,7 +517,7 @@ class MainWindow(QMainWindow):
         data : object
             The dataset object containing preprocessed ECG signals.
         """
-        if hasattr(data, "has_ecg") and data.has_ecg:
+        if data.has_ecg:
             self.ui.Views.setTabVisible(0, True)
             self.ui.Views.setCurrentIndex(0)
             self.prep_plot_widget.prepPlot(data)

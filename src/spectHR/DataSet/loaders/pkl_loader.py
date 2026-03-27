@@ -12,16 +12,12 @@ def load_pkl(physiodata, filename: str, **kwargs: Any) -> None:
     """
     Loader for previously pickled PhysioData objects.
 
-    Notes
-    -----
-    - This assumes the pickle contains a PhysioData instance.
-    - Its internal state is copied onto the current `physiodata`.
+    Restores the complete object state by copying all attributes from the
+    pickled instance onto the current physiodata shell. This preserves
+    hrv_map, band_map, active_band, rsp_map, phases, and all other fields
+    that were present when the pickle was saved.
     """
     logger.info(f"Loading PhysioData from pickle: {filename}")
     with open(filename, "rb") as f:
         loaded = pickle.load(f)
-
-    # Copy relevant attributes (simple shallow copy)
-    for attr in ("timeseries", "events", "epochs", "rtops"):
-        if hasattr(loaded, attr):
-            setattr(physiodata, attr, getattr(loaded, attr))
+    physiodata.__dict__.update(loaded.__dict__)
