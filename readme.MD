@@ -44,6 +44,8 @@ The project consists of two layers:
 - **spectHR** — the analysis library (`src/spectHR/`). Handles data loading, signal processing, R-peak detection, IBI classification, and HRV metric computation.
 - **spectUI** — the Qt application (`src/spectUI/`). Provides the interactive GUI built on top of the library.
 
+![spectHR architecture](specthr_architecture.svg)
+
 ## Features
 
 - **Multiple file formats** — reads LabStreamingLayer `.xdf` files, Polar `.txt` exports, and CARSPAN `.evt`/`.nff` files.
