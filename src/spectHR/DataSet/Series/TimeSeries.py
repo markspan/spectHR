@@ -31,7 +31,9 @@ class TimeSeries:
         self.values = np.asarray(self.values, dtype=float)
 
         if self.times.ndim != 1 or self.values.ndim != 1:
-            raise ValueError("TimeSeries.times and TimeSeries.values must be 1-D arrays.")
+            raise ValueError(
+                "TimeSeries.times and TimeSeries.values must be 1-D arrays."
+            )
         if self.times.shape[0] != self.values.shape[0]:
             raise ValueError("TimeSeries times and values must have same length.")
 
@@ -46,7 +48,7 @@ class TimeSeries:
 
         Parameters
         ----------
-        
+
         bandpass : tuple[float, float], optional
             Bandpass filter (Hz) used to emphasize QRS complexes.
         min_peak_distance : float, optional
@@ -132,11 +134,7 @@ class TimeSeries:
         # ------------------------------------------------------------------
         # 5. Aggregate decision
         # ------------------------------------------------------------------
-        total_score = (
-            1.0 * peak_score +
-            0.8 * envelope_score +
-            0.5 * extrema_score
-        )
+        total_score = 1.0 * peak_score + 0.8 * envelope_score + 0.5 * extrema_score
 
         polarity = "normal" if total_score < 0 else "inverted"
 
@@ -155,7 +153,7 @@ class TimeSeries:
         """Invert the signal values in place."""
         logger.info("Flipping TimeSeries values.")
         self.values = -self.values
-    
+
     def filter(
         self,
         *,
@@ -228,7 +226,7 @@ class TimeSeries:
 
         # Copy semantics
         return TimeSeries(self.times.copy(), filtered)
-    
+
     def __getitem__(self, idx):
         """
         Non-epoch slicing. Returns raw value(s) only.
@@ -250,7 +248,20 @@ class TimeSeries:
             return None
         return float(1.0 / np.mean(diffs))
 
-    def view(self, starttime: float | None = None, endtime: float | None = None) -> "TimeSeriesView":
+    @srate.setter
+    def srate(self, value: Optional[float]) -> None:
+        """
+        Set the sampling rate manually.
+
+        Args:
+            value: Optional[float]
+                Sampling rate in Hz, or None to clear.
+        """
+        self._srate = value
+
+    def view(
+        self, starttime: float | None = None, endtime: float | None = None
+    ) -> "TimeSeriesView":
         """
         Return an identity-neutral, zero-copy view on a time interval.
 

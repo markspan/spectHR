@@ -403,8 +403,7 @@ class MainWindow(QMainWindow):
 
             # Load dataset (cached or fresh)
             if Path(self.savename).exists():
-                with open(self.savename, "rb") as f:
-                    dataset = pickle.load(f)
+                dataset = PhysioData(self.savename)
             else:
                 dataset = PhysioData(
                     Path(self.workspace["DataDirectory"]) / (Path(filename))

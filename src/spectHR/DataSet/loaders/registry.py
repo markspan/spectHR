@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import os
 from typing import Callable, Dict
+from pathlib import Path
 
 LoaderFunc = Callable[..., None]
 
 _EXTENSION_LOADERS: Dict[str, LoaderFunc] = {}
 
 
-def register_loader(*exts: str):
+def register_loader(*exts: str | Path):
     """
     Decorator to register a loader function for one or more file extensions.
 

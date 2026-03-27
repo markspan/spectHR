@@ -38,3 +38,6 @@ mkpng.py
 Icon.png
 Icon.png
 mytree
+*.mplstyle
+*.ttf
+/MainWindow.dist
