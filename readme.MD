@@ -275,7 +275,7 @@ $$\text{Area} = \pi \cdot \text{SD}_1 \cdot \text{SD}_2$$
 - **Broad ellipse with roughly equal SD1 and SD2** — healthy, balanced autonomic regulation.
 - **Points far from the main cluster** — may indicate mis-detected R-tops. These are worth inspecting in the PreProcessing tab.
 
-Note: SD1 and SD2 carry overlapping information with RMSSD and SDNN respectively; they do not add independent information but offer a useful visual summary.
+Note: SD1 and SD2 carry overlapping information with RMSSD and SDNN respectively; they do not add independent information but offer a useful visual summary [(van Roon et al., 2025)](https://www.mdpi.com/1099-4300/27/8/861).
 
 ---
 
