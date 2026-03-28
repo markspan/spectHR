@@ -39,7 +39,7 @@
 
 ![spectHR](images/MainWindow.PNG)
 
-**spectHR** is an fully open-sourse interactive desktop application for Heart Rate Variability (HRV) analysis. It provides a graphical interface built with Qt and Matplotlib for exploring, preprocessing, and analyzing ECG-derived HRV data. The application is designed for researchers and students who need a hands-on, visual workflow — no programming required to use it.
+**spectHR** is an fully open-source interactive desktop application for Heart Rate Variability (HRV) analysis. It provides a graphical interface built with Qt and Matplotlib for exploring, preprocessing, and analyzing ECG-derived HRV data. The application is designed for researchers and students who need a hands-on, visual workflow — no programming required to use it.
 
 The project consists of two layers:
 
