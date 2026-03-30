@@ -1,22 +1,18 @@
+import copy
 import json
 import os
 from pathlib import Path
 
 from spectHR.Tools.Logger import logger
-from spectHR.DataSet.Series.CardioMetricsMixin import load_frequency_bands
+from spectHR.DataSet.Series.CardioMetricsMixin import (
+    load_frequency_bands,
+    load_welch_params,
+    load_ci_alpha,
+)
 from platformdirs import user_documents_path
 from PySide6.QtWidgets import QTreeWidgetItem
 from PySide6.QtCore import Qt
 
-
-# ── Default workspace structure ────────────────────────────────────────────────
-#
-# The workspace JSON now has two top-level chapters:
-#   "Directories"       — data, cache, and output paths
-#   "FrequencyAnalysis" — HRV frequency band definitions
-#
-# Additional chapters can be added here and to the JSON in the future
-# without touching any other code.
 
 _DEFAULT_WORKSPACE = {
     "Directories": {
@@ -27,14 +23,45 @@ _DEFAULT_WORKSPACE = {
     "FrequencyAnalysis": {
         "bands": {
             "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
-            "LF": {"low": 0.04, "high": 0.15, "color": "green"},
+            "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},
             "HF": {"low": 0.15, "high": 0.40, "color": "red"},
-        }
+        },
+        "welch": {
+            "fs": 4.0,
+            "nperseg": 256,
+            "noverlap": 128,
+            "nfft": 1024,
+            "window": "hamming",
+        },
+        "confidence_interval_alpha": 0.05,
+    },
+    "CardioParameters": {
+        "IbiClassification": {
+            "window_length": 51,
+            "n_std": 4.0,
+            "max_ibi_sec": 2.0,
+            "min_peak_distance_ms": 300.0,
+        },
+        "EcgPreprocessing": {
+            "filter_type": "highpass",
+            "filter_cutoff": 1.0,
+        },
     },
 }
 
 
-def LoadWorkspace(json_file=None):
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override into base; override values win."""
+    result = copy.deepcopy(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def LoadWorkspace(json_file=None) -> dict:
     """
     Load the workspace from a JSON file and apply all configuration sections.
 
@@ -43,18 +70,18 @@ def LoadWorkspace(json_file=None):
 
     Side effects
     ------------
-    - Creates the cache and output directories if they do not exist.
-    - Calls load_frequency_bands() to update HRV_FREQUENCY_BANDS in
-      CardioMetricsMixin from the FrequencyAnalysis section.
+    - Creates CacheDirectory and OutputDirectory if absent.
+    - Calls load_frequency_bands() — updates HRV_FREQUENCY_BANDS.
+    - Calls load_welch_params()    — updates WELCH_PARAMS.
+    - Calls load_ci_alpha()        — updates CI_ALPHA.
+
+    CardioParameters is returned in the dict for callers to read directly
+    (preProcessFile.py, PhysioData.preprocess_ecg).
 
     Returns
     -------
-    dict
-        The full nested workspace dict with at least "Directories" and
-        "FrequencyAnalysis" keys.
+    dict  The full nested workspace with all chapters.
     """
-    import copy
-
     workspace = copy.deepcopy(_DEFAULT_WORKSPACE)
 
     if json_file is None:
@@ -68,37 +95,42 @@ def LoadWorkspace(json_file=None):
         try:
             with open(json_file, "r") as f:
                 loaded = json.load(f)
-
-            # Deep-merge loaded values into defaults so missing keys stay safe
-            for chapter, defaults in workspace.items():
-                if chapter in loaded:
-                    if isinstance(defaults, dict):
-                        defaults.update(loaded[chapter])
-                    else:
-                        workspace[chapter] = loaded[chapter]
-
+            workspace = _deep_merge(workspace, loaded)
         except Exception as e:
             logger.warning(f"Could not load workspace file: {e}")
     else:
-        # Write defaults to disk on first run
         _ensure_dirs(workspace)
         with open(json_file, "w") as f:
             json.dump(workspace, f, indent=4)
 
     _ensure_dirs(workspace)
 
-    # Apply frequency band configuration
+    # Apply FrequencyAnalysis to CardioMetricsMixin module-level globals
+    fa = workspace.get("FrequencyAnalysis", {})
     try:
-        bands = workspace["FrequencyAnalysis"]["bands"]
-        load_frequency_bands(bands)
+        load_frequency_bands(fa["bands"])
     except (KeyError, Exception) as e:
-        logger.warning(f"Could not load frequency bands from workspace: {e}")
+        logger.warning(f"Could not apply frequency bands: {e}")
+    try:
+        load_welch_params(fa["welch"])
+    except (KeyError, Exception) as e:
+        logger.warning(f"Could not apply Welch params: {e}")
+    try:
+        load_ci_alpha(fa["confidence_interval_alpha"])
+    except (KeyError, Exception) as e:
+        logger.warning(f"Could not apply CI alpha: {e}")
 
     return workspace
 
 
+def SaveWorkspace(workspace: dict, json_file) -> None:
+    """Save the full workspace dict (all chapters) to a JSON file."""
+    with open(json_file, "w") as f:
+        json.dump(workspace, f, indent=4)
+
+
 def _ensure_dirs(workspace: dict) -> None:
-    """Create cache and output directories if they do not exist."""
+    """Create CacheDirectory and OutputDirectory if they do not exist."""
     dirs = workspace.get("Directories", {})
     for key in ("CacheDirectory", "OutputDirectory"):
         path = dirs.get(key)
@@ -106,20 +138,9 @@ def _ensure_dirs(workspace: dict) -> None:
             os.makedirs(path)
 
 
-def SaveWorkspace(workspace: dict, json_file) -> None:
-    """
-    Save the full workspace dict (all chapters) to a JSON file.
-
-    This is a standalone helper so callers are not duplicating json.dump logic.
-    """
-    with open(json_file, "w") as f:
-        json.dump(workspace, f, indent=4)
-
-
-def PopulateTree(treewidget, workspace):
-    """Populate a QTreeWidget with files from the workspace DataDirectory."""
+def PopulateTree(treewidget, workspace: dict) -> None:
+    """Populate a QTreeWidget with files from workspace DataDirectory."""
     treewidget.clear()
-
     data_dir = workspace["Directories"]["DataDirectory"]
 
     categories = {

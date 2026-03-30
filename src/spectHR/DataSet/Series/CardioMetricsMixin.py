@@ -1,8 +1,6 @@
 # spectHR/DataSet/Series/CardioMetricsMixin.py
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Dict, Tuple
 
 import numpy as np
@@ -14,42 +12,30 @@ from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 
 
 # ======================================================================
-# Frequency band definitions
+# Module-level configuration — populated from workspace at startup
 # ======================================================================
-#
-# HRV_FREQUENCY_BANDS is the single authoritative source of band names,
-# edges (Hz), and display colours used by both the metric methods and
-# the PSD plot widget.
-#
-# Defaults follow the 1996 Task Force guidelines.
-# At application startup, workSpace.LoadWorkspace() calls
-# load_frequency_bands() to override these from the workspace JSON.
 
 HRV_FREQUENCY_BANDS: Dict[str, Dict] = {
     "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
-    "LF": {"low": 0.04, "high": 0.15, "color": "green"},
+    "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},
     "HF": {"low": 0.15, "high": 0.40, "color": "red"},
 }
+
+WELCH_PARAMS: Dict = {
+    "fs": 4.0,
+    "nperseg": 256,
+    "noverlap": 128,
+    "nfft": 1024,
+    "window": "hamming",
+}
+
+CI_ALPHA: float = 0.05
 
 
 def load_frequency_bands(bands_config: dict) -> None:
     """
-    Update HRV_FREQUENCY_BANDS in place from a dict of band specifications.
-
-    Parameters
-    ----------
-    bands_config : dict
-        Dict in the form::
-
-            {
-                "VLF": {"low": 0.003, "high": 0.04,  "color": "blue"},
-                "LF":  {"low": 0.04,  "high": 0.15,  "color": "green"},
-                "HF":  {"low": 0.15,  "high": 0.40,  "color": "red"}
-            }
-
-        Any bands not present are left at their default values.
-        Extra bands are added, making it easy to extend the analysis
-        without changing any code.
+    Update HRV_FREQUENCY_BANDS in place from workspace["FrequencyAnalysis"]["bands"].
+    Extra bands in the config are added; missing ones keep their defaults.
     """
     for name, spec in bands_config.items():
         HRV_FREQUENCY_BANDS[name] = {
@@ -57,6 +43,24 @@ def load_frequency_bands(bands_config: dict) -> None:
             "high": float(spec["high"]),
             "color": str(spec.get("color", "gray")),
         }
+
+
+def load_welch_params(welch_config: dict) -> None:
+    """
+    Update WELCH_PARAMS in place from workspace["FrequencyAnalysis"]["welch"].
+    """
+    for key in ("fs", "nperseg", "noverlap", "nfft", "window"):
+        if key in welch_config:
+            WELCH_PARAMS[key] = welch_config[key]
+
+
+def load_ci_alpha(alpha: float) -> None:
+    """
+    Update the module-level CI_ALPHA from
+    workspace["FrequencyAnalysis"]["confidence_interval_alpha"].
+    """
+    global CI_ALPHA
+    CI_ALPHA = float(alpha)
 
 
 # ======================================================================
@@ -67,15 +71,13 @@ def load_frequency_bands(bands_config: dict) -> None:
 class CardioMetricsMixin(HRVMetric):
     """
     Mixin providing HRV metric computation for any object that exposes:
-        times  : np.ndarray  (property or attribute)
-        labels : np.ndarray  (property or attribute)
-        ibi    : np.ndarray  (property)
+        times  : np.ndarray
+        labels : np.ndarray
+        ibi    : np.ndarray
 
-    Both CardioSeries (data owner) and CardioSeriesView (zero-copy view)
-    inherit from this mixin so they share an identical metric implementation
-    without either class depending on the other.
-
-    Methods here never mutate labels or times.
+    All frequency-domain parameters (band edges, Welch settings, CI alpha)
+    are read from the module-level constants above, which are populated at
+    application startup from the workspace JSON via workSpace.LoadWorkspace().
     """
 
     METRIC_ORDER = [
@@ -104,12 +106,7 @@ class CardioMetricsMixin(HRVMetric):
 
     def _ibi_clean_ms(self) -> np.ndarray:
         """
-        Return valid IBI values in milliseconds for HRV metric calculations.
-
-        Excludes:
-        - NaN values (trailing alignment NaN, missing data)
-        - Intervals labeled "TL" (too long; likely artifacts)
-        - Intervals labeled "T"  (degenerate; zero or negative)
+        Return valid IBI values in milliseconds, excluding NaN, TL, and T labels.
         """
         ibi_sec = self.ibi
         if ibi_sec.size == 0:
@@ -124,22 +121,27 @@ class CardioMetricsMixin(HRVMetric):
     def welch_psd(
         self,
         *,
-        fs: float = 4.0,
-        nperseg: int = 256,
-        noverlap: int = 128,
-        window: str = "hamming",
+        fs: float | None = None,
+        nperseg: int | None = None,
+        noverlap: int | None = None,
+        nfft: int | None = None,
+        window: str | None = None,
         interpolate: bool = True,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Compute Welch PSD on the IBI series (ms), optionally interpolated
-        to uniform sampling.
+        Compute Welch PSD on the IBI series (ms).
 
-        Returns
-        -------
-        freqs, power : np.ndarray
-            Empty arrays if there are no usable IBI samples or interpolation
-            fails.
+        Parameters default to the workspace-configured WELCH_PARAMS when
+        not explicitly supplied by the caller.
+
+        Returns empty arrays if there are no usable IBIs or interpolation fails.
         """
+        fs = fs if fs is not None else WELCH_PARAMS["fs"]
+        nperseg = nperseg if nperseg is not None else WELCH_PARAMS["nperseg"]
+        noverlap = noverlap if noverlap is not None else WELCH_PARAMS["noverlap"]
+        nfft = nfft if nfft is not None else WELCH_PARAMS["nfft"]
+        window = window if window is not None else WELCH_PARAMS["window"]
+
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size == 0:
             return np.ndarray(0), np.ndarray(0)
@@ -167,7 +169,7 @@ class CardioMetricsMixin(HRVMetric):
             ibi_ms,
             fs=fs,
             scaling="density",
-            nfft=1024,
+            nfft=nfft,
             nperseg=nperseg,
             noverlap=noverlap,
             window=window,
@@ -177,28 +179,24 @@ class CardioMetricsMixin(HRVMetric):
     def welch_psd_with_ci(
         self,
         *,
-        fs: float = 4.0,
-        nperseg: int = 256,
-        noverlap: int = 128,
-        window: str = "hamming",
-        interpolate: bool = True,
-        alpha: float = 0.05,
+        alpha: float | None = None,
+        **kwargs,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Compute Welch PSD with chi-square confidence intervals.
 
+        alpha defaults to the workspace-configured CI_ALPHA.
+
         Returns freqs, psd, ci_lower, ci_upper.
         """
-        freqs, psd = self.welch_psd(
-            fs=fs,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            window=window,
-            interpolate=interpolate,
-        )
+        alpha = alpha if alpha is not None else CI_ALPHA
+
+        freqs, psd = self.welch_psd(**kwargs)
         if freqs.size == 0:
             return freqs, psd, psd, psd
 
+        nperseg = kwargs.get("nperseg", WELCH_PARAMS["nperseg"])
+        noverlap = kwargs.get("noverlap", WELCH_PARAMS["noverlap"])
         step = nperseg - noverlap
         n_segments = max(1, int(np.floor((psd.size * step) / nperseg)))
         nu = 2 * n_segments
@@ -215,7 +213,7 @@ class CardioMetricsMixin(HRVMetric):
     ) -> float:
         """
         Band power by trapezoidal integration with endpoint interpolation.
-        Units: ms².  Returns NaN if inputs are empty or band has no data.
+        Units: ms².  Returns NaN if band has no data.
         """
         if freqs.size == 0:
             return np.nan
@@ -234,42 +232,35 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def count(self) -> int:
-        """Number of valid IBIs after NaN and artifact removal."""
         return int(self._ibi_clean_ms().size)
 
     @hrv_metric
     def mean(self) -> float:
-        """Mean IBI (ms)."""
         ibi_ms = self._ibi_clean_ms()
         return float(np.mean(ibi_ms)) if ibi_ms.size else np.nan
 
     @hrv_metric
     def std(self) -> float:
-        """Standard deviation of IBI (ms)."""
         ibi_ms = self._ibi_clean_ms()
         return float(np.std(ibi_ms)) if ibi_ms.size else np.nan
 
     @hrv_metric
     def min(self) -> float:
-        """Minimum IBI (ms)."""
         ibi_ms = self._ibi_clean_ms()
         return float(np.min(ibi_ms)) if ibi_ms.size else np.nan
 
     @hrv_metric
     def max(self) -> float:
-        """Maximum IBI (ms)."""
         ibi_ms = self._ibi_clean_ms()
         return float(np.max(ibi_ms)) if ibi_ms.size else np.nan
 
     @hrv_metric
     def median(self) -> float:
-        """Median IBI (ms)."""
         ibi_ms = self._ibi_clean_ms()
         return float(np.median(ibi_ms)) if ibi_ms.size else np.nan
 
     @hrv_metric
     def rmssd(self) -> float:
-        """Root mean square of successive differences (ms)."""
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 2:
             return np.nan
@@ -278,13 +269,11 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def sdnn(self) -> float:
-        """SDNN (ms): standard deviation of IBI."""
         ibi_ms = self._ibi_clean_ms()
         return float(np.std(ibi_ms)) if ibi_ms.size else np.nan
 
     @hrv_metric
     def sdsd(self) -> float:
-        """SDSD (ms): standard deviation of successive differences."""
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 2:
             return np.nan
@@ -292,7 +281,6 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def sd1(self) -> float:
-        """SD1 (ms) — short-term Poincaré variability."""
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 2:
             return np.nan
@@ -300,7 +288,6 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def sd2(self) -> float:
-        """SD2 (ms) — long-term Poincaré variability."""
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 2:
             return np.nan
@@ -308,7 +295,6 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def sd_ratio(self) -> float:
-        """SD1/SD2 ratio (dimensionless)."""
         s1, s2 = self.sd1(), self.sd2()
         if np.isnan(s1) or np.isnan(s2) or s2 == 0:
             return np.nan
@@ -316,7 +302,6 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def ellipse_area(self) -> float:
-        """Area of the Poincaré ellipse (π · SD1 · SD2) in ms²."""
         s1, s2 = self.sd1(), self.sd2()
         if np.isnan(s1) or np.isnan(s2):
             return np.nan
@@ -325,21 +310,21 @@ class CardioMetricsMixin(HRVMetric):
     @hrv_metric
     def vlf_power(self) -> float:
         """VLF band power in ms² — edges from HRV_FREQUENCY_BANDS."""
-        band = HRV_FREQUENCY_BANDS.get("VLF", {"low": 0.003, "high": 0.04})
+        band = HRV_FREQUENCY_BANDS["VLF"]
         freqs, power = self.welch_psd()
         return self._band_power_exact(freqs, power, band["low"], band["high"])
 
     @hrv_metric
     def lf_power(self) -> float:
         """LF band power in ms² — edges from HRV_FREQUENCY_BANDS."""
-        band = HRV_FREQUENCY_BANDS.get("LF", {"low": 0.04, "high": 0.15})
+        band = HRV_FREQUENCY_BANDS["LF"]
         freqs, power = self.welch_psd()
         return self._band_power_exact(freqs, power, band["low"], band["high"])
 
     @hrv_metric
     def hf_power(self) -> float:
         """HF band power in ms² — edges from HRV_FREQUENCY_BANDS."""
-        band = HRV_FREQUENCY_BANDS.get("HF", {"low": 0.15, "high": 0.40})
+        band = HRV_FREQUENCY_BANDS["HF"]
         freqs, power = self.welch_psd()
         return self._band_power_exact(freqs, power, band["low"], band["high"])
 

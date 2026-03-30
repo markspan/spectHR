@@ -5,10 +5,10 @@ from spectUI.epochPlotWidget import EpochPlotWidget
 from spectUI.hrPlotWidget import HRPlotWidget
 from spectUI.LineHandler import LineHandler
 from spectUI.WorkSpaceEditor import DirectorySelectorDialog
-
 from spectUI.poincarePlotWidget import PoincarePlotWidget
 from spectUI.welchPlotWidget import WelchPSDPlotWidget
 from spectUI.parametersPlotWidget import ParametersPlotWidget
+from spectUI.preProcessFile import PreProcessFile
 
 __all__ = [
     "PrepPlotWidget",
