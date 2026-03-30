@@ -25,6 +25,7 @@ from matplotlib.axes import Axes
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
 from scipy.interpolate import interp1d
 from scipy.signal import welch
+from spectHR.DataSet.Series.CardioMetricsMixin import HRV_FREQUENCY_BANDS
 
 warnings.filterwarnings("ignore")
 
@@ -114,7 +115,7 @@ class WelchPSDPlotWidget(QWidget):
         logscale: bool = False,
         **kwargs,
     ) -> Axes:
-        
+
         freqs, power, ci_lo, ci_hi = series.welch_psd_with_ci(fs=fs, **kwargs)
         if freqs.size == 0:
             return ax
@@ -125,14 +126,10 @@ class WelchPSDPlotWidget(QWidget):
         ax.plot(freqs, ci_lo, "k:", lw=0.8, alpha=0.6)
         ax.plot(freqs, ci_hi, "k:", lw=0.8, alpha=0.6)
 
-        bands = {
-            "VLF": ((0.003, 0.04), "blue"),
-            "LF":  ((0.04, 0.15), "green"),
-            "HF":  ((0.15, 0.40), "red"),
-        }
+        BAND_COLOURS = {"VLF": "blue", "LF": "green", "HF": "red"}
 
-        for name, ((f0, f1), color) in bands.items():
-
+        for name, (f0, f1) in HRV_FREQUENCY_BANDS.items():
+            color = BAND_COLOURS[name]
             # Welch bins strictly inside the band
             mask = (freqs >= f0) & (freqs <= f1)
 
@@ -154,7 +151,7 @@ class WelchPSDPlotWidget(QWidget):
                 alpha=0.3,
                 label=f"{name}: {band_power:.4f}",
             )
-            
+
         ax.set_xlim(0.0, 0.4)
         ax.set_ylim(bottom=0.0)
         ax.set_xlabel("Frequency [Hz]")
@@ -168,7 +165,6 @@ class WelchPSDPlotWidget(QWidget):
         ax.spines["right"].set_visible(False)
 
         return ax
-
 
     # ------------------------------------------------------------------
     # Instance-level convenience wrapper

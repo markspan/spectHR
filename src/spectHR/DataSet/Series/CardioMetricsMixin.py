@@ -10,6 +10,14 @@ from scipy.stats import chi2
 
 from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 
+# Standard HRV frequency bands (Hz).
+# Used by both the metric methods and the PSD plot widget.
+HRV_FREQUENCY_BANDS = {
+    "VLF": (0.003, 0.04),
+    "LF": (0.04, 0.15),
+    "HF": (0.15, 0.40),
+}
+
 
 class CardioMetricsMixin(HRVMetric):
     """
@@ -183,7 +191,7 @@ class CardioMetricsMixin(HRVMetric):
         """
         if freqs.size == 0:
             return np.nan
-        mask = (freqs > f0) & (freqs < f1)
+        mask = (freqs >= f0) & (freqs < f1)
         if not np.any(mask):
             return np.nan
         p0 = np.interp(f0, freqs, power)
@@ -288,21 +296,21 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def vlf_power(self) -> float:
-        """VLF band power (0.003–0.04 Hz) in ms²."""
+        """VLF band power in ms²."""
         freqs, power = self.welch_psd()
-        return self._band_power_exact(freqs, power, 0.003, 0.04)
+        return self._band_power_exact(freqs, power, *HRV_FREQUENCY_BANDS["VLF"])
 
     @hrv_metric
     def lf_power(self) -> float:
-        """LF band power (0.04–0.15 Hz) in ms²."""
+        """LF band power in ms²."""
         freqs, power = self.welch_psd()
-        return self._band_power_exact(freqs, power, 0.04, 0.15)
+        return self._band_power_exact(freqs, power, *HRV_FREQUENCY_BANDS["LF"])
 
     @hrv_metric
     def hf_power(self) -> float:
-        """HF band power (0.15–0.40 Hz) in ms²."""
+        """HF band power in ms²."""
         freqs, power = self.welch_psd()
-        return self._band_power_exact(freqs, power, 0.15, 0.4)
+        return self._band_power_exact(freqs, power, *HRV_FREQUENCY_BANDS["HF"])
 
     @hrv_metric
     def lf_hf_ratio(self) -> float:
