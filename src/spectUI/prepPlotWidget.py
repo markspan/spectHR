@@ -77,7 +77,8 @@ from PySide6.QtWidgets import (
 
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
-from spectHR.DataSet.Series.CardioSeries import CardioSeries, CardioSeriesView
+from spectHR.DataSet.Series.CardioSeries import CardioSeries
+from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 from spectUI.LineHandler import LineHandler
 
 # ======================================================================
