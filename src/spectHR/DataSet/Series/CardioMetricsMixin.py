@@ -1,7 +1,9 @@
 # spectHR/DataSet/Series/CardioMetricsMixin.py
 from __future__ import annotations
 
-from typing import Tuple
+import json
+from pathlib import Path
+from typing import Dict, Tuple
 
 import numpy as np
 import scipy.signal as signal
@@ -10,13 +12,56 @@ from scipy.stats import chi2
 
 from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 
-# Standard HRV frequency bands (Hz).
-# Used by both the metric methods and the PSD plot widget.
-HRV_FREQUENCY_BANDS = {
-    "VLF": (0.003, 0.04),
-    "LF": (0.04, 0.15),
-    "HF": (0.15, 0.40),
+
+# ======================================================================
+# Frequency band definitions
+# ======================================================================
+#
+# HRV_FREQUENCY_BANDS is the single authoritative source of band names,
+# edges (Hz), and display colours used by both the metric methods and
+# the PSD plot widget.
+#
+# Defaults follow the 1996 Task Force guidelines.
+# At application startup, workSpace.LoadWorkspace() calls
+# load_frequency_bands() to override these from the workspace JSON.
+
+HRV_FREQUENCY_BANDS: Dict[str, Dict] = {
+    "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
+    "LF": {"low": 0.04, "high": 0.15, "color": "green"},
+    "HF": {"low": 0.15, "high": 0.40, "color": "red"},
 }
+
+
+def load_frequency_bands(bands_config: dict) -> None:
+    """
+    Update HRV_FREQUENCY_BANDS in place from a dict of band specifications.
+
+    Parameters
+    ----------
+    bands_config : dict
+        Dict in the form::
+
+            {
+                "VLF": {"low": 0.003, "high": 0.04,  "color": "blue"},
+                "LF":  {"low": 0.04,  "high": 0.15,  "color": "green"},
+                "HF":  {"low": 0.15,  "high": 0.40,  "color": "red"}
+            }
+
+        Any bands not present are left at their default values.
+        Extra bands are added, making it easy to extend the analysis
+        without changing any code.
+    """
+    for name, spec in bands_config.items():
+        HRV_FREQUENCY_BANDS[name] = {
+            "low": float(spec["low"]),
+            "high": float(spec["high"]),
+            "color": str(spec.get("color", "gray")),
+        }
+
+
+# ======================================================================
+# Mixin
+# ======================================================================
 
 
 class CardioMetricsMixin(HRVMetric):
@@ -86,21 +131,8 @@ class CardioMetricsMixin(HRVMetric):
         interpolate: bool = True,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Compute Welch PSD on the IBI series (ms), optionally interpolated to
-        uniform sampling.
-
-        Parameters
-        ----------
-        fs : float
-            Target resampling frequency (Hz) for interpolation.
-        nperseg : int
-            Segment length for Welch.
-        noverlap : int
-            Segment overlap.
-        window : str
-            Window function name (passed to SciPy's Welch).
-        interpolate : bool
-            If True, interpolate the IBI series to a uniform grid at fs.
+        Compute Welch PSD on the IBI series (ms), optionally interpolated
+        to uniform sampling.
 
         Returns
         -------
@@ -155,9 +187,7 @@ class CardioMetricsMixin(HRVMetric):
         """
         Compute Welch PSD with chi-square confidence intervals.
 
-        Returns
-        -------
-        freqs, psd, ci_lower, ci_upper
+        Returns freqs, psd, ci_lower, ci_upper.
         """
         freqs, psd = self.welch_psd(
             fs=fs,
@@ -185,13 +215,11 @@ class CardioMetricsMixin(HRVMetric):
     ) -> float:
         """
         Band power by trapezoidal integration with endpoint interpolation.
-
-        Returns NaN if inputs are empty or the band contains no frequencies.
-        Units: ms² (same as PSD integrated over Hz).
+        Units: ms².  Returns NaN if inputs are empty or band has no data.
         """
         if freqs.size == 0:
             return np.nan
-        mask = (freqs >= f0) & (freqs < f1)
+        mask = (freqs > f0) & (freqs < f1)
         if not np.any(mask):
             return np.nan
         p0 = np.interp(f0, freqs, power)
@@ -296,21 +324,24 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def vlf_power(self) -> float:
-        """VLF band power in ms²."""
+        """VLF band power in ms² — edges from HRV_FREQUENCY_BANDS."""
+        band = HRV_FREQUENCY_BANDS.get("VLF", {"low": 0.003, "high": 0.04})
         freqs, power = self.welch_psd()
-        return self._band_power_exact(freqs, power, *HRV_FREQUENCY_BANDS["VLF"])
+        return self._band_power_exact(freqs, power, band["low"], band["high"])
 
     @hrv_metric
     def lf_power(self) -> float:
-        """LF band power in ms²."""
+        """LF band power in ms² — edges from HRV_FREQUENCY_BANDS."""
+        band = HRV_FREQUENCY_BANDS.get("LF", {"low": 0.04, "high": 0.15})
         freqs, power = self.welch_psd()
-        return self._band_power_exact(freqs, power, *HRV_FREQUENCY_BANDS["LF"])
+        return self._band_power_exact(freqs, power, band["low"], band["high"])
 
     @hrv_metric
     def hf_power(self) -> float:
-        """HF band power in ms²."""
+        """HF band power in ms² — edges from HRV_FREQUENCY_BANDS."""
+        band = HRV_FREQUENCY_BANDS.get("HF", {"low": 0.15, "high": 0.40})
         freqs, power = self.welch_psd()
-        return self._band_power_exact(freqs, power, *HRV_FREQUENCY_BANDS["HF"])
+        return self._band_power_exact(freqs, power, band["low"], band["high"])
 
     @hrv_metric
     def lf_hf_ratio(self) -> float:

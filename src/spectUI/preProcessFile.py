@@ -19,7 +19,7 @@ def PreProcessFile(workspace, file_path, reset=False, border=False):
     # ------------------------------------------------------------
     # Load dataset
     # ------------------------------------------------------------
-    dataset = PhysioData(Path(workspace["DataDirectory"]) / file_path)
+    dataset = PhysioData(Path(workspace["Directories"]["DataDirectory"]) / file_path)
     if dataset.has_ecg == False:
         return dataset
     # ------------------------------------------------------------

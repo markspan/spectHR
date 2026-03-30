@@ -45,7 +45,10 @@ class ParametersPlotWidget(QWidget):
 
     def display_parameters(self, dataset, workspace):
         self.dataset = dataset
-        self.csvfile = Path(workspace["OutputDirectory"]) / f"{dataset.basename}.csv"
+        self.csvfile = (
+            Path(workspace["Directories"]["OutputDirectory"])
+            / f"{dataset.basename}.csv"
+        )
         self.setFocus()
 
         # ---- Get NumPy "table" from your HRV object ----
