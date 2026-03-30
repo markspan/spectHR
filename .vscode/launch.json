@@ -5,7 +5,7 @@
             "name": "Python Debugger: Module",
             "type": "debugpy",
             "request": "launch",
-            "module": "spectUI.MainWindow",
+            // "module": "spectUI.MainWindow",
             "console": "integratedTerminal",
             "python": "${workspaceFolder}/.venv/Scripts/python.exe"
         }

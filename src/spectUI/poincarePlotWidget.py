@@ -121,8 +121,8 @@ class PoincarePlotWidget(QWidget):
 
             ellipse = Ellipse(
                 (mean_ibi, mean_ibi),
-                rt.sd1() / 500.0,
-                rt.sd2() / 500.0,
+                rt.sd1() / 500.0, # Be Aware
+                rt.sd2() / 500.0, # Be Aware
                 angle=-45,
                 facecolor=color,
                 edgecolor="black",
