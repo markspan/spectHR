@@ -1,26 +1,30 @@
 {
     "Directories": {
-        "DataDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData",
-        "CacheDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/cache",
+        "DataDirectory":   "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData",
+        "CacheDirectory":  "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/cache",
         "OutputDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/export"
     },
     "FrequencyAnalysis": {
+		"method":  "LOMBSCARGLE",
         "bands": {
-            "VLF": {
-                "low": 0.003,
-                "high": 0.04,
-                "color": "blue"
-            },
-            "LF": {
-                "low": 0.04,
-                "high": 0.15,
-                "color": "green"
-            },
-            "HF": {
-                "low": 0.15,
-                "high": 0.4,
-                "color": "red"
-            }
+            "VLF": { "low": 0.02,  "high": 0.06,  "color": "blue"      },
+            "LF":  { "low": 0.06,  "high": 0.14,  "color": "darkgreen" },
+            "HF":  { "low": 0.14,  "high": 0.40,  "color": "red"       }
+        },                           
+        "welch": {
+            "fs": 4, "nperseg": 256, "noverlap": 128,
+            "nfft": null, "window": "hamming"
+        },
+        "confidence_interval_alpha": 0.05
+    },
+    "CardioParameters": {
+        "IbiClassification": {
+            "window_length": 51, "n_std": 4.0,
+            "max_ibi_sec": 2.0, "min_peak_distance_ms": 300.0
+        },
+        "EcgPreprocessing": {
+            "filter_type":   "highpass",
+            "filter_cutoff": 1.0
         }
     }
 }
