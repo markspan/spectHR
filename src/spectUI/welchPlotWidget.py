@@ -141,13 +141,15 @@ class WelchPSDPlotWidget(QWidget):
             return ax
 
         # ---- CI shading ------------------------------------------------
+        _cm = _sys.modules["spectHR.DataSet.Series.CardioMetricsMixin"]
+        ci_pct = int(round((1.0 - _cm.CI_ALPHA) * 100))
         ax.fill_between(
             freqs,
             ci_lo,
             ci_hi,
             color="gray",
             alpha=0.20,
-            label=f"95 % CI",
+            label=f"{ci_pct} % CI",
             zorder=1,
         )
         ax.plot(freqs, ci_lo, color="gray", lw=0.7, ls="--", alpha=0.55, zorder=2)

@@ -253,6 +253,10 @@ class CardioMetricsMixin(HRVMetric):
         No interpolation is applied — the native strength of Lomb-Scargle is
         that it handles irregular timestamps directly.
 
+        Timestamps are in seconds; IBI values are in milliseconds.
+        astropy normalization="psd" yields power in ms²·s = ms²/Hz, which is
+        the correct PSD unit consistent with the Welch back-end.
+
         Parameters are read from the module-level LOMBSCARGLE_PARAMS.
         Returns empty arrays if there are fewer than 4 usable IBIs.
         """
@@ -266,12 +270,14 @@ class CardioMetricsMixin(HRVMetric):
         fmin_floor = LOMBSCARGLE_PARAMS["fmin_floor"]
 
         try:
-            # Evaluate on a frequency grid spanning all configured HRV bands
             f_min = min(s["low"] for s in HRV_FREQUENCY_BANDS.values())
             f_max = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
             freqs = np.linspace(max(f_min, fmin_floor), f_max, nfreqs)
 
-            power = LombScargle(ibi_times, ibi_ms).power(freqs, normalization="psd")
+            # Subtract the mean so the DC component does not bleed into the PSD.
+            ibi_zero = ibi_ms - ibi_ms.mean()
+
+            power = LombScargle(ibi_times, ibi_zero).power(freqs, normalization="psd")
             power = np.asarray(power).ravel()  # astropy can return 2-D
         except Exception:
             return np.ndarray(0), np.ndarray(0)
@@ -286,9 +292,14 @@ class CardioMetricsMixin(HRVMetric):
         """
         Compute Lomb-Scargle PSD with chi-square confidence intervals.
 
-        Each frequency bin of the Lomb-Scargle periodogram has approximately
-        2 degrees of freedom, so a chi²(2) distribution is used — the standard
-        approach for Lomb-Scargle CIs.
+        Degrees of freedom are estimated from the data rather than fixed at 2.
+        For a time series of duration T observed at N points, the number of
+        statistically independent frequencies in a band [f_min, f_max] is
+        approximately n_eff = 2 × (f_max - f_min) × T (Scargle 1982).
+        Each independent frequency contributes 2 d.f., giving nu = 2 × n_eff.
+
+        This produces CIs that scale with observation length — longer recordings
+        give tighter intervals, just as averaging more Welch segments does.
 
         alpha defaults to the workspace-configured CI_ALPHA.
         Returns freqs, psd, ci_lower, ci_upper.
@@ -298,7 +309,15 @@ class CardioMetricsMixin(HRVMetric):
         if freqs.size == 0:
             return freqs, psd, psd, psd
 
-        nu = 2  # degrees of freedom per bin for Lomb-Scargle
+        ibi_ms = self._ibi_clean_ms()
+        ibi_times = self.times[: ibi_ms.size]
+        T = float(ibi_times[-1] - ibi_times[0])  # observation duration (s)
+
+        f_min = float(freqs[0])
+        f_max = float(freqs[-1])
+        n_eff = max(1, int(2.0 * (f_max - f_min) * T))
+        nu = 2 * n_eff
+
         ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
         ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
         return freqs, psd, ci_lower, ci_upper
