@@ -26,6 +26,7 @@ dependencies = [
     "pyxdf",
     "mplcursors",
     "h5py",
+	"astropy",
 ]
 
 [project.optional-dependencies]
