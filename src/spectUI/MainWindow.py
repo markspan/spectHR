@@ -16,6 +16,7 @@ from PySide6.QtGui import QAction, QFont
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QInputDialog,
     QMainWindow,
@@ -30,6 +31,7 @@ from spectHR.DataSet.Epoch import Epoch
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series import CardioSeries
 import spectUI as spQt
+import spectHR.DataSet.Series.CardioMetricsMixin as _mixin
 from spectHR.Tools.Logger import logger
 
 
@@ -38,8 +40,9 @@ class MainWindow(QMainWindow):
     Main application window for the spectQt ECG pre-processing GUI.
 
     The workspace dict has two top-level chapters:
-      workspace["Directories"]       — DataDirectory, CacheDirectory, OutputDirectory
-      workspace["FrequencyAnalysis"] — HRV frequency band configuration
+        workspace["Directories"]      — DataDirectory, CacheDirectory, OutputDirectory
+        workspace["FrequencyAnalysis"] — HRV frequency band configuration
+        workspace["CardioParameters"] — IBI classification and ECG preprocessing
 
     All directory accesses use workspace["Directories"][key].
     """
@@ -65,10 +68,14 @@ class MainWindow(QMainWindow):
         self.ui.Splitter.setSizes([200, 1700])
 
         # Initialize workspace (also applies FrequencyAnalysis bands)
-        self.workspace = spQt.LoadWorkspace()
+        # Store the path so EditParameters can save back to the same file
+        from platformdirs import user_documents_path
+
+        self.workspace_file = user_documents_path() / "DefaultWorkSpace.json"
+        self.workspace = spQt.LoadWorkspace(self.workspace_file)
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
 
-        # Menu wiring
+        # Menu wiring — Workspace / Directories
         self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
         self.ui.actionOpen_Workspace.setShortcut("Ctrl+O")
         self.ui.actionOpen_Workspace.setStatusTip("Open a workspace file")
@@ -76,8 +83,13 @@ class MainWindow(QMainWindow):
 
         self.ui.actionEdit_Workspace.triggered.connect(self.EditWorkSpace)
         self.ui.actionEdit_Workspace.setShortcut("Ctrl+E")
-        self.ui.actionEdit_Workspace.setStatusTip("Edit a workspace file")
-        self.ui.actionEdit_Workspace.setToolTip("Edit a workspace file")
+        self.ui.actionEdit_Workspace.setStatusTip("Edit workspace directories")
+        self.ui.actionEdit_Workspace.setToolTip("Edit workspace directories")
+
+        self.ui.actionEdit_Parameters.triggered.connect(self.EditParameters)
+        self.ui.actionEdit_Parameters.setShortcut("Ctrl+P")
+        self.ui.actionEdit_Parameters.setStatusTip("Edit workspace parameters")
+        self.ui.actionEdit_Parameters.setToolTip("Edit workspace parameters")
 
         self.ui.actionSave_Workspace.triggered.connect(self.SaveWorkSpace)
         self.ui.actionSave_Workspace.setShortcut("Ctrl+S")
@@ -127,6 +139,7 @@ class MainWindow(QMainWindow):
 
         self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
+
         self.dataset = None
 
     # ------------------------------------------------------------------
@@ -139,6 +152,7 @@ class MainWindow(QMainWindow):
             self, "Select a file", "", "workspace Files (*.json);;Text Files (*.txt)"
         )
         if file_path:
+            self.workspace_file = file_path
             self.workspace = spQt.LoadWorkspace(file_path)
             spQt.PopulateTree(self.ui.treeWidget, self.workspace)
 
@@ -157,9 +171,56 @@ class MainWindow(QMainWindow):
         """Edit the Directories section of the workspace."""
         dialog = spQt.DirectorySelectorDialog(self.workspace["Directories"])
         if dialog.exec_() == QInputDialog.Accepted:
-            # Merge edited directories back into the Directories chapter
             self.workspace["Directories"] = dialog.get_directories()
             spQt.PopulateTree(self.ui.treeWidget, self.workspace)
+
+    def EditParameters(self):
+        """
+        Edit all non-directory parameters in the workspace via a dynamic form.
+
+        On OK:
+        1. The updated values are written back into self.workspace.
+        2. The workspace JSON file is saved immediately so the changes persist.
+        3. The CardioMetricsMixin module-level globals are re-applied in-process
+           so any subsequent PSD computation uses the new settings without a restart.
+        4. The PSD tab is refreshed if a dataset is currently loaded.
+        """
+        dialog = spQt.ParametersEditorDialog(self.workspace, parent=self)
+        if dialog.exec_() == QDialog.Accepted:
+            self.workspace = dialog.get_parameters(self.workspace)
+
+            # 1. Save to disk immediately
+            try:
+                spQt.SaveWorkspace(self.workspace, self.workspace_file)
+            except Exception as e:
+                logger.warning(f"Could not save workspace after parameter edit: {e}")
+
+            # 2. Re-apply FrequencyAnalysis globals in-process
+            fa = self.workspace.get("FrequencyAnalysis", {})
+            try:
+                _mixin.load_frequency_bands(fa["bands"])
+            except Exception:
+                pass
+            try:
+                _mixin.load_welch_params(fa["welch"])
+            except Exception:
+                pass
+            try:
+                _mixin.load_lombscargle_params(fa["lombscargle"])
+            except Exception:
+                pass
+            try:
+                _mixin.load_method(fa["method"])
+            except Exception:
+                pass
+            try:
+                _mixin.load_ci_alpha(fa["confidence_interval_alpha"])
+            except Exception:
+                pass
+
+            # 3. Refresh the PSD plot immediately if a dataset is loaded
+            if self.dataset is not None:
+                self.show_welch_psd_plot(self.dataset)
 
     # ------------------------------------------------------------------
     # Context menu
@@ -206,12 +267,12 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         ecg_accessor = self.dataset["ecg"]
         ecg_ts = ecg_accessor.timeseries
-
         cs = CardioSeries.from_timeseries(
             ecg_ts,
             min_peak_distance_ms=min_peak_distance_ms,
             classify=False,
         )
+
         import numpy as np
 
         cs.times = np.array([np.nan])
@@ -291,7 +352,7 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         dirs = self.workspace["Directories"]
 
-        # ── CASE 1: Dataset root node ──────────────────────────────────
+        # ── CASE 1: Dataset root node ─────────────────────────────────
         if meta.get("type") == "dataset":
             filename = meta["filename"]
             self.savename = Path(dirs["CacheDirectory"]) / (
@@ -301,7 +362,6 @@ class MainWindow(QMainWindow):
             if Path(self.savename).exists():
                 with open(self.savename, "rb") as f:
                     dataset = pickle.load(f)
-                # Self-heal stale pickles that pre-date preprocessing
                 if not dataset.hrv_map or dataset.active_band is None:
                     if getattr(dataset, "has_ecg", False):
                         dataset.preprocess_ecg()
@@ -323,7 +383,6 @@ class MainWindow(QMainWindow):
                     if "[" in name and "]" in name
                 }
             )
-
             if len(band_ids) > 1:
                 if not meta.get("bands_expanded", False):
                     item.takeChildren()
@@ -341,8 +400,8 @@ class MainWindow(QMainWindow):
                     meta["bands_expanded"] = True
                     item.setData(0, Qt.UserRole, meta)
                     item.setExpanded(True)
-                QApplication.restoreOverrideCursor()
-                return
+                    QApplication.restoreOverrideCursor()
+                    return
 
             self.dataset = dataset
             if hasattr(dataset, "has_ecg") and dataset.has_ecg:
@@ -350,7 +409,8 @@ class MainWindow(QMainWindow):
                 self.ui.Views.setTabVisible(0, True)
             else:
                 self.ui.Views.setTabVisible(0, False)
-            self.show_hr_plot(self.dataset)
+                self.show_hr_plot(self.dataset)
+
             self.show_poincare_plot(self.dataset)
             self.show_epoch_plot(self.dataset)
             self.show_welch_psd_plot(self.dataset)
@@ -358,14 +418,13 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
             return
 
-        # ── CASE 2: Band node ──────────────────────────────────────────
+        # ── CASE 2: Band node ─────────────────────────────────────────
         if meta.get("type") == "band":
             filename = meta["filename"]
             band_id = meta["band_id"]
             self.savename = Path(dirs["CacheDirectory"]) / (
                 Path(filename).stem + ".pkl"
             )
-
             if self.savename.exists():
                 with open(self.savename, "rb") as f:
                     dataset = pickle.load(f)
@@ -425,6 +484,7 @@ class MainWindow(QMainWindow):
                 pairs.append((label, dataset.hrv[label]))
             except Exception:
                 continue
+
         if not pairs:
             return
 

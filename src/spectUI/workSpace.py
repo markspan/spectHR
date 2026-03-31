@@ -7,12 +7,13 @@ from spectHR.Tools.Logger import logger
 from spectHR.DataSet.Series.CardioMetricsMixin import (
     load_frequency_bands,
     load_welch_params,
+    load_lombscargle_params,
     load_ci_alpha,
+    load_method,
 )
 from platformdirs import user_documents_path
 from PySide6.QtWidgets import QTreeWidgetItem
 from PySide6.QtCore import Qt
-
 
 _DEFAULT_WORKSPACE = {
     "Directories": {
@@ -21,7 +22,7 @@ _DEFAULT_WORKSPACE = {
         "OutputDirectory": str(user_documents_path() / "spectHR/export"),
     },
     "FrequencyAnalysis": {
-        "method": "WELCH",
+        "method": "welch",
         "bands": {
             "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
             "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},
@@ -33,6 +34,10 @@ _DEFAULT_WORKSPACE = {
             "noverlap": 128,
             "nfft": 1024,
             "window": "hamming",
+        },
+        "lombscargle": {
+            "nfreqs": 1000,
+            "fmin_floor": 1e-4,
         },
         "confidence_interval_alpha": 0.05,
     },
@@ -75,13 +80,15 @@ def LoadWorkspace(json_file=None) -> dict:
     - Calls load_frequency_bands() — updates HRV_FREQUENCY_BANDS.
     - Calls load_welch_params()    — updates WELCH_PARAMS.
     - Calls load_ci_alpha()        — updates CI_ALPHA.
+    - Calls load_method()          — updates METHOD ("WELCH" or "LOMBSCARGLE").
 
     CardioParameters is returned in the dict for callers to read directly
     (preProcessFile.py, PhysioData.preprocess_ecg).
 
     Returns
     -------
-    dict  The full nested workspace with all chapters.
+    dict
+        The full nested workspace with all chapters.
     """
     workspace = copy.deepcopy(_DEFAULT_WORKSPACE)
 
@@ -108,18 +115,31 @@ def LoadWorkspace(json_file=None) -> dict:
 
     # Apply FrequencyAnalysis to CardioMetricsMixin module-level globals
     fa = workspace.get("FrequencyAnalysis", {})
+
     try:
         load_frequency_bands(fa["bands"])
     except (KeyError, Exception) as e:
         logger.warning(f"Could not apply frequency bands: {e}")
+
     try:
         load_welch_params(fa["welch"])
     except (KeyError, Exception) as e:
         logger.warning(f"Could not apply Welch params: {e}")
+
+    try:
+        load_lombscargle_params(fa["lombscargle"])
+    except (KeyError, Exception) as e:
+        logger.warning(f"Could not apply Lomb-Scargle params: {e}")
+
     try:
         load_ci_alpha(fa["confidence_interval_alpha"])
     except (KeyError, Exception) as e:
         logger.warning(f"Could not apply CI alpha: {e}")
+
+    try:
+        load_method(fa["method"])
+    except (KeyError, Exception) as e:
+        logger.warning(f"Could not apply PSD method: {e}")
 
     return workspace
 
@@ -143,14 +163,12 @@ def PopulateTree(treewidget, workspace: dict) -> None:
     """Populate a QTreeWidget with files from workspace DataDirectory."""
     treewidget.clear()
     data_dir = workspace["Directories"]["DataDirectory"]
-
     categories = {
         "XDF Files": "*.xdf",
         "CARSPAN EVT Files": "*.evt",
         "RR Text Files": "*.txt",
     }
     treewidget.setHeaderLabels(["WorkSpace Data"])
-
     for label, pattern in categories.items():
         parent = QTreeWidgetItem([label])
         extension = pattern.split("*")[-1].lower()
@@ -171,5 +189,4 @@ def PopulateTree(treewidget, workspace: dict) -> None:
                 },
             )
         treewidget.addTopLevelItem(parent)
-
     treewidget.expandAll()

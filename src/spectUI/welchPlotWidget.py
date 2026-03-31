@@ -1,10 +1,10 @@
 """
-Welch PSD plotting widget for CardioSeriesView objects.
+PSD plotting widget for CardioSeriesView objects.
 
 This module provides:
-- A QWidget that embeds a Matplotlib figure
-- A pure plotting backend for Welch PSD
-- A static probing utility to normalize axes across multiple epochs
+  - A QWidget that embeds a Matplotlib figure
+  - A pure plotting backend for the active PSD method (Welch or Lomb-Scargle)
+  - A static probing utility to normalise axes across multiple epochs
 
 Design principles
 -----------------
@@ -12,6 +12,8 @@ Design principles
 - Input is always a CardioSeriesView (or compatible interface)
 - Band definitions (edges, names, colours) are read from HRV_FREQUENCY_BANDS
   in CardioMetricsMixin — the single source of truth for frequency analysis
+- The PSD method (WELCH / LOMBSCARGLE) is read from the module-level METHOD
+  constant in CardioMetricsMixin, which is set at startup from the workspace JSON
 """
 
 from __future__ import annotations
@@ -26,28 +28,34 @@ from matplotlib.axes import Axes
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
 
 from spectHR.DataSet.Series.CardioMetricsMixin import HRV_FREQUENCY_BANDS
+import sys as _sys
 
 warnings.filterwarnings("ignore")
 
 
 class WelchPSDPlotWidget(QWidget):
     """
-    Qt widget for displaying a Welch Power Spectral Density (PSD) plot.
+    Qt widget for displaying a Power Spectral Density (PSD) plot.
 
     The widget is intentionally lightweight:
-    - It embeds a single Matplotlib Axes
-    - It delegates all numerical work to static helper methods
-    - It can be stacked vertically in a scroll area
+      - It embeds a single Matplotlib Axes
+      - It delegates all numerical work to static helper methods
+      - It can be stacked vertically in a scroll area
 
     Band names, frequency edges, and fill colours are taken from
-    HRV_FREQUENCY_BANDS (CardioMetricsMixin), which is populated at startup
-    from the workspace JSON FrequencyAnalysis section.
+    HRV_FREQUENCY_BANDS (CardioMetricsMixin), populated at startup from the
+    workspace JSON FrequencyAnalysis section.
+
+    The PSD method (Welch / Lomb-Scargle) is determined by the module-level
+    METHOD constant (also set from the workspace).  No extra configuration is
+    needed in the widget itself.
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.canvas: FigureCanvas = FigureCanvas(Figure(figsize=(5, 3)))
         self.ax: Axes = self.canvas.figure.add_subplot(111)
+
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
         self.setLayout(layout)
@@ -81,6 +89,7 @@ class WelchPSDPlotWidget(QWidget):
             if y1 <= y0:
                 continue
             ymaxs.append(y1)
+
         if not ymaxs:
             return 0.0, 1.0
         return 0.0, max(ymaxs)
@@ -99,30 +108,55 @@ class WelchPSDPlotWidget(QWidget):
         **kwargs,
     ) -> Axes:
         """
-        Plot Welch PSD with confidence intervals and band fills on ax.
+        Plot PSD with confidence-interval shading and frequency-band fills on ax.
+
+        The PSD estimate is obtained via ``series.psd_with_ci()``, which
+        dispatches to Welch or Lomb-Scargle according to the workspace-configured
+        MODULE-level METHOD constant.
+
+        Confidence intervals are drawn as:
+          - a light-grey ``fill_between`` shaded band
+          - two thin dashed boundary lines for precise reading
 
         Band names, edges, and colours come from HRV_FREQUENCY_BANDS.
-        The x-axis upper limit is set to the highest band edge.
         """
-        freqs, power, ci_lo, ci_hi = series.welch_psd_with_ci(fs=fs, **kwargs)
-        freqs, power = series.welch_psd(fs=fs, **kwargs)
-        # freqs, power = series.soc_carspan()
-        ci_lo, ci_hi = power, power
+        freqs, power, ci_lo, ci_hi = series.psd_with_ci(fs=fs, **kwargs)
+
+        # Ensure all arrays are 1-D (astropy LombScargle can return 2-D)
+        freqs = np.asarray(freqs).ravel()
+        power = np.asarray(power).ravel()
+        ci_lo = np.asarray(ci_lo).ravel()
+        ci_hi = np.asarray(ci_hi).ravel()
+
         if freqs.size == 0:
+            ax.text(
+                0.5,
+                0.5,
+                "Insufficient data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color="gray",
+            )
             return ax
 
-        # PSD line + confidence interval
-        ax.plot(freqs, power, "k", lw=0.8, alpha=0.6)
-        ax.plot(freqs, ci_lo, "k:", lw=0.8, alpha=0.6)
-        ax.plot(freqs, ci_hi, "k:", lw=0.8, alpha=0.6)
+        # ---- CI shading ------------------------------------------------
         ax.fill_between(
             freqs,
-            0,
-            power,
+            ci_lo,
+            ci_hi,
             color="gray",
-            alpha=0.3,
+            alpha=0.20,
+            label=f"95 % CI",
+            zorder=1,
         )
-        # Frequency band fills — from HRV_FREQUENCY_BANDS
+        ax.plot(freqs, ci_lo, color="gray", lw=0.7, ls="--", alpha=0.55, zorder=2)
+        ax.plot(freqs, ci_hi, color="gray", lw=0.7, ls="--", alpha=0.55, zorder=2)
+
+        # ---- PSD line --------------------------------------------------
+        ax.plot(freqs, power, "k", lw=1.0, alpha=0.85, zorder=3)
+
+        # ---- Frequency band fills --------------------------------------
         x_max = 0.0
         for name, spec in HRV_FREQUENCY_BANDS.items():
             f0 = spec["low"]
@@ -142,19 +176,28 @@ class WelchPSDPlotWidget(QWidget):
                 0,
                 p_band,
                 color=color,
-                alpha=0.3,
+                alpha=0.35,
                 label=f"{name}: {band_power:.4f} ms²",
+                zorder=4,
             )
 
+        # ---- Axes decoration -------------------------------------------
         ax.set_xlim(0.0, x_max)
         ax.set_ylim(bottom=0.0)
         ax.set_xlabel("Frequency [Hz]")
         ax.set_ylabel("PSD [ms²/Hz]")
+
         if logscale:
             ax.set_yscale("log")
-        ax.legend(loc="upper right")
+
+        _cm = _sys.modules["spectHR.DataSet.Series.CardioMetricsMixin"]
+        ax.set_title(
+            f"PSD  ({_cm.METHOD.capitalize()})", fontsize=8, loc="left", color="dimgray"
+        )
+        ax.legend(loc="upper right", fontsize=7)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
+
         return ax
 
     # ------------------------------------------------------------------

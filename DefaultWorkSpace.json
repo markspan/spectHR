@@ -1,29 +1,37 @@
 {
     "Directories": {
-        "DataDirectory":   "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData",
-        "CacheDirectory":  "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/cache",
+        "DataDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData",
+        "CacheDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/cache",
         "OutputDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/export"
     },
     "FrequencyAnalysis": {
-		"method":  "LOMBSCARGLE",
+        "method": "lombscargle",
         "bands": {
-            "VLF": { "low": 0.02,  "high": 0.06,  "color": "blue"      },
-            "LF":  { "low": 0.06,  "high": 0.14,  "color": "darkgreen" },
-            "HF":  { "low": 0.14,  "high": 0.40,  "color": "red"       }
-        },                           
-        "welch": {
-            "fs": 4, "nperseg": 256, "noverlap": 128,
-            "nfft": null, "window": "hamming"
+            "VLF": { "low": 0.02,  "high": 0.06, "color": "blue" },
+            "LF":  { "low": 0.06,  "high": 0.14, "color": "darkgreen" },
+            "HF":  { "low": 0.14,  "high": 0.40, "color": "red" }
         },
-        "confidence_interval_alpha": 0.05
-    },
+        "welch": {
+            "fs": 4,
+            "nperseg": 256,
+            "noverlap": 128,
+            "nfft": null,
+            "window": "hamming"
+        },
+        "lombscargle": {
+            "nfreqs": 100,
+            "fmin_floor": 0.0001
+        },
+        "confidence_interval_alpha": 0.5
     "CardioParameters": {
         "IbiClassification": {
-            "window_length": 51, "n_std": 4.0,
-            "max_ibi_sec": 2.0, "min_peak_distance_ms": 300.0
+            "window_length": 51,
+            "n_std": 4.0,
+            "max_ibi_sec": 2.0,
+            "min_peak_distance_ms": 300.0
         },
         "EcgPreprocessing": {
-            "filter_type":   "highpass",
+            "filter_type": "highpass",
             "filter_cutoff": 1.0
         }
     }
