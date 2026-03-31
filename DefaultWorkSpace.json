@@ -23,6 +23,7 @@
             "fmin_floor": 0.0001
         },
         "confidence_interval_alpha": 0.5
+    },
     "CardioParameters": {
         "IbiClassification": {
             "window_length": 51,

@@ -31,7 +31,19 @@ from spectHR.DataSet.Epoch import Epoch
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series import CardioSeries
 import spectUI as spQt
-import spectHR.DataSet.Series.CardioMetricsMixin as _mixin
+
+# NOTE: cannot use "import ... as _mixin" here — the Series __init__.py re-exports
+# the class CardioMetricsMixin under that name, so Python resolves the alias to the
+# class instead of the module.  We import the module explicitly by full name and then
+# retrieve it from sys.modules at call time to get the real module object.
+import spectHR.DataSet.Series.CardioMetricsMixin  # ensure the module is loaded
+
+
+def _cm():
+    """Return the CardioMetricsMixin *module* (never the class)."""
+    return sys.modules["spectHR.DataSet.Series.CardioMetricsMixin"]
+
+
 from spectHR.Tools.Logger import logger
 
 
@@ -198,25 +210,25 @@ class MainWindow(QMainWindow):
             # 2. Re-apply FrequencyAnalysis globals in-process
             fa = self.workspace.get("FrequencyAnalysis", {})
             try:
-                _mixin.load_frequency_bands(fa["bands"])
-            except Exception:
-                pass
+                _cm().load_frequency_bands(fa["bands"])
+            except Exception as e:
+                logger.warning(f"Could not apply frequency bands: {e}")
             try:
-                _mixin.load_welch_params(fa["welch"])
-            except Exception:
-                pass
+                _cm().load_welch_params(fa["welch"])
+            except Exception as e:
+                logger.warning(f"Could not apply Welch params: {e}")
             try:
-                _mixin.load_lombscargle_params(fa["lombscargle"])
-            except Exception:
-                pass
+                _cm().load_lombscargle_params(fa["lombscargle"])
+            except Exception as e:
+                logger.warning(f"Could not apply Lomb-Scargle params: {e}")
             try:
-                _mixin.load_method(fa["method"])
-            except Exception:
-                pass
+                _cm().load_method(fa["method"])
+            except Exception as e:
+                logger.warning(f"Could not apply PSD method: {e}")
             try:
-                _mixin.load_ci_alpha(fa["confidence_interval_alpha"])
-            except Exception:
-                pass
+                _cm().load_ci_alpha(fa["confidence_interval_alpha"])
+            except Exception as e:
+                logger.warning(f"Could not apply CI alpha: {e}")
 
             # 3. Refresh the PSD plot immediately if a dataset is loaded
             if self.dataset is not None:
