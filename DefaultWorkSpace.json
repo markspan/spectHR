@@ -28,7 +28,7 @@
         "IbiClassification": {
             "window_length": 51,
             "n_std": 4.0,
-            "max_ibi_sec": 2.0,
+            "max_ibi_sec": 2.5,
             "min_peak_distance_ms": 300.0
         },
         "EcgPreprocessing": {
