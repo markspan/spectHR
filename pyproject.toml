@@ -1,21 +1,17 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
-
+ 
 [project]
 name = "specthr"
 version = "1.1.5"
 description = "HRV / physiological data tooling"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
-
-# Modern SPDX license string (fixes the warning)
 license = { text = "GPL-2.0-only" }
-
 authors = [
-    { name = "M.M. Span", email = "m.m.span@rug.nl" }
+  { name = "M.M. Span", email = "m.m.span@rug.nl" }
 ]
-
 dependencies = [
     "platformdirs",
     "matplotlib",
@@ -26,19 +22,17 @@ dependencies = [
     "pyxdf",
     "mplcursors",
     "h5py",
-	"astropy",
 ]
-
+ 
 [project.optional-dependencies]
 dev = [
     "pytest",
 ]
-
+ 
 [tool.setuptools.packages]
 find = { where = ["src"] , include = ["spectUI*", "spectHR*"]}
-
+ 
 [project.urls]
 Homepage = "https://github.com/MarkSpan/spectHR"
 Repository = "https://github.com/MarkSpan/spectHR"
 Issues = "https://github.com/MarkSpan/spectHR/issues"
-
