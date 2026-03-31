@@ -7,7 +7,6 @@ import numpy as np
 import scipy.signal as signal
 from scipy.interpolate import interp1d
 from scipy.stats import chi2
-from astropy.timeseries import LombScargle
 
 from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 
@@ -242,24 +241,10 @@ class CardioMetricsMixin(HRVMetric):
         return freqs, psd, ci_lower, ci_upper
 
     # ------------------------------------------------------------------
-    # Lomb-Scargle back-end
+    # Lomb-Scargle back-end  (scipy.signal.lombscargle)
     # ------------------------------------------------------------------
 
     def lombscargle_psd(self) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Compute Lomb-Scargle PSD on the *unevenly sampled* IBI series (ms).
-
-        Uses astropy.timeseries.LombScargle with PSD normalisation.
-        No interpolation is applied — the native strength of Lomb-Scargle is
-        that it handles irregular timestamps directly.
-
-        Timestamps are in seconds; IBI values are in milliseconds.
-        astropy normalization="psd" yields power in ms²·s = ms²/Hz, which is
-        the correct PSD unit consistent with the Welch back-end.
-
-        Parameters are read from the module-level LOMBSCARGLE_PARAMS.
-        Returns empty arrays if there are fewer than 4 usable IBIs.
-        """
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 4:
             return np.ndarray(0), np.ndarray(0)
@@ -274,11 +259,18 @@ class CardioMetricsMixin(HRVMetric):
             f_max = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
             freqs = np.linspace(max(f_min, fmin_floor), f_max, nfreqs)
 
-            # Subtract the mean so the DC component does not bleed into the PSD.
+            ang_freqs = 2.0 * np.pi * freqs
+
             ibi_zero = ibi_ms - ibi_ms.mean()
 
-            power = LombScargle(ibi_times, ibi_zero).power(freqs, normalization="psd")
-            power = np.asarray(power).ravel()  # astropy can return 2-D
+            pgram = signal.lombscargle(ibi_times, ibi_zero, ang_freqs, normalize=False)
+
+            # Scale to PSD (ms²/Hz), matching astropy normalization="psd":
+            # power_psd = (2 * T / N²) * pgram
+            T = float(ibi_times[-1] - ibi_times[0])
+            N = float(ibi_ms.size)
+            power = (2.0 * T / (N ** 2)) * pgram
+
         except Exception:
             return np.ndarray(0), np.ndarray(0)
 
