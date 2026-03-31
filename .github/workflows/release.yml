@@ -210,9 +210,6 @@ jobs:
               libxcb-present0 \
               libxcb-sync1 \
               libxshmfence1 \
-              libglu1-mesa \
-              libegl1-mesa \
-              mesa-utils \
               fonts-dejavu-core
 
       - name: Install project + Nuitka tooling
