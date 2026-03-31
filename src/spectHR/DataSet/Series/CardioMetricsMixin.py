@@ -7,6 +7,7 @@ import numpy as np
 import scipy.signal as signal
 from scipy.interpolate import interp1d
 from scipy.stats import chi2
+from astropy.timeseries import LombScargle
 
 from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 
@@ -22,14 +23,15 @@ HRV_FREQUENCY_BANDS: Dict[str, Dict] = {
 }
 
 WELCH_PARAMS: Dict = {
-    "fs": 4.0,
+    "fs": 100.0,
     "nperseg": 256,
     "noverlap": 128,
-    "nfft": 1024,
+    "nfft": None,
     "window": "hamming",
 }
 
 CI_ALPHA: float = 0.05
+METHOD: str = "WELCH"  # or "LOMBSCARGLE"
 
 
 def load_frequency_bands(bands_config: dict) -> None:
@@ -127,6 +129,7 @@ class CardioMetricsMixin(HRVMetric):
         nfft: int | None = None,
         window: str | None = None,
         interpolate: bool = True,
+        method="LOMBSCARGLE",
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute Welch PSD on the IBI series (ms).
@@ -136,15 +139,27 @@ class CardioMetricsMixin(HRVMetric):
 
         Returns empty arrays if there are no usable IBIs or interpolation fails.
         """
+
         fs = fs if fs is not None else WELCH_PARAMS["fs"]
         nperseg = nperseg if nperseg is not None else WELCH_PARAMS["nperseg"]
         noverlap = noverlap if noverlap is not None else WELCH_PARAMS["noverlap"]
         nfft = nfft if nfft is not None else WELCH_PARAMS["nfft"]
         window = window if window is not None else WELCH_PARAMS["window"]
+        method = method if method is not None else METHOD
 
         ibi_ms = self._ibi_clean_ms()
+
         if ibi_ms.size == 0:
             return np.ndarray(0), np.ndarray(0)
+
+        if method == "LOMBSCARGLE":
+            ibi_times = self.times[: ibi_ms.size]
+            try:
+                freqs = np.linspace(0.003, 0.4, 1000)  # VLF to HF range
+                power = LombScargle(ibi_times, ibi_ms).power(freqs, normalization="psd")
+                return freqs, power
+            except Exception:
+                return np.ndarray(0), np.ndarray(0)
 
         if ibi_ms.size < nperseg:
             nperseg = ibi_ms.size

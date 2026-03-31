@@ -21,6 +21,7 @@ _DEFAULT_WORKSPACE = {
         "OutputDirectory": str(user_documents_path() / "spectHR/export"),
     },
     "FrequencyAnalysis": {
+        "method": "WELCH",
         "bands": {
             "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
             "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},

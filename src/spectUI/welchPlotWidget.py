@@ -94,7 +94,7 @@ class WelchPSDPlotWidget(QWidget):
         ax: Axes,
         series,
         *,
-        fs: float = 4.0,
+        fs: float = 100.0,
         logscale: bool = False,
         **kwargs,
     ) -> Axes:
@@ -105,14 +105,23 @@ class WelchPSDPlotWidget(QWidget):
         The x-axis upper limit is set to the highest band edge.
         """
         freqs, power, ci_lo, ci_hi = series.welch_psd_with_ci(fs=fs, **kwargs)
+        freqs, power = series.welch_psd(fs=fs, **kwargs)
+        # freqs, power = series.soc_carspan()
+        ci_lo, ci_hi = power, power
         if freqs.size == 0:
             return ax
 
         # PSD line + confidence interval
-        ax.plot(freqs, power, "-k", lw=0.8, alpha=0.6)
+        ax.plot(freqs, power, "k", lw=0.8, alpha=0.6)
         ax.plot(freqs, ci_lo, "k:", lw=0.8, alpha=0.6)
         ax.plot(freqs, ci_hi, "k:", lw=0.8, alpha=0.6)
-
+        ax.fill_between(
+            freqs,
+            0,
+            power,
+            color="gray",
+            alpha=0.3,
+        )
         # Frequency band fills — from HRV_FREQUENCY_BANDS
         x_max = 0.0
         for name, spec in HRV_FREQUENCY_BANDS.items():
