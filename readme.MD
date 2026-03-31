@@ -10,26 +10,26 @@
     - [Inputs](#inputs)
     - [Workflow](#workflow)
     - [Outputs](#outputs)
-- [The Application Tabs in Detail](#the-application-tabs-in-detail)
-  - [PreProcessing Tab](#preprocessing-tab)
-  - [IBI Series Tab](#ibi-series-tab)
-  - [Poincaré Tab](#poincaré-tab)
-  - [Epochs Tab](#epochs-tab)
-  - [PSD Tab](#psd-tab)
-  - [Parameters Tab](#parameters-tab)
-- [Data Formats](#data-formats)
-- [IBI Classification](#ibi-classification)
-  - [Labels](#labels)
-  - [Classification Parameters](#classification-parameters)
-- [Breathing Signal Extraction](#breathing-signal-extraction)
-- [Poincaré Plots](#poincaré-plots)
-- [Power Spectral Density (PSD)](#power-spectral-density-psd)
-- [Installation and Running](#installation-and-running)
-  - [Windows](#windows)
-  - [macOS](#macos)
-- [Workspace Configuration](#workspace-configuration)
-- [Contributing](#contributing)
-- [License](#license)
+  - [The Application Tabs in Detail](#the-application-tabs-in-detail)
+    - [PreProcessing Tab](#preprocessing-tab)
+    - [IBI Series Tab](#ibi-series-tab)
+    - [Poincaré Tab](#poincaré-tab)
+    - [Epochs Tab](#epochs-tab)
+    - [PSD Tab](#psd-tab)
+    - [Parameters Tab](#parameters-tab)
+  - [Data Formats](#data-formats)
+  - [IBI Classification](#ibi-classification)
+    - [Labels](#labels)
+    - [Classification Parameters](#classification-parameters)
+  - [Breathing Signal Extraction](#breathing-signal-extraction)
+  - [Poincaré Plots](#poincaré-plots)
+  - [Power Spectral Density (PSD)](#power-spectral-density-psd)
+  - [Installation and Running](#installation-and-running)
+    - [Windows](#windows)
+    - [macOS](#macos)
+  - [Workspace Configuration](#workspace-configuration)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ---
 
@@ -56,6 +56,8 @@ The project consists of two layers:
 - **Breathing signal extraction** — a respiration surrogate is derived from the Polar H10's 3-axis accelerometer via PCA and overlaid on the ECG and heart rate plots.
 - **Epoch-based analysis** — all analyses are segmented by named time epochs. Epochs are built automatically from event markers, or can be added, renamed, and adjusted manually.
 - **Full HRV metric suite** — time-domain (RMSSD, SDNN, SD1, SD2, …) and frequency-domain (VLF, LF, HF power) metrics per epoch.
+- **Dual PSD methods** — power spectral density can be estimated using either **Welch's method** (uniform resampling + FFT) or the **Lomb-Scargle periodogram** (works directly on the irregular IBI timestamps without resampling). The method is selected in the workspace and can be changed at runtime via the Parameters dialog without restarting.
+- **Configurable confidence intervals** — chi-square confidence intervals are shown as shaded bands on every PSD plot. The significance level α is configurable; the plot legend always reflects the actual level used (e.g. "95 % CI" for α = 0.05).
 - **Multiple simultaneous devices** — supports recordings from more than one Polar H10 at the same time. Each device's ECG and respiration data are indexed as separate "bands."
 - **Caching** — processed datasets are saved as `.pkl` files so reopening a file is instant.
 
@@ -67,13 +69,14 @@ A dataset is loaded from a supported file format. It must contain at least an EC
 
 ### Workflow
 
-1. **Configure a workspace** — a JSON file that points to your data directory, cache directory, and output directory. The app opens with a default workspace; you can open or edit your own via the File menu.
+1. **Configure a workspace** — a JSON file that points to your data directory, cache directory, and sets all analysis parameters. The app opens with a default workspace; you can open or edit your own via the File menu.
 2. **Select a file** from the file tree on the left. The app loads (or retrieves from cache), preprocesses the ECG, detects R-peaks, extracts the breathing signal if accelerometer data is available, and displays the results.
 3. **Inspect and correct R-peaks** in the PreProcessing tab. Use Drag / Add / Remove mode to fix any mis-detections.
 4. **Review the heart rate series** in the IBI Series tab.
 5. **Explore HRV dynamics** in the Poincaré, PSD, and Parameters tabs.
 6. **Adjust epoch boundaries** in the Epochs tab by dragging the edges of epoch bars.
-7. **Export results** — click Save in the Parameters tab to write a CSV file to the configured output directory.
+7. **Edit analysis parameters** via File → Edit Parameters to change PSD method, frequency bands, IBI classification settings, and more — all changes take effect immediately and are saved to the workspace file.
+8. **Export results** — click Save in the Parameters tab to write a CSV file to the configured output directory.
 
 All edits are saved automatically to the cache file when you switch tabs or select a new file.
 
@@ -89,9 +92,7 @@ All edits are saved automatically to the cache file when you switch tabs or sele
 
 ## PreProcessing Tab
 
-The central workspace for ECG quality control.
-
-The tab shows two stacked plots:
+The central workspace for ECG quality control. The tab shows two stacked plots:
 
 - **Main ECG plot** (upper, larger) — the raw ECG signal in red, with detected R-peaks shown as colour-coded vertical lines. Lines are coloured by their IBI classification label (see [IBI Classification](#ibi-classification) below). IBI durations in milliseconds are annotated as arrows between adjacent R-peaks. If a breathing signal is available, it is overlaid as a green trace on a secondary y-axis. Time epochs are shown as horizontal arrows above the plot.
 - **Overview strip** (lower, smaller) — a thumbnail of the full ECG recording with a blue rectangle indicating the current zoom window. Drag the rectangle to navigate.
@@ -116,17 +117,11 @@ The tab shows two stacked plots:
 
 ## IBI Series Tab
 
-Displays the heart rate over time in beats per minute (bpm), derived from the R-peak times.
-
-Heart rate is computed as 60 / IBI at each R-peak, plotted at the midpoint of each inter-beat interval. The same navigation bar as in the PreProcessing tab is available for zooming and panning. If breathing data is present, it is overlaid as a semi-transparent green trace.
+Displays the heart rate over time in beats per minute (bpm), derived from the R-peak times. Heart rate is computed as 60 / IBI at each R-peak, plotted at the midpoint of each inter-beat interval. The same navigation bar as in the PreProcessing tab is available for zooming and panning. If breathing data is present, it is overlaid as a semi-transparent green trace.
 
 ## Poincaré Tab
 
-Displays a Poincaré (return map) scatter plot: each point represents a pair of consecutive IBIs — IBI(n) on the x-axis and IBI(n+1) on the y-axis.
-
-Each epoch is plotted in a distinct colour, with an SD1/SD2 confidence ellipse overlaid. Epoch visibility is controlled by checkboxes on the right side of the tab. Hovering over a point (click to pin the tooltip) shows the two IBI values and the timestamp of that R-peak.
-
-See [Poincaré Plots](#poincaré-plots) for metric definitions.
+Displays a Poincaré (return map) scatter plot: each point represents a pair of consecutive IBIs — IBI(n) on the x-axis and IBI(n+1) on the y-axis. Each epoch is plotted in a distinct colour, with an SD1/SD2 confidence ellipse overlaid. Epoch visibility is controlled by checkboxes on the right side of the tab. Hovering over a point (click to pin the tooltip) shows the two IBI values and the timestamp of that R-peak. See [Poincaré Plots](#poincaré-plots) for metric definitions.
 
 ## Epochs Tab
 
@@ -142,7 +137,9 @@ Epoch changes immediately affect all other tabs and all metric calculations.
 
 Shows one Power Spectral Density plot per active epoch, stacked vertically in a scrollable panel. All epoch plots share the same y-axis scale so epochs can be compared at a glance.
 
-PSD is estimated using Welch's method on the IBI series, interpolated to a uniform 4 Hz grid. Confidence intervals are shown as shaded bands. See [Power Spectral Density](#power-spectral-density-psd) for parameter details.
+The PSD method — **Welch** or **Lomb-Scargle** — is selected in the workspace and shown in each plot's title. Confidence intervals are rendered as a shaded grey band with dashed boundary lines; the legend label (e.g. "95 % CI") always reflects the configured significance level α.
+
+Frequency bands are coloured fills with the integrated band power shown in the legend. See [Power Spectral Density](#power-spectral-density-psd) for full parameter details.
 
 ## Parameters Tab
 
@@ -198,7 +195,7 @@ After R-peak detection, each inter-beat interval is classified automatically. Th
 
 ## Classification Parameters
 
-These parameters can be adjusted by calling `classify_ibi()` programmatically (see [Contributing](#contributing)):
+These parameters can be adjusted via **File → Edit Parameters** in the application, or by calling `classify_ibi()` programmatically (see [Contributing](#contributing)):
 
 ### Window size (`window_length`)
 
@@ -243,9 +240,7 @@ The breathing signal is overlaid in green on the PreProcessing and IBI Series pl
 
 # Poincaré Plots
 
-A Poincaré plot maps each IBI against the one that follows it. For a sequence of intervals IBI₁, IBI₂, …, IBIₙ, the plot shows the point cloud (IBIᵢ, IBIᵢ₊₁).
-
-The spread of this cloud in two directions yields complementary HRV measures:
+A Poincaré plot maps each IBI against the one that follows it. For a sequence of intervals IBI₁, IBI₂, …, IBIₙ, the plot shows the point cloud (IBIᵢ, IBIᵢ₊₁). The spread of this cloud in two directions yields complementary HRV measures:
 
 ### SD1 — short-term variability
 
@@ -281,6 +276,10 @@ Note: SD1 and SD2 carry overlapping information with RMSSD and SDNN respectively
 
 # Power Spectral Density (PSD)
 
+spectHR supports two PSD estimation methods, selectable via the workspace. Both produce power in **ms²/Hz** over the same configurable frequency bands.
+
+## Welch's Method
+
 The IBI series is resampled to a uniform time grid using linear interpolation, then Welch's method is applied to estimate the power spectral density.
 
 Default parameters:
@@ -293,19 +292,42 @@ Default parameters:
 | Window function | Hamming |
 | FFT length (`nfft`) | 1024 |
 
-Frequency bands:
+Confidence intervals use a chi-square approximation with `ν = 2 × n_segments` degrees of freedom, where `n_segments` is the number of Welch averaging segments. For short epochs, segment length and overlap are automatically reduced to fit the available data.
 
-| Band | Range |
-|------|-------|
+See the [scipy.signal.welch](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.welch.html) documentation for full technical details.
+
+## Lomb-Scargle Periodogram
+
+The Lomb-Scargle method evaluates the PSD directly on the **unevenly sampled** IBI timestamps — no resampling or interpolation is needed. This is the primary advantage over Welch for short or irregularly sampled epochs.
+
+The mean IBI is subtracted before estimation to prevent DC leakage. The frequency grid spans all configured HRV bands.
+
+Default parameters:
+
+| Parameter | Value |
+|-----------|-------|
+| Number of frequency points (`nfreqs`) | 1000 |
+| Minimum frequency floor (`fmin_floor`) | 0.0001 Hz |
+
+Confidence intervals use a chi-square approximation with data-driven degrees of freedom. Following Scargle (1982), the effective number of independent frequencies in band `[f_min, f_max]` over an observation of duration `T` seconds is `n_eff ≈ 2 × (f_max − f_min) × T`, giving `ν = 2 × n_eff`. This means CI width scales naturally with recording length — longer recordings give tighter intervals.
+
+## Frequency Bands
+
+Both methods use the same configurable frequency bands:
+
+| Band | Default Range |
+|------|--------------|
 | VLF (Very Low Frequency) | 0.003–0.04 Hz |
 | LF (Low Frequency) | 0.04–0.15 Hz |
 | HF (High Frequency) | 0.15–0.40 Hz |
 
-Band power is computed by trapezoidal integration with linear interpolation at the band edges. Confidence intervals are estimated using a chi-square approximation.
+Band edges, colours, and the active PSD method are all configurable in the workspace JSON and in the **Edit Parameters** dialog.
 
-For short epochs, segment length and overlap are automatically reduced to fit the available data.
+Band power is computed by trapezoidal integration with linear interpolation at the band edges.
 
-See the [scipy.signal.welch](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.welch.html) documentation for full technical details.
+## Confidence Intervals
+
+Both methods display a shaded confidence band around the PSD curve. The significance level α (`confidence_interval_alpha`) defaults to 0.05, giving 95 % CIs. The plot legend always shows the actual level, e.g. "90 % CI" if α = 0.10. α can be changed in the workspace or the **Edit Parameters** dialog.
 
 ---
 
@@ -336,7 +358,6 @@ Drag `spectHR.app` to `/Applications`. This avoids permission issues with runnin
 Because the app is not signed by Apple, macOS will block it the first time. Choose one of the following:
 
 **Option A — Finder (recommended)**
-
 1. Open `/Applications`
 2. Right-click `spectHR.app` → choose **Open**
 3. Click **Open** in the dialog
@@ -344,17 +365,14 @@ Because the app is not signed by Apple, macOS will block it the first time. Choo
 The app will run normally from this point on.
 
 **Option B — System Settings**
-
 1. Try opening `spectHR.app` once (so macOS registers the block)
 2. Open **System Settings → Privacy & Security**
 3. Near the bottom you will see: *"spectHR was blocked…"* — click **Open Anyway**
 
 **Option C — Terminal (always works)**
-
 ```bash
 xattr -dr com.apple.quarantine /Applications/spectHR.app
 ```
-
 Then open `spectHR.app` normally.
 
 ### Updating
@@ -365,21 +383,67 @@ Download the new `.zip`, replace `spectHR.app` in `/Applications`. No reinstalla
 
 # Workspace Configuration
 
-spectHR uses a JSON workspace file to locate your files. The default workspace is loaded on startup. You can open, edit, or save workspaces via the **File** menu.
+spectHR uses a JSON workspace file to configure file locations and all analysis parameters. The default workspace is loaded on startup from `~/Documents/DefaultWorkSpace.json`. You can open, edit, or save workspaces via the **File** menu. Parameters can also be edited interactively via **File → Edit Parameters**, which saves changes back to the current workspace file immediately.
 
-A workspace file has three keys:
+The workspace has three top-level sections:
 
 ```json
 {
-    "DataDirectory": "/path/to/your/raw/data",
-    "CacheDirectory": "/path/to/cache",
-    "OutputDirectory": "/path/to/csv/output"
+    "Directories": {
+        "DataDirectory":  "/path/to/your/raw/data",
+        "CacheDirectory": "/path/to/cache",
+        "OutputDirectory": "/path/to/csv/output"
+    },
+    "FrequencyAnalysis": {
+        "method": "welch",
+        "bands": {
+            "VLF": { "low": 0.003, "high": 0.04,  "color": "blue" },
+            "LF":  { "low": 0.04,  "high": 0.15,  "color": "darkgreen" },
+            "HF":  { "low": 0.15,  "high": 0.40,  "color": "red" }
+        },
+        "welch": {
+            "fs": 4.0,
+            "nperseg": 256,
+            "noverlap": 128,
+            "nfft": null,
+            "window": "hamming"
+        },
+        "lombscargle": {
+            "nfreqs": 1000,
+            "fmin_floor": 0.0001
+        },
+        "confidence_interval_alpha": 0.05
+    },
+    "CardioParameters": {
+        "IbiClassification": {
+            "window_length": 51,
+            "n_std": 4.0,
+            "max_ibi_sec": 2.0,
+            "min_peak_distance_ms": 300.0
+        },
+        "EcgPreprocessing": {
+            "filter_type": "highpass",
+            "filter_cutoff": 1.0
+        }
+    }
 }
 ```
 
-- **DataDirectory** — where spectHR looks for `.xdf`, `.txt`, and `.evt` files. All files in this directory are listed in the file tree.
-- **CacheDirectory** — where processed datasets are saved as `.pkl` files for fast reloading.
-- **OutputDirectory** — where CSV exports from the Parameters tab are written.
+**Directories**
+- `DataDirectory` — where spectHR looks for `.xdf`, `.txt`, and `.evt` files.
+- `CacheDirectory` — where processed datasets are saved as `.pkl` files for fast reloading.
+- `OutputDirectory` — where CSV exports from the Parameters tab are written.
+
+**FrequencyAnalysis**
+- `method` — PSD estimation method: `"welch"` or `"lombscargle"`.
+- `bands` — frequency band definitions; add, remove, or rename bands freely.
+- `welch` — parameters passed to `scipy.signal.welch` (used when `method` is `"welch"`).
+- `lombscargle` — parameters for the Lomb-Scargle periodogram (used when `method` is `"lombscargle"`).
+- `confidence_interval_alpha` — significance level α for the chi-square CI shading (0.05 = 95 % CI).
+
+**CardioParameters**
+- `IbiClassification` — window length, standard-deviation multiplier, and maximum IBI threshold for automatic beat classification.
+- `EcgPreprocessing` — filter type and cutoff used during ECG pre-processing.
 
 ---
 
@@ -393,6 +457,7 @@ spectHR is written in pure Python. The library layer (`src/spectHR/`) and the UI
 |-------|------|------|
 | `PhysioData` | `DataSet/PhysioData.py` | Central data container; owns all time series, epochs, and derived data |
 | `CardioSeries` | `DataSet/Series/CardioSeries.py` | R-peak times, IBI classification, all HRV metric methods |
+| `CardioMetricsMixin` | `DataSet/Series/CardioMetricsMixin.py` | All frequency-domain PSD computation (Welch + Lomb-Scargle), CI estimation, band-power metrics |
 | `TimeSeries` | `DataSet/Series/TimeSeries.py` | Raw 1-D time series with filtering and polarity detection |
 | `RespirationSeries` | `DataSet/Series/RespirationSeries.py` | Detected inhalation/exhalation phase intervals |
 | `Epoch` | `DataSet/Epoch.py` | Single named time interval with helper methods |
