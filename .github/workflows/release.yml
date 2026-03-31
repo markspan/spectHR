@@ -212,7 +212,6 @@ jobs:
               libxshmfence1 \
               libglu1-mesa \
               libegl1-mesa \
-              libgles2-mesa \
               mesa-utils \
               fonts-dejavu-core
 
