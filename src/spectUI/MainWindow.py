@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
 
         self.ui.actionDocumentation.triggered.connect(
             lambda: webbrowser.open(
-                "https://github.com/markspan/spectHR/blob/test/readme.MD"
+                "https://github.com/markspan/spectHR/blob/V2/readme.MD"
             )
         )
         self.ui.actionDocumentation.setShortcut("Ctrl+D")
