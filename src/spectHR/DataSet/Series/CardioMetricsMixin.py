@@ -15,80 +15,116 @@ from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 # ======================================================================
 
 HRV_FREQUENCY_BANDS: Dict[str, Dict] = {
-    "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
-    "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},
-    "HF": {"low": 0.15, "high": 0.40, "color": "red"},
+    "VLF": {"low": 0.003, "high": 0.04,  "color": "blue"},
+    "LF":  {"low": 0.04,  "high": 0.15,  "color": "darkgreen"},
+    "HF":  {"low": 0.15,  "high": 0.40,  "color": "red"},
 }
 
 WELCH_PARAMS: Dict = {
-    "fs": 100.0,
-    "nperseg": 256,
+    "fs":       4.0,
+    "nperseg":  256,
     "noverlap": 128,
-    "nfft": None,
-    "window": "hamming",
+    "nfft":     None,
+    "window":   "hamming",
 }
 
 LOMBSCARGLE_PARAMS: Dict = {
-    "nfreqs": 1000,  # number of frequency grid points
-    "fmin_floor": 1e-4,  # lower bound floor (Hz) — avoids evaluating at zero
+    "nfreqs":     1000,
+    "fmin_floor": 1e-4,
+}
+
+CARSPAN_PARAMS: Dict = {
+    # Output frequency grid resolution in Hz.
+    # CARSPAN interpolates computed spectral lines onto this fixed grid so
+    # that spectra are visually comparable across recording lengths (§3.3.4).
+    "freq_resolution": 0.01,
+
+    # Tapering window applied to the event sequence before the DFT.
+    # CARSPAN uses Hanning (confirmed by Arie Goudbeek).
+    # Any name accepted by scipy.signal.get_window() is valid,
+    # e.g. "hann", "hamming", "blackman", "bartlett", "boxcar".
+    "window": "hann",
 }
 
 CI_ALPHA: float = 0.05
 
-# "welch" or "lombscargle" — updated by load_method() at startup
+# Active PSD method: "welch", "lombscargle", or "carspan"
 METHOD: str = "welch"
 
 
+# ======================================================================
+# Workspace loaders — called once at startup by workSpace.LoadWorkspace()
+# ======================================================================
+
 def load_frequency_bands(bands_config: dict) -> None:
-    """
-    Update HRV_FREQUENCY_BANDS in place from workspace["FrequencyAnalysis"]["bands"].
-    Extra bands in the config are added; missing ones keep their defaults.
-    """
+    """Update HRV_FREQUENCY_BANDS in place from workspace config."""
     for name, spec in bands_config.items():
         HRV_FREQUENCY_BANDS[name] = {
-            "low": float(spec["low"]),
-            "high": float(spec["high"]),
+            "low":   float(spec["low"]),
+            "high":  float(spec["high"]),
             "color": str(spec.get("color", "gray")),
         }
 
 
 def load_welch_params(welch_config: dict) -> None:
-    """
-    Update WELCH_PARAMS in place from workspace["FrequencyAnalysis"]["welch"].
-    """
+    """Update WELCH_PARAMS in place from workspace config."""
     for key in ("fs", "nperseg", "noverlap", "nfft", "window"):
         if key in welch_config:
             WELCH_PARAMS[key] = welch_config[key]
 
 
 def load_lombscargle_params(ls_config: dict) -> None:
-    """
-    Update LOMBSCARGLE_PARAMS in place from workspace["FrequencyAnalysis"]["lombscargle"].
-    """
+    """Update LOMBSCARGLE_PARAMS in place from workspace config."""
     for key in ("nfreqs", "fmin_floor"):
         if key in ls_config:
             LOMBSCARGLE_PARAMS[key] = ls_config[key]
 
 
+def load_carspan_params(cs_config: dict) -> None:
+    """
+    Update CARSPAN_PARAMS in place from
+    workspace["FrequencyAnalysis"]["carspan"].
+
+    Keys
+    ----
+    freq_resolution : float
+        Step size of the output frequency grid in Hz (default 0.01).
+        CARSPAN interpolates computed spectral lines onto this grid,
+        ensuring spectra are comparable regardless of recording length.
+    window : str
+        Tapering window applied before the DFT (default "hann").
+        Any name accepted by scipy.signal.get_window() is valid,
+        e.g. "hann", "hamming", "blackman", "bartlett", "boxcar".
+    """
+    for key in ("freq_resolution", "window"):
+        if key in cs_config:
+            CARSPAN_PARAMS[key] = cs_config[key]
+
+
 def load_ci_alpha(alpha: float) -> None:
-    """
-    Update the module-level CI_ALPHA from
-    workspace["FrequencyAnalysis"]["confidence_interval_alpha"].
-    """
+    """Update CI_ALPHA from workspace config."""
     global CI_ALPHA
     CI_ALPHA = float(alpha)
 
 
 def load_method(method: str) -> None:
     """
-    Update the module-level METHOD from workspace["FrequencyAnalysis"]["method"].
-    Accepted values (case-insensitive): "welch", "lombscargle".
+    Update METHOD from workspace["FrequencyAnalysis"]["method"].
+
+    Accepted values (case-insensitive)
+    ------------------------------------
+    "welch"       — Welch periodogram on a resampled, uniform IBI grid.
+    "lombscargle" — Lomb-Scargle periodogram on irregular timestamps.
+    "carspan"     — Direct DFT on R-peak event times (CARSPAN manual §3.3.4,
+                    formula 3.19), with configurable tapering window and
+                    automatic mMI² normalisation (formula 3.20/3.29).
     """
     global METHOD
     m = str(method).lower().strip()
-    if m not in ("welch", "lombscargle"):
+    if m not in ("welch", "lombscargle", "carspan"):
         raise ValueError(
-            f"Unknown PSD method {method!r}. Must be 'welch' or 'lombscargle'."
+            f"Unknown PSD method {method!r}. "
+            "Must be 'welch', 'lombscargle', or 'carspan'."
         )
     METHOD = m
 
@@ -97,60 +133,89 @@ def load_method(method: str) -> None:
 # Mixin
 # ======================================================================
 
-
 class CardioMetricsMixin(HRVMetric):
     """
     Mixin providing HRV metric computation for any object that exposes:
-        times  : np.ndarray
-        labels : np.ndarray
-        ibi    : np.ndarray
+        times  : np.ndarray   R-peak times in seconds
+        labels : np.ndarray   per-interval labels
+        ibi    : np.ndarray   inter-beat intervals in seconds
 
-    All frequency-domain parameters (band edges, Welch settings, CI alpha,
-    and method choice) are read from the module-level constants above, which
-    are populated at application startup from the workspace JSON via
-    workSpace.LoadWorkspace().
+    Three PSD back-ends are available, selected via the workspace:
 
-    PSD dispatch
-    ------------
-    ``psd_with_ci()`` is the single public entry point used by the band-power
-    metrics and the plot widget.  It routes to Welch or Lomb-Scargle based on
-    the workspace-configured METHOD and always returns
-    ``(freqs, psd, ci_lower, ci_upper)``.
+    Welch (default)
+        Resamples the IBI series onto a uniform grid (default 4 Hz) and
+        applies scipy.signal.welch. Output in ms²/Hz.
+
+    Lomb-Scargle
+        Evaluates the spectrum directly on the original irregular beat
+        timestamps without resampling. Output in ms²/Hz.
+
+    CARSPAN
+        Implements the direct DFT on R-peak event times as described in
+        the CARSPAN manual (Mulder, 1988; §3.3.4, formula 3.19):
+
+            S(fk) = (2/T) * |Σ_i  w_i · exp(-2πj·fk·ti)|²
+
+        where w_i is the i-th element of the configurable tapering window
+        (default: Hanning, as used in CARSPAN).
+
+        The spectrum is computed on the native frequency grid (Δf = 1/T)
+        and then interpolated onto a fixed output grid (default 0.01 Hz
+        resolution) so that spectra are visually comparable across
+        recordings of different lengths — exactly matching CARSPAN output.
+
+        Band-power values are automatically expressed in mMI²
+        (milli-Modulation-Index squared) via the CARSPAN normalisation
+        (formula 3.20/3.29):
+
+            power_mMI² = (power_ms² / mean_IBI_ms²) × 1 000 000
+
+        This makes the spectrum dimensionless and directly comparable to
+        CARSPAN output.
+
+    Switching the method in the workspace immediately updates all band-power
+    metrics (vlf_power, lf_power, hf_power) and the PSD plot.
     """
 
     METRIC_ORDER = [
-        "count",
-        "mean",
-        "median",
-        "min",
-        "max",
-        "std",
-        "rmssd",
-        "sdnn",
-        "sdsd",
-        "sd1",
-        "sd2",
-        "sd_ratio",
-        "ellipse_area",
-        "vlf_power",
-        "lf_power",
-        "hf_power",
-        "lf_hf_ratio",
+        "count", "mean", "median", "min", "max", "std",
+        "rmssd", "sdnn", "sdsd",
+        "sd1", "sd2", "sd_ratio", "ellipse_area",
+        "vlf_power", "lf_power", "hf_power", "lf_hf_ratio",
     ]
 
     # ------------------------------------------------------------------
-    # Core helper
+    # Core helpers
     # ------------------------------------------------------------------
 
     def _ibi_clean_ms(self) -> np.ndarray:
-        """
-        Return valid IBI values in milliseconds, excluding NaN, TL, and T labels.
-        """
+        """Return valid IBI values in ms, excluding NaN, TL, and T labels."""
         ibi_sec = self.ibi
         if ibi_sec.size == 0:
             return np.array([], dtype=float)
-        valid = ~np.isnan(ibi_sec) & (self.labels != "TL") & (self.labels != "T")
+        valid = (
+            ~np.isnan(ibi_sec)
+            & (self.labels != "TL")
+            & (self.labels != "T")
+        )
         return 1000.0 * ibi_sec[valid]
+
+    def _carspan_normalise(self, power_ms2: float) -> float:
+        """
+        Convert band-power from ms² to mMI² using the CARSPAN normalisation
+        (CARSPAN manual §3.3.4, formulae 3.20 and 3.29):
+
+            power_mMI² = (power_ms² / mean_IBI_ms²) × 1 000 000
+
+        Returns NaN if mean IBI is zero or unavailable.
+        """
+        ibi_ms = self._ibi_clean_ms()
+        if ibi_ms.size == 0:
+            return np.nan
+        mean_ibi = float(np.mean(ibi_ms))
+        if mean_ibi == 0.0:
+            return np.nan
+        return (power_ms2 / ((mean_ibi/1000) ** 2)) * 1_000_000.0
 
     # ------------------------------------------------------------------
     # Welch back-end
@@ -159,33 +224,30 @@ class CardioMetricsMixin(HRVMetric):
     def welch_psd(
         self,
         *,
-        fs: float | None = None,
-        nperseg: int | None = None,
-        noverlap: int | None = None,
-        nfft: int | None = None,
-        window: str | None = None,
+        fs:          float | None = None,
+        nperseg:     int   | None = None,
+        noverlap:    int   | None = None,
+        nfft:        int   | None = None,
+        window:      str   | None = None,
         interpolate: bool = True,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute Welch PSD on the IBI series (ms), resampled to a uniform grid.
-
-        Parameters default to the workspace-configured WELCH_PARAMS when not
-        explicitly supplied by the caller.
-
+        Parameters default to the workspace-configured WELCH_PARAMS.
         Returns empty arrays if there are no usable IBIs or interpolation fails.
         """
-        fs = fs if fs is not None else WELCH_PARAMS["fs"]
-        nperseg = nperseg if nperseg is not None else WELCH_PARAMS["nperseg"]
+        fs       = fs       if fs       is not None else WELCH_PARAMS["fs"]
+        nperseg  = nperseg  if nperseg  is not None else WELCH_PARAMS["nperseg"]
         noverlap = noverlap if noverlap is not None else WELCH_PARAMS["noverlap"]
-        nfft = nfft if nfft is not None else WELCH_PARAMS["nfft"]
-        window = window if window is not None else WELCH_PARAMS["window"]
+        nfft     = nfft     if nfft     is not None else WELCH_PARAMS["nfft"]
+        window   = window   if window   is not None else WELCH_PARAMS["window"]
 
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size == 0:
             return np.ndarray(0), np.ndarray(0)
 
         if ibi_ms.size < nperseg:
-            nperseg = ibi_ms.size
+            nperseg  = ibi_ms.size
             noverlap = int(ibi_ms.size / 2) if ibi_ms.size >= 2 else 0
 
         ibi_times = self.times[: ibi_ms.size]
@@ -195,8 +257,7 @@ class CardioMetricsMixin(HRVMetric):
                 if ibi_times.size >= 2:
                     t_uniform = np.arange(ibi_times[0], ibi_times[-1], 1.0 / fs)
                     ibi_ms = interp1d(
-                        ibi_times,
-                        ibi_ms,
+                        ibi_times, ibi_ms,
                         kind="linear",
                         fill_value="extrapolate",
                     )(t_uniform)
@@ -220,28 +281,23 @@ class CardioMetricsMixin(HRVMetric):
         alpha: float | None = None,
         **kwargs,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Compute Welch PSD with chi-square confidence intervals.
-
-        alpha defaults to the workspace-configured CI_ALPHA.
-        Returns freqs, psd, ci_lower, ci_upper.
-        """
+        """Welch PSD with chi-square confidence intervals."""
         alpha = alpha if alpha is not None else CI_ALPHA
         freqs, psd = self.welch_psd(**kwargs)
         if freqs.size == 0:
             return freqs, psd, psd, psd
 
-        nperseg = kwargs.get("nperseg", WELCH_PARAMS["nperseg"])
+        nperseg  = kwargs.get("nperseg",  WELCH_PARAMS["nperseg"])
         noverlap = kwargs.get("noverlap", WELCH_PARAMS["noverlap"])
-        step = nperseg - noverlap
+        step       = nperseg - noverlap
         n_segments = max(1, int(np.floor((psd.size * step) / nperseg)))
-        nu = 2 * n_segments
-        ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
-        ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
+        nu         = 2 * n_segments
+        ci_lower   = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
+        ci_upper   = (nu * psd) / chi2.ppf(alpha / 2, nu)
         return freqs, psd, ci_lower, ci_upper
 
     # ------------------------------------------------------------------
-    # Lomb-Scargle back-end  (scipy.signal.lombscargle)
+    # Lomb-Scargle back-end
     # ------------------------------------------------------------------
 
     def lombscargle_psd(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -249,28 +305,22 @@ class CardioMetricsMixin(HRVMetric):
         if ibi_ms.size < 4:
             return np.ndarray(0), np.ndarray(0)
 
-        ibi_times = self.times[: ibi_ms.size]  # seconds, irregular
-
-        nfreqs = LOMBSCARGLE_PARAMS["nfreqs"]
+        ibi_times  = self.times[: ibi_ms.size]
+        nfreqs     = LOMBSCARGLE_PARAMS["nfreqs"]
         fmin_floor = LOMBSCARGLE_PARAMS["fmin_floor"]
 
         try:
-            f_min = min(s["low"] for s in HRV_FREQUENCY_BANDS.values())
-            f_max = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
-            freqs = np.linspace(max(f_min, fmin_floor), f_max, nfreqs)
-
+            f_min     = min(s["low"]  for s in HRV_FREQUENCY_BANDS.values())
+            f_max     = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
+            freqs     = np.linspace(max(f_min, fmin_floor), f_max, nfreqs)
             ang_freqs = 2.0 * np.pi * freqs
-
-            ibi_zero = ibi_ms - ibi_ms.mean()
-
-            pgram = signal.lombscargle(ibi_times, ibi_zero, ang_freqs, normalize=False)
-
-            # Scale to PSD (ms²/Hz), matching astropy normalization="psd":
-            # power_psd = (2 * T / N²) * pgram
-            T = float(ibi_times[-1] - ibi_times[0])
-            N = float(ibi_ms.size)
+            ibi_zero  = ibi_ms - ibi_ms.mean()
+            pgram     = signal.lombscargle(
+                ibi_times, ibi_zero, ang_freqs, normalize=False
+            )
+            T     = float(ibi_times[-1] - ibi_times[0])
+            N     = float(ibi_ms.size)
             power = (2.0 * T / (N ** 2)) * pgram
-
         except Exception:
             return np.ndarray(0), np.ndarray(0)
 
@@ -281,41 +331,120 @@ class CardioMetricsMixin(HRVMetric):
         *,
         alpha: float | None = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Compute Lomb-Scargle PSD with chi-square confidence intervals.
-
-        Degrees of freedom are estimated from the data rather than fixed at 2.
-        For a time series of duration T observed at N points, the number of
-        statistically independent frequencies in a band [f_min, f_max] is
-        approximately n_eff = 2 × (f_max - f_min) × T (Scargle 1982).
-        Each independent frequency contributes 2 d.f., giving nu = 2 × n_eff.
-
-        This produces CIs that scale with observation length — longer recordings
-        give tighter intervals, just as averaging more Welch segments does.
-
-        alpha defaults to the workspace-configured CI_ALPHA.
-        Returns freqs, psd, ci_lower, ci_upper.
-        """
+        """Lomb-Scargle PSD with chi-square confidence intervals."""
         alpha = alpha if alpha is not None else CI_ALPHA
         freqs, psd = self.lombscargle_psd()
         if freqs.size == 0:
             return freqs, psd, psd, psd
 
-        ibi_ms = self._ibi_clean_ms()
+        ibi_ms    = self._ibi_clean_ms()
         ibi_times = self.times[: ibi_ms.size]
-        T = float(ibi_times[-1] - ibi_times[0])  # observation duration (s)
-
+        T     = float(ibi_times[-1] - ibi_times[0])
         f_min = float(freqs[0])
         f_max = float(freqs[-1])
         n_eff = max(1, int(2.0 * (f_max - f_min) * T))
-        nu = 2 * n_eff
+        nu    = 2 * n_eff
 
         ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
         ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
         return freqs, psd, ci_lower, ci_upper
 
     # ------------------------------------------------------------------
-    # Unified dispatcher — used by metrics and the plot widget
+    # CARSPAN back-end
+    # ------------------------------------------------------------------
+
+    def carspan_psd(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Direct DFT on R-peak event times, following CARSPAN manual §3.3.4
+        (Mulder, 1988; formula 3.19):
+
+            S(fk) = (2/T) * |Σ_i  w_i · exp(-2πj·fk·ti)|²
+
+        where w_i is the i-th tapering window coefficient.
+
+        Steps
+        -----
+        1. Build the native frequency grid fk = k/T (Δf = 1/T),
+           restricted to the frequency range covered by the HRV bands.
+        2. Apply a tapering window (default: Hanning) to reduce spectral
+           leakage, as done in CARSPAN.
+        3. Evaluate the direct DFT at each fk.
+        4. Interpolate onto a fixed output grid (default 0.01 Hz) so that
+           spectra are visually comparable across recording lengths —
+           exactly as CARSPAN does.
+
+        Output is in ms²/Hz.  Band-power metrics apply _carspan_normalise()
+        to convert to mMI² automatically.
+        """
+        ibi_ms = self._ibi_clean_ms()
+        if ibi_ms.size < 4:
+            return np.ndarray(0), np.ndarray(0)
+
+        ibi_times = self.times[: ibi_ms.size]
+        T = float(ibi_times[-1] - ibi_times[0])
+        if T <= 0:
+            return np.ndarray(0), np.ndarray(0)
+
+        N = ibi_ms.size
+
+        # Tapering window — configurable, default Hanning
+        win_name = CARSPAN_PARAMS["window"]
+        try:
+            win = signal.get_window(win_name, N)
+        except Exception:
+            win = np.ones(N)  # fallback: rectangular
+
+        # Native frequency grid: fk = k/T, only within band limits
+        f_min  = min(s["low"]  for s in HRV_FREQUENCY_BANDS.values())
+        f_max  = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
+        k_min  = max(1, int(np.floor(f_min * T)))
+        k_max  = int(np.ceil(f_max * T))
+        k_vals = np.arange(k_min, k_max + 1)
+        freqs_native = k_vals / T  # Hz, resolution = 1/T
+
+        # Direct DFT (formula 3.19), vectorised
+        # phases: shape (N_events, N_freqs)
+        phases  = -2.0 * np.pi * np.outer(ibi_times, freqs_native)
+        X_real  = np.dot(win, np.cos(phases))
+        X_imag  = np.dot(win, np.sin(phases))
+        power_native = (2.0 / T) * (X_real ** 2 + X_imag ** 2)
+
+        # Interpolate onto the fixed output grid (CARSPAN convention)
+        freq_res  = float(CARSPAN_PARAMS["freq_resolution"])
+        freqs_out = np.arange(f_min, f_max + freq_res / 2, freq_res)
+        freqs_out = freqs_out[freqs_out <= f_max]
+
+        if freqs_native.size < 2:
+            return np.ndarray(0), np.ndarray(0)
+
+        power_out = np.interp(freqs_out, freqs_native, power_native)
+        return freqs_out, power_out
+
+    def carspan_psd_with_ci(
+        self,
+        *,
+        alpha: float | None = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """CARSPAN PSD with chi-square confidence intervals."""
+        alpha = alpha if alpha is not None else CI_ALPHA
+        freqs, psd = self.carspan_psd()
+        if freqs.size == 0:
+            return freqs, psd, psd, psd
+
+        ibi_ms    = self._ibi_clean_ms()
+        ibi_times = self.times[: ibi_ms.size]
+        T     = float(ibi_times[-1] - ibi_times[0])
+        f_min = float(freqs[0])
+        f_max = float(freqs[-1])
+        n_eff = max(1, int(2.0 * (f_max - f_min) * T))
+        nu    = 2 * n_eff
+
+        ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
+        ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
+        return freqs, psd, ci_lower, ci_upper
+
+    # ------------------------------------------------------------------
+    # Unified dispatcher
     # ------------------------------------------------------------------
 
     def psd_with_ci(
@@ -325,14 +454,17 @@ class CardioMetricsMixin(HRVMetric):
         **kwargs,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Compute PSD with confidence intervals using the method set in the
-        workspace (module-level METHOD constant).
+        Compute PSD with confidence intervals using the active METHOD.
+        Always returns (freqs, psd, ci_lower, ci_upper) in ms²/Hz.
 
-        Routes to ``welch_psd_with_ci`` or ``lombscargle_psd_with_ci``
-        and always returns ``(freqs, psd, ci_lower, ci_upper)``.
+        When METHOD == "carspan", the raw spectrum is still in ms²/Hz here.
+        The mMI² conversion happens in _band_power(), keeping the PSD plot
+        unaffected by the normalisation.
         """
         if METHOD == "lombscargle":
             return self.lombscargle_psd_with_ci(alpha=alpha)
+        elif METHOD == "carspan":
+            return self.carspan_psd_with_ci(alpha=alpha)
         else:
             return self.welch_psd_with_ci(alpha=alpha, **kwargs)
 
@@ -344,23 +476,37 @@ class CardioMetricsMixin(HRVMetric):
         self,
         freqs: np.ndarray,
         power: np.ndarray,
-        f0: float,
-        f1: float,
+        f0:    float,
+        f1:    float,
     ) -> float:
         """
         Band power by trapezoidal integration with endpoint interpolation.
-        Units: ms².  Returns NaN if band has no data.
+        Returns NaN if the band has no data. Units: ms².
         """
         if freqs.size == 0:
             return np.nan
         mask = (freqs > f0) & (freqs < f1)
         if not np.any(mask):
             return np.nan
-        p0 = np.interp(f0, freqs, power)
-        p1 = np.interp(f1, freqs, power)
+        p0     = np.interp(f0, freqs, power)
+        p1     = np.interp(f1, freqs, power)
         f_band = np.concatenate(([f0], freqs[mask], [f1]))
         p_band = np.concatenate(([p0], power[mask], [p1]))
         return float(np.trapezoid(p_band, f_band))
+
+    def _band_power(self, band_name: str) -> float:
+        """
+        Band power using the active method.
+        Returns ms² for welch/lombscargle, mMI² for carspan.
+        """
+        band              = HRV_FREQUENCY_BANDS[band_name]
+        freqs, power, _, _ = self.psd_with_ci()
+        power_ms2         = self._band_power_exact(
+            freqs, power, band["low"], band["high"]
+        )
+        if METHOD == "carspan":
+            return self._carspan_normalise(power_ms2)
+        return power_ms2
 
     # ------------------------------------------------------------------
     # HRV metrics
@@ -445,27 +591,21 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def vlf_power(self) -> float:
-        """VLF band power in ms² — uses the active PSD method."""
-        band = HRV_FREQUENCY_BANDS["VLF"]
-        freqs, power, _, _ = self.psd_with_ci()
-        return self._band_power_exact(freqs, power, band["low"], band["high"])
+        """VLF band power. Units: ms² (welch/lombscargle) or mMI² (carspan)."""
+        return self._band_power("VLF")
 
     @hrv_metric
     def lf_power(self) -> float:
-        """LF band power in ms² — uses the active PSD method."""
-        band = HRV_FREQUENCY_BANDS["LF"]
-        freqs, power, _, _ = self.psd_with_ci()
-        return self._band_power_exact(freqs, power, band["low"], band["high"])
+        """LF band power. Units: ms² (welch/lombscargle) or mMI² (carspan)."""
+        return self._band_power("LF")
 
     @hrv_metric
     def hf_power(self) -> float:
-        """HF band power in ms² — uses the active PSD method."""
-        band = HRV_FREQUENCY_BANDS["HF"]
-        freqs, power, _, _ = self.psd_with_ci()
-        return self._band_power_exact(freqs, power, band["low"], band["high"])
+        """HF band power. Units: ms² (welch/lombscargle) or mMI² (carspan)."""
+        return self._band_power("HF")
 
     @hrv_metric
     def lf_hf_ratio(self) -> float:
-        """LF/HF ratio (dimensionless)."""
+        """LF/HF ratio (dimensionless). Independent of normalisation."""
         lf, hf = self.lf_power(), self.hf_power()
-        return float(lf / hf) if hf > 0 else np.nan
+        return float(lf / hf) if hf and hf > 0 else np.nan

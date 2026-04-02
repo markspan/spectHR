@@ -111,7 +111,7 @@ _EXCLUDED_SECTIONS = {"Directories"}
 
 # Known enumeration choices for specific leaf keys
 _ENUM_CHOICES: dict[str, list[str]] = {
-    "method": ["welch", "lombscargle"],
+    "method": ["welch", "lombscargle", "carspan"],
     "window": ["hamming", "hann", "blackman", "bartlett", "boxcar"],
     "filter_type": ["highpass", "lowpass", "bandpass"],
 }
