@@ -47,10 +47,10 @@ class CardioSeries(CardioMetricsMixin):
     """
 
     def __init__(self, times: np.ndarray) -> None:
-        self.times = np.asarray(times, dtype=float)
+        self.times  = np.asarray(times, dtype=float)
         self.labels = np.full(self.times.shape, "N", dtype=object)
-        self._pd: Optional["PhysioData"] = None
-        self._stream: Optional[str] = None
+        self._pd:     Optional["PhysioData"] = None
+        self._stream: Optional[str]          = None
 
     # ------------------------------------------------------------------
     # Construction / detection
@@ -62,7 +62,10 @@ class CardioSeries(CardioMetricsMixin):
         ts,
         *,
         min_peak_distance_ms: float = 300.0,
-        classify: bool = True,
+        window_length:        int   = 51,
+        n_std:                float = 4.0,
+        max_ibi_sec:          float = 2.0,
+        classify:             bool  = True,
     ) -> "CardioSeries":
         """
         Detect R-peaks from an ECG TimeSeries and construct a CardioSeries.
@@ -71,20 +74,26 @@ class CardioSeries(CardioMetricsMixin):
         -----
         1. Estimate sampling rate from ts.times.
         2. Detect candidate peaks with scipy.signal.find_peaks.
+           The minimum peak distance enforces a physiological refractory
+           period equivalent to CARSPAN's Trefr (default 300 ms → max ~200 bpm).
         3. Apply a lightweight sub-sample timing correction.
         4. Initialise labels to "N".
         5. Optionally classify IBIs via classify_ibi().
 
         Parameters
         ----------
-        ts :
-            ECG time series with .times and .values attributes.
-        min_peak_distance_ms :
-            Minimum expected R-R distance in milliseconds.
-        classify :
-            If True, run classify_ibi() after peak detection.
+        ts : ECG time series with .times and .values attributes.
+        min_peak_distance_ms : Minimum R-R distance in milliseconds.
+            Beats closer than this cannot be detected, acting as a
+            refractory period (CARSPAN: Trefr = 300 ms).
+        window_length : Passed to classify_ibi() — centered rolling window
+            size in beats.
+        n_std : Passed to classify_ibi() — threshold in standard deviations.
+        max_ibi_sec : Passed to classify_ibi() — absolute ceiling for IBI
+            length; longer intervals are labeled "TL".
+        classify : If True, run classify_ibi() after peak detection.
         """
-        times = np.asarray(ts.times, dtype=float)
+        times  = np.asarray(ts.times,  dtype=float)
         values = np.asarray(ts.values, dtype=float)
 
         if times.size < 2 or values.size < 2:
@@ -97,9 +106,9 @@ class CardioSeries(CardioMetricsMixin):
             raise ValueError(
                 "Cannot estimate sampling rate from ECG times (no positive deltas)."
             )
-        sampling_rate_hz = 1.0 / float(np.mean(time_deltas))
 
-        min_distance_samples = max(
+        sampling_rate_hz      = 1.0 / float(np.mean(time_deltas))
+        min_distance_samples  = max(
             1, int((min_peak_distance_ms / 1000.0) * sampling_rate_hz)
         )
         peak_height_threshold = float(np.median(values) + 1.5 * np.std(values))
@@ -114,23 +123,30 @@ class CardioSeries(CardioMetricsMixin):
             logger.warning("No R-peaks detected.")
             return cls(np.array([], dtype=float))
 
-        pre_values = values[np.clip(peak_indices - 1, 0, values.size - 1)]
-        post_values = values[np.clip(peak_indices + 1, 0, values.size - 1)]
-        peak_values = values[peak_indices]
+        # Sub-sample timing correction
+        pre_values   = values[np.clip(peak_indices - 1, 0, values.size - 1)]
+        post_values  = values[np.clip(peak_indices + 1, 0, values.size - 1)]
+        peak_values  = values[peak_indices]
         local_contrast = np.maximum(
             np.abs(peak_values - pre_values),
             np.abs(post_values - peak_values),
         )
         local_contrast[local_contrast == 0] = 1e-12
         correction_sec = (
-            (post_values - pre_values) / sampling_rate_hz / (2.0 * local_contrast)
+            (post_values - pre_values)
+            / sampling_rate_hz
+            / (2.0 * local_contrast)
         )
         peak_times = times[peak_indices] + correction_sec
 
         series = cls(np.asarray(peak_times, dtype=float))
         series.labels[:] = "N"
         if classify:
-            series.classify_ibi()
+            series.classify_ibi(
+                window_length=window_length,
+                n_std=n_std,
+                max_ibi_sec=max_ibi_sec,
+            )
         return series
 
     # ------------------------------------------------------------------
@@ -142,8 +158,9 @@ class CardioSeries(CardioMetricsMixin):
         """
         Inter-beat intervals in seconds, with a trailing NaN for alignment.
 
-        len(ibi) == len(times).  ibi[i] is the interval between times[i] and
-        times[i+1].  The final element is always NaN.
+        len(ibi) == len(times).
+        ibi[i] is the interval between times[i] and times[i+1].
+        The final element is always NaN.
 
         Pure computation — never mutates self.labels.
         Call classify_ibi() after any mutation to times.
@@ -159,9 +176,9 @@ class CardioSeries(CardioMetricsMixin):
     def classify_ibi(
         self,
         *,
-        window_length: int = 51,
-        n_std: float = 4.0,
-        max_ibi_sec: float = 2.0,
+        window_length: int   = 51,
+        n_std:         float = 4.0,
+        max_ibi_sec:   float = 2.0,
     ) -> None:
         """
         Classify IBIs and assign labels.
@@ -172,7 +189,7 @@ class CardioSeries(CardioMetricsMixin):
         Labels produced
         ---------------
         "N"   — normal
-        "L"   — long (above rolling upper threshold)
+        "L"   — long  (above rolling upper threshold)
         "S"   — short (below rolling lower threshold)
         "TL"  — too long (> max_ibi_sec); excluded from statistics
         "SL"  — short-then-long pattern
@@ -181,17 +198,23 @@ class CardioSeries(CardioMetricsMixin):
 
         Parameters
         ----------
-        window_length :
+        window_length : int
             Size of the centered rolling window (beats) for local mean/std.
-        n_std :
+            Loaded from workspace["CardioParameters"]["IbiClassification"]
+            ["window_length"].
+        n_std : float
             Threshold multiplier: mean ± n_std × std defines S/L boundaries.
-        max_ibi_sec :
+            Loaded from workspace["CardioParameters"]["IbiClassification"]
+            ["n_std"].
+        max_ibi_sec : float
             Absolute ceiling; IBIs above this are labeled TL before rolling
             statistics are computed, so artifacts do not distort thresholds.
+            Loaded from workspace["CardioParameters"]["IbiClassification"]
+            ["max_ibi_sec"].
         """
-        ibi_sec = self.ibi  # pure — no side effects
-        labels = self.labels
-        n = ibi_sec.size
+        ibi_sec = self.ibi   # pure — no side effects
+        labels  = self.labels
+        n       = ibi_sec.size
 
         if n == 0:
             return
@@ -199,12 +222,13 @@ class CardioSeries(CardioMetricsMixin):
         # Step 1: degenerate and too-long
         degenerate = np.isnan(ibi_sec) | (ibi_sec <= 0)
         labels[degenerate] = "T"
-        too_long = ibi_sec > max_ibi_sec
-        labels[too_long] = "TL"
+        too_long           = ibi_sec > max_ibi_sec
+        labels[too_long]   = "TL"
 
         # Step 2: IBI array for statistics (exclude T and TL)
         ibi_stats = ibi_sec.astype(float, copy=True)
         ibi_stats[degenerate | too_long] = np.nan
+
         if ibi_stats.size >= 2 and np.isnan(ibi_stats[-1]):
             last_valid = ibi_stats[~np.isnan(ibi_stats)]
             if last_valid.size > 0:
@@ -215,21 +239,21 @@ class CardioSeries(CardioMetricsMixin):
 
         # Step 3: short-series fallback
         if n < window_length:
-            mean = np.nanmean(ibi_stats)
-            std = np.nanstd(ibi_stats)
-            lo, hi = mean - n_std * std, mean + n_std * std
+            mean    = np.nanmean(ibi_stats)
+            std     = np.nanstd(ibi_stats)
+            lo, hi  = mean - n_std * std, mean + n_std * std
             for i in range(n):
                 if labels[i] in ("T", "TL"):
                     continue
                 labels[i] = "L" if ibi_sec[i] > hi else "S" if ibi_sec[i] < lo else "N"
             return
 
-        # Step 4: rolling statistics
-        half = window_length // 2
+        # Step 4: rolling statistics (centered window)
+        half   = window_length // 2
         padded = np.pad(ibi_stats, (half, half), mode="edge")
-        windows = np.lib.stride_tricks.sliding_window_view(padded, window_length)
+        windows    = np.lib.stride_tricks.sliding_window_view(padded, window_length)
         local_mean = np.nanmean(windows, axis=1)[:n]
-        local_std = np.nanstd(windows, axis=1)[:n]
+        local_std  = np.nanstd(windows,  axis=1)[:n]
         lo = local_mean - n_std * local_std
         hi = local_mean + n_std * local_std
 
@@ -238,7 +262,9 @@ class CardioSeries(CardioMetricsMixin):
             if labels[i] in ("T", "TL"):
                 continue
             labels[i] = (
-                "L" if ibi_sec[i] > hi[i] else "S" if ibi_sec[i] < lo[i] else "N"
+                "L" if ibi_sec[i] > hi[i]
+                else "S" if ibi_sec[i] < lo[i]
+                else "N"
             )
 
         # Step 6: sequence heuristics
@@ -263,49 +289,66 @@ class CardioSeries(CardioMetricsMixin):
         self,
         ts,
         *,
-        start: float,
-        end: float,
+        start:                float,
+        end:                  float,
         min_peak_distance_ms: float = 300.0,
-        classify: bool = True,
+        window_length:        int   = 51,
+        n_std:                float = 4.0,
+        max_ibi_sec:          float = 2.0,
+        classify:             bool  = True,
     ) -> None:
         """
         Re-detect R-peaks inside [start, end] and merge with peaks outside.
 
         Designed for interactive editing: keeps R-peaks outside the window,
         replaces those inside with freshly detected ones, then optionally
-        re-runs global classification.
+        re-runs global classification with the supplied thresholds.
         """
         if start >= end:
             raise ValueError("replace_from_timeseries: start must be < end")
 
         if self.times.size == 0:
             new = CardioSeries.from_timeseries(
-                ts, min_peak_distance_ms=min_peak_distance_ms, classify=classify
+                ts,
+                min_peak_distance_ms=min_peak_distance_ms,
+                window_length=window_length,
+                n_std=n_std,
+                max_ibi_sec=max_ibi_sec,
+                classify=classify,
             )
-            self.times = new.times
+            self.times  = new.times
             self.labels = new.labels
             return
 
         new = CardioSeries.from_timeseries(
-            ts, min_peak_distance_ms=min_peak_distance_ms, classify=False
+            ts,
+            min_peak_distance_ms=min_peak_distance_ms,
+            window_length=window_length,
+            n_std=n_std,
+            max_ibi_sec=max_ibi_sec,
+            classify=False,
         )
         new_labels = np.full(new.times.shape, "N", dtype=object)
 
-        keep = (self.times < start) | (self.times > end)
-        merged_times = np.concatenate([self.times[keep], new.times])
+        keep          = (self.times < start) | (self.times > end)
+        merged_times  = np.concatenate([self.times[keep], new.times])
         merged_labels = np.concatenate([self.labels[keep], new_labels])
 
         if merged_times.size == 0:
-            self.times = merged_times
+            self.times  = merged_times
             self.labels = merged_labels
             return
 
-        order = np.argsort(merged_times)
-        self.times = merged_times[order]
+        order       = np.argsort(merged_times)
+        self.times  = merged_times[order]
         self.labels = merged_labels[order]
 
         if classify:
-            self.classify_ibi()
+            self.classify_ibi(
+                window_length=window_length,
+                n_std=n_std,
+                max_ibi_sec=max_ibi_sec,
+            )
 
     # ------------------------------------------------------------------
     # Views / slicing
@@ -317,14 +360,10 @@ class CardioSeries(CardioMetricsMixin):
 
         Raises
         ------
-        RuntimeError
-            If this CardioSeries is not linked to a PhysioData instance.
-        KeyError
-            If the requested epoch does not exist.
+        RuntimeError  If this CardioSeries is not linked to a PhysioData.
+        KeyError      If the requested epoch does not exist.
         """
-        from spectHR.DataSet.Series.CardioSeriesView import (
-            CardioSeriesView,
-        )  # local to avoid circular import
+        from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 
         if self._pd is None:
             raise RuntimeError(
@@ -333,25 +372,24 @@ class CardioSeries(CardioMetricsMixin):
             )
         if epoch_label not in self._pd.epochs:
             raise KeyError(f"No epoch '{epoch_label}' in PhysioData.")
-        ep = self._pd.epochs[epoch_label]
+
+        ep  = self._pd.epochs[epoch_label]
         idx = np.where((self.times >= ep.start) & (self.times <= ep.end))[0]
-        v = CardioSeriesView(self, idx)
-        v._pd = self._pd
+        v   = CardioSeriesView(self, idx)
+        v._pd     = self._pd
         v._stream = self._stream
-        v._epoch = epoch_label
+        v._epoch  = epoch_label
         return v
 
     def view(self, starttime: float, endtime: float) -> "CardioSeriesView":
         """Return a zero-copy view restricted to [starttime, endtime]."""
-        from spectHR.DataSet.Series.CardioSeriesView import (
-            CardioSeriesView,
-        )  # local to avoid circular import
+        from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 
         idx = np.where((self.times >= starttime) & (self.times <= endtime))[0]
-        v = CardioSeriesView(self, idx)
-        v._pd = self._pd
+        v   = CardioSeriesView(self, idx)
+        v._pd     = self._pd
         v._stream = self._stream
-        v._epoch = None
+        v._epoch  = None
         return v
 
     # ------------------------------------------------------------------
@@ -367,12 +405,12 @@ class CardioSeries(CardioMetricsMixin):
 
         Returns
         -------
-        labels : np.ndarray  (n_epochs,)       — epoch names
-        cols   : list[str]                     — metric names in METRIC_ORDER
-        values : np.ndarray  (n_epochs, n_metrics)  — float64, NaN for missing
+        labels : np.ndarray (n_epochs,)   — epoch names
+        cols   : list[str]                — metric names in METRIC_ORDER
+        values : np.ndarray (n_epochs, n_metrics) — float64, NaN for missing
         """
-        labels_list: List[Any] = []
-        rows: List[Dict[str, float]] = []
+        labels_list: List[Any]        = []
+        rows:        List[Dict[str, float]] = []
 
         for label, ep in physiodata.epochs.items():
             if getattr(ep, "active", False):
@@ -382,11 +420,11 @@ class CardioSeries(CardioMetricsMixin):
         if not rows:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
 
-        keys = set().union(*(d.keys() for d in rows))
-        cols = [c for c in self.METRIC_ORDER if c in keys]
+        keys    = set().union(*(d.keys() for d in rows))
+        cols    = [c for c in self.METRIC_ORDER if c in keys]
         cols.extend(sorted(keys - set(cols)))
-
         col_idx = {c: j for j, c in enumerate(cols)}
+
         values = np.full((len(rows), len(cols)), np.nan, dtype=float)
         for i, d in enumerate(rows):
             for k, v in d.items():

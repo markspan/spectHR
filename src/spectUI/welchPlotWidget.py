@@ -92,8 +92,6 @@ class WelchPSDPlotWidget(QWidget):
             fig = Figure(figsize=(5, 3))
             ax  = fig.add_subplot(111)
             WelchPSDPlotWidget.plot_on_axis(ax, series, **plot_kwargs)
-            ax.relim()
-            ax.autoscale_view()
             y0, y1 = ax.get_ylim()
             if not np.isfinite(y0) or not np.isfinite(y1):
                 continue
@@ -168,9 +166,10 @@ class WelchPSDPlotWidget(QWidget):
         if is_carspan:
             ibi_ms = series._ibi_clean_ms()
             if ibi_ms.size > 0:
-                mean_ibi_ms = float(np.mean(ibi_ms))
-                if mean_ibi_ms > 0:
-                    scale = 1_000_000.0 / (mean_ibi_ms ** 2)
+                mean_ibi_sec = float(np.mean(ibi_ms)) / 1000.0
+                if mean_ibi_sec > 0:
+                    # S'(fk) = S(fk) / mean_HR² * 1e6 = S(fk) * mean_IBI_sec² * 1e6
+                    scale = (mean_ibi_sec ** 2) * 1_000_000.0
                     power = power * scale
                     ci_lo = ci_lo * scale
                     ci_hi = ci_hi * scale
@@ -179,6 +178,13 @@ class WelchPSDPlotWidget(QWidget):
         else:
             power_unit  = "ms²"
             psd_unit    = "ms²/Hz"
+
+        # Set x-axis to span exactly the band range — no empty space
+        # before the first band or after the last.
+        x_min = min(s["low"]  for s in HRV_FREQUENCY_BANDS.values())
+        x_max = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
+        ax.set_xlim(x_min, x_max)
+        ax.autoscale(enable=False, axis="x")
 
         # ---- CI shading ------------------------------------------------
         ci_pct = int(round((1.0 - cm.CI_ALPHA) * 100))
@@ -204,12 +210,10 @@ class WelchPSDPlotWidget(QWidget):
             for name in HRV_FREQUENCY_BANDS
         }
 
-        x_max = 0.0
         for name, spec in HRV_FREQUENCY_BANDS.items():
             f0    = spec["low"]
             f1    = spec["high"]
             color = spec.get("color", "gray")
-            x_max = max(x_max, f1)
 
             mask   = (freqs >= f0) & (freqs <= f1)
             p0     = np.interp(f0, freqs, power)
@@ -230,7 +234,6 @@ class WelchPSDPlotWidget(QWidget):
             )
 
         # ---- Axes decoration -------------------------------------------
-        ax.set_xlim(0.0, x_max)
         ax.set_ylim(bottom=0.0)
         ax.set_xlabel("Frequency [Hz]")
         ax.set_ylabel(f"PSD [{psd_unit}]")

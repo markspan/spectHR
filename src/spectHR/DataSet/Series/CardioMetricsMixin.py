@@ -200,22 +200,28 @@ class CardioMetricsMixin(HRVMetric):
         )
         return 1000.0 * ibi_sec[valid]
 
-    def _carspan_normalise(self, power_ms2: float) -> float:
+    def _carspan_normalise(self, power_raw: float) -> float:
         """
-        Convert band-power from ms² to mMI² using the CARSPAN normalisation
-        (CARSPAN manual §3.3.4, formulae 3.20 and 3.29):
+        Convert raw DFT band-power (unit pulses, s²/Hz) to mMI² using the
+        CARSPAN normalisation (manual §3.3.4, formulae 3.20 and 3.29):
 
-            power_mMI² = (power_ms² / mean_IBI_ms²) × 1 000 000
+            S'(fk) = S(fk) / mean_x²   where mean_x = 1 / mean_IBI_sec (HR in Hz)
+
+        Multiplied by 10⁶ to yield mMI²:
+
+            power_mMI² = (power_raw / mean_HR_Hz²) × 1 000 000
+                       = power_raw × mean_IBI_sec² × 1 000 000
 
         Returns NaN if mean IBI is zero or unavailable.
         """
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size == 0:
             return np.nan
-        mean_ibi = float(np.mean(ibi_ms))
-        if mean_ibi == 0.0:
+        mean_ibi_sec = float(np.mean(ibi_ms)) / 1000.0
+        if mean_ibi_sec == 0.0:
             return np.nan
-        return (power_ms2 / ((mean_ibi/1000) ** 2)) * 1_000_000.0
+        # mean_x = 1/mean_IBI_sec, so 1/mean_x² = mean_IBI_sec²
+        return (power_raw * (mean_ibi_sec ** 2)) * 1_000_000.0
 
     # ------------------------------------------------------------------
     # Welch back-end
@@ -310,9 +316,8 @@ class CardioMetricsMixin(HRVMetric):
         fmin_floor = LOMBSCARGLE_PARAMS["fmin_floor"]
 
         try:
-            f_min     = min(s["low"]  for s in HRV_FREQUENCY_BANDS.values())
             f_max     = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
-            freqs     = np.linspace(max(f_min, fmin_floor), f_max, nfreqs)
+            freqs     = np.linspace(fmin_floor, f_max, nfreqs)
             ang_freqs = 2.0 * np.pi * freqs
             ibi_zero  = ibi_ms - ibi_ms.mean()
             pgram     = signal.lombscargle(
@@ -324,6 +329,10 @@ class CardioMetricsMixin(HRVMetric):
         except Exception:
             return np.ndarray(0), np.ndarray(0)
 
+        # Prepend (fmin_floor, 0) so the plot widget can set xlim to 0
+        # without np.interp clamping to the first computed value.
+        freqs = np.concatenate(([fmin_floor], freqs))
+        power = np.concatenate(([0.0],        power))
         return freqs, power
 
     def lombscargle_psd_with_ci(
@@ -394,12 +403,14 @@ class CardioMetricsMixin(HRVMetric):
         except Exception:
             win = np.ones(N)  # fallback: rectangular
 
-        # Native frequency grid: fk = k/T, only within band limits
-        f_min  = min(s["low"]  for s in HRV_FREQUENCY_BANDS.values())
+        # Native frequency grid: fk = k/T for k = 1 .. ceil(f_max * T).
+        # k=1 is the lowest non-DC frequency; DC (k=0) carries no HRV info.
+        # We compute the full grid from k=1 so that np.interp never has to
+        # extrapolate downward — points below freqs_native[0] are set to 0
+        # via the explicit left=0.0 argument.
         f_max  = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
-        k_min  = max(1, int(np.floor(f_min * T)))
         k_max  = int(np.ceil(f_max * T))
-        k_vals = np.arange(k_min, k_max + 1)
+        k_vals = np.arange(1, k_max + 1)
         freqs_native = k_vals / T  # Hz, resolution = 1/T
 
         # Direct DFT (formula 3.19), vectorised
@@ -409,9 +420,12 @@ class CardioMetricsMixin(HRVMetric):
         X_imag  = np.dot(win, np.sin(phases))
         power_native = (2.0 / T) * (X_real ** 2 + X_imag ** 2)
 
-        # Interpolate onto the fixed output grid (CARSPAN convention)
+        # Interpolate onto the fixed output grid (CARSPAN convention).
+        # Grid starts at the lowest band edge so there is no empty space
+        # before the first band in the plot.
         freq_res  = float(CARSPAN_PARAMS["freq_resolution"])
-        freqs_out = np.arange(f_min, f_max + freq_res / 2, freq_res)
+        f_min_band = min(s["low"] for s in HRV_FREQUENCY_BANDS.values())
+        freqs_out = np.arange(f_min_band, f_max + freq_res / 2, freq_res)
         freqs_out = freqs_out[freqs_out <= f_max]
 
         if freqs_native.size < 2:
