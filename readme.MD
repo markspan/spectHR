@@ -200,13 +200,13 @@ After R-peak detection, each inter-beat interval is classified before any metric
 >
 > | Condition | Label |
 > |-----------|-------|
-> | $\text{IBI}_i > T_{\max}$ | TL |
-> | $\text{IBI}_i \leq 0$ or NaN | T |
-> | $\text{IBI}_i > \bar{\text{IBI}} + N \cdot \sigma$ | L |
-> | $\text{IBI}_i < \bar{\text{IBI}} - N \cdot \sigma$ | S |
-> | $\text{label}_i$ = S and $\text{label}_{i+1}$ = L | SL |
-> | $\text{label}_i$ = S, $\text{label}_{i+1}$ = N, $\text{label}_{i+2}$ = S | SNS |
-> | otherwise | N |
+> | $`\text{IBI}_i > T_{\max}`$ | **TL** *(excluded from all statistics)* |
+> | $`\text{IBI}_i \leq 0`$ or NaN | **T** *(excluded from all statistics)* |
+> | $`\text{IBI}_i > \bar{\text{IBI}} + N \cdot \sigma`$ | **L** |
+> | $`\text{IBI}_i < \bar{\text{IBI}} - N \cdot \sigma`$ | **S** |
+> | beat $`i`$ is S and beat $`i+1`$ is L | **SL** |
+> | beat $`i`$ is S, beat $`i+1`$ is N, beat $`i+2`$ is S | **SNS** |
+> | otherwise | **N** |
 >
 > **Default parameters** (all configurable in *Edit Parameters*):
 >
