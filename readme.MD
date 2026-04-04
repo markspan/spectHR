@@ -58,11 +58,11 @@ The heart does not beat at a perfectly regular rate. Even in a healthy person si
 
 The primary pathway for parasympathetic control of the heart runs through the vagus nerve. Vagal activity produces rapid, moment-to-moment fluctuations in heart rate, particularly those linked to breathing, the heart speeds up slightly during inhalation and slows during exhalation. This coupling between respiration and heart rate is called **respiratory sinus arrhythmia (RSA)**. Sympathetic influences are slower, taking several seconds to propagate through the circulatory system, and are more closely linked to vasomotor tone and blood pressure regulation.
 
-Because the two branches operate at different speeds, spectral analysis of the heartbeat interval series separates them by frequency: fast (respiratory) fluctuations appear in the high-frequency band; slower vasomotor fluctuations appear in the low and mid frequency bands. This is the fundamental justification for frequency-domain HRV analysis, it is not merely a signal-processing choice but a reflection of the underlying physiology ([Mulder & Mulder, 1981](#ref-mulder1981); [Task Force of the European Society of Cardiology, 1996](#ref-taskforce1996)).
+Because the two branches operate at different speeds, spectral analysis of the heartbeat interval series separates them by frequency: fast (respiratory) fluctuations appear in the high-frequency band; slower vasomotor fluctuations appear in the low and mid frequency bands. This is the fundamental justification for frequency-domain HRV analysis, it is not merely a signal-processing choice but a reflection of the underlying physiology ([Mulder, 1989](#ref-mulder1989); [Task Force of the European Society of Cardiology, 1996](#ref-taskforce1996)).
 
 ### HRV as a measure of mental effort
 
-The use of HRV in occupational and psychophysiological research has a long history. Mulder [(1980)](#ref-mulder1980) demonstrated that mental task performance reduces heart rate variability compared to rest, and that this reduction is particularly pronounced in the mid-frequency band (0.06–0.14 Hz), which reflects baroreceptor-mediated blood pressure regulation. Subsequent work by Mulder & Mulder [(1981)](#ref-mulder1981) formalised the theoretical framework: when a person invests mental effort in a task, sympathetic activation increases and parasympathetic withdrawal follows, leading to a rise in heart rate and a fall in HRV power, especially in the LF band. The relationship is not between task *difficulty* and HRV per se, but between *invested effort* and HRV. A person who disengages from a hard task may show little HRV change; a person working hard at an easy task may show a marked decrease ([Mulder, 1992](#ref-mulder1992)).
+The use of HRV in occupational and psychophysiological research has a long history. Mulder [(1980)](#ref-mulder1980) demonstrated that mental task performance reduces heart rate variability compared to rest, and that this reduction is particularly pronounced in the mid-frequency band (0.06–0.14 Hz), which reflects baroreceptor-mediated blood pressure regulation. Subsequent work by Mulder & Mulder [(1981)](#ref-mulder1989) formalised the theoretical framework: when a person invests mental effort in a task, sympathetic activation increases and parasympathetic withdrawal follows, leading to a rise in heart rate and a fall in HRV power, especially in the LF band. The relationship is not between task *difficulty* and HRV per se, but between *invested effort* and HRV. A person who disengages from a hard task may show little HRV change; a person working hard at an easy task may show a marked decrease ([Mulder, 1992](#ref-mulder1992)).
 
 This framework has been extensively replicated. HRV is consistently lowered by mental effort and mental workload, probably due to sympathetic activation and parasympathetic withdrawal. The pattern generalises across task types and populations: driving ([de Waard, 1996](#ref-dewaard1996); [Mulder et al., 2004](#ref-mulder2004)), aviation ([De Rivecourt et al., 2008](#ref-derivecourt2008)), air traffic control, and clinical work ([Peabody et al., 2023](#ref-peabody2023)). De Waard's (1996) systematic evaluation of seven driving studies found that the 0.10 Hz HRV component was sensitive to fine-grained changes in task complexity, and notably that it was more sensitive to task-related effort than to changes in driver state such as fatigue or monotony, further supporting the view that LF HRV indexes invested effort rather than arousal level per se. A recent large-scale driving simulation study with 892 participants found that increased cognitive load was accompanied by higher heart rate and lower HRV as measured by RMSSD.
 
@@ -86,11 +86,11 @@ The CARSPAN tradition, which spectHR inherits, has always been careful about thi
 
 ### Frequency bands and their interpretation
 
-The spectral content of HRV is distributed across three bands that reflect different regulatory processes ([Mulder & Mulder, 1981](#ref-mulder1981); [Mulder, 1988](#ref-mulder1988)):
+The spectral content of HRV is distributed across three bands that reflect different regulatory processes ([Mulder, 1989](#ref-mulder1989); [Mulder, 1988](#ref-mulder1988)):
 
 **Very low frequency (VLF, 0.02–0.06 Hz)** reflects slow regulatory processes including thermoregulation, hormonal rhythms, and gradual adaptation to sustained task demands. Reliable estimation of VLF power requires recordings of at least 5 minutes and preferably longer. Some authors caution against interpreting VLF from short recordings.
 
-**Low / mid frequency (LF, 0.06–0.14 Hz)** reflects oscillatory fluctuations in blood pressure arising from baroreceptor regulation of vasomotor tone. This band is the most consistently sensitive to mental workload in the Mulder tradition: Mulder and Mulder [(1981)](#ref-mulder1981) found that spectral power between 0.06 and 0.14 Hz was related to the dynamic control of mean arterial blood pressure, and that under mental load this band was particularly affected, contributing about 80% to the total decrease in spectral energy. Baroreflex sensitivity, the gain of the closed-loop blood pressure control system, also decreases under mental load, which helps explain why LF power drops.
+**Low / mid frequency (LF, 0.06–0.14 Hz)** reflects oscillatory fluctuations in blood pressure arising from baroreceptor regulation of vasomotor tone. This band is the most consistently sensitive to mental workload in the Mulder tradition: Mulder and Mulder [(1981)](#ref-mulder1989) found that spectral power between 0.06 and 0.14 Hz was related to the dynamic control of mean arterial blood pressure, and that under mental load this band was particularly affected, contributing about 80% to the total decrease in spectral energy. Baroreflex sensitivity, the gain of the closed-loop blood pressure control system, also decreases under mental load, which helps explain why LF power drops.
 
 **High frequency (HF, 0.14–0.40 Hz)** reflects respiratory sinus arrhythmia and is primarily parasympathetically mediated. It is sensitive to both breathing rate (which must remain within the HF band for it to be correctly measured) and parasympathetic tone. HF power decreases under mental effort, but the effect is less specific than the LF effect because any change in breathing pattern, rate, depth, regularity, will alter HF power independently of ANS state.
 
@@ -185,7 +185,7 @@ The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD
 
 > **A note on SD1 and SD2:** SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively. Van Roon et al. (2025) demonstrate this rigorously: SD1 $= \text{RMSSD}/\sqrt{2}$ by definition, and SD2 follows algebraically from SDNN and RMSSD. spectHR reports them because they are widely expected in the literature and because the Poincaré plot is a useful visual summary, but users should not treat SD1 and SD2 as independent metrics alongside RMSSD and SDNN in statistical analyses.
 >
-> *van Roon, A.M., Mulder, L.J.M., Althaus, M., & Mulder, G. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. Entropy, 27(8), 861.* https://doi.org/10.3390/e27080861
+> *van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. Entropy, 27(8), 861.* https://doi.org/10.3390/e27080861
 
 ---
 
@@ -605,8 +605,8 @@ Mulder, L.J.M. (1988). *Assessment of cardiovascular reactivity by means of spec
 Mulder, L.J.M. (1992). Measurement and analysis methods of heart rate and respiration for use in applied environments. *Biological Psychology*, 34, 205–236. https://doi.org/10.1016/0301-0511(92)90016-N
 
 
-<a id="ref-mulder1981"></a>
-Mulder, L.J.M., & Mulder, G. (1981). Cardiovascular reactivity and mental workload. In O. Rompelman & R.I. Kitney (Eds.), *The Study of Heart-Rate Variability*. Oxford: Clarendon Press.
+<a id="ref-mulder1989"></a>
+Mulder, L.J.M. (1989). Cardiovascular reactivity and mental workload. *International Journal of Psychophysiology*, 7, 321.
 
 
 <a id="ref-mulder2004"></a>
@@ -614,7 +614,7 @@ Mulder, L.J.M., de Waard, D., & Brookhuis, K.A. (2004). Estimating mental effort
 
 
 <a id="ref-peabody2023"></a>
-Peabody, M., Martinez, M., Sheridan, M., & Bhatt, J. (2023). A systematic review of heart rate variability as a measure of stress in medical professionals. *Cureus*, 15(1), e33565. https://doi.org/10.7759/cureus.33565
+Peabody, J.E., Ryznar, R., Ziesmann, M.T., & Gillman, L. (2023). A systematic review of heart rate variability as a measure of stress in medical professionals. *Cureus*, 15(1), e34345. https://doi.org/10.7759/cureus.34345
 
 
 
@@ -623,7 +623,7 @@ Rompelman, O. (1980). Heart rate variability and the assessment of mental worklo
 
 
 <a id="ref-rompelman1977"></a>
-Rompelman, O., Coenen, A.J.M.W., & Kitney, R.I. (1977). Measurement of heart-rate variability. *Medical and Biological Engineering*, 15, 233–239.
+Rompelman, O., Coenen, A.J.R.M., & Kitney, R.I. (1977). Measurement of heart-rate variability: Part 1 — Comparative study of heart-rate variability analysis methods. *Medical and Biological Engineering and Computing*, 15, 233–239. https://doi.org/10.1007/BF02441043
 
 
 
@@ -642,8 +642,8 @@ Task Force of the European Society of Cardiology and the North American Society 
 Tegegne, B., Man, T., van Roon, A., Riese, H., & Snieder, H. (2019). To the Editor: 10-second ECG-based RMSSD as valid measure of HRV. *Heart Rhythm*, 16(3), e35. https://doi.org/10.1016/j.hrthm.2018.10.038
 
 <a id="ref-vanroon2025"></a>
-van Roon, A.M., Mulder, L.J.M., Althaus, M., & Mulder, G. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. *Entropy*, 27(8), 861. https://doi.org/10.3390/e27080861
+van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. *Entropy*, 27(8), 861. https://doi.org/10.3390/e27080861
 
 
-<a id="ref-ye2024"></a>
-Ye, J., Lan, Z., Li, B., Peng, X., Ye, J., & Zhao, G. (2024). Heart rate dynamics for cognitive load estimation in a driving simulation task. *Scientific Reports*, 14, 31386. https://doi.org/10.1038/s41598-024-79728-x
+<a id="ref-arutyunova2024"></a>
+Arutyunova, K.R., Bakhchina, A.V., Konovalov, D.I., Margaryan, M., Filimonov, A.V., & Shishalov, I.S. (2024). Heart rate dynamics for cognitive load estimation in a driving simulation task. *Scientific Reports*, 14, 31656. https://doi.org/10.1038/s41598-024-79728-x
