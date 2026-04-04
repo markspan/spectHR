@@ -240,7 +240,7 @@ CARSPAN's window is defined in seconds; spectHR's in beats. For a resting heart 
 
 #### 4. Successive difference criterion — not implemented
 
-CARSPAN also flags a beat if the *difference* between consecutive intervals ($\text{IBI}_i - \text{IBI}_{i-1}$) exceeds $N_\text{SuD}$ standard deviations of the successive difference series. spectHR does not implement this. The SL and SNS sequence labels already capture the most physiologically relevant abrupt patterns. Adding a separate threshold would introduce a second set of parameters that could conflict with the sequence labels in ambiguous cases.
+CARSPAN also flags a beat if the *difference* between consecutive intervals ($`\text{IBI}_i - \text{IBI}_{i-1}$) exceeds $N_\text{SuD}`$ standard deviations of the successive difference series. spectHR does not implement this. The SL and SNS sequence labels already capture the most physiologically relevant abrupt patterns. Adding a separate threshold would introduce a second set of parameters that could conflict with the sequence labels in ambiguous cases.
 
 #### 5. Min/Max SD clipping — not implemented
 
@@ -316,7 +316,7 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 > [!NOTE]
 > ### Lomb-Scargle — algorithm detail
 >
-> Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
+> Let $t_i$ denote the R-peak times (s) and $`x_i = \text{IBI}_i - \bar{\text{IBI}}`$ (ms) the mean-subtracted IBIs. The angular frequency grid $`\omega = 2\pi f`$ is evaluated over $`[f_\text{min}, f_\text{max}]`$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
 >
 > $$\hat{S}(f_k) = \frac{2T}{N^2}\, P(\omega_k)$$
 >
@@ -396,7 +396,7 @@ The CARSPAN method implements the direct Discrete Fourier Transform on R-peak ev
 >
 > Multiplication by $10^6$ scales the result into a convenient numeric range (milli-Modulation-Index squared, mMI²), consistent with CARSPAN output convention. An important consequence of this normalisation is that mMI² values are largely independent of mean heart rate, making them directly comparable between subjects and sessions.
 >
-> **Implementation note on units:** The normalisation formula divides by $\bar{x}^2 = (1/\bar{\text{IBI}}_\text{sec})^2$, which is equivalent to multiplying by $\bar{\text{IBI}}_\text{sec}^2$. Since IBI values are stored internally in seconds, the code computes `mean_ibi_sec = mean(ibi_ms) / 1000` and then applies `power_raw * mean_ibi_sec² * 1e6`. A common error is to use `mean_ibi_ms²` instead, which would make the result $10^6$ times too small.
+> **Implementation note on units:** The normalisation formula divides by $`\bar{x}^2 = (1/\bar{\text{IBI}}_\text{sec})^2`$, which is equivalent to multiplying by $`\bar{\text{IBI}}_\text{sec}^2`$. Since IBI values are stored internally in seconds, the code computes `mean_ibi_sec = mean(ibi_ms) / 1000` and then applies `power_raw * mean_ibi_sec² * 1e6`. A common error is to use `mean_ibi_ms²` instead, which would make the result $10^6$ times too small.
 >
 > **Default parameters** (configurable in *Edit Parameters*):
 >
