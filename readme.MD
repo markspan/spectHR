@@ -100,7 +100,7 @@ The **LF/HF ratio** is sometimes used as a sympatho-vagal balance index. Its int
 
 A simple measure like mean heart rate or RMSSD captures something real about autonomic state, but it collapses all the frequency-specific information into a single number. Spectral analysis preserves that frequency structure, allowing the researcher to ask: *how much of the variability is coming from the LF band (baroreceptor regulation, sensitive to effort) versus the HF band (respiratory coupling, sensitive to breathing and vagal tone)?*
 
-The CARSPAN approach, which spectHR implements, represents the heart rate signal as a series of unit impulses at R-peak times, the Integral Pulse Frequency Modulation (IPFM) model. This model, developed by Rompelman [(1980)](#ref-rompelman1980) and formalised for spectral analysis by Mulder [(1988)](#ref-mulder1988), has the advantage that the DFT can be computed directly on the event times without resampling to a uniform grid. This matters because resampling introduces artefacts that are especially problematic in short segments and at the boundaries of frequency bands.
+The CARSPAN approach, which spectHR implements, represents the heart rate signal as a series of unit impulses at R-peak times, the Integral Pulse Frequency Modulation (IPFM) model. This model, developed by Rompelman [(1985)](#ref-rompelman1985) and formalised for spectral analysis by Mulder [(1988)](#ref-mulder1988), has the advantage that the DFT can be computed directly on the event times without resampling to a uniform grid. This matters because resampling introduces artefacts that are especially problematic in short segments and at the boundaries of frequency bands.
 
 Spectral analysis of HRV is most informative when the following conditions hold: the recording is long enough relative to the frequency of interest (at least 10 cycles per band), the IBI series is free of artefacts, the participant is not talking or moving heavily (both of which corrupt the signal), and the analysis epochs correspond to clearly defined task conditions.
 
@@ -421,7 +421,7 @@ The CARSPAN method implements the direct Discrete Fourier Transform on R-peak ev
 >
 > #### The R-peak event series
 >
-> Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heart rate signal is represented as a series of unit impulses at the R-peak occurrence times $t_i$ (in seconds):
+> Following Rompelman (1985) and Mulder [(1988)](#ref-mulder1988), the heart rate signal is represented as a series of unit impulses at the R-peak occurrence times $t_i$ (in seconds):
 >
 > $$x(t) = \sum_{i=1}^{N} \delta(t - t_i)$$
 >
@@ -593,9 +593,6 @@ de Waard, D. (1996). *The measurement of drivers' mental workload*. Ph.D. Thesis
 Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Groningen.
 
 
-<a id="ref-mulder1985"></a>
-Mulder, L.J.M. (1985). Mental load, mental effort and attention. In A.W.K. Gaillard & W. Ritter (Eds.), *Tutorials in Event Related Potential Research: Endogenous Components*. Amsterdam: North Holland.
-
 
 <a id="ref-mulder1988"></a>
 Mulder, L.J.M. (1988). *Assessment of cardiovascular reactivity by means of spectral analysis*. Ph.D. Thesis, University of Groningen.
@@ -618,13 +615,8 @@ Peabody, J.E., Ryznar, R., Ziesmann, M.T., & Gillman, L. (2023). A systematic re
 
 
 
-<a id="ref-rompelman1980"></a>
-Rompelman, O. (1980). Heart rate variability and the assessment of mental workload. In B.K.P. Horn (Ed.), *Methods of Information in Medicine*. Stuttgart: Schattauer.
-
-
-<a id="ref-rompelman1977"></a>
-Rompelman, O., Coenen, A.J.R.M., & Kitney, R.I. (1977). Measurement of heart-rate variability: Part 1 — Comparative study of heart-rate variability analysis methods. *Medical and Biological Engineering and Computing*, 15, 233–239. https://doi.org/10.1007/BF02441043
-
+<a id="ref-rompelman1985"></a>
+Rompelman O. (1985) Spectral analysis of heart-rate variability, In: J.F. Orlebeke, G. Mulder and L.J.P. van Doornen (eds.) Psychophysiology of cardiovascular control (pp. 315-331). New York: Plenum Press. 
 
 
 <a id="ref-stuiver2014"></a>
