@@ -193,7 +193,7 @@ After R-peak detection, each inter-beat interval is classified before any metric
 
 ---
 
-> [!TIP]
+> [!NOTE]
 > ### Classification algorithm
 >
 > Let $\text{IBI}_i$ denote the $i$-th inter-beat interval and let $\bar{\text{IBI}}$ and $\sigma$ denote the **local** mean and standard deviation over a centred rolling window of $W$ beats. Classification proceeds as follows:
@@ -204,8 +204,8 @@ After R-peak detection, each inter-beat interval is classified before any metric
 > | $\text{IBI}_i \leq 0$ or NaN | T |
 > | $\text{IBI}_i > \bar{\text{IBI}} + N \cdot \sigma$ | L |
 > | $\text{IBI}_i < \bar{\text{IBI}} - N \cdot \sigma$ | S |
-> | label$_i$ = S and label$_{i+1}$ = L | SL |
-> | label$_i$ = S, label$_{i+1}$ = N, label$_{i+2}$ = S | SNS |
+> | $\text{label}_i$ = S and $\text{label}_{i+1}$ = L | SL |
+> | $\text{label}_i$ = S, $\text{label}_{i+1}$ = N, $\text{label}_{i+2}$ = S | SNS |
 > | otherwise | N |
 >
 > **Default parameters** (all configurable in *Edit Parameters*):
@@ -260,12 +260,17 @@ When a Polar H10 accelerometer stream is present, spectHR derives a respiration 
 
 ## Poincaré Metrics
 
-| Metric | Formula | Interpretation |
-|--------|---------|----------------|
-| SD1 | $\sqrt{\tfrac{1}{2}\operatorname{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$ | Beat-to-beat variability. Equal to $\text{RMSSD}/\sqrt{2}$. |
-| SD2 | $\sqrt{2\operatorname{Var}(\text{IBI}_i) - \tfrac{1}{2}\operatorname{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$ | Longer-term variability. Algebraically related to SDNN and RMSSD. |
-| SD2/SD1 | — | Autonomic balance index. |
-| Ellipse area | $\pi \cdot \text{SD1} \cdot \text{SD2}$ | Total HRV. |
+**SD1** — beat-to-beat variability, equal to $\text{RMSSD}/\sqrt{2}$:
+
+$$\text{SD1} = \sqrt{\tfrac{1}{2}\,\mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+
+**SD2** — longer-term variability, algebraically related to SDNN and RMSSD:
+
+$$\text{SD2} = \sqrt{2\,\mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2}\,\mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+
+**SD2/SD1** — autonomic balance index.
+
+**Ellipse area** $= \pi \cdot \text{SD1} \cdot \text{SD2}$ — total HRV.
 
 **Important:** SD1 and SD2 are fully determined by RMSSD and SDNN and therefore carry no additional statistical information (van Roon et al., 2025). Including all four in a statistical model introduces redundancy.
 
@@ -277,7 +282,7 @@ When a Polar H10 accelerometer stream is present, spectHR derives a respiration 
 
 The IBI series (in ms) is resampled onto a uniform grid using linear interpolation, divided into overlapping segments, windowed, Fourier-transformed, and averaged. Averaging over segments reduces variance at the cost of frequency resolution. Output units: **ms²/Hz**; band power in **ms²**.
 
-> [!TIP]
+> [!NOTE]
 > ### Welch — algorithm detail
 >
 > Let $x(t)$ denote the IBI series (ms) resampled at $f_s$ Hz. `scipy.signal.welch` is called with `scaling='density'`, returning the one-sided PSD in ms²/Hz.
@@ -308,7 +313,7 @@ The IBI series (in ms) is resampled onto a uniform grid using linear interpolati
 
 The Lomb-Scargle method evaluates the spectrum directly at the original, irregularly-spaced beat timestamps — no resampling required. The mean IBI is subtracted before estimation to suppress the DC component. Output units: **ms²/Hz**; band power in **ms²**.
 
-> [!TIP]
+> [!NOTE]
 > ### Lomb-Scargle — algorithm detail
 >
 > Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
@@ -336,7 +341,7 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 
 The CARSPAN method implements the direct Discrete Fourier Transform on R-peak event times, following the algorithm described by Mulder (1988) and used in the CARSPAN software package. No resampling is performed. The spectrum is computed on the native frequency grid $f_k = k/T$ (resolution $\Delta f = 1/T$), then interpolated onto a fixed display grid. Band power is computed on the native grid following CARSPAN formula 3.28. Output units: **mMI²**.
 
-> [!TIP]
+> [!NOTE]
 > ### CARSPAN — algorithm detail
 >
 > #### The R-peak event series
@@ -413,7 +418,7 @@ $$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac
 
 The difference lies in how the degrees of freedom $\nu$ are determined.
 
-> [!TIP]
+> [!NOTE]
 > ### Confidence interval degrees of freedom
 >
 > **Welch:** $\nu = 2K$ where $K$ is the number of non-overlapping segments. More segments (longer recording, shorter overlap) give a tighter CI.
@@ -424,11 +429,11 @@ The difference lies in how the degrees of freedom $\nu$ are determined.
 >
 > $$\frac{2\, P(f_k)}{S(f)} \sim \chi^2_2$$
 >
-> so $\nu = 2$ per native line. Each display output point (at resolution `freq_resolution`) is supported by approximately $n_\text{per} = \text{round}(\text{freq\_resolution} \times T)$ native lines. Therefore:
+> so $\nu = 2$ per native line. Each display output point (at resolution `freq_resolution`) is supported by approximately $n_p = \mathrm{round}(\Delta f_\text{out} \times T)$ native lines, where $\Delta f_\text{out}$ is the display grid step. Therefore:
 >
-> $$\nu = 2 \times n_\text{per} = 2 \times \text{round}(\text{freq\_resolution} \times T)$$
+> $$\nu = 2 \times n_p = 2 \times \mathrm{round}(\Delta f_\text{out} \times T)$$
 >
-> For a 5-minute recording with the default 0.01 Hz resolution: $n_\text{per} = \text{round}(0.01 \times 300) = 3$, giving $\nu = 6$ and a 95% CI spanning roughly [42%, 485%] of the PSD value. This wide CI correctly reflects that the direct DFT — with no segment averaging — is a much noisier estimator than Welch at the same recording length.
+> For a 5-minute recording with the default 0.01 Hz resolution: $n_p = \mathrm{round}(0.01 \times 300) = 3$, giving $\nu = 6$ and a 95% CI spanning roughly [42 %, 485 %] of the PSD value. This wide CI correctly reflects that the direct DFT — with no segment averaging — is a much noisier estimator than Welch at the same recording length.
 >
 > A useful consequence: the CI width is directly controlled by `freq_resolution`. A coarser grid (larger step) averages more native lines per display point, narrowing the CI. A finer grid (smaller step) places each display point between native lines, widening the CI. The CARSPAN manual itself notes (§3.3) that this integration over the fixed output grid is the *only* factor that increases the reliability of each spectral point.
 >
