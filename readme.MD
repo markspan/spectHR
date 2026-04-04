@@ -196,7 +196,7 @@ After R-peak detection, each inter-beat interval is classified before any metric
 > [!NOTE]
 > ### Classification algorithm
 >
-> Let $\text{IBI}_i$ denote the $i$-th inter-beat interval and let $\bar{\text{IBI}}$ and $\sigma$ denote the **local** mean and standard deviation over a centred rolling window of $W$ beats. Classification proceeds as follows:
+> Let $`\text{IBI}_i`$ denote the $`i`$-th inter-beat interval and let $`\bar{\text{IBI}}`$ and $\sigma$ denote the **local** mean and standard deviation over a centred rolling window of $W$ beats. Classification proceeds as follows:
 >
 > | Condition | Label |
 > |-----------|-------|
