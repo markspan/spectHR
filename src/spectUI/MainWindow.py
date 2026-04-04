@@ -222,6 +222,10 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logger.warning(f"Could not apply Lomb-Scargle params: {e}")
             try:
+                _cm().load_carspan_params(fa["carspan"])   # <-- was missing
+            except Exception as e:
+                logger.warning(f"Could not apply CARSPAN params: {e}")
+            try:
                 _cm().load_method(fa["method"])
             except Exception as e:
                 logger.warning(f"Could not apply PSD method: {e}")

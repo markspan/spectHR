@@ -43,6 +43,7 @@ _DEFAULT_WORKSPACE = {
         "carspan": {                   # <-- nieuw
             "freq_resolution": 0.01,
             "window":          "hann",
+            "smooth_for_display": True,
         },
         "confidence_interval_alpha": 0.05,
     },
