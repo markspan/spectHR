@@ -68,7 +68,7 @@ This framework has been extensively replicated. HRV is consistently lowered by m
 
 Importantly, the overall cardiovascular pattern under mental effort is coherent: heart rate increases, HRV decreases, blood pressure rises, and baroreflex sensitivity falls ([Mulder, 1992](#ref-mulder1992)). This consistency across multiple physiological channels, not just HRV alone, gives the framework its strength. HRV is most informative when interpreted alongside mean heart rate and, where available, blood pressure and respiratory signals.
 
-### HRV and stress, an important distinction
+### HRV and stress
 
 The word *stress* appears constantly in the HRV literature, but it is used in at least two very different senses that are easily conflated. This distinction is not merely semantic, it has real consequences for how HRV data should be interpreted.
 
