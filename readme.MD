@@ -391,11 +391,11 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 > [!NOTE]
 > ### Lomb-Scargle, algorithm detail
 >
-> Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
+> Let $`t_i`$ denote the R-peak times (s) and $`x_i = \text{IBI}_i - \bar{\text{IBI}}`$ (ms) the mean-subtracted IBIs. The angular frequency grid $`\omega = 2\pi f`$ is evaluated over $`[f_\text{min}, f_\text{max}]`$ at `nfreqs` equally spaced points. The periodogram $`P(\omega)`$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
 >
 > $$\hat{S}(f_k) = \frac{2T}{N^2}\, P(\omega_k)$$
 >
-> where $T = t_N - t_1$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid.
+> where $`T = t_N - t_1`$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid.
 >
 > Confidence intervals use the Scargle (1982) effective degrees of freedom:
 >
