@@ -6,7 +6,7 @@
 - [Theoretical background](#theoretical-background)
   - [The autonomic nervous system and the heart](#the-autonomic-nervous-system-and-the-heart)
   - [HRV as a measure of mental effort](#hrv-as-a-measure-of-mental-effort)
-  - [HRV and stress, an important distinction](#hrv-and-stress--an-important-distinction)
+  - [HRV and stress](#hrv-and-stress)
   - [Frequency bands and their interpretation](#frequency-bands-and-their-interpretation)
   - [Why spectral analysis?](#why-spectral-analysis)
   - [Practical considerations](#practical-considerations)
