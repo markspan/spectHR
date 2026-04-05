@@ -589,6 +589,9 @@ De Rivecourt, M., Kuperus, M.N., Post, W.J., & Mulder, L.J.M. (2008). Cardiovasc
 <a id="ref-dewaard1996"></a>
 de Waard, D. (1996). *The measurement of drivers' mental workload*. Ph.D. Thesis, University of Groningen.
 
+<a id="ref-Grossman2026"></a>
+Grossman P, Ackland GL, Allen AM, Berntson GGB, Booth LC, Burghardt GM, Buron J, Dinets V, Doody JS, Dutschmann M, Farmer DGS, Fisher JP, Gourine AV, Joyner MJ, Karemaker JM, Khalsa SS, Lakatta EG, Leite CAC, Macefield VG, Machado BH, Machado RM, Menuet C, Mendelowitz D, Moraes DJA, Neuhuber W, Ottaviani MM, Paterson DJ, Paton JFP, Pellegrino PR, Ramchandra R, Shanks J, Schwaber JS, Shivkumar K, Spyer KM, Taylor EW, Taylor JA, Wang T, Yao ST, Zucker IH. Why The Polyvagal Theory Is Untenable: An international expert evaluation of the polyvagal theory and commentary upon Porges, S.W. (2025). *Polyvagal theory: current status, clinical applications, and future directions.* Clin. Neuropsychiatry, 22(3), 169-184. Clin Neuropsychiatry. 2026 Feb;23(1):100-112. doi: 10.36131/cnfioritieditore20260110. PMID: 41768017; PMCID: PMC12937499.
+
 <a id="ref-mulder1980"></a>
 Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Groningen.
 
