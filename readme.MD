@@ -6,7 +6,7 @@
 - [Theoretical background](#theoretical-background)
   - [The autonomic nervous system and the heart](#the-autonomic-nervous-system-and-the-heart)
   - [HRV as a measure of mental effort](#hrv-as-a-measure-of-mental-effort)
-  - [HRV and stress](#hrv-and-stress)
+  - [HRV and stress, an important distinction](#hrv-and-stress--an-important-distinction)
   - [Frequency bands and their interpretation](#frequency-bands-and-their-interpretation)
   - [Why spectral analysis?](#why-spectral-analysis)
   - [Practical considerations](#practical-considerations)
@@ -52,71 +52,40 @@ The key principle behind spectHR is that **you remain in control of data quality
 
 ## Theoretical background
 
-### The autonomic nervous system and the heart
+Heart rate variability (HRV) reflects the continuous interplay between the two branches of the autonomic nervous system (ANS). The **parasympathetic** branch, acting via the vagus nerve, produces rapid beat-to-beat fluctuations — including respiratory sinus arrhythmia (RSA). The **sympathetic** branch exerts slower influences, mainly through vasomotor tone and blood pressure regulation. Because the two branches operate at different speeds, spectral analysis separates their contributions by frequency. This is not merely a signal-processing choice; it reflects the underlying physiology ([Mulder, 1989](#ref-mulder1989); [Task Force of the European Society of Cardiology, 1996](#ref-taskforce1996)).
 
-The heart does not beat at a perfectly regular rate. Even in a healthy person sitting quietly, the interval between consecutive heartbeats varies continuously, typically over a range of tens to hundreds of milliseconds. This variation, heart rate variability, is not noise. It is the result of a continuous, dynamic interplay between two branches of the autonomic nervous system (ANS): the **sympathetic** branch, which tends to increase heart rate and mobilise energy, and the **parasympathetic** branch, which tends to slow the heart and promote recovery.
+A note on the two-branch picture: both branches can be simultaneously active or withdrawn — they do not simply trade off. HRV primarily indexes vagal modulation; it does not directly reveal what the sympathetic branch is doing. Broader conclusions about autonomic balance require additional signals such as blood pressure or pre-ejection period.
 
-The primary pathway for parasympathetic control of the heart runs through the vagus nerve. Vagal activity produces rapid, moment-to-moment fluctuations in heart rate, particularly those linked to breathing, the heart speeds up slightly during inhalation and slows during exhalation. This coupling between respiration and heart rate is called **respiratory sinus arrhythmia (RSA)**. Sympathetic influences are slower, taking several seconds to propagate through the circulatory system, and are more closely linked to vasomotor tone and blood pressure regulation.
+### Mental effort, not stress
 
-Because the two branches operate at different speeds, spectral analysis of the heartbeat interval series separates them by frequency: fast (e.g., respiratory-induced) fluctuations appear in the high-frequency band; slower vasomotor fluctuations appear in the low and mid frequency bands. This is the fundamental justification for frequency-domain HRV analysis, it is not merely a signal-processing choice but a reflection of the underlying physiology ([Mulder, 1989](#ref-mulder1989); [Task Force of the European Society of Cardiology, 1996](#ref-taskforce1996)).
+The CARSPAN tradition, which spectHR inherits, uses *mental effort* and *mental workload* rather than *stress*. Mental effort is defined as the resources invested in response to task demands — a construct that can be experimentally manipulated and whose physiological cost can be measured independently of the subjective experience of strain. Mulder [(1980)](#ref-mulder1980) showed that task performance suppresses HRV, particularly in the mid-frequency band (~0.10 Hz) that reflects baroreceptor-driven blood pressure oscillations. Mulder [(1989)](#ref-mulder1989) formalised the framework: the suppression reflects invested effort, not task difficulty — a person who disengages from a hard task shows little HRV change; one working hard at an easy task shows a marked decrease ([Mulder, 1992](#ref-mulder1992)). The pattern generalises across driving ([de Waard, 1996](#ref-dewaard1996); [Mulder et al., 2004](#ref-mulder2004)), aviation ([De Rivecourt et al., 2008](#ref-derivecourt2008)), clinical work ([Peabody et al., 2023](#ref-peabody2023)), and large-scale simulation studies ([Arutyunova et al., 2024](#ref-arutyunova2024)).
 
-### HRV as a measure of mental effort
+HRV does not measure perceived stress. It measures a physiological state — the cost of effort investment — that may or may not correspond to what a person calls "feeling stressed." The gap between the two is where individual differences and coping strategies operate. Treating HRV as a direct readout of stress conflates distinct levels of analysis.
 
-The use of HRV in psychophysiological research has a long history. Mulder [(1980)](#ref-mulder1980) demonstrated that mental task performance reduces heart rate variability compared to rest, and that this reduction is particularly pronounced in the mid-frequency band (0.06–0.14 Hz), which reflects baroreceptor-mediated blood pressure regulation. Subsequent work by Mulder & Mulder [(1981)](#ref-mulder1989) formalised the theoretical framework: when a person invests mental effort in a task, sympathetic activation increases and parasympathetic withdrawal follows, leading to a rise in heart rate and a fall in HRV power, especially in the LF band. The relationship is not between task *difficulty* and HRV per se, but between *invested effort* and HRV. A person who disengages from a hard task may show little HRV change; a person heavil engaged in an easy task may show a marked decrease ([Mulder, 1992](#ref-mulder1992)).
+### Frequency bands
 
-This framework has been extensively replicated. HRV is consistently lowered by mental effort and mental workload, probably due to sympathetic activation and parasympathetic withdrawal. The pattern generalises across task types and populations: driving ([de Waard, 1996](#ref-dewaard1996); [Mulder et al., 2004](#ref-mulder2004)), aviation ([De Rivecourt et al., 2008](#ref-derivecourt2008)), air traffic control, and clinical work ([Peabody et al., 2023](#ref-peabody2023)). De Waard's (1996) systematic evaluation of seven driving studies found that the 0.10 Hz HRV component was sensitive to fine-grained changes in task complexity, and notably that it was more sensitive to task-related effort than to changes in driver state such as fatigue or monotony, further supporting the view that LF HRV indexes invested effort rather than arousal level per se. A recent large-scale driving simulation study with 892 participants ([Arutyunova, 2024](#ref-arutyunova2024)) re-established the finding that increased cognitive load was accompanied by higher heart rate and lower HRV as measured by RMSSD.
+spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder, 1988](#ref-mulder1988)), following the CARSPAN convention. **Band boundaries are user-configurable** to accommodate different research traditions.
 
-Importantly, the overall cardiovascular pattern under mental effort is coherent: heart rate increases, HRV decreases, blood pressure rises, and baroreflex sensitivity falls ([Mulder, 1992](#ref-mulder1992)). This consistency across multiple physiological channels, not just HRV alone, gives the framework its strength. HRV is most informative when interpreted alongside mean heart rate and, where available, blood pressure and respiratory signals.
+| Band | Default range | Reflects |
+|------|--------------|---------|
+| VLF | 0.02–0.06 Hz | Thermoregulation, hormonal rhythms; requires ≥ 5 min epochs |
+| MF | 0.06–0.14 Hz | Baroreceptor-driven vasomotor oscillations; most sensitive to mental effort |
+| HF | 0.14–0.40 Hz | Respiratory sinus arrhythmia; parasympathetically mediated but confounded by breathing pattern |
 
-### HRV and stress
-
-The word *stress* appears constantly in the HRV literature, but it is used in at least two very different senses that are easily conflated. This distinction is not merely semantic, it has real consequences for how HRV data should be interpreted.
-
-**Stress as a physiological state** is the body's response to demand. Selye's original definition, the non-specific response of the body to any demand for change, refers to a biological process: activation of the hypothalamic–pituitary–adrenal axis, release of cortisol and catecholamines, and the corresponding autonomic shifts that HRV reflects. In this sense, HRV is a legitimate biomarker of stress *load* on the system.
-
-**Stress as a perceived social construct** is something different. When people say they "feel stressed", they are reporting an appraisal, a subjective evaluation that the demands placed on them exceed their resources. This appraisal depends on personality, context, social support, prior experience, and a host of factors that have nothing to do with the objective difficulty of the task or the physiological state of the ANS. Two people performing the same task under the same conditions can have very different stress *experiences* while showing similar HRV changes, or vice versa.
-
-HRV does not measure perceived stress. It measures a physiological state, specifically, the balance of autonomic nervous system activity, that may or may not correspond to what a person calls "stress". An environmental demand translates both into psychological responses (self-appraisal or perception) and biological responses in the body, and these are mediated by a complex interplay of nervous, endocrine, and immune mechanisms. The psychological response and the biological response are related but not identical, and the gap between them is where individual differences, coping strategies, and social context operate.
-
-Several reviews have documented this gap empirically. The utility of HRV for characterising psychological stress is primarily impacted by methodological considerations such as study populations, the nature of experienced versus induced stress, and the method of stress assessment. Across 15 studies meeting rigorous methodological criteria, RMSSD was the most consistently associated metric, but effect sizes and directions varied substantially between populations and stressor types. At present, there is no universally recognised standard for stress evaluation, and the search for stress biomarkers remains a challenging task because of the lack of consensus on the definition of stress.
-
-The practical implication for HRV researchers is this: **HRV changes reflect the physiological cost of effort and demand, not the experience of stress**. A participant who reports high stress on a questionnaire while showing normal HRV may be coping effectively; a participant who reports low stress while showing suppressed HRV may be under-reporting or physiologically reactive. Neither pattern is wrong, they are simply measuring different things. Treating HRV as a direct readout of "how stressed someone is" conflates these levels and can lead to circular or misleading conclusions.
-
-The CARSPAN tradition, which spectHR inherits, has always been careful about this. Mulder's framework uses the term *mental effort* or *mental workload*, defined as invested resources in response to task demands, rather than stress. The physiological changes HRV captures are understood as the cost of that investment, not as an emotion or an appraisal. This framing is more tractable for experimental research because effort can be manipulated (via task difficulty and incentives) independently of the subjective experience of stress.
-
-### Frequency bands and their interpretation
-
-The spectral content of HRV is distributed across three bands that reflect different regulatory processes ([Mulder, 1989](#ref-mulder1989); [Mulder, 1988](#ref-mulder1988)):
-
-**Very low frequency (VLF, 0.02–0.06 Hz)** reflects slow regulatory processes including thermoregulation, hormonal rhythms, and gradual adaptation to sustained task demands. Reliable estimation of VLF power requires recordings of at least 5 minutes and preferably longer. Some authors caution against interpreting VLF from short recordings.
-
-**Low / mid frequency (LF, 0.06–0.14 Hz)** reflects oscillatory fluctuations in blood pressure arising from baroreceptor regulation of vasomotor tone. This band is the most consistently sensitive to mental workload in the Mulder tradition: Mulder and Mulder [(1981)](#ref-mulder1989) found that spectral power between 0.06 and 0.14 Hz was related to the dynamic control of mean arterial blood pressure, and that under mental load this band was particularly affected, contributing about 80% to the total decrease in spectral energy. Baroreflex sensitivity, the gain of the closed-loop blood pressure control system, also decreases under mental load, which helps explain why LF power drops.
-
-**High frequency (HF, 0.14–0.40 Hz)** reflects respiratory sinus arrhythmia and is primarily parasympathetically mediated. It is sensitive to both breathing rate (which must remain within the HF band for it to be correctly measured) and parasympathetic tone. HF power decreases under mental effort, but the effect is less specific than the LF effect because any change in breathing pattern, rate, depth, regularity, will alter HF power independently of ANS state.
-
-The **LF/HF ratio** is sometimes used as a sympatho-vagal balance index. Its interpretation is contested ([Billman, 2013](#ref-billman2013)), and Mulder's tradition generally prefers absolute band power normalised by mean heart rate (the mMI² metric), which removes the confound of mean heart rate level.
-
-### Why spectral analysis?
-
-A simple measure like mean heart rate or RMSSD captures something real about autonomic state, but it collapses all the frequency-specific information into a single number. Spectral analysis preserves that frequency structure, allowing the researcher to ask: *how much of the variability is coming from the LF band (baroreceptor regulation, sensitive to effort) versus the HF band (respiratory coupling, sensitive to breathing and vagal tone)?*
-
-The CARSPAN approach, which spectHR implements, represents the heart rate signal as a series of unit impulses at R-peak times, the Integral Pulse Frequency Modulation (IPFM) model. This model, developed by Rompelman [(1985)](#ref-rompelman1985) and formalised for spectral analysis by Mulder [(1988)](#ref-mulder1988), has the advantage that the DFT can be computed directly on the event times without resampling to a uniform grid. This matters because resampling introduces artefacts that are especially problematic in short segments and at the boundaries of frequency bands.
-
-Spectral analysis of HRV is most informative when the following conditions hold: the recording is long enough relative to the frequency of interest (at least 10 cycles per band), the IBI series is free of artefacts, the participant is not talking or moving heavily (both of which corrupt the signal), and the analysis epochs correspond to clearly defined task conditions.
+The **LF/HF ratio** as a sympatho-vagal balance index is contested ([Billman, 2013](#ref-billman2013)); the CARSPAN tradition prefers absolute band power normalised by mean heart rate (mMI²).
 
 ### Practical considerations
 
-A few things are worth bearing in mind when interpreting spectHR output:
+**Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals — visible in spectHR's shaded CI band. Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2018) showed that a 10-second ECG yields a valid RMSSD estimate in large samples.
 
-**Recording length matters.** The frequency resolution of the spectrum is $\Delta f = 1/T$, where $T$ is the epoch duration in seconds. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve the LF and HF bands clearly. Shorter epochs give coarser resolution, wider confidence intervals, and less reliable band power estimates. RMSSD can be estimated validly from segments as short as 10 seconds ([Tegegne et al., 2019](#ref-tegegne2018)), but frequency-domain measures require substantially longer recordings. The confidence interval display in spectHR makes this visible: the shaded band will be much wider for a 60-second epoch than for a 5-minute one. It is worth noting that this length requirement applies specifically to frequency-domain metrics. Time-domain measures such as RMSSD behave differently: Tegegne et al. (2019) showed that a single 10-second ECG recording yields a valid and reliable RMSSD estimate with substantial agreement against the 4, 5-minute gold standard (r = 0.853, 0.862). Short epochs are therefore acceptable for RMSSD but remain problematic for spectral band power, particularly in the LF band where several oscillation cycles must be captured.
+**Artefacts are critical.** A single missed or spurious R-peak introduces broadband spectral energy that can swamp the genuine HRV signal ([Mulder, 1988](#ref-mulder1988)). This is why spectHR requires the user to inspect and verify the IBI series before computing any metrics.
 
-**Artefacts are critical.** A single missed or spurious R-peak can produce an IBI value two or three times the normal range, introducing broadband spectral energy that swamps the genuine HRV signal ([Mulder, 1988](#ref-mulder1988)). This is why spectHR shows every detected peak and requires the user to verify the IBI series before computing any metrics. The variance added by one prolonged IBI can equal the variance of the entire remaining series, a point made explicitly in the CARSPAN manual and the reason artefact correction is treated as a first-class step rather than an afterthought.
+**Normalisation.** Absolute spectral power in ms² scales with mean IBI squared, increasing at lower heart rates. The CARSPAN mMI² normalisation corrects for this automatically. For the Welch and Lomb-Scargle methods normalisation is not applied automatically: whether and how to correct HRV for mean heart rate is genuinely unresolved ([de Geus et al., 2019](#ref-degeus2019)), and no single recommendation fits all research questions. We have made both corrected and uncorrected approaches available so researchers can choose.
 
-**Normalise by mean heart rate.** Absolute spectral power in ms² is proportional to mean IBI squared, so it increases at lower heart rates. The CARSPAN mMI² normalisation divides by the squared mean heart rate, making values comparable across sessions, participants, and conditions with different resting heart rates. spectHR applies this normalisation automatically when the CARSPAN PSD method is selected.
-
-**HRV is one signal among many.** The most reliable conclusions come from a convergent pattern across heart rate, HRV, and when available, blood pressure and respiration. A decrease in LF HRV that is accompanied by an increase in heart rate and a decrease in baroreflex sensitivity is a much stronger indicator of increased effort than an isolated HRV change. Stuiver and Mulder (2014) demonstrated exactly this: across an ambulance dispatch simulation and a driving simulator study, the cardiovascular response was consistently a combination of an initial defence reaction followed by compensatory blood pressure control via the baroreflex, and this full pattern was more diagnostically useful than any single measure in isolation. Interpreting heart rate alone, for example, can be misleading because the initial sympathetic increase in HR is often reversed by baroreflex compensation during sustained load, producing a decrease in HR even as mental effort remains high.
+**spectHR operates on IBI time series.** The core analyses — time-domain HRV, spectral band power, Poincaré geometry — require only inter-beat intervals. Simultaneous blood pressure or respiration recordings are not needed. That said, the most reliable conclusions about mental effort come from converging evidence across heart rate, HRV, and when available, blood pressure and baroreflex sensitivity. Stuiver and Mulder [(2014)](#ref-stuiver2014) showed that the full cardiovascular pattern was more diagnostically informative than any single measure in isolation.
 
 ---
+
 
 ## Getting started
 
@@ -190,8 +159,6 @@ The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD
 ---
 
 ## Step 5, Examine frequency-domain HRV (PSD tab)
-
-![spectHR](images/PSDWindow.PNG)
 
 The **PSD tab** shows one power spectrum per active epoch, stacked vertically. Three frequency bands are shaded:
 
@@ -317,7 +284,7 @@ CARSPAN's window is defined in seconds; spectHR's in beats. For a resting heart 
 
 #### 4. Successive difference criterion, not implemented
 
-CARSPAN also flags a beat if the *difference* between consecutive intervals ($`\text{IBI}_i - \text{IBI}_{i-1}`$) exceeds $`N_\text{SuD}`$ standard deviations of the successive difference series. spectHR does not implement this. The SL and SNS sequence labels already capture the most physiologically relevant abrupt patterns. Adding a separate threshold would introduce a second set of parameters that could conflict with the sequence labels in ambiguous cases.
+CARSPAN also flags a beat if the *difference* between consecutive intervals ($\text{IBI}_i - \text{IBI}_{i-1}$) exceeds $N_\text{SuD}$ standard deviations of the successive difference series. spectHR does not implement this. The SL and SNS sequence labels already capture the most physiologically relevant abrupt patterns. Adding a separate threshold would introduce a second set of parameters that could conflict with the sequence labels in ambiguous cases.
 
 #### 5. Min/Max SD clipping, not implemented
 
@@ -337,7 +304,7 @@ When a Polar H10 accelerometer stream is present, spectHR derives a respiration 
 
 ## Poincaré Metrics
 
-**SD1**, beat-to-beat variability, equal to $`\text{RMSSD}/\sqrt{2}`$:
+**SD1**, beat-to-beat variability, equal to $\text{RMSSD}/\sqrt{2}$:
 
 $$\text{SD1} = \sqrt{\tfrac{1}{2}\,\mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
@@ -368,7 +335,7 @@ The IBI series (in ms) is resampled onto a uniform grid using linear interpolati
 >
 > $$B = \int_{f_l}^{f_h} \hat{S}(f)\, df \approx \sum_k \hat{S}(f_k)\, \Delta f$$
 >
-> For $`K`$ non-overlapping segments the degrees of freedom are $`\nu = 2K`$, giving chi-square confidence intervals:
+> For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
 >
 > $$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
 >
@@ -382,7 +349,7 @@ The IBI series (in ms) is resampled onto a uniform grid using linear interpolati
 > | FFT length | same as `nperseg` | `nfft` |
 > | Window | Hamming | `window` |
 >
-> **Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $`f_s / \text{nperseg} = 4/256 = 0.0156\,\text{Hz}`$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
+> **Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156\,\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
 
 ---
 
@@ -393,11 +360,11 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 > [!NOTE]
 > ### Lomb-Scargle, algorithm detail
 >
-> Let $`t_i`$ denote the R-peak times (s) and $`x_i = \text{IBI}_i - \bar{\text{IBI}}`$ (ms) the mean-subtracted IBIs. The angular frequency grid $`\omega = 2\pi f`$ is evaluated over $`[f_\text{min}, f_\text{max}]`$ at `nfreqs` equally spaced points. The periodogram $`P(\omega)`$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
+> Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
 >
 > $$\hat{S}(f_k) = \frac{2T}{N^2}\, P(\omega_k)$$
 >
-> where $`T = t_N - t_1`$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid.
+> where $T = t_N - t_1$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid.
 >
 > Confidence intervals use the Scargle (1982) effective degrees of freedom:
 >
@@ -416,14 +383,14 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 
 ### CARSPAN method
 
-The CARSPAN method implements the direct Discrete Fourier Transform on R-peak event times, following the algorithm described by Mulder [(1988)](#ref-mulder1988) and used in the CARSPAN software package. No resampling is performed. The spectrum is computed on the native frequency grid $`f_k = k/T`$ (resolution $`\Delta f = 1/T`$), then interpolated onto a fixed display grid. Band power is computed on the native grid following CARSPAN formula 3.28. Output units: **mMI²**.
+The CARSPAN method implements the direct Discrete Fourier Transform on R-peak event times, following the algorithm described by Mulder [(1988)](#ref-mulder1988) and used in the CARSPAN software package. No resampling is performed. The spectrum is computed on the native frequency grid $f_k = k/T$ (resolution $\Delta f = 1/T$), then interpolated onto a fixed display grid. Band power is computed on the native grid following CARSPAN formula 3.28. Output units: **mMI²**.
 
 > [!NOTE]
 > ### CARSPAN, algorithm detail
 >
 > #### The R-peak event series
 >
-> Following Rompelman (1985) and Mulder [(1988)](#ref-mulder1988), the heart rate signal is represented as a series of unit impulses at the R-peak occurrence times $`t_i`$ (in seconds):
+> Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heart rate signal is represented as a series of unit impulses at the R-peak occurrence times $t_i$ (in seconds):
 >
 > $$x(t) = \sum_{i=1}^{N} \delta(t - t_i)$$
 >
@@ -431,17 +398,17 @@ The CARSPAN method implements the direct Discrete Fourier Transform on R-peak ev
 >
 > #### Power spectral density (formula 3.19)
 >
-> Assuming periodicity outside the analysis segment $`[0, T]`$, the power spectral density at discrete frequencies $`f_k = k/T`$ is:
+> Assuming periodicity outside the analysis segment $[0, T]$, the power spectral density at discrete frequencies $f_k = k/T$ is:
 >
 > $$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i\, e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
 >
-> where $`w_i`$ is the $`i`$-th coefficient of a tapering window (default: Hanning, as used in CARSPAN; configurable). The window is applied to suppress spectral leakage at the segment boundaries.
+> where $w_i$ is the $i$-th coefficient of a tapering window (default: Hanning, as used in CARSPAN; configurable). The window is applied to suppress spectral leakage at the segment boundaries.
 >
-> **Deviation from CARSPAN:** In CARSPAN, formula 3.19 uses $`w_i = 1`$ (no window) for the analytical formula, and a 5 % cosine taper is applied separately. spectHR applies a full-length configurable window to each $`w_i`$ directly in formula 3.19. The practical effect is similar: both suppress leakage at the segment edges.
+> **Deviation from CARSPAN:** In CARSPAN, formula 3.19 uses $w_i = 1$ (no window) for the analytical formula, and a 5 % cosine taper is applied separately. spectHR applies a full-length configurable window to each $w_i$ directly in formula 3.19. The practical effect is similar: both suppress leakage at the segment edges.
 >
 > #### Native frequency grid
 >
-> The native grid runs from $`f_1 = 1/T`$ to $`f_{k_\text{max}} = \lceil f_\text{max} \cdot T \rceil / T`$, with spacing $`\Delta f = 1/T`$. The DC component ($`k = 0`$) is excluded because it carries no HRV information.
+> The native grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max} \cdot T \rceil / T$, with spacing $\Delta f = 1/T$. The DC component ($k = 0$) is excluded because it carries no HRV information.
 >
 > #### Display grid and smoothing
 >
@@ -457,23 +424,23 @@ The CARSPAN method implements the direct Discrete Fourier Transform on R-peak ev
 >
 > #### Band power (formula 3.28)
 >
-> Band power in $`[f_l, f_h]`$ is computed by direct summation on the native grid:
+> Band power in $[f_l, f_h]$ is computed by direct summation on the native grid:
 >
 > $$B(f_l, f_h) = \sum_{\substack{f_k = f_l}}^{f_h} S_{xx}(f_k)\, \Delta f, \qquad \Delta f = \frac{1}{T}$$
 >
 > This is a rectangular (Riemann) summation, matching CARSPAN exactly. spectHR uses trapezoidal integration for Welch and Lomb-Scargle band power; only the CARSPAN back-end uses rectangular summation to match formula 3.28.
 >
-> **Important:** Because $`\Delta f = 1/T`$ is fixed by the recording duration, not by `freq_resolution`, band power values are completely independent of the display resolution setting.
+> **Important:** Because $\Delta f = 1/T$ is fixed by the recording duration, not by `freq_resolution`, band power values are completely independent of the display resolution setting.
 >
 > #### Normalisation to mMI² (formulae 3.20 and 3.29)
 >
-> The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is normalised by the squared mean of the R-peak event series. For the unit-impulse representation, the mean equals the mean heart rate $`\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}`$. The normalised band power is:
+> The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is normalised by the squared mean of the R-peak event series. For the unit-impulse representation, the mean equals the mean heart rate $\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}$. The normalised band power is:
 >
 > $$B'(f_l, f_h) = \frac{B(f_l, f_h)}{\bar{x}^2} \times 10^6 = B(f_l, f_h) \times \bar{\text{IBI}}_\text{sec}^2 \times 10^6 \quad [\text{mMI}^2]$$
 >
-> Multiplication by $`10^6`$ scales the result into a convenient numeric range (milli-Modulation-Index squared, mMI²), consistent with CARSPAN output convention. An important consequence of this normalisation is that mMI² values are largely independent of mean heart rate, making them directly comparable between subjects and sessions.
+> Multiplication by $10^6$ scales the result into a convenient numeric range (milli-Modulation-Index squared, mMI²), consistent with CARSPAN output convention. An important consequence of this normalisation is that mMI² values are largely independent of mean heart rate, making them directly comparable between subjects and sessions.
 >
-> **Implementation note on units:** The normalisation formula divides by $`\bar{x}^2 = (1/\bar{\text{IBI}}_\text{sec})^2`$, which is equivalent to multiplying by $`\bar{\text{IBI}}_\text{sec}^2`$. Since IBI values are stored internally in seconds, the code computes `mean_ibi_sec = mean(ibi_ms) / 1000` and then applies `power_raw * mean_ibi_sec² * 1e6`. A common error is to use `mean_ibi_ms²` instead, which would make the result $`10^6`$ times too small.
+> **Implementation note on units:** The normalisation formula divides by $\bar{x}^2 = (1/\bar{\text{IBI}}_\text{sec})^2$, which is equivalent to multiplying by $\bar{\text{IBI}}_\text{sec}^2$. Since IBI values are stored internally in seconds, the code computes `mean_ibi_sec = mean(ibi_ms) / 1000` and then applies `power_raw * mean_ibi_sec² * 1e6`. A common error is to use `mean_ibi_ms²` instead, which would make the result $10^6$ times too small.
 >
 > **Default parameters** (configurable in *Edit Parameters*):
 >
@@ -493,24 +460,24 @@ All three methods use a chi-square CI of the form:
 
 $$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
 
-The difference lies in how the degrees of freedom $`\nu`$ are determined.
+The difference lies in how the degrees of freedom $\nu$ are determined.
 
 > [!NOTE]
 > ### Confidence interval degrees of freedom
 >
-> **Welch:** $`\nu = 2K`$ where $`K`$ is the number of non-overlapping segments. More segments (longer recording, shorter overlap) give a tighter CI.
+> **Welch:** $\nu = 2K$ where $K$ is the number of non-overlapping segments. More segments (longer recording, shorter overlap) give a tighter CI.
 >
-> **Lomb-Scargle:** $`\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min})\, T \rceil`$, following Scargle (1982). The factor 2 in $`2(f_\text{max} - f_\text{min})T`$ accounts for the adaptive frequency resolution of Lomb-Scargle.
+> **Lomb-Scargle:** $\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min})\, T \rceil$, following Scargle (1982). The factor 2 in $2(f_\text{max} - f_\text{min})T$ accounts for the adaptive frequency resolution of Lomb-Scargle.
 >
-> **CARSPAN:** Each native DFT line $`f_k = k/T`$ is a single periodogram ordinate. For a periodogram ordinate at a frequency where the true spectral density is $S(f)$:
+> **CARSPAN:** Each native DFT line $f_k = k/T$ is a single periodogram ordinate. For a periodogram ordinate at a frequency where the true spectral density is $S(f)$:
 >
 > $$\frac{2\, P(f_k)}{S(f)} \sim \chi^2_2$$
 >
-> so $`\nu = 2`$ per native line. Each display output point (at resolution `freq_resolution`) is supported by approximately $`n_p = \mathrm{round}(\Delta f_\text{out} \times T)`$ native lines, where $`\Delta f_\text{out}`$ is the display grid step. Therefore:
+> so $\nu = 2$ per native line. Each display output point (at resolution `freq_resolution`) is supported by approximately $n_p = \mathrm{round}(\Delta f_\text{out} \times T)$ native lines, where $\Delta f_\text{out}$ is the display grid step. Therefore:
 >
 > $$\nu = 2 \times n_p = 2 \times \mathrm{round}(\Delta f_\text{out} \times T)$$
 >
-> For a 5-minute recording with the default 0.01 Hz resolution: $`n_p = \mathrm{round}(0.01 \times 300) = 3`$, giving $`\nu = 6`$ and a 95% CI spanning roughly [42 %, 485 %] of the PSD value. This wide CI correctly reflects that the direct DFT, with no segment averaging, is a much noisier estimator than Welch at the same recording length.
+> For a 5-minute recording with the default 0.01 Hz resolution: $n_p = \mathrm{round}(0.01 \times 300) = 3$, giving $\nu = 6$ and a 95% CI spanning roughly [42 %, 485 %] of the PSD value. This wide CI correctly reflects that the direct DFT, with no segment averaging, is a much noisier estimator than Welch at the same recording length.
 >
 > A useful consequence: the CI width is directly controlled by `freq_resolution`. A coarser grid (larger step) averages more native lines per display point, narrowing the CI. A finer grid (smaller step) places each display point between native lines, widening the CI. The CARSPAN manual itself notes (§3.3) that this integration over the fixed output grid is the *only* factor that increases the reliability of each spectral point.
 >
@@ -591,12 +558,15 @@ De Rivecourt, M., Kuperus, M.N., Post, W.J., & Mulder, L.J.M. (2008). Cardiovasc
 <a id="ref-dewaard1996"></a>
 de Waard, D. (1996). *The measurement of drivers' mental workload*. Ph.D. Thesis, University of Groningen.
 
-<a id="ref-Grossman2026"></a>
-Grossman P, Ackland GL, Allen AM, Berntson GGB, Booth LC, Burghardt GM, Buron J, Dinets V, Doody JS, Dutschmann M, Farmer DGS, Fisher JP, Gourine AV, Joyner MJ, Karemaker JM, Khalsa SS, Lakatta EG, Leite CAC, Macefield VG, Machado BH, Machado RM, Menuet C, Mendelowitz D, Moraes DJA, Neuhuber W, Ottaviani MM, Paterson DJ, Paton JFP, Pellegrino PR, Ramchandra R, Shanks J, Schwaber JS, Shivkumar K, Spyer KM, Taylor EW, Taylor JA, Wang T, Yao ST, Zucker IH. Why The Polyvagal Theory Is Untenable: An international expert evaluation of the polyvagal theory and commentary upon Porges, S.W. (2025). *Polyvagal theory: current status, clinical applications, and future directions.* Clin. Neuropsychiatry, 22(3), 169-184. Clin Neuropsychiatry. 2026 Feb;23(1):100-112. doi: 10.36131/cnfioritieditore20260110. PMID: 41768017; PMCID: PMC12937499.
+<a id="ref-degeus2019"></a>
+de Geus, E.J.C., Gianaros, P.J., Brindle, R.C., Jennings, J.R., & Berntson, G.G. (2019). Should heart rate variability be "corrected" for heart rate? Biological, quantitative, and interpretive considerations. *Psychophysiology*, 56(2), e13287. https://doi.org/10.1111/psyp.13287
 
 <a id="ref-mulder1980"></a>
 Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Groningen.
 
+
+<a id="ref-mulder1985"></a>
+Mulder, L.J.M. (1985). Mental load, mental effort and attention. In A.W.K. Gaillard & W. Ritter (Eds.), *Tutorials in Event Related Potential Research: Endogenous Components*. Amsterdam: North Holland.
 
 
 <a id="ref-mulder1988"></a>
@@ -620,8 +590,13 @@ Peabody, J.E., Ryznar, R., Ziesmann, M.T., & Gillman, L. (2023). A systematic re
 
 
 
-<a id="ref-rompelman1985"></a>
-Rompelman O. (1985) Spectral analysis of heart-rate variability, In: J.F. Orlebeke, G. Mulder and L.J.P. van Doornen (eds.) Psychophysiology of cardiovascular control (pp. 315-331). New York: Plenum Press. 
+<a id="ref-rompelman1980"></a>
+Rompelman, O. (1980). Heart rate variability and the assessment of mental workload. In B.K.P. Horn (Ed.), *Methods of Information in Medicine*. Stuttgart: Schattauer.
+
+
+<a id="ref-rompelman1977"></a>
+Rompelman, O., Coenen, A.J.R.M., & Kitney, R.I. (1977). Measurement of heart-rate variability: Part 1 — Comparative study of heart-rate variability analysis methods. *Medical and Biological Engineering and Computing*, 15, 233–239. https://doi.org/10.1007/BF02441043
+
 
 
 <a id="ref-stuiver2014"></a>
