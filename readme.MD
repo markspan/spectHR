@@ -1,4 +1,9 @@
-> **⚠️ CAUTION:** This project is a work in progress. Blood pressure analysis is not yet implemented. Breathing signal extraction and visualisation are functional but should be treated as experimental.
+<details>
+<summary>⚠️ CAUTION</summary>
+
+This project is a work in progress. Blood pressure analysis is not yet implemented. Breathing signal extraction and visualisation are functional but should be treated as experimental.
+
+</details>
 
 ---
 
@@ -128,7 +133,12 @@ When you spot a problem, use the **mode selector**:
 
 All changes are saved automatically to the cache file when you leave the tab.
 
-> **Tip:** Right-clicking a file gives you *Reload Raw*, *Invert ECG Polarity*, and *Retrigger ECG*.
+<details>
+<summary>Tip</summary>
+
+Right-clicking a file gives you *Reload Raw*, *Invert ECG Polarity*, and *Retrigger ECG*.
+
+</details>
 
 ---
 
@@ -152,9 +162,14 @@ The **Poincaré tab** shows a scatter plot where each point represents one heart
 
 The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD2) reflects slower variability. Each active epoch is drawn in a different colour with its own ellipse overlaid.
 
-> **A note on SD1 and SD2:** SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively. Van Roon et al. (2025) demonstrate this rigorously: SD1 $= \text{RMSSD}/\sqrt{2}$ by definition, and SD2 follows algebraically from SDNN and RMSSD. spectHR reports them because they are widely expected in the literature and because the Poincaré plot is a useful visual summary, but users should not treat SD1 and SD2 as independent metrics alongside RMSSD and SDNN in statistical analyses.
->
-> *van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. Entropy, 27(8), 861.* https://doi.org/10.3390/e27080861
+<details>
+<summary>A note on SD1 and SD2</summary>
+
+SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively. Van Roon et al. (2025) demonstrate this rigorously: SD1 $= \text{RMSSD}/\sqrt{2}$ by definition, and SD2 follows algebraically from SDNN and RMSSD. spectHR reports them because they are widely expected in the literature and because the Poincaré plot is a useful visual summary, but users should not treat SD1 and SD2 as independent metrics alongside RMSSD and SDNN in statistical analyses.
+
+*van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. Entropy, 27(8), 861.* https://doi.org/10.3390/e27080861
+
+</details>
 
 ---
 
@@ -232,33 +247,41 @@ After R-peak detection, each inter-beat interval is classified before any metric
 | SNS | Short-Normal-Short triplet | Light sea green |
 | T | Degenerate (NaN or zero duration); excluded from all metrics |, |
 
-> [!NOTE]
-> **Terminology:** The CARSPAN documentation occasionally uses the term *Energy* where *Power* is the correct term. spectHR uses *Power* consistently throughout.
+<details>
+<summary>Terminology</summary>
+
+**Terminology:** The CARSPAN documentation occasionally uses the term *Energy* where *Power* is the correct term. spectHR uses *Power* consistently throughout.
+
+</details>
 
 ---
 
-> [!NOTE]
-> ### Classification algorithm
->
-> Let $\text{IBI}_i$ denote the $i$-th inter-beat interval and let $\bar{\text{IBI}}$ and $\sigma$ denote the **local** mean and standard deviation over a centred rolling window of $W$ beats. Classification proceeds as follows:
->
-> | Condition | Label |
-> |-----------|-------|
-> | $`\text{IBI}_i > T_{\max}`$ | **TL** *(excluded from all statistics)* |
-> | $`\text{IBI}_i \leq 0`$ or NaN | **T** *(excluded from all statistics)* |
-> | $`\text{IBI}_i > \bar{\text{IBI}} + N \cdot \sigma`$ | **L** |
-> | $`\text{IBI}_i < \bar{\text{IBI}} - N \cdot \sigma`$ | **S** |
-> | beat $`i`$ is S and beat $`i+1`$ is L | **SL** |
-> | beat $`i`$ is S, beat $`i+1`$ is N, beat $`i+2`$ is S | **SNS** |
-> | otherwise | **N** |
->
-> **Default parameters** (all configurable in *Edit Parameters*):
->
-> | Parameter | Default | JSON key |
-> |-----------|---------|----------|
-> | Window length $`W`$ | 51 beats | `window_length` |
-> | Threshold $`N`$ | 4.0 std | `n_std` |
-> | TL ceiling $`T_{\max}`$ | 2.0 s | `max_ibi_sec` |
+<details>
+<summary>Classification algorithm</summary>
+
+### Classification algorithm
+
+Let $\text{IBI}_i$ denote the $i$-th inter-beat interval and let $\bar{\text{IBI}}$ and $\sigma$ denote the **local** mean and standard deviation over a centred rolling window of $W$ beats. Classification proceeds as follows:
+
+| Condition | Label |
+|-----------|-------|
+| $`\text{IBI}_i > T_{\max}`$ | **TL** *(excluded from all statistics)* |
+| $`\text{IBI}_i \leq 0`$ or NaN | **T** *(excluded from all statistics)* |
+| $`\text{IBI}_i > \bar{\text{IBI}} + N \cdot \sigma`$ | **L** |
+| $`\text{IBI}_i < \bar{\text{IBI}} - N \cdot \sigma`$ | **S** |
+| beat $`i`$ is S and beat $`i+1`$ is L | **SL** |
+| beat $`i`$ is S, beat $`i+1`$ is N, beat $`i+2`$ is S | **SNS** |
+| otherwise | **N** |
+
+**Default parameters** (all configurable in *Edit Parameters*):
+
+| Parameter | Default | JSON key |
+|-----------|---------|----------|
+| Window length $`W`$ | 51 beats | `window_length` |
+| Threshold $`N`$ | 4.0 std | `n_std` |
+| TL ceiling $`T_{\max}`$ | 2.0 s | `max_ibi_sec` |
+
+</details>
 
 ---
 
@@ -326,30 +349,34 @@ $$\text{SD2} = \sqrt{2\,\mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2}\,\mathrm{Var}(
 
 The IBI series (in ms) is resampled onto a uniform grid using linear interpolation, divided into overlapping segments, windowed, Fourier-transformed, and averaged. Averaging over segments reduces variance at the cost of frequency resolution. Output units: **ms²/Hz**; band power in **ms²**.
 
-> [!NOTE]
-> ### Welch, algorithm detail
->
-> Let $x(t)$ denote the IBI series (ms) resampled at $f_s$ Hz. `scipy.signal.welch` is called with `scaling='density'`, returning the one-sided PSD in ms²/Hz.
->
-> Band power $B$ in $[f_l, f_h]$ is computed by trapezoidal integration with endpoint interpolation:
->
-> $$B = \int_{f_l}^{f_h} \hat{S}(f)\, df \approx \sum_k \hat{S}(f_k)\, \Delta f$$
->
-> For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
->
-> $$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
->
-> **Default parameters** (configurable in *Edit Parameters*):
->
-> | Parameter | Default | JSON key |
-> |-----------|---------|----------|
-> | Resampling frequency | 4 Hz | `fs` |
-> | Segment length | 256 samples | `nperseg` |
-> | Overlap | 128 samples | `noverlap` |
-> | FFT length | same as `nperseg` | `nfft` |
-> | Window | Hamming | `window` |
->
-> **Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156\,\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
+<details>
+<summary>Welch, algorithm detail</summary>
+
+### Welch, algorithm detail
+
+Let $x(t)$ denote the IBI series (ms) resampled at $f_s$ Hz. `scipy.signal.welch` is called with `scaling='density'`, returning the one-sided PSD in ms²/Hz.
+
+Band power $B$ in $[f_l, f_h]$ is computed by trapezoidal integration with endpoint interpolation:
+
+$$B = \int_{f_l}^{f_h} \hat{S}(f)\, df \approx \sum_k \hat{S}(f_k)\, \Delta f$$
+
+For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
+
+$$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
+
+**Default parameters** (configurable in *Edit Parameters*):
+
+| Parameter | Default | JSON key |
+|-----------|---------|----------|
+| Resampling frequency | 4 Hz | `fs` |
+| Segment length | 256 samples | `nperseg` |
+| Overlap | 128 samples | `noverlap` |
+| FFT length | same as `nperseg` | `nfft` |
+| Window | Hamming | `window` |
+
+**Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156\,\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
+
+</details>
 
 ---
 
@@ -357,27 +384,31 @@ The IBI series (in ms) is resampled onto a uniform grid using linear interpolati
 
 The Lomb-Scargle method evaluates the spectrum directly at the original, irregularly-spaced beat timestamps, no resampling required. The mean IBI is subtracted before estimation to suppress the DC component. Output units: **ms²/Hz**; band power in **ms²**.
 
-> [!NOTE]
-> ### Lomb-Scargle, algorithm detail
->
-> Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
->
-> $$\hat{S}(f_k) = \frac{2T}{N^2}\, P(\omega_k)$$
->
-> where $T = t_N - t_1$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid.
->
-> Confidence intervals use the Scargle (1982) effective degrees of freedom:
->
-> $$\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min})\, T \rceil$$
->
-> This accounts for the adaptive frequency resolution of Lomb-Scargle compared to the regular DFT grid.
->
-> **Default parameters** (configurable in *Edit Parameters*):
->
-> | Parameter | Default | JSON key |
-> |-----------|---------|----------|
-> | Number of frequency points | 1000 | `nfreqs` |
-> | Lower frequency floor | 0.0001 Hz | `fmin_floor` |
+<details>
+<summary>Lomb-Scargle, algorithm detail</summary>
+
+### Lomb-Scargle, algorithm detail
+
+Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
+
+$$\hat{S}(f_k) = \frac{2T}{N^2}\, P(\omega_k)$$
+
+where $T = t_N - t_1$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid.
+
+Confidence intervals use the Scargle (1982) effective degrees of freedom:
+
+$$\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min})\, T \rceil$$
+
+This accounts for the adaptive frequency resolution of Lomb-Scargle compared to the regular DFT grid.
+
+**Default parameters** (configurable in *Edit Parameters*):
+
+| Parameter | Default | JSON key |
+|-----------|---------|----------|
+| Number of frequency points | 1000 | `nfreqs` |
+| Lower frequency floor | 0.0001 Hz | `fmin_floor` |
+
+</details>
 
 ---
 
@@ -385,70 +416,74 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 
 The CARSPAN method implements the direct Discrete Fourier Transform on R-peak event times, following the algorithm described by Mulder [(1988)](#ref-mulder1988) and used in the CARSPAN software package. No resampling is performed. The spectrum is computed on the native frequency grid $f_k = k/T$ (resolution $\Delta f = 1/T$), then interpolated onto a fixed display grid. Band power is computed on the native grid following CARSPAN formula 3.28. Output units: **mMI²**.
 
-> [!NOTE]
-> ### CARSPAN, algorithm detail
->
-> #### The R-peak event series
->
-> Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heart rate signal is represented as a series of unit impulses at the R-peak occurrence times $t_i$ (in seconds):
->
-> $$x(t) = \sum_{i=1}^{N} \delta(t - t_i)$$
->
-> This is the *Integral Pulse Frequency Modulation* (IPFM) model representation. The spectrum of this series reflects **heart rate** variability, not IBI variability directly. CARSPAN normalises out the mean heart rate afterwards (formula 3.20) to make the two equivalent.
->
-> #### Power spectral density (formula 3.19)
->
-> Assuming periodicity outside the analysis segment $[0, T]$, the power spectral density at discrete frequencies $f_k = k/T$ is:
->
-> $$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i\, e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
->
-> where $w_i$ is the $i$-th coefficient of a tapering window (default: Hanning, as used in CARSPAN; configurable). The window is applied to suppress spectral leakage at the segment boundaries.
->
-> **Deviation from CARSPAN:** In CARSPAN, formula 3.19 uses $w_i = 1$ (no window) for the analytical formula, and a 5 % cosine taper is applied separately. spectHR applies a full-length configurable window to each $w_i$ directly in formula 3.19. The practical effect is similar: both suppress leakage at the segment edges.
->
-> #### Native frequency grid
->
-> The native grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max} \cdot T \rceil / T$, with spacing $\Delta f = 1/T$. The DC component ($k = 0$) is excluded because it carries no HRV information.
->
-> #### Display grid and smoothing
->
-> The native spectrum is interpolated onto a fixed display grid with step `freq_resolution` (default 0.01 Hz). A finer value produces a smoother curve; a coarser value shows the raw native lines more directly. **Band power values are never affected by `freq_resolution`.**
->
-> Following the CARSPAN manual (§3.3, pre-algorithm choices):
-> > *"a moving average window over three frequency points (0.03 Hz bandwidth) is applied before plotting the spectral functions"*
->
-> When `smooth_for_display = True` (the default), a 3-point unweighted moving average is applied to the interpolated display spectrum before it is shown. The same passage also states:
-> > *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
->
-> Accordingly, smoothing is applied only in the display path; band power is always computed from the unsmoothed native grid.
->
-> #### Band power (formula 3.28)
->
-> Band power in $[f_l, f_h]$ is computed by direct summation on the native grid:
->
-> $$B(f_l, f_h) = \sum_{\substack{f_k = f_l}}^{f_h} S_{xx}(f_k)\, \Delta f, \qquad \Delta f = \frac{1}{T}$$
->
-> This is a rectangular (Riemann) summation, matching CARSPAN exactly. spectHR uses trapezoidal integration for Welch and Lomb-Scargle band power; only the CARSPAN back-end uses rectangular summation to match formula 3.28.
->
-> **Important:** Because $\Delta f = 1/T$ is fixed by the recording duration, not by `freq_resolution`, band power values are completely independent of the display resolution setting.
->
-> #### Normalisation to mMI² (formulae 3.20 and 3.29)
->
-> The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is normalised by the squared mean of the R-peak event series. For the unit-impulse representation, the mean equals the mean heart rate $\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}$. The normalised band power is:
->
-> $$B'(f_l, f_h) = \frac{B(f_l, f_h)}{\bar{x}^2} \times 10^6 = B(f_l, f_h) \times \bar{\text{IBI}}_\text{sec}^2 \times 10^6 \quad [\text{mMI}^2]$$
->
-> Multiplication by $10^6$ scales the result into a convenient numeric range (milli-Modulation-Index squared, mMI²), consistent with CARSPAN output convention. An important consequence of this normalisation is that mMI² values are largely independent of mean heart rate, making them directly comparable between subjects and sessions.
->
-> **Implementation note on units:** The normalisation formula divides by $\bar{x}^2 = (1/\bar{\text{IBI}}_\text{sec})^2$, which is equivalent to multiplying by $\bar{\text{IBI}}_\text{sec}^2$. Since IBI values are stored internally in seconds, the code computes `mean_ibi_sec = mean(ibi_ms) / 1000` and then applies `power_raw * mean_ibi_sec² * 1e6`. A common error is to use `mean_ibi_ms²` instead, which would make the result $10^6$ times too small.
->
-> **Default parameters** (configurable in *Edit Parameters*):
->
-> | Parameter | Default | JSON key | Effect |
-> |-----------|---------|----------|--------|
-> | Display grid resolution | 0.01 Hz | `freq_resolution` | Smoothness of displayed curve; does not affect band power |
-> | Tapering window | `hann` | `window` | Any `scipy.signal.get_window` name |
-> | 3-point display smoothing | `true` | `smooth_for_display` | Matches CARSPAN plot convention |
+<details>
+<summary>CARSPAN, algorithm detail</summary>
+
+### CARSPAN, algorithm detail
+
+#### The R-peak event series
+
+Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heart rate signal is represented as a series of unit impulses at the R-peak occurrence times $t_i$ (in seconds):
+
+$$x(t) = \sum_{i=1}^{N} \delta(t - t_i)$$
+
+This is the *Integral Pulse Frequency Modulation* (IPFM) model representation. The spectrum of this series reflects **heart rate** variability, not IBI variability directly. CARSPAN normalises out the mean heart rate afterwards (formula 3.20) to make the two equivalent.
+
+#### Power spectral density (formula 3.19)
+
+Assuming periodicity outside the analysis segment $[0, T]$, the power spectral density at discrete frequencies $f_k = k/T$ is:
+
+$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i\, e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
+
+where $w_i$ is the $i$-th coefficient of a tapering window (default: Hanning, as used in CARSPAN; configurable). The window is applied to suppress spectral leakage at the segment boundaries.
+
+**Deviation from CARSPAN:** In CARSPAN, formula 3.19 uses $w_i = 1$ (no window) for the analytical formula, and a 5 % cosine taper is applied separately. spectHR applies a full-length configurable window to each $w_i$ directly in formula 3.19. The practical effect is similar: both suppress leakage at the segment edges.
+
+#### Native frequency grid
+
+The native grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max} \cdot T \rceil / T$, with spacing $\Delta f = 1/T$. The DC component ($k = 0$) is excluded because it carries no HRV information.
+
+#### Display grid and smoothing
+
+The native spectrum is interpolated onto a fixed display grid with step `freq_resolution` (default 0.01 Hz). A finer value produces a smoother curve; a coarser value shows the raw native lines more directly. **Band power values are never affected by `freq_resolution`.**
+
+Following the CARSPAN manual (§3.3, pre-algorithm choices):
+> *"a moving average window over three frequency points (0.03 Hz bandwidth) is applied before plotting the spectral functions"*
+
+When `smooth_for_display = True` (the default), a 3-point unweighted moving average is applied to the interpolated display spectrum before it is shown. The same passage also states:
+> *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
+
+Accordingly, smoothing is applied only in the display path; band power is always computed from the unsmoothed native grid.
+
+#### Band power (formula 3.28)
+
+Band power in $[f_l, f_h]$ is computed by direct summation on the native grid:
+
+$$B(f_l, f_h) = \sum_{\substack{f_k = f_l}}^{f_h} S_{xx}(f_k)\, \Delta f, \qquad \Delta f = \frac{1}{T}$$
+
+This is a rectangular (Riemann) summation, matching CARSPAN exactly. spectHR uses trapezoidal integration for Welch and Lomb-Scargle band power; only the CARSPAN back-end uses rectangular summation to match formula 3.28.
+
+**Important:** Because $\Delta f = 1/T$ is fixed by the recording duration, not by `freq_resolution`, band power values are completely independent of the display resolution setting.
+
+#### Normalisation to mMI² (formulae 3.20 and 3.29)
+
+The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is normalised by the squared mean of the R-peak event series. For the unit-impulse representation, the mean equals the mean heart rate $\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}$. The normalised band power is:
+
+$$B'(f_l, f_h) = \frac{B(f_l, f_h)}{\bar{x}^2} \times 10^6 = B(f_l, f_h) \times \bar{\text{IBI}}_\text{sec}^2 \times 10^6 \quad [\text{mMI}^2]$$
+
+Multiplication by $10^6$ scales the result into a convenient numeric range (milli-Modulation-Index squared, mMI²), consistent with CARSPAN output convention. An important consequence of this normalisation is that mMI² values are largely independent of mean heart rate, making them directly comparable between subjects and sessions.
+
+**Implementation note on units:** The normalisation formula divides by $\bar{x}^2 = (1/\bar{\text{IBI}}_\text{sec})^2$, which is equivalent to multiplying by $\bar{\text{IBI}}_\text{sec}^2$. Since IBI values are stored internally in seconds, the code computes `mean_ibi_sec = mean(ibi_ms) / 1000` and then applies `power_raw * mean_ibi_sec² * 1e6`. A common error is to use `mean_ibi_ms²` instead, which would make the result $10^6$ times too small.
+
+**Default parameters** (configurable in *Edit Parameters*):
+
+| Parameter | Default | JSON key | Effect |
+|-----------|---------|----------|--------|
+| Display grid resolution | 0.01 Hz | `freq_resolution` | Smoothness of displayed curve; does not affect band power |
+| Tapering window | `hann` | `window` | Any `scipy.signal.get_window` name |
+| 3-point display smoothing | `true` | `smooth_for_display` | Matches CARSPAN plot convention |
+
+</details>
 
 ---
 
@@ -462,26 +497,30 @@ $$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac
 
 The difference lies in how the degrees of freedom $\nu$ are determined.
 
-> [!NOTE]
-> ### Confidence interval degrees of freedom
->
-> **Welch:** $\nu = 2K$ where $K$ is the number of non-overlapping segments. More segments (longer recording, shorter overlap) give a tighter CI.
->
-> **Lomb-Scargle:** $\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min})\, T \rceil$, following Scargle (1982). The factor 2 in $2(f_\text{max} - f_\text{min})T$ accounts for the adaptive frequency resolution of Lomb-Scargle.
->
-> **CARSPAN:** Each native DFT line $f_k = k/T$ is a single periodogram ordinate. For a periodogram ordinate at a frequency where the true spectral density is $S(f)$:
->
-> $$\frac{2\, P(f_k)}{S(f)} \sim \chi^2_2$$
->
-> so $\nu = 2$ per native line. Each display output point (at resolution `freq_resolution`) is supported by approximately $n_p = \mathrm{round}(\Delta f_\text{out} \times T)$ native lines, where $\Delta f_\text{out}$ is the display grid step. Therefore:
->
-> $$\nu = 2 \times n_p = 2 \times \mathrm{round}(\Delta f_\text{out} \times T)$$
->
-> For a 5-minute recording with the default 0.01 Hz resolution: $n_p = \mathrm{round}(0.01 \times 300) = 3$, giving $\nu = 6$ and a 95% CI spanning roughly [42 %, 485 %] of the PSD value. This wide CI correctly reflects that the direct DFT, with no segment averaging, is a much noisier estimator than Welch at the same recording length.
->
-> A useful consequence: the CI width is directly controlled by `freq_resolution`. A coarser grid (larger step) averages more native lines per display point, narrowing the CI. A finer grid (smaller step) places each display point between native lines, widening the CI. The CARSPAN manual itself notes (§3.3) that this integration over the fixed output grid is the *only* factor that increases the reliability of each spectral point.
->
-> **CARSPAN does not display CIs.** The manual states explicitly: *"No statistical analyses are performed by CARSPAN."* The CI shown in spectHR is an addition, intended to make the uncertainty of the direct DFT estimate visible.
+<details>
+<summary>Confidence interval degrees of freedom</summary>
+
+### Confidence interval degrees of freedom
+
+**Welch:** $\nu = 2K$ where $K$ is the number of non-overlapping segments. More segments (longer recording, shorter overlap) give a tighter CI.
+
+**Lomb-Scargle:** $\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min})\, T \rceil$, following Scargle (1982). The factor 2 in $2(f_\text{max} - f_\text{min})T$ accounts for the adaptive frequency resolution of Lomb-Scargle.
+
+**CARSPAN:** Each native DFT line $f_k = k/T$ is a single periodogram ordinate. For a periodogram ordinate at a frequency where the true spectral density is $S(f)$:
+
+$$\frac{2\, P(f_k)}{S(f)} \sim \chi^2_2$$
+
+so $\nu = 2$ per native line. Each display output point (at resolution `freq_resolution`) is supported by approximately $n_p = \mathrm{round}(\Delta f_\text{out} \times T)$ native lines, where $\Delta f_\text{out}$ is the display grid step. Therefore:
+
+$$\nu = 2 \times n_p = 2 \times \mathrm{round}(\Delta f_\text{out} \times T)$$
+
+For a 5-minute recording with the default 0.01 Hz resolution: $n_p = \mathrm{round}(0.01 \times 300) = 3$, giving $\nu = 6$ and a 95% CI spanning roughly [42 %, 485 %] of the PSD value. This wide CI correctly reflects that the direct DFT, with no segment averaging, is a much noisier estimator than Welch at the same recording length.
+
+A useful consequence: the CI width is directly controlled by `freq_resolution`. A coarser grid (larger step) averages more native lines per display point, narrowing the CI. A finer grid (smaller step) places each display point between native lines, widening the CI. The CARSPAN manual itself notes (§3.3) that this integration over the fixed output grid is the *only* factor that increases the reliability of each spectral point.
+
+**CARSPAN does not display CIs.** The manual states explicitly: *"No statistical analyses are performed by CARSPAN."* The CI shown in spectHR is an addition, intended to make the uncertainty of the direct DFT estimate visible.
+
+</details>
 
 ---
 
@@ -596,4 +635,3 @@ van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of math
 
 <a id="ref-dewaard1996"></a>
 de Waard, D. (1996). *The measurement of drivers' mental workload*. Ph.D. Thesis, University of Groningen.
-
