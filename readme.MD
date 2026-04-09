@@ -32,7 +32,6 @@ This project is a work in progress. Blood pressure analysis is not yet implement
   - [Welch's method](#welchs-method)
   - [Lomb-Scargle periodogram](#lomb-scargle-periodogram)
   - [CARSPAN method](#carspan-method)
-  - [Confidence intervals](#confidence-intervals)
   - [Frequency bands](#frequency-bands)
   - [Units and normalisation](#units-and-normalisation)
 - [Installation](#installation)
@@ -183,7 +182,7 @@ The **PSD tab** shows one power spectrum per active epoch, stacked vertically. T
 - **LF (0.06–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
 - **HF (0.14–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
 
-The shaded grey band is the **confidence interval** (see [Confidence intervals](#confidence-intervals)).
+The shaded grey band is the **confidence interval**.
 
 Three PSD methods are available, selected in **WorkSpace → Edit Parameters**. The method takes effect immediately without restarting.
 
@@ -498,31 +497,6 @@ All three methods use a chi-square CI of the form:
 $$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
 
 The difference lies in how the degrees of freedom $\nu$ are determined.
-
-<details>
-<summary>Confidence interval degrees of freedom</summary>
-
-### Confidence interval degrees of freedom
-
-**Welch:** $\nu = 2K$ where $K$ is the number of non-overlapping segments. More segments (longer recording, shorter overlap) give a tighter CI.
-
-**Lomb-Scargle:** $\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min})\, T \rceil$, following Scargle (1982). The factor 2 in $2(f_\text{max} - f_\text{min})T$ accounts for the adaptive frequency resolution of Lomb-Scargle.
-
-**CARSPAN:** Each native DFT line $f_k = k/T$ is a single periodogram ordinate. For a periodogram ordinate at a frequency where the true spectral density is $S(f)$:
-
-$$\frac{2\, P(f_k)}{S(f)} \sim \chi^2_2$$
-
-so $\nu = 2$ per native line. Each display output point (at resolution `freq_resolution`) is supported by approximately $n_p = \mathrm{round}(\Delta f_\text{out} \times T)$ native lines, where $\Delta f_\text{out}$ is the display grid step. Therefore:
-
-$$\nu = 2 \times n_p = 2 \times \mathrm{round}(\Delta f_\text{out} \times T)$$
-
-For a 5-minute recording with the default 0.01 Hz resolution: $n_p = \mathrm{round}(0.01 \times 300) = 3$, giving $\nu = 6$ and a 95% CI spanning roughly [42 %, 485 %] of the PSD value. This wide CI correctly reflects that the direct DFT, with no segment averaging, is a much noisier estimator than Welch at the same recording length.
-
-A useful consequence: the CI width is directly controlled by `freq_resolution`. A coarser grid (larger step) averages more native lines per display point, narrowing the CI. A finer grid (smaller step) places each display point between native lines, widening the CI. The CARSPAN manual itself notes (§3.3) that this integration over the fixed output grid is the *only* factor that increases the reliability of each spectral point.
-
-**CARSPAN does not display CIs.** The manual states explicitly: *"No statistical analyses are performed by CARSPAN."* The CI shown in spectHR is an addition, intended to make the uncertainty of the direct DFT estimate visible.
-
-</details>
 
 ---
 
