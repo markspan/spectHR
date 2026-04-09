@@ -335,7 +335,7 @@ $$\text{SD1} = \sqrt{\tfrac{1}{2}\ \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)
 
 **SD2**, longer-term variability, algebraically related to SDNN and RMSSD:
 
-$$\text{SD2} = \sqrt{2\ \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2}\,\mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+$$\text{SD2} = \sqrt{2\ \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2}\ \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
 **SD2/SD1**, autonomic balance index.
 
