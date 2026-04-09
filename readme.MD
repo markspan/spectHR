@@ -175,6 +175,8 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 ## Step 5, Examine frequency-domain HRV (PSD tab)
 
+![spectHR](images/PSDWindow.PNG)
+
 The **PSD tab** shows one power spectrum per active epoch, stacked vertically. Three frequency bands are shaded:
 
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes; requires long recordings.
