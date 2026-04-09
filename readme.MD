@@ -359,15 +359,15 @@ Let $x(t)$ denote the IBI series (ms) resampled at $f_s$ Hz. `scipy.signal.welch
 
 Band power $B$ in $[f_l, f_h]$ is computed by trapezoidal integration with endpoint interpolation:
 
-$$`B = \int_{f_l}^{f_h} \hat{S}(f)\, df \approx \sum_k \hat{S}(f_k)\, \Delta f`$$
+$$B = \int_{f_l}^{f_h} \hat{S}(f)\, df \approx \sum_k \hat{S}(f_k)\, \Delta f$$
 
 For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
 
-$$`CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, \alpha/2}} \right]`$$
+$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, \alpha/2}} \right]$$
 
 where 
 
-$$`\nu = \frac{2K \cdot W_{\text{eff}}}{1 + 2\sum_{k=1}^{K-1}\left(1 - \frac{k}{K}\right)\rho^2(k)}`$$
+$$\nu = \frac{2K \cdot W_{\text{eff}}}{1 + 2\sum_{k=1}^{K-1}\left(1 - \frac{k}{K}\right)\rho^2(k)}$$
 
 where:
 
