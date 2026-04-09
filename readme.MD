@@ -363,7 +363,7 @@ $$B = \int_{f_l}^{f_h} \hat{S}(f)\, df \approx \sum_k \hat{S}(f_k)\, \Delta f$$
 
 For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
 
-$$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
+$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, \alpha/2}} \right]$$
 
 **Default parameters** (configurable in *Edit Parameters*):
 
