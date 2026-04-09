@@ -369,17 +369,13 @@ where
 
 $$\nu = \frac{2K \cdot W_{\text{eff}}}{1 + 2\sum_{k=1}^{K-1}\left(1 - \frac{k}{K}\right)\rho^2(k)}$$
 
-and:
+where:
 
-K — number of segments
-
-W_eff — effective noise bandwidth of the window (e.g. 1.5 for Hann, 1.36 for Hamming)
-
-ρ(k) — correlation between segments k steps apart (depends on overlap fraction)
-
-χ²_{ν, p} — chi-square quantile at probability p with ν degrees of freedom
-
-α — significance level (e.g. 0.05 for a 95% CI)
+- $K$ — number of segments
+- $W_{\text{eff}}$ — effective noise bandwidth of the window (e.g. 1.5 for Hann, 1.36 for Hamming)
+- $\rho(k)$ — correlation between segments $k$ steps apart (depends on overlap fraction)
+- $\chi^2_{\nu,\, p}$ — chi-square quantile at probability $p$ with $\nu$ degrees of freedom
+- $\alpha$ — significance level (e.g. 0.05 for a 95% CI)
 
 
 For the common case of a Hann window with 50% overlap, this simplifies to approximately:
