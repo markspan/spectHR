@@ -363,7 +363,7 @@ $$B = \int_{f_l}^{f_h} \hat{S}(f)\, df \approx \sum_k \hat{S}(f_k)\, \Delta f$$
 
 For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
 
-$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, \alpha/2}} \right]$$
+$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu \, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu \, \alpha/2}} \right]$$
 
 where 
 
@@ -380,7 +380,7 @@ where:
 
 For the common case of a Hann window with 50% overlap, this simplifies to approximately:
 
-$$`\nu \approx \frac{8K}{3}`$$
+$$\nu \approx \frac{8K}{3}$$
 
 **Default parameters** (configurable in *Edit Parameters*):
 
