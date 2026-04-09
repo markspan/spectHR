@@ -365,6 +365,20 @@ For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving c
 
 $$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\, \alpha/2}} \right]$$
 
+where $$\nu = \frac{2K \cdot W_{\text{eff}}}{1 + 2\sum_{k=1}^{K-1}\left(1 - \frac{k}{K}\right)\rho^2(k)}$
+
+and:
+
+K — number of segments
+W_eff — effective noise bandwidth of the window (e.g. 1.5 for Hann, 1.36 for Hamming)
+ρ(k) — correlation between segments k steps apart (depends on overlap fraction)
+χ²_{ν, p} — chi-square quantile at probability p with ν degrees of freedom
+α — significance level (e.g. 0.05 for a 95% CI)
+
+For the common case of a Hann window with 50% overlap, this simplifies to approximately:
+ν≈8K3\nu \approx \frac{8K}{3}
+ν≈38K​
+
 **Default parameters** (configurable in *Edit Parameters*):
 
 | Parameter | Default | JSON key |
