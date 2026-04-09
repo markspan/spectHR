@@ -331,11 +331,11 @@ When a Polar H10 accelerometer stream is present, spectHR derives a respiration 
 
 **SD1**, beat-to-beat variability, equal to $\text{RMSSD}/\sqrt{2}$:
 
-$$\text{SD1} = \sqrt{\tfrac{1}{2}\,\mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+$$\text{SD1} = \sqrt{\tfrac{1}{2}\ \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
 **SD2**, longer-term variability, algebraically related to SDNN and RMSSD:
 
-$$\text{SD2} = \sqrt{2\,\mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2}\,\mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+$$\text{SD2} = \sqrt{2\ \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2}\,\mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
 **SD2/SD1**, autonomic balance index.
 
