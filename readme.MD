@@ -289,7 +289,7 @@ CARSPAN's window is defined in seconds; spectHR's in beats. For a resting heart 
 
 #### 4. Successive difference criterion, not implemented
 
-CARSPAN also flags a beat if the *difference* between consecutive intervals ($\text{IBI}_i - \text{IBI}_{i-1}$) exceeds $N_\text{SuD}$ standard deviations of the successive difference series. spectHR does not implement this. The SL and SNS sequence labels already capture the most physiologically relevant abrupt patterns. Adding a separate threshold would introduce a second set of parameters that could conflict with the sequence labels in ambiguous cases.
+CARSPAN also flags a beat if the *difference* between consecutive intervals ($`\text{IBI}_i - \text{IBI}_{i-1}`$) exceeds $`N_\text{SuD}`$ standard deviations of the successive difference series. spectHR does not implement this. The SL and SNS sequence labels already capture the most physiologically relevant abrupt patterns. Adding a separate threshold would introduce a second set of parameters that could conflict with the sequence labels in ambiguous cases.
 
 #### 5. Min/Max SD clipping, not implemented
 
