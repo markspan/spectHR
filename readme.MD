@@ -336,9 +336,9 @@ The IBI series (in ms) is resampled onto a uniform grid using linear interpolati
 
 ### Welch, algorithm detail
 
-Let $x(t)$ denote the IBI series (ms) resampled at $f_s$ Hz. `scipy.signal.welch` is called with `scaling='density'`, returning the one-sided PSD in ms²/Hz.
+Let $`x(t)`$ denote the IBI series (ms) resampled at $`f_s`$ Hz. `scipy.signal.welch` is called with `scaling='density'`, returning the one-sided PSD in ms²/Hz.
 
-Band power $B$ in $[f_l, f_h]$ is computed by trapezoidal integration with endpoint interpolation:
+Band power $B$ in $`[f_l, f_h]`$ is computed by trapezoidal integration with endpoint interpolation:
 
 $$B = \int_{f_l}^{f_h} \hat{S}(f) df \approx \sum_k \hat{S}(f_k) \Delta f$$
 
@@ -386,11 +386,11 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 
 ### Lomb-Scargle, algorithm detail
 
-Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
+Let $`t_i`$ denote the R-peak times (s) and $`x_i = \text{IBI}_i - \bar{\text{IBI}}`$ (ms) the mean-subtracted IBIs. The angular frequency grid $`\omega = 2\pi f`$ is evaluated over $`[f_\text{min}, f_\text{max}]`$ at `nfreqs` equally spaced points. The periodogram $`P(\omega)`$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
 
 $$\hat{S}(f_k) = \frac{2T}{N^2} P(\omega_k)$$
 
-where $T = t_N - t_1$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid. Confidence intervals use the Scargle (1982) effective degrees of freedom:
+where $`T = t_N - t_1`$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid. Confidence intervals use the Scargle (1982) effective degrees of freedom:
 
 $$\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min}) T \rceil$$
 
