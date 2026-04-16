@@ -1,34 +1,29 @@
 <details>
 <summary>⚠️ CAUTION</summary>
-
 This project is a work in progress. Blood pressure analysis is not yet implemented. Breathing signal extraction and visualisation are functional but should be treated as experimental.
-
 </details>
 
 ---
 
 - [What is spectHR?](#what-is-specthr)
 - [Theoretical background](#theoretical-background)
-  - [The autonomic nervous system and the heart](#the-autonomic-nervous-system-and-the-heart)
-  - [HRV as a measure of mental effort](#hrv-as-a-measure-of-mental-effort)
-  - [HRV and stress, an important distinction](#hrv-and-stress--an-important-distinction)
-  - [Frequency bands and their interpretation](#frequency-bands-and-their-interpretation)
-  - [Why spectral analysis?](#why-spectral-analysis)
+  - [Mental effort, not stress](#mental-effort-not-stress)
+  - [Frequency bands](#frequency-bands-1)
   - [Practical considerations](#practical-considerations)
 - [Getting started](#getting-started)
 - [The interface at a glance](#the-interface-at-a-glance)
-- [Step 1, Check and clean the ECG](#step-1--check-and-clean-the-ecg-preprocessing-tab)
-- [Step 2, Inspect the heart rate series](#step-2--inspect-the-heart-rate-series-ibi-series-tab)
-- [Step 3, Define your analysis segments](#step-3--define-your-analysis-segments-epochs-tab)
-- [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4--explore-autonomic-dynamics-poincaré-tab)
-- [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5--examine-frequency-domain-hrv-psd-tab)
-- [Step 6, Export your results](#step-6--export-your-results-parameters-tab)
+- [Step 1, Check and clean the ECG](#step-1-check-and-clean-the-ecg-preprocessing-tab)
+- [Step 2, Inspect the heart rate series](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
+- [Step 3, Define your analysis segments](#step-3-define-your-analysis-segments-epochs-tab)
+- [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
+- [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
+- [Step 6, Export your results](#step-6-export-your-results-parameters-tab)
 - [Configuring the analysis](#configuring-the-analysis)
 - [Data Formats](#data-formats)
 - [IBI Classification](#ibi-classification)
 - [Breathing Signal Extraction](#breathing-signal-extraction)
 - [Poincaré Metrics](#poincaré-metrics)
-- [Power Spectral Density, method details](#power-spectral-density--method-details)
+- [Power Spectral Density, method details](#power-spectral-density-method-details)
   - [Welch's method](#welchs-method)
   - [Lomb-Scargle periodogram](#lomb-scargle-periodogram)
   - [CARSPAN method](#carspan-method)
@@ -62,7 +57,9 @@ A note on the two-branch picture: both branches can be simultaneously active or 
 
 ### Mental effort, not stress
 
-The CARSPAN tradition, which spectHR inherits, uses *mental effort* and *mental workload* rather than *stress*. Mental effort is defined as the resources invested in response to task demands — a construct that can be experimentally manipulated and whose physiological cost can be measured independently of the subjective experience of strain. Mulder [(1980)](#ref-mulder1980) showed that task performance suppresses HRV, particularly in the mid-frequency band (~0.10 Hz) that reflects baroreceptor-driven blood pressure oscillations. Mulder [(1989)](#ref-mulder1989) formalised the framework: the suppression reflects invested effort, not task difficulty. A person who disengages from a hard task shows little HRV change; one working hard at an easy task shows a marked decrease ([Mulder, 1992](#ref-mulder1992)). The pattern generalises across driving ([de Waard, 1996](#ref-dewaard1996); [Mulder et al., 2004](#ref-mulder2004)), aviation ([De Rivecourt et al., 2008](#ref-derivecourt2008)), clinical work ([Peabody et al., 2023](#ref-peabody2023)), and large-scale simulation studies ([Arutyunova et al., 2024](#ref-arutyunova2024)).
+The CARSPAN tradition, which spectHR inherits, uses *mental effort* and *mental workload* rather than *stress*. Mental effort is defined as the resources invested in response to task demands — a construct that can be experimentally manipulated and whose physiological cost can be measured independently of the subjective experience of strain.
+
+Mulder [(1980)](#ref-mulder1980) showed that task performance suppresses HRV, particularly in the mid-frequency band (~0.10 Hz) that reflects baroreceptor-driven blood pressure oscillations. Mulder [(1989)](#ref-mulder1989) formalised the framework: the suppression reflects invested effort, not task difficulty. A person who disengages from a hard task shows little HRV change; one working hard at an easy task shows a marked decrease ([Mulder, 1992](#ref-mulder1992)). The pattern generalises across driving ([de Waard, 1996](#ref-dewaard1996); [Mulder et al., 2004](#ref-mulder2004)), aviation ([De Rivecourt et al., 2008](#ref-derivecourt2008)), clinical work ([Peabody et al., 2023](#ref-peabody2023)), and large-scale simulation studies ([Arutyunova et al., 2024](#ref-arutyunova2024)).
 
 HRV does not measure perceived stress. It measures a physiological state: the cost of effort investment that may or may not correspond to what a person calls "feeling stressed." The gap between the two is where individual differences and coping strategies operate. Treating HRV as a direct readout of stress conflates distinct levels of analysis.
 
@@ -71,7 +68,7 @@ HRV does not measure perceived stress. It measures a physiological state: the co
 spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder, 1988](#ref-mulder1988)), following the CARSPAN convention. Band boundaries are **user-configurable** to accommodate different research traditions.
 
 | Band | Default range | Reflects |
-|------|--------------|---------|
+|------|--------------|---------| 
 | VLF | 0.02–0.06 Hz | Thermoregulation, hormonal rhythms; requires ≥ 5 min epochs |
 | MF | 0.06–0.14 Hz | Baroreceptor-driven vasomotor oscillations; most sensitive to mental effort |
 | HF | 0.14–0.40 Hz | Respiratory sinus arrhythmia; parasympathetically mediated but confounded by breathing pattern |
@@ -89,7 +86,6 @@ The **LF/HF ratio** as a sympatho-vagal balance index is contested ([Billman, 20
 **spectHR operates on IBI time series.** The core analyses - time-domain HRV, spectral band power, Poincaré geometry - require only inter-beat intervals. Simultaneous blood pressure or respiration recordings are not needed. That said, the most reliable conclusions about mental effort come from converging evidence across heart rate, HRV, and when available, blood pressure and baroreflex sensitivity. Stuiver and Mulder [(2014)](#ref-stuiver2014) showed that the full cardiovascular pattern was more diagnostically informative than any single measure in isolation.
 
 ---
-
 
 ## Getting started
 
@@ -121,9 +117,7 @@ This is the most important step. The quality of every metric downstream depends 
 
 When you select a file, spectHR loads the ECG, finds R-peaks automatically, and displays everything in the Preprocessing tab. The **main plot** shows the raw ECG signal in red. Every detected R-peak is marked with a vertical coloured line, and the IBI (in milliseconds) is printed as an arrow between consecutive peaks. A **colour code** immediately tells you which beats look suspicious, see [IBI Classification](#ibi-classification) for the full scheme.
 
-If a breathing signal is available from the device's accelerometer, it appears as a **green curve** overlaid on the ECG. Light-blue shading marks inhalation phases.
-
-Below the main ECG is a **thumbnail strip** showing the entire recording. The **navigation bar** at the bottom lets you jump to the next or previous abnormal beat, pan, and zoom.
+If a breathing signal is available from the device's accelerometer, it appears as a **green curve** overlaid on the ECG. Light-blue shading marks inhalation phases. Below the main ECG is a **thumbnail strip** showing the entire recording. The **navigation bar** at the bottom lets you jump to the next or previous abnormal beat, pan, and zoom.
 
 When you spot a problem, use the **mode selector**:
 - **Drag**, shift a peak line to its correct position.
@@ -134,9 +128,7 @@ All changes are saved automatically to the cache file when you leave the tab.
 
 <details>
 <summary>Tip</summary>
-
 Right-clicking a file gives you *Reload Raw*, *Invert ECG Polarity*, and *Retrigger ECG*.
-
 </details>
 
 ---
@@ -149,17 +141,13 @@ Once the peaks look correct, switch to the **IBI Series tab** to see heart rate 
 
 ## Step 3, Define your analysis segments (Epochs tab)
 
-HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. You can also add epochs manually via **Actions → Add Epoch** and trim them by dragging their edges.
-
-Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
+HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. You can also add epochs manually via **Actions → Add Epoch** and trim them by dragging their edges. Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
 
 ---
 
 ## Step 4, Explore autonomic dynamics (Poincaré tab)
 
-The **Poincaré tab** shows a scatter plot where each point represents one heartbeat: its IBI on the x-axis and the following IBI on the y-axis. A healthy autonomic system produces a characteristic elliptical cloud elongated along the diagonal.
-
-The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD2) reflects slower variability. Each active epoch is drawn in a different colour with its own ellipse overlaid.
+The **Poincaré tab** shows a scatter plot where each point represents one heartbeat: its IBI on the x-axis and the following IBI on the y-axis. A healthy autonomic system produces a characteristic elliptical cloud elongated along the diagonal. The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD2) reflects slower variability. Each active epoch is drawn in a different colour with its own ellipse overlaid.
 
 <details>
 <summary>A note on SD1 and SD2</summary>
@@ -182,9 +170,7 @@ The **PSD tab** shows one power spectrum per active epoch, stacked vertically. T
 - **LF (0.06–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
 - **HF (0.14–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
 
-The shaded grey band is the **confidence interval**.
-
-Three PSD methods are available, selected in **WorkSpace → Edit Parameters**. The method takes effect immediately without restarting.
+The shaded grey band is the **confidence interval**. Three PSD methods are available, selected in **WorkSpace → Edit Parameters**. The method takes effect immediately without restarting.
 
 ---
 
@@ -209,7 +195,6 @@ All parameters are stored in a JSON workspace file, editable through the applica
 **WorkSpace → Edit Workspace** changes the three folder paths (data, cache, export).
 
 **WorkSpace → Edit Parameters** covers:
-
 - *Frequency Analysis*, PSD method, band edges and colours, method-specific parameters, CI level.
 - *IBI Classification*, window length, threshold multiplier, TL ceiling.
 - *ECG Preprocessing*, high-pass filter settings.
@@ -246,7 +231,7 @@ After R-peak detection, each inter-beat interval is classified before any metric
 | TL | Too Long, exceeds the absolute ceiling; excluded from all metrics | Orange |
 | SL | Short followed immediately by Long | Turquoise |
 | SNS | Short-Normal-Short triplet | Light sea green |
-| T | Degenerate (NaN or zero duration); excluded from all metrics |, |
+| T | Degenerate (NaN or zero duration); excluded from all metrics | — |
 
 <details>
 <summary>Terminology</summary>
@@ -292,15 +277,11 @@ Users familiar with CARSPAN will notice several differences in the classificatio
 
 #### 1. Refractory period, implemented at detection, not classification
 
-CARSPAN enforces a hardware refractory period $T_\text{refr} = 300\,\text{ms}$ at the classification stage, rejecting any detected interval shorter than this. spectHR implements the equivalent constraint earlier in the pipeline as the `min_peak_distance_ms` parameter passed to `scipy.signal.find_peaks`. Any two candidate peaks closer than 300 ms simply cannot both be detected.
-
-This approach prevents the false detection from entering the data in the first place. The effect on the classified IBI series is identical.
+CARSPAN enforces a hardware refractory period $T_\text{refr} = 300 \;\text{ms}$ at the classification stage, rejecting any detected interval shorter than this. spectHR implements the equivalent constraint earlier in the pipeline as the `min_peak_distance_ms` parameter passed to `scipy.signal.find_peaks`. Any two candidate peaks closer than 300 ms simply cannot both be detected. This approach prevents the false detection from entering the data in the first place. The effect on the classified IBI series is identical.
 
 #### 2. Window type, centred rather than causal
 
-CARSPAN computes its running statistics over a **causal** (backward-looking) window of $T_w = 60\,\text{s}$. spectHR uses a **centred** window of $W$ beats, incorporating beats both before and after the current interval.
-
-A centred window produces more stable thresholds at condition boundaries, precisely where accurate classification is most important in psychophysiological research. A causal window adapts its threshold only *after* a heart rate change has occurred, which can flag the first beats of a new condition incorrectly.
+CARSPAN computes its running statistics over a **causal** (backward-looking) window of $T_w = 60 \;\text{s}$. spectHR uses a **centred** window of $W$ beats, incorporating beats both before and after the current interval. A centred window produces more stable thresholds at condition boundaries, precisely where accurate classification is most important in psychophysiological research. A causal window adapts its threshold only *after* a heart rate change has occurred, which can flag the first beats of a new condition incorrectly.
 
 #### 3. Window unit, beats rather than seconds
 
@@ -330,11 +311,11 @@ When a Polar H10 accelerometer stream is present, spectHR derives a respiration 
 
 **SD1**, beat-to-beat variability, equal to $\text{RMSSD}/\sqrt{2}$:
 
-$$\text{SD1} = \sqrt{\tfrac{1}{2}\ \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+$$\text{SD1} = \sqrt{\tfrac{1}{2} \; \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
 **SD2**, longer-term variability, algebraically related to SDNN and RMSSD:
 
-$$\text{SD2} = \sqrt{2\ \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2}\ \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+$$\text{SD2} = \sqrt{2 \; \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \; \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
 **SD2/SD1**, autonomic balance index.
 
@@ -359,24 +340,22 @@ Let $x(t)$ denote the IBI series (ms) resampled at $f_s$ Hz. `scipy.signal.welch
 
 Band power $B$ in $[f_l, f_h]$ is computed by trapezoidal integration with endpoint interpolation:
 
-$$B = \int_{f_l}^{f_h} \hat{S}(f)\, df \approx \sum_k \hat{S}(f_k)\, \Delta f$$
+$$B = \int_{f_l}^{f_h} \hat{S}(f) \; df \approx \sum_k \hat{S}(f_k) \; \Delta f$$
 
 For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
 
-$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu \, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu \, \alpha/2}} \right]$$
+$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\; 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\; \alpha/2}} \right]$$
 
-where 
+where
 
 $$\nu = \frac{2K \cdot W_{\text{eff}}}{1 + 2\sum_{k=1}^{K-1}\left(1 - \frac{k}{K}\right)\rho^2(k)}$$
 
 where:
-
 - $K$ — number of segments
 - $W_{\text{eff}}$ — effective noise bandwidth of the window (e.g. 1.5 for Hann, 1.36 for Hamming)
 - $\rho(k)$ — correlation between segments $k$ steps apart (depends on overlap fraction)
 - $\chi^2_{\nu,\, p}$ — chi-square quantile at probability $p$ with $\nu$ degrees of freedom
 - $\alpha$ — significance level (e.g. 0.05 for a 95% CI)
-
 
 For the common case of a Hann window with 50% overlap, this simplifies to approximately:
 
@@ -392,7 +371,7 @@ $$\nu \approx \frac{8K}{3}$$
 | FFT length | same as `nperseg` | `nfft` |
 | Window | Hamming | `window` |
 
-**Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156\,\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
+**Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156 \;\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
 
 </details>
 
@@ -409,13 +388,11 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 
 Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
 
-$$\hat{S}(f_k) = \frac{2T}{N^2}\, P(\omega_k)$$
+$$\hat{S}(f_k) = \frac{2T}{N^2} \; P(\omega_k)$$
 
-where $T = t_N - t_1$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid.
+where $T = t_N - t_1$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid. Confidence intervals use the Scargle (1982) effective degrees of freedom:
 
-Confidence intervals use the Scargle (1982) effective degrees of freedom:
-
-$$\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min})\, T \rceil$$
+$$\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min}) \; T \rceil$$
 
 This accounts for the adaptive frequency resolution of Lomb-Scargle compared to the regular DFT grid.
 
@@ -451,7 +428,7 @@ This is the *Integral Pulse Frequency Modulation* (IPFM) model representation. T
 
 Assuming periodicity outside the analysis segment $[0, T]$, the power spectral density at discrete frequencies $f_k = k/T$ is:
 
-$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i\, e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
+$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i \; e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
 
 where $w_i$ is the $i$-th coefficient of a tapering window (default: Hanning, as used in CARSPAN; configurable). The window is applied to suppress spectral leakage at the segment boundaries.
 
@@ -466,9 +443,11 @@ The native grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max}
 The native spectrum is interpolated onto a fixed display grid with step `freq_resolution` (default 0.01 Hz). A finer value produces a smoother curve; a coarser value shows the raw native lines more directly. **Band power values are never affected by `freq_resolution`.**
 
 Following the CARSPAN manual (§3.3, pre-algorithm choices):
+
 > *"a moving average window over three frequency points (0.03 Hz bandwidth) is applied before plotting the spectral functions"*
 
 When `smooth_for_display = True` (the default), a 3-point unweighted moving average is applied to the interpolated display spectrum before it is shown. The same passage also states:
+
 > *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
 
 Accordingly, smoothing is applied only in the display path; band power is always computed from the unsmoothed native grid.
@@ -477,7 +456,7 @@ Accordingly, smoothing is applied only in the display path; band power is always
 
 Band power in $[f_l, f_h]$ is computed by direct summation on the native grid:
 
-$$B(f_l, f_h) = \sum_{\substack{f_k = f_l}}^{f_h} S_{xx}(f_k)\, \Delta f, \qquad \Delta f = \frac{1}{T}$$
+$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}(f_k) \; \Delta f, \qquad \Delta f = \frac{1}{T}$$
 
 This is a rectangular (Riemann) summation, matching CARSPAN exactly. spectHR uses trapezoidal integration for Welch and Lomb-Scargle band power; only the CARSPAN back-end uses rectangular summation to match formula 3.28.
 
@@ -507,11 +486,9 @@ Multiplication by $10^6$ scales the result into a convenient numeric range (mill
 
 ### Confidence intervals
 
-spectHR adds confidence intervals to all three PSD methods. CARSPAN itself does not compute CIs, this is a spectHR extension. The CI reflects how much the spectral estimate would vary if the measurement were repeated under identical conditions.
+spectHR adds confidence intervals to all three PSD methods. CARSPAN itself does not compute CIs, this is a spectHR extension. The CI reflects how much the spectral estimate would vary if the measurement were repeated under identical conditions. All three methods use a chi-square CI of the form:
 
-All three methods use a chi-square CI of the form:
-
-$$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \leq S(f) \leq \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
+$$\frac{\nu \; \hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \leq S(f) \leq \frac{\nu \; \hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
 
 The difference lies in how the degrees of freedom $\nu$ are determined.
 
@@ -522,7 +499,7 @@ The difference lies in how the degrees of freedom $\nu$ are determined.
 All three methods share the same configurable band definitions:
 
 | Band | Default range | Reflects |
-|------|--------------|---------|
+|------|--------------|---------| 
 | VLF | 0.02–0.06 Hz | Slow regulatory processes; requires long recordings |
 | LF | 0.06–0.14 Hz | Baroreceptor reflex, mixed sympathetic/parasympathetic |
 | HF | 0.14–0.40 Hz | Respiratory sinus arrhythmia, parasympathetic tone |
@@ -537,7 +514,7 @@ Band edges are configurable in *Edit Parameters*. If your participants breathe s
 |--------|----------|-----------------|----------------------|
 | Welch | ms²/Hz | ms² | No |
 | Lomb-Scargle | ms²/Hz | ms² | No |
-| CARSPAN | mMI²/Hz | mMI² | Yes, $`\times\,\bar{\text{IBI}}_\text{sec}^2 \times 10^6`$ |
+| CARSPAN | mMI²/Hz | mMI² | Yes, $`\times \bar{\text{IBI}}_\text{sec}^2 \times 10^6`$ |
 
 Welch and Lomb-Scargle ms² values scale with mean IBI and should be treated with caution when comparing groups or conditions that differ in resting heart rate. CARSPAN mMI² values are dimensionless and largely heart-rate independent.
 
