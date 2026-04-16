@@ -511,7 +511,7 @@ spectHR adds confidence intervals to all three PSD methods. CARSPAN itself does 
 
 All three methods use a chi-square CI of the form:
 
-$$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \;\leq\; S(f) \;\leq\; \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
+$$\frac{\nu\,\hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \leq S(f) \leq \frac{\nu\,\hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
 
 The difference lies in how the degrees of freedom $\nu$ are determined.
 
