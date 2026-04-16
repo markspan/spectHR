@@ -348,7 +348,7 @@ $$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, 1-\alpha/2}}, \quad \f
 
 where
 
-$$\nu = \frac{2K \cdot W_{\text{eff}}}{1 + 2\sum_{k=1}^{K-1}\left(1 - \frac{k}{K}\right)\rho^2(k)}$$
+$$\nu = \frac{2 \cdot K \cdot W_{\text{eff}}}{1 + 2\sum_{k=1}^{K-1}\left(1 - \frac{k}{K}\right)\rho^2(k)}$$
 
 where:
 - $K$ — number of segments
@@ -359,7 +359,7 @@ where:
 
 For the common case of a Hann window with 50% overlap, this simplifies to approximately:
 
-$$\nu \approx \frac{8K}{3}$$
+$$\nu \approx \frac{8 \cdot K}{3}$$
 
 **Default parameters** (configurable in *Edit Parameters*):
 
