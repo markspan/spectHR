@@ -277,11 +277,11 @@ Users familiar with CARSPAN will notice several differences in the classificatio
 
 #### 1. Refractory period, implemented at detection, not classification
 
-CARSPAN enforces a hardware refractory period $T_\text{refr} = 300 \;\text{ms}$ at the classification stage, rejecting any detected interval shorter than this. spectHR implements the equivalent constraint earlier in the pipeline as the `min_peak_distance_ms` parameter passed to `scipy.signal.find_peaks`. Any two candidate peaks closer than 300 ms simply cannot both be detected. This approach prevents the false detection from entering the data in the first place. The effect on the classified IBI series is identical.
+CARSPAN enforces a hardware refractory period $T_\text{refr} = 300~\text{ms}$ at the classification stage, rejecting any detected interval shorter than this. spectHR implements the equivalent constraint earlier in the pipeline as the `min_peak_distance_ms` parameter passed to `scipy.signal.find_peaks`. Any two candidate peaks closer than 300 ms simply cannot both be detected. This approach prevents the false detection from entering the data in the first place. The effect on the classified IBI series is identical.
 
 #### 2. Window type, centred rather than causal
 
-CARSPAN computes its running statistics over a **causal** (backward-looking) window of $T_w = 60 \;\text{s}$. spectHR uses a **centred** window of $W$ beats, incorporating beats both before and after the current interval. A centred window produces more stable thresholds at condition boundaries, precisely where accurate classification is most important in psychophysiological research. A causal window adapts its threshold only *after* a heart rate change has occurred, which can flag the first beats of a new condition incorrectly.
+CARSPAN computes its running statistics over a **causal** (backward-looking) window of $T_w = 60~\text{s}$. spectHR uses a **centred** window of $W$ beats, incorporating beats both before and after the current interval. A centred window produces more stable thresholds at condition boundaries, precisely where accurate classification is most important in psychophysiological research. A causal window adapts its threshold only *after* a heart rate change has occurred, which can flag the first beats of a new condition incorrectly.
 
 #### 3. Window unit, beats rather than seconds
 
@@ -311,11 +311,11 @@ When a Polar H10 accelerometer stream is present, spectHR derives a respiration 
 
 **SD1**, beat-to-beat variability, equal to $\text{RMSSD}/\sqrt{2}$:
 
-$$\text{SD1} = \sqrt{\tfrac{1}{2} \; \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+$$\text{SD1} = \sqrt{\tfrac{1}{2} \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
 **SD2**, longer-term variability, algebraically related to SDNN and RMSSD:
 
-$$\text{SD2} = \sqrt{2 \; \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \; \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
+$$\text{SD2} = \sqrt{2 \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
 **SD2/SD1**, autonomic balance index.
 
@@ -340,11 +340,11 @@ Let $x(t)$ denote the IBI series (ms) resampled at $f_s$ Hz. `scipy.signal.welch
 
 Band power $B$ in $[f_l, f_h]$ is computed by trapezoidal integration with endpoint interpolation:
 
-$$B = \int_{f_l}^{f_h} \hat{S}(f) \; df \approx \sum_k \hat{S}(f_k) \; \Delta f$$
+$$B = \int_{f_l}^{f_h} \hat{S}(f) df \approx \sum_k \hat{S}(f_k) \Delta f$$
 
 For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
 
-$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\; 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu,\; \alpha/2}} \right]$$
+$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, \alpha/2}} \right]$$
 
 where
 
@@ -354,7 +354,7 @@ where:
 - $K$ — number of segments
 - $W_{\text{eff}}$ — effective noise bandwidth of the window (e.g. 1.5 for Hann, 1.36 for Hamming)
 - $\rho(k)$ — correlation between segments $k$ steps apart (depends on overlap fraction)
-- $\chi^2_{\nu,\, p}$ — chi-square quantile at probability $p$ with $\nu$ degrees of freedom
+- $\chi^2_{\nu, p}$ — chi-square quantile at probability $p$ with $\nu$ degrees of freedom
 - $\alpha$ — significance level (e.g. 0.05 for a 95% CI)
 
 For the common case of a Hann window with 50% overlap, this simplifies to approximately:
@@ -371,7 +371,7 @@ $$\nu \approx \frac{8K}{3}$$
 | FFT length | same as `nperseg` | `nfft` |
 | Window | Hamming | `window` |
 
-**Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156 \;\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
+**Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156~\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
 
 </details>
 
@@ -388,11 +388,11 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 
 Let $t_i$ denote the R-peak times (s) and $x_i = \text{IBI}_i - \bar{\text{IBI}}$ (ms) the mean-subtracted IBIs. The angular frequency grid $\omega = 2\pi f$ is evaluated over $[f_\text{min}, f_\text{max}]$ at `nfreqs` equally spaced points. The periodogram $P(\omega)$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
 
-$$\hat{S}(f_k) = \frac{2T}{N^2} \; P(\omega_k)$$
+$$\hat{S}(f_k) = \frac{2T}{N^2} P(\omega_k)$$
 
 where $T = t_N - t_1$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid. Confidence intervals use the Scargle (1982) effective degrees of freedom:
 
-$$\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min}) \; T \rceil$$
+$$\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min}) T \rceil$$
 
 This accounts for the adaptive frequency resolution of Lomb-Scargle compared to the regular DFT grid.
 
@@ -428,7 +428,7 @@ This is the *Integral Pulse Frequency Modulation* (IPFM) model representation. T
 
 Assuming periodicity outside the analysis segment $[0, T]$, the power spectral density at discrete frequencies $f_k = k/T$ is:
 
-$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i \; e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
+$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
 
 where $w_i$ is the $i$-th coefficient of a tapering window (default: Hanning, as used in CARSPAN; configurable). The window is applied to suppress spectral leakage at the segment boundaries.
 
@@ -456,7 +456,7 @@ Accordingly, smoothing is applied only in the display path; band power is always
 
 Band power in $[f_l, f_h]$ is computed by direct summation on the native grid:
 
-$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}(f_k) \; \Delta f, \qquad \Delta f = \frac{1}{T}$$
+$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}(f_k) \Delta f, \qquad \Delta f = \frac{1}{T}$$
 
 This is a rectangular (Riemann) summation, matching CARSPAN exactly. spectHR uses trapezoidal integration for Welch and Lomb-Scargle band power; only the CARSPAN back-end uses rectangular summation to match formula 3.28.
 
@@ -488,7 +488,7 @@ Multiplication by $10^6$ scales the result into a convenient numeric range (mill
 
 spectHR adds confidence intervals to all three PSD methods. CARSPAN itself does not compute CIs, this is a spectHR extension. The CI reflects how much the spectral estimate would vary if the measurement were repeated under identical conditions. All three methods use a chi-square CI of the form:
 
-$$\frac{\nu \; \hat{S}(f)}{\chi^2_{1-\alpha/2,\,\nu}} \leq S(f) \leq \frac{\nu \; \hat{S}(f)}{\chi^2_{\alpha/2,\,\nu}}$$
+$$\frac{\nu \cdot \hat{S}(f)}{\chi^2_{1-\alpha/2, \nu}} \leq S(f) \leq \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\alpha/2, \nu}}$$
 
 The difference lies in how the degrees of freedom $\nu$ are determined.
 
