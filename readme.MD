@@ -128,7 +128,7 @@ All changes are saved automatically to the cache file when you leave the tab.
 
 <details>
 <summary>Tip</summary>
-Right-clicking a file gives you *`Reload Raw`*, *`Invert ECG Polarity`*, and *`Retrigger ECG`*.
+Right-clicking a file gives you **Reload Raw**, **Invert ECG Polarity**, and *Retrigger ECG*.
 </details>
 
 ---
