@@ -266,43 +266,6 @@ class CardioMetricsMixin(HRVMetric):
         return freqs, psd, ci_lower, ci_upper
 
     def carspan_psd(self):
-        ibi_ms = self._ibi_clean_ms()
-        if ibi_ms.size < 4:
-            return np.ndarray(0), np.ndarray(0)
-        ibi_times = self.times[: ibi_ms.size]
-        T = float(ibi_times[-1] - ibi_times[0])
-        if T <= 0:
-            return np.ndarray(0), np.ndarray(0)
-        N = ibi_ms.size
-        win_name = CARSPAN_PARAMS["window"]
-        try:
-            win = signal.get_window(win_name, N)
-        except Exception:
-            win = np.ones(N)
-        f_max        = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
-        k_max        = int(np.ceil(f_max * T))
-        k_vals       = np.arange(1, k_max + 1)
-        freqs_native = k_vals / T
-        phases       = -2.0 * np.pi * np.outer(ibi_times, freqs_native)
-        X_real       = np.dot(win, np.cos(phases))
-        X_imag       = np.dot(win, np.sin(phases))
-        power_native = (2.0 / T) * (X_real ** 2 + X_imag ** 2)
-        freq_res     = float(CARSPAN_PARAMS["freq_resolution"])
-        f_min_band   = min(s["low"] for s in HRV_FREQUENCY_BANDS.values())
-        freqs_out    = np.arange(f_min_band, f_max + freq_res / 2, freq_res)
-        freqs_out    = freqs_out[freqs_out <= f_max]
-        if freqs_native.size < 2:
-            return np.ndarray(0), np.ndarray(0)
-        power_out = np.interp(freqs_out, freqs_native, power_native)
-        if CARSPAN_PARAMS.get("smooth_for_display", True) and power_out.size >= 3:
-            kernel   = np.array([1.0, 1.0, 1.0]) / 3.0
-            smoothed = np.convolve(power_out, kernel, mode="same")
-            smoothed[0]  = (power_out[0]  + power_out[1])  / 2.0
-            smoothed[-1] = (power_out[-2] + power_out[-1]) / 2.0
-            power_out = smoothed
-        return freqs_out, power_out
-
-    def carspan_psd(self):
         """Smoothed CARSPAN PSD on a uniform display grid. Delegates the
         core transform to _carspan_psd_native so the metric path and the
         display path cannot drift apart."""
