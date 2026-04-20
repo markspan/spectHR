@@ -34,7 +34,7 @@ _DEFAULT_WORKSPACE = {
             "nperseg":  256,
             "noverlap": 128,
             "nfft":     1024,
-            "window":   "hamming",
+            "window":   "hann",
         },
         "lombscargle": {
             "nfreqs":     1000,
