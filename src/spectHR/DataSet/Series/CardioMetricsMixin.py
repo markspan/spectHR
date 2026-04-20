@@ -290,6 +290,21 @@ class CardioMetricsMixin(HRVMetric):
     
         return freqs_out, power_out
         
+    def carspan_psd_with_ci(self, *, alpha=None):
+        alpha = alpha if alpha is not None else CI_ALPHA
+        freqs, psd = self.carspan_psd()
+        if freqs.size == 0:
+            return freqs, psd, psd, psd
+        ibi_ms    = self._ibi_clean_ms()
+        ibi_times = self.times[: ibi_ms.size]
+        T         = float(ibi_times[-1] - ibi_times[0])
+        freq_res  = float(CARSPAN_PARAMS["freq_resolution"])
+        n_per_point = max(1, int(round(freq_res * T)))
+        nu = 2 * n_per_point
+        ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
+        ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
+        return freqs, psd, ci_lower, ci_upper
+        
     def psd_with_ci(self, *, alpha=None, **kwargs):
         if METHOD == "lombscargle":
             return self.lombscargle_psd_with_ci(alpha=alpha)
