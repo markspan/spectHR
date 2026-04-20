@@ -302,21 +302,31 @@ class CardioMetricsMixin(HRVMetric):
             power_out = smoothed
         return freqs_out, power_out
 
-    def carspan_psd_with_ci(self, *, alpha=None):
-        alpha = alpha if alpha is not None else CI_ALPHA
-        freqs, psd = self.carspan_psd()
-        if freqs.size == 0:
-            return freqs, psd, psd, psd
-        ibi_ms    = self._ibi_clean_ms()
-        ibi_times = self.times[: ibi_ms.size]
-        T         = float(ibi_times[-1] - ibi_times[0])
-        freq_res  = float(CARSPAN_PARAMS["freq_resolution"])
-        n_per_point = max(1, int(round(freq_res * T)))
-        nu = 2 * n_per_point
-        ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
-        ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
-        return freqs, psd, ci_lower, ci_upper
-
+    def carspan_psd(self):
+        """Smoothed CARSPAN PSD on a uniform display grid. Delegates the
+        core transform to _carspan_psd_native so the metric path and the
+        display path cannot drift apart."""
+        freqs_native, power_native = self._carspan_psd_native()
+        if freqs_native.size < 2:
+            return np.ndarray(0), np.ndarray(0)
+    
+        f_max      = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
+        f_min_band = min(s["low"]  for s in HRV_FREQUENCY_BANDS.values())
+        freq_res   = float(CARSPAN_PARAMS["freq_resolution"])
+    
+        freqs_out = np.arange(f_min_band, f_max + freq_res / 2, freq_res)
+        freqs_out = freqs_out[freqs_out <= f_max]
+        power_out = np.interp(freqs_out, freqs_native, power_native)
+    
+        if CARSPAN_PARAMS.get("smooth_for_display", True) and power_out.size >= 3:
+            kernel   = np.array([1.0, 1.0, 1.0]) / 3.0
+            smoothed = np.convolve(power_out, kernel, mode="same")
+            smoothed[0]  = (power_out[0]  + power_out[1])  / 2.0
+            smoothed[-1] = (power_out[-2] + power_out[-1]) / 2.0
+            power_out = smoothed
+    
+        return freqs_out, power_out
+        
     def psd_with_ci(self, *, alpha=None, **kwargs):
         if METHOD == "lombscargle":
             return self.lombscargle_psd_with_ci(alpha=alpha)
@@ -338,6 +348,21 @@ class CardioMetricsMixin(HRVMetric):
         return float(np.trapezoid(p_band, f_band))
 
     def _carspan_psd_native(self):
+        """Native-resolution periodogram of the IBI series at f_k = k/T,
+        k = 1..k_max. Uses a windowed, mean-removed DFT over the beat
+        times.
+    
+        Mean removal is required: at ~800 ms mean IBI the DC component
+        dwarfs VLF/LF content, and a non-rectangular window leaks it
+        through its sidelobes into all bands.
+    
+        Normalisation is the standard one-sided Welch form,
+            P(f) = (2 * T) / (N * sum(win^2))  *  |X(f)|^2
+        with X(f) = sum_i (x_i - mean(x)) * win_i * exp(-2*pi*j*f*t_i).
+        For a rectangular window this reduces to (2*T / N^2) * |X|^2,
+        matching the Lomb-Scargle scaling used in lombscargle_psd.
+        Output units: ms^2 / Hz (i.e. mMI^2 / Hz).
+        """
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 4:
             return np.ndarray(0), np.ndarray(0)
@@ -346,19 +371,33 @@ class CardioMetricsMixin(HRVMetric):
         if T <= 0:
             return np.ndarray(0), np.ndarray(0)
         N = ibi_ms.size
+    
         win_name = CARSPAN_PARAMS["window"]
         try:
             win = signal.get_window(win_name, N)
         except Exception:
             win = np.ones(N)
+    
+        # Mean-remove, then window. This is the fix: the IBI values now
+        # actually enter the transform, and DC is removed before windowing
+        # so its sidelobes cannot leak into VLF/LF.
+        x = (ibi_ms - float(np.mean(ibi_ms))) * win
+    
         f_max        = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
         k_max        = int(np.ceil(f_max * T))
         freqs_native = np.arange(1, k_max + 1) / T
-        phases       = -2.0 * np.pi * np.outer(ibi_times, freqs_native)
-        X_real       = np.dot(win, np.cos(phases))
-        X_imag       = np.dot(win, np.sin(phases))
-        power_native = (2.0 / T) * (X_real ** 2 + X_imag ** 2)
+    
+        phases = -2.0 * np.pi * np.outer(ibi_times, freqs_native)
+        X_real = np.dot(x, np.cos(phases))
+        X_imag = np.dot(x, np.sin(phases))
+    
+        S2 = float(np.sum(win * win))
+        if S2 <= 0.0:
+            return np.ndarray(0), np.ndarray(0)
+        power_native = (2.0 * T / (N * S2)) * (X_real ** 2 + X_imag ** 2)
+    
         return freqs_native, power_native
+
 
     def _carspan_band_power_native(self, f0, f1):
         freqs_native, power_native = self._carspan_psd_native()
