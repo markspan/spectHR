@@ -371,7 +371,7 @@ $$\nu \approx \frac{8 \cdot K}{3}$$
 | Segment length | 256 samples | `nperseg` |
 | Overlap | 128 samples | `noverlap` |
 | FFT length | same as `nperseg` | `nfft` |
-| Window | Hamming | `window` |
+| Window | Hann | `window` |
 
 **Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156~\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
 
