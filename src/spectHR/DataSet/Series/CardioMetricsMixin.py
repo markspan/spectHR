@@ -25,7 +25,7 @@ WELCH_PARAMS: Dict = {
     "nperseg":  256,
     "noverlap": 128,
     "nfft":     None,
-    "window":   "hamming",
+    "window":   "hann",
 }
 
 LOMBSCARGLE_PARAMS: Dict = {
