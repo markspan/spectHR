@@ -28,6 +28,14 @@ CARSPAN_PARAMS: Dict = {
     "window": "hann",
     "smooth_for_display": True,
 }
+CARSPAN_WINDOW_PRESETS: Dict = {
+    "5% cosine bell": ("tukey", 0.10),
+    "10% cosine bell": ("tukey", 0.20),
+    "25% cosine bell": ("tukey", 0.50),
+    "hann": "hann",
+    "hamming": "hamming",
+    "boxcar": "boxcar",
+}
 CI_ALPHA: float = 0.05
 METHOD: str = "welch"
 
@@ -56,7 +64,14 @@ def load_lombscargle_params(ls_config: dict) -> None:
 def load_carspan_params(cs_config: dict) -> None:
     for key in ("freq_resolution", "window", "smooth_for_display"):
         if key in cs_config:
-            CARSPAN_PARAMS[key] = cs_config[key]
+            value = cs_config[key]
+            if (
+                key == "window"
+                and isinstance(value, str)
+                and value in CARSPAN_WINDOW_PRESETS
+            ):
+                value = CARSPAN_WINDOW_PRESETS[value]
+            CARSPAN_PARAMS[key] = value
 
 
 def load_ci_alpha(alpha: float) -> None:
@@ -82,7 +97,6 @@ class CardioMetricsMixin(HRVMetric):
         "median",
         "min",
         "max",
-        "std",
         "rmssd",
         "sdnn",
         "sdsd",
@@ -133,15 +147,48 @@ class CardioMetricsMixin(HRVMetric):
             return np.array([], dtype=float)
         return ibi_ms[1:][pair_ok] - ibi_ms[:-1][pair_ok]
 
-    def _carspan_normalise(self, power_raw: float) -> float:
-        """Convert raw DFT band-power (s^2/Hz) to mMI2:"""
+    def _carspan_mmi2_factor(self) -> float:
+        """Multiplicative factor that converts raw CARSPAN HR-spectrum
+        output to mMI^2 units (mMI^2 for band power, mMI^2/Hz for
+        density). Both the band-metric path (_carspan_normalise) and
+        the display path (carspan_psd) apply this factor so the
+        displayed PSD integrates to the same numbers reported as
+        band-power metrics.
+
+        Algebraically the factor is mean_ibi_msec^2: the ms-to-s
+        conversion (1e-6) and the CARSPAN 1e6 display scaling cancel.
+        See _carspan_normalise for the full derivation.
+        """
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size == 0:
             return np.nan
         mean_ibi_msec = float(np.mean(ibi_ms))
-        if mean_ibi_msec == 0.0:
+        if mean_ibi_msec <= 0.0:
             return np.nan
-        return power_raw * ((mean_ibi_msec / 1000) ** 2)
+        return mean_ibi_msec * mean_ibi_msec
+
+    def _carspan_normalise(self, power_raw: float) -> float:
+        """Convert raw HR-event-series band power [Hz^2] to mMI^2.
+
+        CARSPAN manual Eq. 3.20 normalises by the squared mean of the
+        signal (here the R-peak event rate, x_bar = N/T = HR), and
+        Table 3.1 / the worked example in section 3.3.4 multiply by 1e6
+        for display in milli-modulation-index squared. Algebraically:
+
+            B [mMI^2] = B [Hz^2] / HR^2 * 1e6
+                      = B [Hz^2] * IBI_mean_sec^2 * 1e6
+                      = B [Hz^2] * IBI_mean_msec^2
+
+        The ms-to-s conversion and the 1e6 display factor cancel
+        exactly, so the implementation is just one squaring.
+
+        Sanity (manual section 3.3.4 example): 10% coefficient of
+        variation in HR yields a total power of 10000 mMI^2.
+        """
+        factor = self._carspan_mmi2_factor()
+        if np.isnan(factor):
+            return np.nan
+        return power_raw * factor
 
     def welch_psd(
         self,
@@ -292,12 +339,32 @@ class CardioMetricsMixin(HRVMetric):
         return freqs, psd, ci_lower, ci_upper
 
     def carspan_psd(self):
-        """Smoothed CARSPAN PSD on a uniform display grid. Delegates the
-        core transform to _carspan_psd_native so the metric path and the
-        display path cannot drift apart."""
+        """Smoothed CARSPAN PSD on a uniform 0.01 Hz display grid, in
+        mMI^2/Hz units. Integrating the returned PSD over a frequency
+        band reproduces the band-power metrics (vlf_power, lf_power,
+        hf_power) to within boundary-bin rounding.
+
+        Two design points worth knowing:
+
+        1. Same mMI^2 normalisation as the band-metric path. Both call
+           _carspan_mmi2_factor; the displayed y-axis matches the
+           y-axis of any band-power table.
+
+        2. Native points (resolution 1/T) are bin-AVERAGED into the
+           0.01 Hz display bins, not point-sampled. This is the
+           "integration/interpolation routine" of CARSPAN manual
+           section 3.2 and is what preserves total band power. Linear
+           interpolation is used only as a fallback for bins that
+           contain no native point (only possible when T < 100 s for
+           the default 0.01 Hz resolution).
+        """
         freqs_native, power_native = self._carspan_psd_native()
         if freqs_native.size < 2:
             return np.ndarray(0), np.ndarray(0)
+
+        factor = self._carspan_mmi2_factor()
+        if not np.isnan(factor):
+            power_native = power_native * factor
 
         f_max = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
         f_min_band = min(s["low"] for s in HRV_FREQUENCY_BANDS.values())
@@ -305,7 +372,32 @@ class CardioMetricsMixin(HRVMetric):
 
         freqs_out = np.arange(f_min_band, f_max + freq_res / 2, freq_res)
         freqs_out = freqs_out[freqs_out <= f_max]
-        power_out = np.interp(freqs_out, freqs_native, power_native)
+
+        # Bin-average native points into freq_res-wide bins centred on
+        # freqs_out.
+        edges = np.concatenate(
+            ([freqs_out[0] - freq_res / 2.0], freqs_out + freq_res / 2.0)
+        )
+        bin_idx = np.digitize(freqs_native, edges) - 1
+        valid = (bin_idx >= 0) & (bin_idx < freqs_out.size)
+        sums = np.bincount(
+            bin_idx[valid], weights=power_native[valid], minlength=freqs_out.size
+        )
+        counts = np.bincount(bin_idx[valid], minlength=freqs_out.size)
+        power_out = np.where(counts > 0, sums / np.maximum(counts, 1), np.nan)
+
+        # Empty bins (only when freq_res * T < 1, i.e. T < 100 s for
+        # the default settings): fill by linear interpolation across
+        # populated bins.
+        empty = counts == 0
+        if np.any(empty):
+            ok = ~empty
+            if np.any(ok):
+                power_out[empty] = np.interp(
+                    freqs_out[empty], freqs_out[ok], power_out[ok]
+                )
+            else:
+                power_out = np.interp(freqs_out, freqs_native, power_native)
 
         if CARSPAN_PARAMS.get("smooth_for_display", True) and power_out.size >= 3:
             kernel = np.array([1.0, 1.0, 1.0]) / 3.0
@@ -317,6 +409,9 @@ class CardioMetricsMixin(HRVMetric):
         return freqs_out, power_out
 
     def carspan_psd_with_ci(self, *, alpha=None):
+        """CI bounds for the displayed CARSPAN PSD (mMI^2/Hz). The
+        chi-square scaling is multiplicative, so applying it to the
+        already-normalised display PSD gives bounds in matching units."""
         alpha = alpha if alpha is not None else CI_ALPHA
         freqs, psd = self.carspan_psd()
         if freqs.size == 0:
@@ -352,20 +447,30 @@ class CardioMetricsMixin(HRVMetric):
         return float(np.trapezoid(p_band, f_band))
 
     def _carspan_psd_native(self):
-        """Native-resolution periodogram of the IBI series at f_k = k/T,
-        k = 1..k_max. Uses a windowed, mean-removed DFT over the beat
-        times.
+        """Native-resolution PSD of the R-peak event series at f_k = k/T,
+        k = 1..k_max. Implements CARSPAN manual Eq. 3.19 with a window.
 
-        Mean removal is required: at ~800 ms mean IBI the DC component
-        dwarfs VLF/LF content, and a non-rectangular window leaks it
-        through its sidelobes into all bands.
+        The signal is the R-peak event series x(t) = sum_i delta(t-t_i),
+        NOT the IBI amplitude series. Per Rompelman (1985), cited in
+        manual section 3.1.4, the Fourier spectrum of this unit-pulse
+        train at R-peak times equals the spectrum of low-pass-filtered
+        heart rate below half the mean HR. With a tapering window w_i:
 
-        Normalisation is the standard one-sided Welch form,
-            P(f) = (2 * T) / (N * sum(win^2))  *  |X(f)|^2
-        with X(f) = sum_i (x_i - mean(x)) * win_i * exp(-2*pi*j*f*t_i).
-        For a rectangular window this reduces to (2*T / N^2) * |X|^2,
-        matching the Lomb-Scargle scaling used in lombscargle_psd.
-        Output units: ms^2 / Hz (i.e. mMI^2 / Hz).
+            S_xx(f_k) = (2*N) / (T * S2) *
+                        | sum_i w_i exp(-2*pi*j*f_k*t_i) |^2
+
+        where S2 = sum(w_i^2). The N/S2 factor compensates for the
+        energy loss from the window. For w_i = 1 this reduces to the
+        unweighted form (2/T) * |sum exp|^2 in Eq. 3.19.
+
+        Mean removal is unnecessary: the signal values are unit pulses,
+        so the only "DC" is the event rate N/T = HR_mean, which sits at
+        f=0 and leaks negligibly into f_k >= 1/T through the window
+        sidelobes (Hann: ~-32 dB at the first bin).
+
+        Output units: Hz. Convert band-integrated values to mMI^2 via
+        _carspan_normalise; convert density to mMI^2/Hz by multiplying
+        by _carspan_mmi2_factor.
         """
         ibi_ms = self._ibi_clean_ms()
         if ibi_ms.size < 4:
@@ -381,36 +486,32 @@ class CardioMetricsMixin(HRVMetric):
             win = signal.get_window(win_name, N)
         except Exception:
             win = np.ones(N)
-
-        # Mean-remove, then window. This is the fix: the IBI values now
-        # actually enter the transform, and DC is removed before windowing
-        # so its sidelobes cannot leak into VLF/LF.
-        x = (ibi_ms - float(np.mean(ibi_ms))) * win
+        S2 = float(np.sum(win * win))
+        if S2 <= 0.0:
+            return np.ndarray(0), np.ndarray(0)
 
         f_max = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
         k_max = int(np.ceil(f_max * T))
         freqs_native = np.arange(1, k_max + 1) / T
 
+        # Unit pulses at event times: only window weights enter the DFT.
         phases = -2.0 * np.pi * np.outer(ibi_times, freqs_native)
-        X_real = np.dot(x, np.cos(phases))
-        X_imag = np.dot(x, np.sin(phases))
+        X_real = np.dot(win, np.cos(phases))
+        X_imag = np.dot(win, np.sin(phases))
 
-        S2 = float(np.sum(win * win))
-        if S2 <= 0.0:
-            return np.ndarray(0), np.ndarray(0)
-        power_native = (2.0 * T / (N * S2)) * (X_real**2 + X_imag**2)
-
+        power_native = (2.0 * N / (T * S2)) * (X_real**2 + X_imag**2)
         return freqs_native, power_native
 
     def _carspan_band_power_native(self, f0, f1):
+        """Eq. 3.28: rectangular sum of S_xx over [f0, f1] on the native
+        f_k = k/T grid. Output units: Hz^2 (raw HR-spectrum variance)."""
         freqs_native, power_native = self._carspan_psd_native()
         if freqs_native.size == 0:
             return np.nan
-        T = float(self.times[: self._ibi_clean_ms().size][-1] - self.times[0])
-        delta_f = 1.0 / T
         mask = (freqs_native >= f0) & (freqs_native <= f1)
         if not np.any(mask):
             return np.nan
+        delta_f = float(freqs_native[0])  # = 1/T by construction
         return float(np.sum(power_native[mask]) * delta_f)
 
     def _band_power(self, band_name):
@@ -429,11 +530,6 @@ class CardioMetricsMixin(HRVMetric):
     def mean(self):
         ibi_ms = self._ibi_clean_ms()
         return float(np.mean(ibi_ms)) if ibi_ms.size else np.nan
-
-    @hrv_metric
-    def std(self):
-        ibi_ms = self._ibi_clean_ms()
-        return float(np.std(ibi_ms)) if ibi_ms.size else np.nan
 
     @hrv_metric
     def min(self):

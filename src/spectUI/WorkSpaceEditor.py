@@ -111,9 +111,22 @@ _EXCLUDED_SECTIONS = {"Directories"}
 
 # Known enumeration choices for specific leaf keys
 _ENUM_CHOICES: dict[str, list[str]] = {
+    # Leaf-key enumerations (apply wherever the key appears)
     "method": ["welch", "lombscargle", "carspan"],
     "window": ["hamming", "hann", "blackman", "bartlett", "boxcar"],
     "filter_type": ["highpass", "lowpass", "bandpass"],
+    # Path-specific enumerations (override the leaf entry above for that
+    # one path; needed when the same key name takes different values in
+    # different sections, e.g. CARSPAN supports cosine-bell presets that
+    # Welch does not)
+    "FrequencyAnalysis.carspan.window": [
+        "5% cosine bell",
+        "10% cosine bell",
+        "25% cosine bell",
+        "hann",
+        "hamming",
+        "boxcar",
+    ],
 }
 
 
@@ -218,7 +231,7 @@ class ParametersEditorDialog(QDialog):
 
             else:
                 # Scalar leaf → make a widget
-                widget = self._make_widget(key, value)
+                widget = self._make_widget(key, value, path=path)
                 self._widgets[path] = (widget, value)
                 form.addRow(_label(key) + ":", widget)
                 has_scalars = True
@@ -228,13 +241,19 @@ class ParametersEditorDialog(QDialog):
 
         return group
 
-    def _make_widget(self, key: str, value: Any) -> QWidget:
-        """Return a QComboBox for known enumerations, QLineEdit otherwise."""
-        if key in _ENUM_CHOICES:
+    def _make_widget(self, key: str, value: Any, path: str = "") -> QWidget:
+        """Return a QComboBox for known enumerations, QLineEdit otherwise.
+
+        Path-specific entries in ``_ENUM_CHOICES`` (e.g. the dotted key
+        ``"FrequencyAnalysis.carspan.window"``) win over leaf-key entries
+        (e.g. ``"window"``). This lets the same key name offer different
+        choice sets in different sections.
+        """
+        choices = _ENUM_CHOICES.get(path) or _ENUM_CHOICES.get(key)
+        if choices is not None:
             combo = QComboBox()
-            for choice in _ENUM_CHOICES[key]:
+            for choice in choices:
                 combo.addItem(choice)
-            # Select current value (case-insensitive)
             idx = combo.findText(
                 str(value), Qt.MatchFixedString | Qt.MatchCaseSensitive
             )

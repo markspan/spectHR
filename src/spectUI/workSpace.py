@@ -8,7 +8,7 @@ from spectHR.DataSet.Series.CardioMetricsMixin import (
     load_frequency_bands,
     load_welch_params,
     load_lombscargle_params,
-    load_carspan_params,          # <-- nieuw
+    load_carspan_params,  # <-- nieuw
     load_ci_alpha,
     load_method,
 )
@@ -18,44 +18,44 @@ from PySide6.QtCore import Qt
 
 _DEFAULT_WORKSPACE = {
     "Directories": {
-        "DataDirectory":   str(user_documents_path() / "spectHR"),
-        "CacheDirectory":  str(user_documents_path() / "spectHR/cache"),
+        "DataDirectory": str(user_documents_path() / "spectHR"),
+        "CacheDirectory": str(user_documents_path() / "spectHR/cache"),
         "OutputDirectory": str(user_documents_path() / "spectHR/export"),
     },
     "FrequencyAnalysis": {
         "method": "welch",
         "bands": {
-            "VLF": {"low": 0.003, "high": 0.04,  "color": "blue"},
-            "LF":  {"low": 0.04,  "high": 0.15,  "color": "darkgreen"},
-            "HF":  {"low": 0.15,  "high": 0.40,  "color": "red"},
+            "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
+            "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},
+            "HF": {"low": 0.15, "high": 0.40, "color": "red"},
         },
         "welch": {
-            "fs":       4.0,
-            "nperseg":  256,
+            "fs": 4.0,
+            "nperseg": 256,
             "noverlap": 128,
-            "nfft":     1024,
-            "window":   "hann",
+            "nfft": 1024,
+            "window": "hann",
         },
         "lombscargle": {
-            "nfreqs":     1000,
+            "nfreqs": 1000,
             "fmin_floor": 1e-4,
         },
-        "carspan": {                   # <-- nieuw
+        "carspan": {
             "freq_resolution": 0.01,
-            "window":          "hann",
+            "window": "5% cosine bell",
             "smooth_for_display": True,
         },
         "confidence_interval_alpha": 0.05,
     },
     "CardioParameters": {
         "IbiClassification": {
-            "window_length":        51,
-            "n_std":                4.0,
-            "max_ibi_sec":          2.0,
+            "window_length": 51,
+            "n_std": 4.0,
+            "max_ibi_sec": 2.0,
             "min_peak_distance_ms": 300.0,
         },
         "EcgPreprocessing": {
-            "filter_type":   "highpass",
+            "filter_type": "highpass",
             "filter_cutoff": 1.0,
         },
     },
@@ -140,7 +140,7 @@ def LoadWorkspace(json_file=None) -> dict:
     except (KeyError, Exception) as e:
         logger.warning(f"Could not apply Lomb-Scargle params: {e}")
 
-    try:                                          # <-- nieuw
+    try:  # <-- nieuw
         load_carspan_params(fa["carspan"])
     except (KeyError, Exception) as e:
         logger.warning(f"Could not apply CARSPAN params: {e}")
@@ -178,15 +178,15 @@ def PopulateTree(treewidget, workspace: dict) -> None:
     treewidget.clear()
     data_dir = workspace["Directories"]["DataDirectory"]
     categories = {
-        "XDF Files":          "*.xdf",
-        "CARSPAN EVT Files":  "*.evt",
-        "RR Text Files":      "*.txt",
+        "XDF Files": "*.xdf",
+        "CARSPAN EVT Files": "*.evt",
+        "RR Text Files": "*.txt",
     }
     treewidget.setHeaderLabels(["WorkSpace Data"])
     for label, pattern in categories.items():
-        parent    = QTreeWidgetItem([label])
+        parent = QTreeWidgetItem([label])
         extension = pattern.split("*")[-1].lower()
-        files     = sorted(
+        files = sorted(
             [f for f in os.listdir(data_dir) if f.lower().endswith(extension)]
         )
         for fname in files:
@@ -197,8 +197,8 @@ def PopulateTree(treewidget, workspace: dict) -> None:
                 0,
                 Qt.UserRole,
                 {
-                    "type":           "dataset",
-                    "filename":       fname,
+                    "type": "dataset",
+                    "filename": fname,
                     "bands_expanded": False,
                 },
             )
