@@ -4,14 +4,15 @@ import os
 from pathlib import Path
 
 from spectHR.Tools.Logger import logger
-from spectHR.DataSet.Series.CardioMetricsMixin import (
+from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
     load_frequency_bands,
-    load_welch_params,
-    load_lombscargle_params,
-    load_carspan_params,  # <-- nieuw
     load_ci_alpha,
     load_method,
 )
+from spectHR.Tools.PSD.WelchPSD import load_welch_params
+from spectHR.Tools.PSD.LombScarglePSD import load_lombscargle_params
+from spectHR.Tools.PSD.CarspanPSD import load_carspan_params
+
 from platformdirs import user_documents_path
 from PySide6.QtWidgets import QTreeWidgetItem
 from PySide6.QtCore import Qt

@@ -7,6 +7,9 @@ import numpy as np
 import scipy.signal as signal
 
 from spectHR.DataSet.Series.CardioMetricsMixin import CardioMetricsMixin
+from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
+    CardioFrequencyMetricsMixin,
+)
 from spectHR.Tools.Logger import logger
 
 if TYPE_CHECKING:
@@ -14,7 +17,7 @@ if TYPE_CHECKING:
     from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 
 
-class CardioSeries(CardioMetricsMixin):
+class CardioSeries(CardioMetricsMixin, CardioFrequencyMetricsMixin):
     """
     Container for R-peak times and per-interval labels, with HRV metric methods.
 
@@ -47,10 +50,10 @@ class CardioSeries(CardioMetricsMixin):
     """
 
     def __init__(self, times: np.ndarray) -> None:
-        self.times  = np.asarray(times, dtype=float)
+        self.times = np.asarray(times, dtype=float)
         self.labels = np.full(self.times.shape, "N", dtype=object)
-        self._pd:     Optional["PhysioData"] = None
-        self._stream: Optional[str]          = None
+        self._pd: Optional["PhysioData"] = None
+        self._stream: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Construction / detection
@@ -62,10 +65,10 @@ class CardioSeries(CardioMetricsMixin):
         ts,
         *,
         min_peak_distance_ms: float = 300.0,
-        window_length:        int   = 51,
-        n_std:                float = 4.0,
-        max_ibi_sec:          float = 2.0,
-        classify:             bool  = True,
+        window_length: int = 51,
+        n_std: float = 4.0,
+        max_ibi_sec: float = 2.0,
+        classify: bool = True,
     ) -> "CardioSeries":
         """
         Detect R-peaks from an ECG TimeSeries and construct a CardioSeries.
@@ -93,7 +96,7 @@ class CardioSeries(CardioMetricsMixin):
             length; longer intervals are labeled "TL".
         classify : If True, run classify_ibi() after peak detection.
         """
-        times  = np.asarray(ts.times,  dtype=float)
+        times = np.asarray(ts.times, dtype=float)
         values = np.asarray(ts.values, dtype=float)
 
         if times.size < 2 or values.size < 2:
@@ -107,8 +110,8 @@ class CardioSeries(CardioMetricsMixin):
                 "Cannot estimate sampling rate from ECG times (no positive deltas)."
             )
 
-        sampling_rate_hz      = 1.0 / float(np.mean(time_deltas))
-        min_distance_samples  = max(
+        sampling_rate_hz = 1.0 / float(np.mean(time_deltas))
+        min_distance_samples = max(
             1, int((min_peak_distance_ms / 1000.0) * sampling_rate_hz)
         )
         peak_height_threshold = float(np.median(values) + 1.5 * np.std(values))
@@ -124,18 +127,16 @@ class CardioSeries(CardioMetricsMixin):
             return cls(np.array([], dtype=float))
 
         # Sub-sample timing correction
-        pre_values   = values[np.clip(peak_indices - 1, 0, values.size - 1)]
-        post_values  = values[np.clip(peak_indices + 1, 0, values.size - 1)]
-        peak_values  = values[peak_indices]
+        pre_values = values[np.clip(peak_indices - 1, 0, values.size - 1)]
+        post_values = values[np.clip(peak_indices + 1, 0, values.size - 1)]
+        peak_values = values[peak_indices]
         local_contrast = np.maximum(
             np.abs(peak_values - pre_values),
             np.abs(post_values - peak_values),
         )
         local_contrast[local_contrast == 0] = 1e-12
         correction_sec = (
-            (post_values - pre_values)
-            / sampling_rate_hz
-            / (2.0 * local_contrast)
+            (post_values - pre_values) / sampling_rate_hz / (2.0 * local_contrast)
         )
         peak_times = times[peak_indices] + correction_sec
 
@@ -176,9 +177,9 @@ class CardioSeries(CardioMetricsMixin):
     def classify_ibi(
         self,
         *,
-        window_length: int   = 51,
-        n_std:         float = 4.0,
-        max_ibi_sec:   float = 2.0,
+        window_length: int = 51,
+        n_std: float = 4.0,
+        max_ibi_sec: float = 2.0,
     ) -> None:
         """
         Classify IBIs and assign labels.
@@ -212,9 +213,9 @@ class CardioSeries(CardioMetricsMixin):
             Loaded from workspace["CardioParameters"]["IbiClassification"]
             ["max_ibi_sec"].
         """
-        ibi_sec = self.ibi   # pure — no side effects
-        labels  = self.labels
-        n       = ibi_sec.size
+        ibi_sec = self.ibi  # pure — no side effects
+        labels = self.labels
+        n = ibi_sec.size
 
         if n == 0:
             return
@@ -222,8 +223,8 @@ class CardioSeries(CardioMetricsMixin):
         # Step 1: degenerate and too-long
         degenerate = np.isnan(ibi_sec) | (ibi_sec <= 0)
         labels[degenerate] = "T"
-        too_long           = ibi_sec > max_ibi_sec
-        labels[too_long]   = "TL"
+        too_long = ibi_sec > max_ibi_sec
+        labels[too_long] = "TL"
 
         # Step 2: IBI array for statistics (exclude T and TL)
         ibi_stats = ibi_sec.astype(float, copy=True)
@@ -239,9 +240,9 @@ class CardioSeries(CardioMetricsMixin):
 
         # Step 3: short-series fallback
         if n < window_length:
-            mean    = np.nanmean(ibi_stats)
-            std     = np.nanstd(ibi_stats)
-            lo, hi  = mean - n_std * std, mean + n_std * std
+            mean = np.nanmean(ibi_stats)
+            std = np.nanstd(ibi_stats)
+            lo, hi = mean - n_std * std, mean + n_std * std
             for i in range(n):
                 if labels[i] in ("T", "TL"):
                     continue
@@ -249,11 +250,11 @@ class CardioSeries(CardioMetricsMixin):
             return
 
         # Step 4: rolling statistics (centered window)
-        half   = window_length // 2
+        half = window_length // 2
         padded = np.pad(ibi_stats, (half, half), mode="edge")
-        windows    = np.lib.stride_tricks.sliding_window_view(padded, window_length)
+        windows = np.lib.stride_tricks.sliding_window_view(padded, window_length)
         local_mean = np.nanmean(windows, axis=1)[:n]
-        local_std  = np.nanstd(windows,  axis=1)[:n]
+        local_std = np.nanstd(windows, axis=1)[:n]
         lo = local_mean - n_std * local_std
         hi = local_mean + n_std * local_std
 
@@ -262,9 +263,7 @@ class CardioSeries(CardioMetricsMixin):
             if labels[i] in ("T", "TL"):
                 continue
             labels[i] = (
-                "L" if ibi_sec[i] > hi[i]
-                else "S" if ibi_sec[i] < lo[i]
-                else "N"
+                "L" if ibi_sec[i] > hi[i] else "S" if ibi_sec[i] < lo[i] else "N"
             )
 
         # Step 6: sequence heuristics
@@ -289,13 +288,13 @@ class CardioSeries(CardioMetricsMixin):
         self,
         ts,
         *,
-        start:                float,
-        end:                  float,
+        start: float,
+        end: float,
         min_peak_distance_ms: float = 300.0,
-        window_length:        int   = 51,
-        n_std:                float = 4.0,
-        max_ibi_sec:          float = 2.0,
-        classify:             bool  = True,
+        window_length: int = 51,
+        n_std: float = 4.0,
+        max_ibi_sec: float = 2.0,
+        classify: bool = True,
     ) -> None:
         """
         Re-detect R-peaks inside [start, end] and merge with peaks outside.
@@ -316,7 +315,7 @@ class CardioSeries(CardioMetricsMixin):
                 max_ibi_sec=max_ibi_sec,
                 classify=classify,
             )
-            self.times  = new.times
+            self.times = new.times
             self.labels = new.labels
             return
 
@@ -330,17 +329,17 @@ class CardioSeries(CardioMetricsMixin):
         )
         new_labels = np.full(new.times.shape, "N", dtype=object)
 
-        keep          = (self.times < start) | (self.times > end)
-        merged_times  = np.concatenate([self.times[keep], new.times])
+        keep = (self.times < start) | (self.times > end)
+        merged_times = np.concatenate([self.times[keep], new.times])
         merged_labels = np.concatenate([self.labels[keep], new_labels])
 
         if merged_times.size == 0:
-            self.times  = merged_times
+            self.times = merged_times
             self.labels = merged_labels
             return
 
-        order       = np.argsort(merged_times)
-        self.times  = merged_times[order]
+        order = np.argsort(merged_times)
+        self.times = merged_times[order]
         self.labels = merged_labels[order]
 
         if classify:
@@ -373,12 +372,12 @@ class CardioSeries(CardioMetricsMixin):
         if epoch_label not in self._pd.epochs:
             raise KeyError(f"No epoch '{epoch_label}' in PhysioData.")
 
-        ep  = self._pd.epochs[epoch_label]
+        ep = self._pd.epochs[epoch_label]
         idx = np.where((self.times >= ep.start) & (self.times <= ep.end))[0]
-        v   = CardioSeriesView(self, idx)
-        v._pd     = self._pd
+        v = CardioSeriesView(self, idx)
+        v._pd = self._pd
         v._stream = self._stream
-        v._epoch  = epoch_label
+        v._epoch = epoch_label
         return v
 
     def view(self, starttime: float, endtime: float) -> "CardioSeriesView":
@@ -386,10 +385,10 @@ class CardioSeries(CardioMetricsMixin):
         from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 
         idx = np.where((self.times >= starttime) & (self.times <= endtime))[0]
-        v   = CardioSeriesView(self, idx)
-        v._pd     = self._pd
+        v = CardioSeriesView(self, idx)
+        v._pd = self._pd
         v._stream = self._stream
-        v._epoch  = None
+        v._epoch = None
         return v
 
     # ------------------------------------------------------------------
@@ -409,8 +408,8 @@ class CardioSeries(CardioMetricsMixin):
         cols   : list[str]                — metric names in METRIC_ORDER
         values : np.ndarray (n_epochs, n_metrics) — float64, NaN for missing
         """
-        labels_list: List[Any]        = []
-        rows:        List[Dict[str, float]] = []
+        labels_list: List[Any] = []
+        rows: List[Dict[str, float]] = []
 
         for label, ep in physiodata.epochs.items():
             if getattr(ep, "active", False):
@@ -420,8 +419,8 @@ class CardioSeries(CardioMetricsMixin):
         if not rows:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
 
-        keys    = set().union(*(d.keys() for d in rows))
-        cols    = [c for c in self.METRIC_ORDER if c in keys]
+        keys = set().union(*(d.keys() for d in rows))
+        cols = [c for c in self.METRIC_ORDER if c in keys]
         cols.extend(sorted(keys - set(cols)))
         col_idx = {c: j for j, c in enumerate(cols)}
 

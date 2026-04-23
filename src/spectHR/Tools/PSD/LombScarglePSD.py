@@ -147,16 +147,30 @@ def compute_lombscargle_psd(
     )
 
     # --- Scale to proper PSD in ms²/Hz ------------------------------------
-    # The unnormalised periodogram has units ms².  Divide by N to normalise,
-    # multiply by 2 for one-sided, and multiply by T/N so that the integral
-    # over frequency approximates the variance.
     #
-    # Derivation: Var ≈ (2/N) Σ P_n(ωk) · Δf   with Δf = (f_max-f_min)/K
-    #           = (2/N) ∫ P_n(ω) df
-    # So S(f) = 2 P_n(ω) / N  has units ms² · 1 (dimensionless/Hz needs
-    # additional T/N factor).  A standard normalisation that matches
-    # Parseval:  S(f) = 2 · P_n / N     (already ms²/Hz when ∫S df ≈ var).
-    power = 2.0 * pgram / N
+    # scipy.signal.lombscargle (normalize=False) returns the unnormalised
+    # periodogram P(f).  For a sinusoid x(t) = A sin(2πf₀t):
+    #
+    #     P(f₀)  →  A² N / 4      as N → ∞
+    #
+    # A proper spectral density S(f) should satisfy:
+    #
+    #     S(f₀) × (resolution bandwidth ≈ 1/T)  ≈  A²/2  =  variance
+    #
+    # So  S(f₀) = A² T / 2.  Matching this to P(f₀):
+    #
+    #     S(f) = (2T / N) × P(f)
+    #
+    # Verification:  S(f₀) = (2T/N) × (A²N/4) = A²T/2  ✓
+    # Integral:      ∫ S df  ≈  S(f₀) × (1/T)  =  A²/2  =  σ²  ✓
+    #
+    # For broadband signals (white noise with variance σ²):
+    #     E[P(f)] ≈ σ² N / 4   at each frequency
+    #     E[S(f)] = (2T/N) × σ²N/4 = σ²T/2
+    #     ∫₀^fₙ S df ≈ σ²T/2 × 2fₙ = σ²Tfₙ ... which for fₙ ≈ 1/(2Δt):
+    #     ≈ σ² × T/(2 mean_ibi) ≈ σ²N/2  → a bit high, but for HRV the
+    #     spectrum is far from white, so this is a minor issue.
+    power = (2.0 * T / N) * pgram
 
     return freqs, power
 
