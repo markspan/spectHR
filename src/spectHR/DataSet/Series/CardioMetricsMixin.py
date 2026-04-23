@@ -159,13 +159,16 @@ class CardioMetricsMixin(HRVMetric):
         conversion (1e-6) and the CARSPAN 1e6 display scaling cancel.
         See _carspan_normalise for the full derivation.
         """
-        ibi_ms = self._ibi_clean_ms()
-        if ibi_ms.size == 0:
+        event_times = self.times
+        N = event_times.size
+        if N < 2:
             return np.nan
-        mean_ibi_msec = float(np.mean(ibi_ms))
-        if mean_ibi_msec <= 0.0:
+        T = float(event_times[-1] - event_times[0])
+        if T <= 0.0:
             return np.nan
-        return mean_ibi_msec * mean_ibi_msec
+        mean_ibi_sec = T / N
+        # (T/N)^2 · 10^6 = (T/N · 1000)^2 — the ms→s and 10^6 cancel
+        return (mean_ibi_sec * 1000.0) ** 2
 
     def _carspan_normalise(self, power_raw: float) -> float:
         """Convert raw HR-event-series band power [Hz^2] to mMI^2.
@@ -422,8 +425,8 @@ class CardioMetricsMixin(HRVMetric):
         freq_res = float(CARSPAN_PARAMS["freq_resolution"])
         n_per_point = max(1, int(round(freq_res * T)))
         nu = 2 * n_per_point
-        ci_lower = (nu * psd) / chi2.ppf(1 - alpha / 2, nu)
-        ci_upper = (nu * psd) / chi2.ppf(alpha / 2, nu)
+        ci_lower = (nu * psd) / chi2.ppf(1 - alpha, nu)
+        ci_upper = (nu * psd) / chi2.ppf(alpha, nu)
         return freqs, psd, ci_lower, ci_upper
 
     def psd_with_ci(self, *, alpha=None, **kwargs):
@@ -472,14 +475,13 @@ class CardioMetricsMixin(HRVMetric):
         _carspan_normalise; convert density to mMI^2/Hz by multiplying
         by _carspan_mmi2_factor.
         """
-        ibi_ms = self._ibi_clean_ms()
-        if ibi_ms.size < 4:
+        event_times = self.times
+        N = event_times.size
+        if N < 4:
             return np.ndarray(0), np.ndarray(0)
-        ibi_times = self.times[: ibi_ms.size]
-        T = float(ibi_times[-1] - ibi_times[0])
+        T = float(event_times[-1] - event_times[0])
         if T <= 0:
             return np.ndarray(0), np.ndarray(0)
-        N = ibi_ms.size
 
         win_name = CARSPAN_PARAMS["window"]
         try:
@@ -495,7 +497,7 @@ class CardioMetricsMixin(HRVMetric):
         freqs_native = np.arange(1, k_max + 1) / T
 
         # Unit pulses at event times: only window weights enter the DFT.
-        phases = -2.0 * np.pi * np.outer(ibi_times, freqs_native)
+        phases = -2.0 * np.pi * np.outer(event_times, freqs_native)
         X_real = np.dot(win, np.cos(phases))
         X_imag = np.dot(win, np.sin(phases))
 

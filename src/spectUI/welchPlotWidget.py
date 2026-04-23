@@ -25,6 +25,7 @@ When METHOD == "carspan":
   and multiplying by 1 000 000 (CARSPAN manual §3.3.4, formula 3.20)
 - Band power labels and y-axis are annotated with "mMI²" accordingly
 """
+
 from __future__ import annotations
 
 import warnings
@@ -90,7 +91,7 @@ class WelchPSDPlotWidget(QWidget):
         ymaxs: list[float] = []
         for series in series_list:
             fig = Figure(figsize=(5, 3))
-            ax  = fig.add_subplot(111)
+            ax = fig.add_subplot(111)
             WelchPSDPlotWidget.plot_on_axis(ax, series, **plot_kwargs)
             y0, y1 = ax.get_ylim()
             if not np.isfinite(y0) or not np.isfinite(y1):
@@ -152,8 +153,11 @@ class WelchPSDPlotWidget(QWidget):
 
         if freqs.size == 0:
             ax.text(
-                0.5, 0.5, "Insufficient data",
-                ha="center", va="center",
+                0.5,
+                0.5,
+                "Insufficient data",
+                ha="center",
+                va="center",
                 transform=ax.transAxes,
                 color="gray",
             )
@@ -162,26 +166,26 @@ class WelchPSDPlotWidget(QWidget):
         # ---- CARSPAN normalisation for display -------------------------
         # psd_with_ci() always returns ms²/Hz. For the CARSPAN method we
         # convert to mMI²/Hz here so the plot matches CARSPAN output.
-        is_carspan = (cm.METHOD == "carspan")
+        is_carspan = cm.METHOD == "carspan"
         if is_carspan:
             ibi_ms = series._ibi_clean_ms()
             if ibi_ms.size > 0:
                 mean_ibi_sec = float(np.mean(ibi_ms)) / 1000.0
                 if mean_ibi_sec > 0:
                     # S'(fk) = S(fk) / mean_HR² * 1e6 = S(fk) * mean_IBI_sec² * 1e6
-                    scale = (mean_ibi_sec ** 2) * 1_000_000.0
+                    scale = mean_ibi_sec**2
                     power = power * scale
                     ci_lo = ci_lo * scale
                     ci_hi = ci_hi * scale
-            power_unit  = "mMI²"
-            psd_unit    = "mMI²/Hz"
+            power_unit = "mMI²"
+            psd_unit = "mMI²/Hz"
         else:
-            power_unit  = "ms²"
-            psd_unit    = "ms²/Hz"
+            power_unit = "ms²"
+            psd_unit = "ms²/Hz"
 
         # Set x-axis to span exactly the band range — no empty space
         # before the first band or after the last.
-        x_min = min(s["low"]  for s in HRV_FREQUENCY_BANDS.values())
+        x_min = min(s["low"] for s in HRV_FREQUENCY_BANDS.values())
         x_max = max(s["high"] for s in HRV_FREQUENCY_BANDS.values())
         ax.set_xlim(x_min, x_max)
         ax.autoscale(enable=False, axis="x")
@@ -189,8 +193,11 @@ class WelchPSDPlotWidget(QWidget):
         # ---- CI shading ------------------------------------------------
         ci_pct = int(round((1.0 - cm.CI_ALPHA) * 100))
         ax.fill_between(
-            freqs, ci_lo, ci_hi,
-            color="gray", alpha=0.20,
+            freqs,
+            ci_lo,
+            ci_hi,
+            color="gray",
+            alpha=0.20,
             label=f"{ci_pct} % CI",
             zorder=1,
         )
@@ -211,24 +218,27 @@ class WelchPSDPlotWidget(QWidget):
         }
 
         for name, spec in HRV_FREQUENCY_BANDS.items():
-            f0    = spec["low"]
-            f1    = spec["high"]
+            f0 = spec["low"]
+            f1 = spec["high"]
             color = spec.get("color", "gray")
 
-            mask   = (freqs >= f0) & (freqs <= f1)
-            p0     = np.interp(f0, freqs, power)
-            p1     = np.interp(f1, freqs, power)
+            mask = (freqs >= f0) & (freqs <= f1)
+            p0 = np.interp(f0, freqs, power)
+            p1 = np.interp(f1, freqs, power)
             f_band = np.concatenate(([f0], freqs[mask], [f1]))
             p_band = np.concatenate(([p0], power[mask], [p1]))
 
             # Use the metric method for the label value — same as param table
-            metric_fn  = band_metric_map.get(name)
+            metric_fn = band_metric_map.get(name)
             band_power = metric_fn() if callable(metric_fn) else np.nan
-            label_val  = f"{band_power:.4f}" if np.isfinite(band_power) else "n/a"
+            label_val = f"{band_power:.4f}" if np.isfinite(band_power) else "n/a"
 
             ax.fill_between(
-                f_band, 0, p_band,
-                color=color, alpha=0.35,
+                f_band,
+                0,
+                p_band,
+                color=color,
+                alpha=0.35,
                 label=f"{name}: {label_val} {power_unit}",
                 zorder=4,
             )
@@ -242,7 +252,9 @@ class WelchPSDPlotWidget(QWidget):
 
         ax.set_title(
             f"PSD ({cm.METHOD.capitalize()})",
-            fontsize=8, loc="left", color="dimgray",
+            fontsize=8,
+            loc="left",
+            color="dimgray",
         )
         ax.legend(loc="upper right", fontsize=7)
         ax.spines["top"].set_visible(False)
