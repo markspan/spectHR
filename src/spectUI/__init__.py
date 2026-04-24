@@ -6,7 +6,7 @@ from spectUI.hrPlotWidget import HRPlotWidget
 from spectUI.LineHandler import LineHandler
 from spectUI.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.poincarePlotWidget import PoincarePlotWidget
-from spectUI.welchPlotWidget import WelchPSDPlotWidget
+from spectUI.PSDPlotWidget import PSDPlotWidget
 from spectUI.parametersPlotWidget import ParametersPlotWidget
 from spectUI.preProcessFile import PreProcessFile
 
@@ -15,7 +15,7 @@ __all__ = [
     "HRPlotWidget",
     "EpochPlotWidget",
     "PoincarePlotWidget",
-    "WelchPSDPlotWidget",
+    "PSDPlotWidget",
     "ParametersPlotWidget",
     "LoadWorkspace",
     "SaveWorkspace",

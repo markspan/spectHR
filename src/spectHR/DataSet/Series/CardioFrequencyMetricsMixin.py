@@ -469,14 +469,12 @@ class CardioFrequencyMetricsMixin:
         """
         Compute strict CARSPAN PSD and convert Hz → mMI²/Hz.
 
-        Conversion:
-            mMI²/Hz = Hz × mean_ibi_ms²
-
-        (S'_xx = S_xx / x̄²;  x̄ = HR = 1/mean_ibi_s;
-         so S'_xx = S_xx × mean_ibi_s² → × 10⁶ for mMI² → factor = mean_ibi_ms²)
+        Conversion: mMI²/Hz = Hz × mean_ibi_ms²
+        (The 10⁶ factors cancel: (mean_ibi_ms²/10⁶) × 10⁶ = mean_ibi_ms²)
         """
         event_times = self._event_times_clean()
         factor = self._mmi2_factor()  # mean_ibi_ms²
+        convert = factor  # Hz → mMI²/Hz
 
         f_max = max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
 
@@ -488,11 +486,11 @@ class CardioFrequencyMetricsMixin:
             )
             return PSDResult(
                 freqs=freqs,
-                power=power * factor,
+                power=power * convert,
                 unit="mMI²/Hz",
                 method="carspan_strict",
-                ci_lower=ci_lo * factor,
-                ci_upper=ci_hi * factor,
+                ci_lower=ci_lo * convert,
+                ci_upper=ci_hi * convert,
             )
         else:
             freqs, power = CarspanPSD.compute_carspan_psd_strict(
@@ -501,7 +499,7 @@ class CardioFrequencyMetricsMixin:
             )
             return PSDResult(
                 freqs=freqs,
-                power=power * factor,
+                power=power * convert,
                 unit="mMI²/Hz",
                 method="carspan_strict",
             )
@@ -510,10 +508,12 @@ class CardioFrequencyMetricsMixin:
         """
         Compute configurable CARSPAN PSD and convert Hz → mMI²/Hz.
 
-        Same conversion as strict: multiply by mean_ibi_ms².
+        Conversion: mMI²/Hz = Hz × mean_ibi_ms²
+        (The 10⁶ factors cancel: (mean_ibi_ms²/10⁶) × 10⁶ = mean_ibi_ms²)
         """
         event_times = self._event_times_clean()
-        factor = self._mmi2_factor()
+        factor = self._mmi2_factor()  # mean_ibi_ms²
+        convert = factor  # Hz → mMI²/Hz
 
         f_max = max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
 
@@ -525,11 +525,11 @@ class CardioFrequencyMetricsMixin:
             )
             return PSDResult(
                 freqs=freqs,
-                power=power * factor,
+                power=power * convert,
                 unit="mMI²/Hz",
                 method="carspan",
-                ci_lower=ci_lo * factor,
-                ci_upper=ci_hi * factor,
+                ci_lower=ci_lo * convert,
+                ci_upper=ci_hi * convert,
             )
         else:
             freqs, power = CarspanPSD.compute_carspan_psd(
@@ -538,7 +538,7 @@ class CardioFrequencyMetricsMixin:
             )
             return PSDResult(
                 freqs=freqs,
-                power=power * factor,
+                power=power * convert,
                 unit="mMI²/Hz",
                 method="carspan",
             )

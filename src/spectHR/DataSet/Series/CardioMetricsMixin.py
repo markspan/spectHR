@@ -18,12 +18,64 @@ import numpy as np
 from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 
 
+# ============================================================================
+# Module-level loader functions (re-exported from specialized modules)
+# ============================================================================
+# Import and re-export loaders so they're accessible via this module
+# for backward compatibility with MainWindow and other code.
+
+from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
+    load_frequency_bands,
+    load_method,
+    load_ci_alpha,
+)
+from spectHR.Tools.PSD.WelchPSD import load_welch_params
+from spectHR.Tools.PSD.LombScarglePSD import load_lombscargle_params
+from spectHR.Tools.PSD.CarspanPSD import load_carspan_params
+
+__all__ = [
+    "CardioMetricsMixin",
+    "load_frequency_bands",
+    "load_method",
+    "load_ci_alpha",
+    "load_welch_params",
+    "load_lombscargle_params",
+    "load_carspan_params",
+]
+
+
 class CardioMetricsMixin(HRVMetric):
     """Time-domain HRV metrics.
 
     Provides classical time-domain measures and Poincaré plot analysis.
     Frequency-domain metrics are provided by CardioFrequencyMetricsMixin,
     which should be mixed in alongside this class.
+    """
+
+    METRIC_ORDER = [
+        "count",
+        "mean",
+        "median",
+        "min",
+        "max",
+        "rmssd",
+        "sdnn",
+        "sdsd",
+        "sd1",
+        "sd2",
+        "sd_ratio",
+        "ellipse_area",
+        "fullrange_power",
+        "vlf_power",
+        "lf_power",
+        "hf_power",
+        "lf_hf_ratio",
+    ]
+    """Canonical order for metrics (time-domain + frequency bands).
+
+    Note: vlf_power, lf_power, hf_power, lf_hf_ratio are computed via
+    CardioFrequencyMetricsMixin.band_power() and are available on CardioSeries
+    instances that inherit from both mixins.
     """
 
     # ========================================================================
@@ -213,4 +265,19 @@ class CardioMetricsMixin(HRVMetric):
         if np.isnan(s1) or np.isnan(s2):
             return np.nan
         return float(np.pi * s1 * s2)
+
+    # ========================================================================
+    # Frequency-Domain Metrics: Band Powers (require CardioFrequencyMetricsMixin)
+    # ========================================================================
+
+    @hrv_metric
+    def fullrange_power(self):
+        """Total power across the full frequency range (FullRange band).
+
+        Returns NaN if FullRange band is not defined or computation fails.
+        """
+        try:
+            return self.band_power("FullRange")
+        except (KeyError, AttributeError):
+            return np.nan
 

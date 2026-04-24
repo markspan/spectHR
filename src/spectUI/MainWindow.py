@@ -37,6 +37,7 @@ import spectUI as spQt
 # class instead of the module.  We import the module explicitly by full name and then
 # retrieve it from sys.modules at call time to get the real module object.
 import spectHR.DataSet.Series.CardioMetricsMixin  # ensure the module is loaded
+import spectHR.DataSet.Series.CardioFrequencyMetricsMixin  # ensure the module is loaded
 
 
 def _cm():
@@ -222,7 +223,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logger.warning(f"Could not apply Lomb-Scargle params: {e}")
             try:
-                _cm().load_carspan_params(fa["carspan"])   # <-- was missing
+                _cm().load_carspan_params(fa["carspan"])  # <-- was missing
             except Exception as e:
                 logger.warning(f"Could not apply CARSPAN params: {e}")
             try:
@@ -236,7 +237,7 @@ class MainWindow(QMainWindow):
 
             # 3. Refresh the PSD plot immediately if a dataset is loaded
             if self.dataset is not None:
-                self.show_welch_psd_plot(self.dataset)
+                self.show_psd_plot(self.dataset)
 
     # ------------------------------------------------------------------
     # Context menu
@@ -351,7 +352,7 @@ class MainWindow(QMainWindow):
         if index == 3 and self.dataset is not None:
             self.show_epoch_plot(self.dataset)
         if index == 4 and self.dataset is not None:
-            self.show_welch_psd_plot(self.dataset)
+            self.show_psd_plot(self.dataset)
         if index == 5 and self.dataset is not None:
             self.show_parameters_plot(self.dataset)
         QApplication.restoreOverrideCursor()
@@ -429,7 +430,7 @@ class MainWindow(QMainWindow):
 
             self.show_poincare_plot(self.dataset)
             self.show_epoch_plot(self.dataset)
-            self.show_welch_psd_plot(self.dataset)
+            self.show_psd_plot(self.dataset)
             self.show_parameters_plot(self.dataset)
             QApplication.restoreOverrideCursor()
             return
@@ -455,7 +456,7 @@ class MainWindow(QMainWindow):
             self.show_hr_plot(self.dataset)
             self.show_poincare_plot(self.dataset)
             self.show_epoch_plot(self.dataset)
-            self.show_welch_psd_plot(self.dataset)
+            self.show_psd_plot(self.dataset)
             self.show_parameters_plot(self.dataset)
             QApplication.restoreOverrideCursor()
 
@@ -484,7 +485,8 @@ class MainWindow(QMainWindow):
         if data is not None:
             self.poincare_plot_widget.poincarePlot(data)
 
-    def show_welch_psd_plot(self, dataset):
+    def show_psd_plot(self, dataset):
+        # Clear existing widgets
         while self.welch_psd_layout.count():
             item = self.welch_psd_layout.takeAt(0)
             widget = item.widget()
@@ -492,6 +494,7 @@ class MainWindow(QMainWindow):
                 widget.setParent(None)
                 widget.deleteLater()
 
+        # Collect active epochs
         pairs = []
         for label, epoch in dataset.epochs.items():
             if not epoch.active:
@@ -505,17 +508,10 @@ class MainWindow(QMainWindow):
             return
 
         labels, views = zip(*pairs)
-        ymin, ymax = spQt.WelchPSDPlotWidget.probe_limits(views, fs=4, interpolate=True)
 
-        for label, view in pairs:
-            widget = spQt.WelchPSDPlotWidget()
-            widget.plot(view, fs=4, interpolate=True)
-            widget.ax.set_ylim(ymin, ymax)
-            widget.ax.set_title(f"PSD – {label}")
-            self.welch_psd_layout.addWidget(widget)
-
-        self.ui.scrollArea.setWidgetResizable(True)
-        self.ui.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        # Create container widget with all plots and uniform scaling
+        psd_widget = spQt.PSDPlotWidget(views, labels)
+        self.welch_psd_layout.addWidget(psd_widget)
 
     def show_parameters_plot(self, data):
         if data is not None:

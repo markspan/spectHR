@@ -36,8 +36,8 @@ from scipy import signal as sp_signal
 # ---------------------------------------------------------------------------
 
 LOMBSCARGLE_PARAMS = {
-    "nfreqs": 1000,  # Number of frequency evaluation points
-    "fmin_floor": 0.0001,  # Lowest frequency (Hz) to avoid DC
+    "nfreqs": 1000,       # Number of frequency evaluation points
+    "fmin_floor": 0.0001, # Lowest frequency (Hz) to avoid DC
 }
 
 
@@ -182,7 +182,7 @@ def compute_lombscargle_psd_with_ci(
     **kwargs,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Lomb-Scargle PSD with exponential confidence intervals.
+    Lomb-Scargle PSD with chi-squared confidence intervals.
 
     Parameters
     ----------
@@ -199,23 +199,36 @@ def compute_lombscargle_psd_with_ci(
 
     Notes
     -----
-    For a single Lomb-Scargle periodogram (no averaging), each frequency
-    bin has roughly 2 degrees of freedom (equivalent to an exponential
-    distribution).  The chi-squared CI with dof = 2 gives:
+    A raw Lomb-Scargle periodogram (no segment averaging) has 2 degrees of
+    freedom per frequency bin.  The resulting 95 % CI is therefore wide by
+    nature (~40 × power for the upper bound) — this correctly reflects the
+    inherent uncertainty of a single-segment spectral estimate.  No smoothing
+    is applied so that the displayed spectrum and band powers remain faithful
+    to the raw data.
 
-        ci_lower = power × dof / χ²(1 − α/2, dof)
-        ci_upper = power × dof / χ²(α/2, dof)
+    The chi-squared CI formula is:
+
+        ci_lower = dof × Ŝ / χ²(1 − α/2, dof)
+        ci_upper = dof × Ŝ / χ²(α/2,     dof)
     """
     from scipy.stats import chi2
 
     freqs, power = compute_lombscargle_psd(ibi_times_s, ibi_values_ms, **kwargs)
 
-    # Lomb-Scargle periodogram: ~2 dof per frequency bin (no averaging)
+    # Single-segment Lomb-Scargle: 2 degrees of freedom per bin.
     dof = 2
-    chi2_lo = chi2.ppf(alpha / 2, dof)
-    chi2_hi = chi2.ppf(1 - alpha / 2, dof)
 
-    ci_lower = dof * power / chi2_hi
-    ci_upper = dof * power / chi2_lo
+    # Handle edge cases
+    if alpha <= 0:
+        ci_lower = np.zeros_like(power)
+        ci_upper = np.full_like(power, np.inf)
+    elif alpha >= 1:
+        ci_lower = power.copy()
+        ci_upper = power.copy()
+    else:
+        chi2_lo = chi2.ppf(alpha / 2, dof)
+        chi2_hi = chi2.ppf(1 - alpha / 2, dof)
+        ci_lower = dof * power / chi2_hi
+        ci_upper = dof * power / chi2_lo
 
     return freqs, power, ci_lower, ci_upper

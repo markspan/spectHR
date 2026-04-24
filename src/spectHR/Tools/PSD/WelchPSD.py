@@ -41,6 +41,44 @@ WELCH_PARAMS = {
 }
 
 
+def _resolve_window_name(window_spec):
+    """
+    Parse custom window naming convention and convert to scipy format.
+
+    Handles the "X% cosine bell" naming convention from workspace config,
+    converting it to ("tukey", alpha) where alpha is the total taper fraction
+    (2 × taper_per_side).
+
+    Examples:
+        "5% cosine bell" → ("tukey", 0.10)
+        "25% cosine bell" → ("tukey", 0.50)
+        "hann" → "hann" (pass through unchanged)
+
+    Parameters
+    ----------
+    window_spec : str or tuple
+        Window name, possibly in "X% cosine bell" format.
+
+    Returns
+    -------
+    window_spec : str or tuple
+        Converted window spec for scipy.signal.welch().
+    """
+    if isinstance(window_spec, str) and "cosine bell" in window_spec:
+        # Parse "X% cosine bell" format
+        try:
+            percent_str = window_spec.split("%")[0].strip()
+            taper_percent = float(percent_str)
+            # Convert percent taper-per-side to total Tukey alpha
+            alpha = taper_percent / 50.0  # alpha = 2 × (percent / 100)
+            return ("tukey", alpha)
+        except (ValueError, IndexError):
+            # Fall through to scipy if parsing fails
+            pass
+
+    return window_spec
+
+
 def load_welch_params(config: dict) -> None:
     """
     Update module-level WELCH_PARAMS from a workspace configuration dict.
@@ -106,6 +144,7 @@ def compute_welch_psd(
     noverlap = int(noverlap if noverlap is not None else WELCH_PARAMS["noverlap"])
     nfft = int(nfft) if nfft is not None else WELCH_PARAMS.get("nfft")
     window = window if window is not None else WELCH_PARAMS["window"]
+    window = _resolve_window_name(window)  # Handle "X% cosine bell" format
 
     # --- Input validation --------------------------------------------------
     if ibi_times_s.size < 4:
@@ -214,10 +253,24 @@ def compute_welch_psd_with_ci(
     #   P[ χ²_{α/2,ν}  ≤  ν·Ŝ/S  ≤  χ²_{1-α/2,ν} ] = 1 − α
     #
     # Rearranging:  S ∈ [ ν·Ŝ / χ²_{1-α/2},  ν·Ŝ / χ²_{α/2} ]
-    chi2_lo = chi2.ppf(alpha / 2, dof)
-    chi2_hi = chi2.ppf(1 - alpha / 2, dof)
+    #
+    # Handle edge cases:
+    #   alpha = 0 → infinite bounds (complete uncertainty)
+    #   alpha >= 1 → collapse to point estimate
 
-    ci_lower = dof * power / chi2_hi
-    ci_upper = dof * power / chi2_lo
+    if alpha <= 0:
+        # Infinite bounds (complete uncertainty)
+        ci_lower = np.zeros_like(power)
+        ci_upper = np.full_like(power, np.inf)
+    elif alpha >= 1:
+        # Collapse to point estimate at power
+        ci_lower = power.copy()
+        ci_upper = power.copy()
+    else:
+        # Standard chi-squared CI
+        chi2_lo = chi2.ppf(alpha / 2, dof)
+        chi2_hi = chi2.ppf(1 - alpha / 2, dof)
+        ci_lower = dof * power / chi2_hi
+        ci_upper = dof * power / chi2_lo
 
     return freqs, power, ci_lower, ci_upper
