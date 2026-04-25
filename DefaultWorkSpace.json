@@ -14,20 +14,20 @@
                 "alpha": 0.35
             },
             "LF": {
-                "low": 0.06,
+                "low": 0.07,
                 "high": 0.14,
                 "color": "darkgreen",
                 "alpha": 0.35
             },
             "HF": {
-                "low": 0.14,
-                "high": 0.4,
+                "low": 0.15,
+                "high": 0.40,
                 "color": "red",
                 "alpha": 0.35
             },
             "FullRange": {
-                "low": 0.0,
-                "high": 0.65,
+                "low": 0.02,
+                "high": 0.50,
                 "color": "gray",
                 "alpha": 0.05
             }
@@ -46,4 +46,7 @@
         "carspan": {
             "freq_resolution": 0.01,
             "window": "hann",
-            "smooth_for_display": tr
+            "smooth_for_display": true
+        }
+    }
+}

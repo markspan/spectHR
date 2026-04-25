@@ -41,3 +41,4 @@ mytree
 *.mplstyle
 *.ttf
 /MainWindow.dist
+/.claude

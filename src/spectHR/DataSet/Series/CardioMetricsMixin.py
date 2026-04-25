@@ -281,3 +281,35 @@ class CardioMetricsMixin(HRVMetric):
         except (KeyError, AttributeError):
             return np.nan
 
+    @hrv_metric
+    def vlf_power(self):
+        """Power in the very-low-frequency band (VLF, mMI²)."""
+        try:
+            return self.band_power("VLF")
+        except (KeyError, AttributeError):
+            return np.nan
+
+    @hrv_metric
+    def lf_power(self):
+        """Power in the low-frequency band (LF, mMI²)."""
+        try:
+            return self.band_power("LF")
+        except (KeyError, AttributeError):
+            return np.nan
+
+    @hrv_metric
+    def hf_power(self):
+        """Power in the high-frequency band (HF, mMI²)."""
+        try:
+            return self.band_power("HF")
+        except (KeyError, AttributeError):
+            return np.nan
+
+    @hrv_metric
+    def lf_hf_ratio(self):
+        """LF/HF ratio. NaN if either band is missing or HF is zero."""
+        lf, hf = self.lf_power(), self.hf_power()
+        if np.isnan(lf) or np.isnan(hf) or hf == 0:
+            return np.nan
+        return float(lf / hf)
+

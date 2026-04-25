@@ -124,6 +124,49 @@ def load_ci_alpha(alpha: float) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Band-power integration (CARSPAN Eq. 3.28)
+# ---------------------------------------------------------------------------
+
+
+def _band_power_rectangular(
+    freqs: np.ndarray,
+    power: np.ndarray,
+    f_low: float,
+    f_high: float,
+) -> float:
+    """
+    Rectangular-rule band power integration (CARSPAN Eq. 3.28):
+
+        B = Σ S_xx(fₖ) · Δf     for f_low ≤ fₖ ≤ f_high
+
+    Both boundaries are inclusive.  Uses spacings between consecutive grid
+    points, so it adapts to both uniform (Welch, L-S) and native-CARSPAN
+    grids.
+    """
+    mask = (freqs >= f_low) & (freqs <= f_high)
+    band_freqs = freqs[mask]
+    band_power = power[mask]
+
+    if band_freqs.size == 0:
+        return 0.0
+
+    if band_freqs.size == 1:
+        if freqs.size > 1:
+            delta_f = float(freqs[1] - freqs[0])
+        else:
+            delta_f = float(band_freqs[0])
+        return float(band_power[0] * delta_f)
+
+    spacings = np.diff(band_freqs)
+    delta_f_per_bin = np.empty_like(band_freqs)
+    delta_f_per_bin[0] = spacings[0]
+    delta_f_per_bin[-1] = spacings[-1]
+    delta_f_per_bin[1:-1] = (spacings[:-1] + spacings[1:]) / 2.0
+
+    return float(np.sum(band_power * delta_f_per_bin))
+
+
+# ---------------------------------------------------------------------------
 # Mixin class
 # ---------------------------------------------------------------------------
 
@@ -347,7 +390,7 @@ class CardioFrequencyMetricsMixin:
         # Get the PSD (already in mMI²/Hz)
         result = self.psd(method=method, with_ci=False)
 
-        return CarspanPSD.band_power_rectangular(
+        return _band_power_rectangular(
             result.freqs, result.power, f_low, f_high
         )
 
@@ -367,7 +410,7 @@ class CardioFrequencyMetricsMixin:
         powers = {}
 
         for name, band in HRV_FREQUENCY_BANDS.items():
-            powers[name] = CarspanPSD.band_power_rectangular(
+            powers[name] = _band_power_rectangular(
                 result.freqs, result.power, band["low"], band["high"]
             )
 
@@ -377,168 +420,108 @@ class CardioFrequencyMetricsMixin:
     #  Private dispatchers — one per back-end
     # ---------------------------------------------------------------
 
+    def _f_max(self) -> float:
+        """Upper frequency limit = max "high" across all configured bands."""
+        return max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
+
+    def _f_min(self) -> float:
+        """
+        Lower frequency limit = min "low" across non-FullRange bands.
+
+        Excludes FullRange because it's an overview band; using it would
+        admit near-DC bins that inflate apparent VLF power (especially
+        with Lomb-Scargle, whose grid extends down to ``fmin_floor``).
+        """
+        named = [b["low"] for n, b in HRV_FREQUENCY_BANDS.items() if n != "FullRange"]
+        if not named:
+            return min(b["low"] for b in HRV_FREQUENCY_BANDS.values())
+        return min(named)
+
+    def _as_result(
+        self,
+        method: str,
+        freqs: np.ndarray,
+        power: np.ndarray,
+        ci_lo: np.ndarray,
+        ci_hi: np.ndarray,
+        convert: float,
+        with_ci: bool,
+        mask: Optional[np.ndarray] = None,
+    ) -> PSDResult:
+        """Trim, unit-convert, and package a PSD computation into a PSDResult."""
+        if mask is not None:
+            freqs = freqs[mask]
+            power = power[mask]
+            ci_lo = ci_lo[mask]
+            ci_hi = ci_hi[mask]
+        return PSDResult(
+            freqs=freqs,
+            power=power * convert,
+            unit="mMI²/Hz",
+            method=method,
+            ci_lower=ci_lo * convert if with_ci else None,
+            ci_upper=ci_hi * convert if with_ci else None,
+        )
+
+    def _band_mask(self, freqs: np.ndarray) -> np.ndarray:
+        """Mask restricting freqs to ``[_f_min, _f_max]``."""
+        return (freqs >= self._f_min()) & (freqs <= self._f_max())
+
     def _psd_welch(self, with_ci: bool = True) -> PSDResult:
         """
-        Compute Welch PSD and convert ms²/Hz → mMI²/Hz.
+        Welch PSD, converted from ms²/Hz → mMI²/Hz (× 10⁶ / mean_ibi_ms²).
 
-        Conversion:
-            mMI²/Hz = (ms²/Hz) / mean_ibi_ms² × 10⁶
-                     = (ms²/Hz) × 10⁶ / mean_ibi_ms²
-
-        (Since MI = deviation / mean, MI² = (ms²) / (ms²) = dimensionless,
-        and per-Hz gives 1/Hz.  The 10⁶ scales to *milli*-MI².)
+        Welch's ms²/Hz becomes dimensionless MI² per Hz when divided by
+        mean_ibi_ms²; the × 10⁶ scales to *milli*-MI².
         """
         ibi_times_s, ibi_values_ms = self._ibi_clean_pairs()
-        factor = self._mmi2_factor()  # mean_ibi_ms²
+        convert = 1e6 / self._mmi2_factor()
 
-        # Conversion multiplier: ms²/Hz → mMI²/Hz
-        # MI² = variance / mean² → (ms²/Hz) / (ms²) = 1/Hz
-        # mMI² = MI² × 10⁶
-        convert = 1e6 / factor  # = 10⁶ / mean_ibi_ms²
-
-        f_max = max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
-
-        if with_ci:
-            freqs, power, ci_lo, ci_hi = WelchPSD.compute_welch_psd_with_ci(
-                ibi_times_s, ibi_values_ms, alpha=CI_ALPHA
-            )
-            # Trim to f_max
-            mask = freqs <= f_max
-            return PSDResult(
-                freqs=freqs[mask],
-                power=power[mask] * convert,
-                unit="mMI²/Hz",
-                method="welch",
-                ci_lower=ci_lo[mask] * convert,
-                ci_upper=ci_hi[mask] * convert,
-            )
-        else:
-            freqs, power = WelchPSD.compute_welch_psd(
-                ibi_times_s,
-                ibi_values_ms,
-            )
-            mask = freqs <= f_max
-            return PSDResult(
-                freqs=freqs[mask],
-                power=power[mask] * convert,
-                unit="mMI²/Hz",
-                method="welch",
-            )
+        freqs, power, ci_lo, ci_hi = WelchPSD.compute_welch_psd(
+            ibi_times_s, ibi_values_ms, alpha_ci=CI_ALPHA,
+        )
+        return self._as_result(
+            "welch", freqs, power, ci_lo, ci_hi,
+            convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+        )
 
     def _psd_lombscargle(self, with_ci: bool = True) -> PSDResult:
-        """
-        Compute Lomb-Scargle PSD and convert ms²/Hz → mMI²/Hz.
-
-        Same conversion as Welch: multiply by 10⁶ / mean_ibi_ms².
-        """
+        """Lomb-Scargle PSD, converted ms²/Hz → mMI²/Hz (same factor as Welch)."""
         ibi_times_s, ibi_values_ms = self._ibi_clean_pairs()
-        factor = self._mmi2_factor()
-        convert = 1e6 / factor
+        convert = 1e6 / self._mmi2_factor()
 
-        f_max = max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
-
-        if with_ci:
-            freqs, power, ci_lo, ci_hi = LombScarglePSD.compute_lombscargle_psd_with_ci(
-                ibi_times_s,
-                ibi_values_ms,
-                alpha=CI_ALPHA,
-                f_max=f_max,
-            )
-            return PSDResult(
-                freqs=freqs,
-                power=power * convert,
-                unit="mMI²/Hz",
-                method="lombscargle",
-                ci_lower=ci_lo * convert,
-                ci_upper=ci_hi * convert,
-            )
-        else:
-            freqs, power = LombScarglePSD.compute_lombscargle_psd(
-                ibi_times_s,
-                ibi_values_ms,
-                f_max=f_max,
-            )
-            return PSDResult(
-                freqs=freqs,
-                power=power * convert,
-                unit="mMI²/Hz",
-                method="lombscargle",
-            )
+        freqs, power, ci_lo, ci_hi = LombScarglePSD.compute_lombscargle_psd(
+            ibi_times_s, ibi_values_ms,
+            alpha_ci=CI_ALPHA,
+            f_max=self._f_max(),
+        )
+        return self._as_result(
+            "lombscargle", freqs, power, ci_lo, ci_hi,
+            convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+        )
 
     def _psd_carspan_strict(self, with_ci: bool = True) -> PSDResult:
-        """
-        Compute strict CARSPAN PSD and convert Hz → mMI²/Hz.
-
-        Conversion: mMI²/Hz = Hz × mean_ibi_ms²
-        (The 10⁶ factors cancel: (mean_ibi_ms²/10⁶) × 10⁶ = mean_ibi_ms²)
-        """
-        event_times = self._event_times_clean()
-        factor = self._mmi2_factor()  # mean_ibi_ms²
-        convert = factor  # Hz → mMI²/Hz
-
-        f_max = max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
-
-        if with_ci:
-            freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd_strict_with_ci(
-                event_times,
-                alpha_ci=CI_ALPHA,
-                f_max=f_max,
-            )
-            return PSDResult(
-                freqs=freqs,
-                power=power * convert,
-                unit="mMI²/Hz",
-                method="carspan_strict",
-                ci_lower=ci_lo * convert,
-                ci_upper=ci_hi * convert,
-            )
-        else:
-            freqs, power = CarspanPSD.compute_carspan_psd_strict(
-                event_times,
-                f_max=f_max,
-            )
-            return PSDResult(
-                freqs=freqs,
-                power=power * convert,
-                unit="mMI²/Hz",
-                method="carspan_strict",
-            )
+        """Strict CARSPAN PSD, converted Hz → mMI²/Hz (× mean_ibi_ms²)."""
+        convert = self._mmi2_factor()
+        freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd_strict(
+            self._event_times_clean(),
+            alpha_ci=CI_ALPHA,
+            f_max=self._f_max(),
+        )
+        return self._as_result(
+            "carspan_strict", freqs, power, ci_lo, ci_hi,
+            convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+        )
 
     def _psd_carspan(self, with_ci: bool = True) -> PSDResult:
-        """
-        Compute configurable CARSPAN PSD and convert Hz → mMI²/Hz.
-
-        Conversion: mMI²/Hz = Hz × mean_ibi_ms²
-        (The 10⁶ factors cancel: (mean_ibi_ms²/10⁶) × 10⁶ = mean_ibi_ms²)
-        """
-        event_times = self._event_times_clean()
-        factor = self._mmi2_factor()  # mean_ibi_ms²
-        convert = factor  # Hz → mMI²/Hz
-
-        f_max = max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
-
-        if with_ci:
-            freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd_with_ci(
-                event_times,
-                alpha_ci=CI_ALPHA,
-                f_max=f_max,
-            )
-            return PSDResult(
-                freqs=freqs,
-                power=power * convert,
-                unit="mMI²/Hz",
-                method="carspan",
-                ci_lower=ci_lo * convert,
-                ci_upper=ci_hi * convert,
-            )
-        else:
-            freqs, power = CarspanPSD.compute_carspan_psd(
-                event_times,
-                f_max=f_max,
-            )
-            return PSDResult(
-                freqs=freqs,
-                power=power * convert,
-                unit="mMI²/Hz",
-                method="carspan",
-            )
+        """Configurable CARSPAN PSD, converted Hz → mMI²/Hz (× mean_ibi_ms²)."""
+        convert = self._mmi2_factor()
+        freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd(
+            self._event_times_clean(),
+            alpha_ci=CI_ALPHA,
+            f_max=self._f_max(),
+        )
+        return self._as_result(
+            "carspan", freqs, power, ci_lo, ci_hi,
+            convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+        )

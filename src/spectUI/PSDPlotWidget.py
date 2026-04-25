@@ -1,37 +1,35 @@
 """
 PSD plotting widget for multiple CardioSeriesView objects.
 
-This module provides:
-- A container QWidget with multiple Matplotlib figures (one per epoch)
-- A pure plotting backend for the active PSD method
-  (Welch, Lomb-Scargle, CARSPAN, or CARSPAN-strict)
-- Automatic uniform y-axis scaling across all epochs
-
-Design principles
------------------
-- PSDPlotWidget is a container holding multiple single-plot subwidgets
-- Input is a list of CardioSeriesView objects (one per epoch)
-- Each subwidget gets its own Matplotlib figure with auto-scaling
-- All figures are then re-scaled uniformly based on the largest y-axis value
-- Band definitions, frequency edges, colours, and PSD method are read from
-  ``CardioFrequencyMetricsMixin`` — the single source of truth
+Design
+------
+- ``PSDPlotWidget`` is a container holding one ``_SinglePSDPlot`` per epoch.
+- PSD values are computed by ``series.psd()`` / ``series.band_powers()`` —
+  which internally call the refactored ``compute_*_psd`` functions.  All
+  plotting-specific decisions (x-limits, y-limits, CI shading, band fills,
+  legend, titles) live in this widget.
+- A single y-limit is shared across all plots so epochs are comparable; the
+  y-max is computed from the PSD arrays themselves (no matplotlib line
+  introspection).
 """
 
 from __future__ import annotations
 
-import warnings
 import sys as _sys
+import warnings
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.axes import Axes
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QGridLayout, QScrollArea, QSizePolicy
-
-from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
-    HRV_FREQUENCY_BANDS,
-    METHOD,
-    CI_ALPHA,
+from PySide6.QtWidgets import (
+    QGridLayout,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 warnings.filterwarnings("ignore")
@@ -41,352 +39,345 @@ def _cfm():
     """
     Return the CardioFrequencyMetricsMixin module at call time.
 
-    Accessing the module lazily (rather than caching the import) ensures
-    that the module-level ``METHOD`` and ``CI_ALPHA`` values reflect the
-    latest workspace configuration, even if the module was reloaded or
-    the globals were updated after import.
+    Lazy lookup so that ``METHOD``, ``CI_ALPHA`` and ``HRV_FREQUENCY_BANDS``
+    reflect the latest workspace configuration, even after reloads.
     """
     return _sys.modules["spectHR.DataSet.Series.CardioFrequencyMetricsMixin"]
 
 
+# ---------------------------------------------------------------------------
+# Pre-computed plot data
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _PlotData:
+    """Everything needed to draw one epoch's PSD plot."""
+
+    label: str
+    freqs: np.ndarray
+    power: np.ndarray
+    ci_lower: Optional[np.ndarray]
+    ci_upper: Optional[np.ndarray]
+    unit: str
+    method: str
+    band_powers: Dict[str, float]
+    error: Optional[str] = None  # set if PSD could not be computed
+
+
+def _fetch(series, label: str) -> _PlotData:
+    """Call ``series.psd()`` and ``series.band_powers()`` — never raises."""
+    try:
+        result = series.psd(with_ci=True)
+    except Exception as e:
+        return _PlotData(
+            label=label,
+            freqs=np.array([]),
+            power=np.array([]),
+            ci_lower=None,
+            ci_upper=None,
+            unit="",
+            method="",
+            band_powers={},
+            error=f"PSD failed: {e}",
+        )
+
+    try:
+        band_powers = series.band_powers()
+        if not isinstance(band_powers, dict):
+            band_powers = {}
+    except Exception as e:
+        print(f"Warning: band powers failed for {label}: {e}")
+        band_powers = {}
+
+    return _PlotData(
+        label=label,
+        freqs=np.asarray(result.freqs).ravel(),
+        power=np.asarray(result.power).ravel(),
+        ci_lower=(
+            np.asarray(result.ci_lower).ravel() if result.ci_lower is not None else None
+        ),
+        ci_upper=(
+            np.asarray(result.ci_upper).ravel() if result.ci_upper is not None else None
+        ),
+        unit=result.unit,
+        method=result.method,
+        band_powers=band_powers,
+    )
+
+
+def _band_bounds(bands: dict) -> Tuple[float, float, float, float]:
+    """
+    Return ``(x_min, x_max, scale_min, scale_max)`` for display and scaling.
+
+    X-axis uses ``FullRange`` if defined, else the union of all bands.
+    Scaling range excludes ``FullRange`` so a wide overview band doesn't
+    dominate the y-limit.
+    """
+    if "FullRange" in bands:
+        x_min = bands["FullRange"]["low"]
+        x_max = bands["FullRange"]["high"]
+    else:
+        x_min = min(s["low"] for s in bands.values())
+        x_max = max(s["high"] for s in bands.values())
+
+    named = {k: v for k, v in bands.items() if k != "FullRange"}
+    if named:
+        scale_min = min(s["low"] for s in named.values())
+        scale_max = max(s["high"] for s in named.values())
+    else:
+        scale_min, scale_max = x_min, x_max
+
+    return x_min, x_max, scale_min, scale_max
+
+
+def _y_max(data: _PlotData, scale_min: float, scale_max: float) -> float:
+    """
+    Maximum PSD value in the scaling band range.
+
+    Includes the upper CI bound up to 3× the PSD peak — so tight CIs
+    (Welch) are respected but wide CIs (Lomb-Scargle, short CARSPAN) don't
+    blow up the axis.
+    """
+    if data.freqs.size == 0:
+        return 0.0
+
+    visible = (data.freqs >= scale_min) & (data.freqs <= scale_max)
+    if not np.any(visible):
+        return 0.0
+
+    peak = float(np.max(data.power[visible]))
+    if data.ci_upper is not None and peak > 0.0:
+        ci_peak = float(np.max(data.ci_upper[visible]))
+        peak = max(peak, min(ci_peak, peak * 3.0))
+    return peak
+
+
+# ---------------------------------------------------------------------------
+# Single-plot subwidget
+# ---------------------------------------------------------------------------
+
+
 class _SinglePSDPlot(QWidget):
-    """
-    Internal widget for a single PSD plot.
+    """One matplotlib figure displaying a single epoch's PSD."""
 
-    Parameters
-    ----------
-    series : CardioSeriesView
-        The series to plot.
-    label : str
-        Label/title for this plot (e.g., epoch name).
-    """
-
-    def __init__(self, series, label: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        data: _PlotData,
+        x_min: float,
+        x_max: float,
+        y_top: float,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
-        self.canvas: FigureCanvas = FigureCanvas(Figure(figsize=(5, 3)))
+        self.canvas: FigureCanvas = FigureCanvas(Figure(figsize=(5, 4)))
         self.ax: Axes = self.canvas.figure.add_subplot(111)
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
         self.setLayout(layout)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Plot the series
-        PSDPlotWidget.plot_on_axis(self.ax, series)
-        self.ax.set_title(f"PSD – {label}")
-
-        # Ensure the axes have auto-scaled before we measure limits
-        self.ax.relim()
-        self.ax.autoscale_view()
+        PSDPlotWidget.plot_on_axis(self.ax, data, x_min, x_max)
+        self.ax.set_title(f"PSD – {data.label}")
+        self.ax.set_ylim(bottom=0.0, top=max(y_top, 1e-12))
         self.canvas.draw()
+
+
+# ---------------------------------------------------------------------------
+# Container widget
+# ---------------------------------------------------------------------------
 
 
 class PSDPlotWidget(QWidget):
     """
-    Container widget displaying multiple PSD plots with uniform y-axis scaling.
-
-    Creates one plot per series/epoch, finds the maximum y-value across all plots,
-    and applies uniform scaling so all epochs are visually comparable.
+    Grid of PSD plots (one per epoch) sharing a uniform y-limit.
 
     Parameters
     ----------
     series_list : list
-        CardioSeriesView objects to plot (one per epoch).
-    labels : list
-        Label strings for each series (e.g., epoch names).
+        CardioSeriesView (or compatible) objects exposing ``psd()`` and
+        ``band_powers()``.
+    labels : list of str
+        Plot titles (e.g., epoch names).
     parent : QWidget, optional
-        Parent widget.
     """
 
-    def __init__(self, series_list, labels, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        series_list: List,
+        labels: List[str],
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
 
-        # Create scroll area to hold all plots
+        cfm = _cfm()
+        x_min, x_max, scale_min, scale_max = _band_bounds(cfm.HRV_FREQUENCY_BANDS)
+
+        # One call to the PSD backends per series; compute y-max before drawing.
+        plots: List[_PlotData] = [
+            _fetch(series, label) for series, label in zip(series_list, labels)
+        ]
+        y_max = max((_y_max(p, scale_min, scale_max) for p in plots), default=0.0)
+        y_top = y_max * 1.1 if y_max > 0 else 1.0
+
+        # Build the scroll area + grid container.
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-
-        # Container for all plot widgets (2 columns if multiple subplots)
         container = QWidget()
         container_layout = QGridLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(5)
 
-        # Pass 1: Create and plot all subwidgets
-        subplots = []
-        for idx, (series, label) in enumerate(zip(series_list, labels)):
-            subplot = _SinglePSDPlot(series, label)
-            subplots.append(subplot)
-            # Add to grid: 2 columns, multiple rows
-            row = idx // 2
-            col = idx % 2
+        for idx, data in enumerate(plots):
+            subplot = _SinglePSDPlot(data, x_min, x_max, y_top)
+            row, col = divmod(idx, 2)
             container_layout.addWidget(subplot, row, col)
 
-        # Pass 2: Find the maximum y-axis value within the named frequency bands
-        # (Exclude FullRange band from scaling calculation)
-        cfm = _cfm()
-
-        # Get all bands except FullRange
-        named_bands = {k: v for k, v in cfm.HRV_FREQUENCY_BANDS.items() if k != "FullRange"}
-
-        if not named_bands:
-            # Fallback if no named bands exist
-            x_min = 0.0
-            x_max = 0.5
-        else:
-            # Use the range of the named bands
-            x_min = min(s["low"] for s in named_bands.values())
-            x_max = max(s["high"] for s in named_bands.values())
-
-        y_max = 0.0
-        for i, subplot in enumerate(subplots):
-            lines = subplot.ax.get_lines()
-            main_line = None
-            dashed_lines = []
-
-            for line in lines:
-                linestyle = line.get_linestyle()
-                if linestyle in ('-', 'solid'):
-                    # Solid black line → the PSD estimate itself.
-                    if main_line is None:
-                        main_line = line
-                elif linestyle in ('--', 'dashed'):
-                    # Dashed grey lines → CI boundary lines.
-                    dashed_lines.append(line)
-
-            # Fallback: identify PSD line by colour if linestyle search failed.
-            if main_line is None:
-                for line in lines:
-                    color = line.get_color()
-                    if color in ('black', 'k'):
-                        main_line = line
-                        break
-
-            subplot_y_max = 0.0
-
-            # --- Primary contribution: the PSD line itself ---
-            if main_line is not None:
-                freqs_data = main_line.get_xdata()
-                power_data = main_line.get_ydata()
-                visible_mask = (freqs_data >= x_min) & (freqs_data <= x_max)
-                visible_power = power_data[visible_mask]
-                if visible_power.size > 0:
-                    subplot_y_max = float(np.max(visible_power))
-
-            # --- Secondary contribution: CI upper bound (capped) ---
-            # Include the upper CI line in the scaling so that tight CIs
-            # (e.g. Welch with many segments) don't get clipped.  Wide CIs
-            # (e.g. Lomb-Scargle, short CARSPAN) are capped at 3× the PSD
-            # peak to prevent them from blowing out the y-axis.
-            if dashed_lines and subplot_y_max > 0.0:
-                ci_cap = subplot_y_max * 3.0  # Never scale beyond 3× the PSD peak.
-                for dline in dashed_lines:
-                    ci_freqs = dline.get_xdata()
-                    ci_vals = dline.get_ydata()
-                    ci_mask = (ci_freqs >= x_min) & (ci_freqs <= x_max)
-                    ci_visible = ci_vals[ci_mask]
-                    if ci_visible.size > 0:
-                        ci_contribution = min(float(np.max(ci_visible)), ci_cap)
-                        if ci_contribution > subplot_y_max:
-                            subplot_y_max = ci_contribution
-
-            if subplot_y_max > y_max:
-                y_max = subplot_y_max
-
-        # Pass 3: Apply uniform scaling with margin
-        # Add 10% padding to the top (margins doesn't work well after set_ylim, so we calculate it)
-        margin_factor = 0.1
-        y_top = y_max * (1.0 + margin_factor)
-
-        for subplot in subplots:
-            subplot.ax.set_ylim(bottom=0.0, top=y_top)
-            subplot.canvas.draw()
-
         scroll_area.setWidget(container)
-
-        # Set up this widget's layout
         layout = QVBoxLayout(self)
         layout.addWidget(scroll_area)
         self.setLayout(layout)
 
     # ------------------------------------------------------------------
-    # Static plotting backend
+    # Pure plotting backend
     # ------------------------------------------------------------------
 
     @staticmethod
     def plot_on_axis(
         ax: Axes,
-        series,
+        data: _PlotData,
+        x_min: float,
+        x_max: float,
         *,
         logscale: bool = False,
-        **kwargs,
     ) -> Axes:
         """
-        Plot PSD with confidence-interval shading and frequency-band fills.
-
-        The PSD estimate is obtained via ``series.psd()``, which returns a
-        ``PSDResult`` already normalised to **mMI²/Hz** — regardless of
-        the underlying method (Welch, Lomb-Scargle, CARSPAN, or
-        CARSPAN-strict).  No method-specific conversion is needed here.
-
-        Band-power values in the legend are computed via
-        ``series.band_powers()``, which integrates the mMI²/Hz spectrum
-        over each band using rectangular summation (CARSPAN Eq. 3.28).
-
-        Confidence intervals are drawn as:
-        - a light-grey ``fill_between`` shaded band
-        - two thin dashed boundary lines for precise reading
-
-        Band names, edges, and colours come from ``HRV_FREQUENCY_BANDS``.
+        Draw PSD, CI shading, and band fills for a single epoch.
 
         Parameters
         ----------
         ax : matplotlib.axes.Axes
-            The target axes to draw on.
-        series : CardioSeriesView (or compatible)
-            Must provide ``psd()`` and ``band_powers()`` methods (inherited
-            from ``CardioFrequencyMetricsMixin``).
+            Target axes.
+        data : _PlotData
+            Pre-computed PSD values, CI bounds, and band powers.
+        x_min, x_max : float
+            X-axis range (Hz).
         logscale : bool
             If True, use a logarithmic y-axis.
-        **kwargs
-            Currently unused; reserved for future options.
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes that were drawn on.
         """
         cfm = _cfm()
 
-        # ---- Fetch PSD (already in mMI²/Hz) ----------------------------
-        result = series.psd(with_ci=True)
-
-        freqs = np.asarray(result.freqs).ravel()
-        power = np.asarray(result.power).ravel()
-
-        if freqs.size == 0:
+        if data.error is not None or data.freqs.size == 0:
+            msg = data.error or "Insufficient data"
             ax.text(
-                0.5,
-                0.5,
-                "Insufficient data",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-                color="gray",
+                0.5, 0.5, msg,
+                ha="center", va="center",
+                transform=ax.transAxes, color="gray",
             )
             return ax
 
-        # Unpack CI bounds (may be None if with_ci failed)
-        has_ci = result.ci_lower is not None and result.ci_upper is not None
-        if has_ci:
-            ci_lo = np.asarray(result.ci_lower).ravel()
-            ci_hi = np.asarray(result.ci_upper).ravel()
-
-        # Unit labels — always mMI² from the mixin
-        power_unit = "mMI²"
-        psd_unit = result.unit  # "mMI²/Hz"
-
-        # ---- X-axis: use the FullRange band if defined, else use band limits --
-        if "FullRange" in cfm.HRV_FREQUENCY_BANDS:
-            full_range = cfm.HRV_FREQUENCY_BANDS["FullRange"]
-            x_min = full_range["low"]
-            x_max = full_range["high"]
-        else:
-            x_min = min(s["low"] for s in cfm.HRV_FREQUENCY_BANDS.values())
-            x_max = max(s["high"] for s in cfm.HRV_FREQUENCY_BANDS.values())
         ax.set_xlim(x_min, x_max)
         ax.autoscale(enable=False, axis="x")
 
-        # ---- CI shading -------------------------------------------------
-        if has_ci:
+        # ---- Confidence-interval shading -------------------------------
+        if data.ci_lower is not None and data.ci_upper is not None:
             ci_pct = int(round((1.0 - cfm.CI_ALPHA) * 100))
             ax.fill_between(
-                freqs,
-                ci_lo,
-                ci_hi,
-                color="gray",
-                alpha=0.20,
-                label=f"{ci_pct} % CI",
-                zorder=1,
+                data.freqs, data.ci_lower, data.ci_upper,
+                color="gray", alpha=0.20,
+                label=f"{ci_pct} % CI", zorder=1,
             )
-            ax.plot(
-                freqs,
-                ci_lo,
-                color="gray",
-                lw=0.7,
-                ls="--",
-                alpha=0.55,
-                zorder=2,
-            )
-            ax.plot(
-                freqs,
-                ci_hi,
-                color="gray",
-                lw=0.7,
-                ls="--",
-                alpha=0.55,
-                zorder=2,
-            )
+            for ci_line in (data.ci_lower, data.ci_upper):
+                ax.plot(
+                    data.freqs, ci_line,
+                    color="gray", lw=0.7, ls="--", alpha=0.55, zorder=2,
+                )
 
-        # ---- PSD line ---------------------------------------------------
-        ax.plot(freqs, power, "k", lw=1.0, alpha=0.85, zorder=3)
+        # ---- PSD line --------------------------------------------------
+        ax.plot(data.freqs, data.power, "k", lw=1.0, alpha=0.85, zorder=3)
 
-        # ---- Frequency band fills and legend entries -----------------------
-        # Compute all band powers in one call (mMI²)
-        try:
-            band_powers = series.band_powers()
-            if not isinstance(band_powers, dict):
-                band_powers = {}
-        except Exception as e:
-            # If band power computation fails, show legend without values
-            print(f"Warning: Could not compute band powers: {e}")
-            band_powers = {}
-
+        # ---- Frequency-band fills + legend -----------------------------
+        power_unit = "mMI²"
+        draw_extents = _band_draw_extents(cfm.HRV_FREQUENCY_BANDS)
         for name, spec in cfm.HRV_FREQUENCY_BANDS.items():
-            f0 = spec["low"]
-            f1 = spec["high"]
-            color = spec.get("color", "gray")
-            alpha = spec.get("alpha", 0.35)  # Default alpha = 0.35, FullRange can override to 0.05
-            bp_val = band_powers.get(name, np.nan)
-            label_val = f"{bp_val:.4f}" if np.isfinite(bp_val) else "n/a"
+            d_lo, d_hi = draw_extents[name]
+            _draw_band_fill(ax, data, name, spec, power_unit, d_lo, d_hi)
 
-            # Build the fill polygon for all bands (including FullRange with low alpha)
-            mask = (freqs >= f0) & (freqs <= f1)
-
-            # Number of PSD grid points that fall within this band's boundaries.
-            # For CARSPAN this equals the display-grid point count reported by
-            # the original CARSPAN output (e.g. 5 for Low, 8 for Mid, etc.).
-            n_pts = int(np.sum(mask))
-
-            p0 = np.interp(f0, freqs, power)
-            p1 = np.interp(f1, freqs, power)
-            f_band = np.concatenate(([f0], freqs[mask], [f1]))
-            p_band = np.concatenate(([p0], power[mask], [p1]))
-
-            ax.fill_between(
-                f_band,
-                0,
-                p_band,
-                color=color,
-                alpha=alpha,
-                label=f"{name}: {label_val} {power_unit} ({n_pts})",
-                zorder=4 if name != "FullRange" else 0,  # FullRange behind other bands
-            )
-
-        # ---- Axes decoration --------------------------------------------
+        # ---- Axes decoration -------------------------------------------
         ax.set_xlabel("Frequency [Hz]")
-        ax.set_ylabel(f"PSD [{psd_unit}]")
+        ax.set_ylabel(f"PSD [{data.unit}]")
         if logscale:
             ax.set_yscale("log")
 
-        # Title reflects the active method
-        method_label = result.method.replace("_", " ").capitalize()
+        method_label = data.method.replace("_", " ").capitalize()
         ax.set_title(
             f"PSD ({method_label})",
-            fontsize=8,
-            loc="left",
-            color="dimgray",
+            fontsize=8, loc="left", color="dimgray",
         )
         ax.legend(loc="upper right", fontsize=7)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
         return ax
+
+
+def _band_draw_extents(bands: dict) -> Dict[str, Tuple[float, float]]:
+    """
+    Return ``{name: (draw_low, draw_high)}`` extending fills to neighbour midpoints.
+
+    With CARSPAN-style gapped bands (e.g. 0.06→0.07, 0.14→0.15) the
+    polygon's ``low`` and ``high`` are pushed to the midpoint with the
+    adjacent band so the fills meet visually — but the band-power
+    *integration* still uses the configured edges (handled by the
+    mixin).  ``FullRange`` keeps its own range.
+    """
+    items = sorted(
+        ((n, s) for n, s in bands.items() if n != "FullRange"),
+        key=lambda kv: kv[1]["low"],
+    )
+    extents: Dict[str, Tuple[float, float]] = {}
+    for i, (name, spec) in enumerate(items):
+        draw_low = spec["low"]
+        draw_high = spec["high"]
+        if i > 0:
+            draw_low = (items[i - 1][1]["high"] + spec["low"]) / 2.0
+        if i < len(items) - 1:
+            draw_high = (spec["high"] + items[i + 1][1]["low"]) / 2.0
+        extents[name] = (draw_low, draw_high)
+    if "FullRange" in bands:
+        extents["FullRange"] = (bands["FullRange"]["low"], bands["FullRange"]["high"])
+    return extents
+
+
+def _draw_band_fill(
+    ax: Axes,
+    data: _PlotData,
+    name: str,
+    spec: dict,
+    power_unit: str,
+    draw_low: float,
+    draw_high: float,
+) -> None:
+    """Fill one frequency band under the PSD curve + add a legend entry."""
+    f0, f1 = spec["low"], spec["high"]
+    color = spec.get("color", "gray")
+    alpha = spec.get("alpha", 0.35)
+    bp_val = data.band_powers.get(name, np.nan)
+    label_val = f"{bp_val:.4f}" if np.isfinite(bp_val) else "n/a"
+
+    # Point count uses the *configured* band (so it matches the integrated power).
+    n_pts = int(np.sum((data.freqs >= f0) & (data.freqs <= f1)))
+
+    # The drawn polygon spans [draw_low, draw_high] so adjacent fills meet.
+    fill_mask = (data.freqs >= draw_low) & (data.freqs <= draw_high)
+    p_lo = np.interp(draw_low, data.freqs, data.power)
+    p_hi = np.interp(draw_high, data.freqs, data.power)
+    f_band = np.concatenate(([draw_low], data.freqs[fill_mask], [draw_high]))
+    p_band = np.concatenate(([p_lo], data.power[fill_mask], [p_hi]))
+
+    ax.fill_between(
+        f_band, 0, p_band,
+        color=color, alpha=alpha,
+        label=f"{name}: {label_val} {power_unit} ({n_pts})",
+        zorder=4 if name != "FullRange" else 0,
+    )
