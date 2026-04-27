@@ -27,6 +27,11 @@ def load_evt(physiodata, filename: str, **kwargs: Any) -> None:
     if NFFPath.exists():
         loadNFF(physiodata,NFFPath)
         logger.info(f"Loading dataset from CARSPAN nff File: {NFFPath.name}")
+        # Lock R-peak times: the .evt timestamps are authoritative when an
+        # accompanying .nff ECG signal exists. Otherwise preprocess_ecg()
+        # would re-detect peaks from the ECG and overwrite the .evt times.
+        for cs in physiodata.hrv_map.values():
+            cs.rtops_locked = True
     else:
         logger.info(f"No corresponding NFF file found at: {NFFPath}")
 

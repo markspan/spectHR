@@ -91,6 +91,12 @@ class PhysioData:
             for ts in self.timeseries.values():
                 if ts.times.size:
                     ts.times = ts.times - earliest
+            # Pre-populated R-peak series (e.g. CARSPAN .evt with .nff) carry
+            # absolute timestamps from the loader and must follow the same
+            # shift, otherwise rtops sit on a different clock than the ECG.
+            for cs in self.hrv_map.values():
+                if cs.times.size:
+                    cs.times = cs.times - earliest
             bounds_start = 0.0
             bounds_end   = float(latest - earliest)
         else:
@@ -259,6 +265,13 @@ class PhysioData:
                 cs._pd     = self
                 cs._stream = band
                 self.hrv_map[band] = cs
+            elif getattr(cs, "rtops_locked", False):
+                # R-peak times came from an authoritative source (e.g. CARSPAN
+                # .evt) — keep them as-is. The ECG was still filtered above
+                # for display, but no re-detection runs over the epochs.
+                logger.info(
+                    f"Band '{band}': R-peak times locked, skipping re-detection."
+                )
             else:
                 for name, epoch in self.epochs.items():
                     if not epoch.active:

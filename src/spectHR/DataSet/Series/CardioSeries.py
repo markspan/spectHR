@@ -54,6 +54,10 @@ class CardioSeries(CardioMetricsMixin, CardioFrequencyMetricsMixin):
         self.labels = np.full(self.times.shape, "N", dtype=object)
         self._pd: Optional["PhysioData"] = None
         self._stream: Optional[str] = None
+        # When True, preprocess_ecg() must NOT re-detect R-peaks from the ECG
+        # signal — the times are authoritative (e.g. loaded from a CARSPAN
+        # .evt alongside an .nff). The ECG can still be filtered for display.
+        self.rtops_locked: bool = False
 
     # ------------------------------------------------------------------
     # Construction / detection

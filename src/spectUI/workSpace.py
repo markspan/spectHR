@@ -24,11 +24,18 @@ _DEFAULT_WORKSPACE = {
         "OutputDirectory": str(user_documents_path() / "spectHR/export"),
     },
     "FrequencyAnalysis": {
-        "method": "welch",
+        "method": "carspan",
         "bands": {
-            "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
-            "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},
+            "FullRange": {"low": 0.02, "high": 0.5, "color": "gray", "alpha": 0.05},
+            "VLF": {"low": 0.02, "high": 0.06, "color": "blue"},
+            "LF": {"low": 0.07, "high": 0.14, "color": "darkgreen"},
             "HF": {"low": 0.15, "high": 0.40, "color": "red"},
+        },
+        "carspan": {
+            "freq_resolution": 0.01,
+            "window": "10% cosine bell",
+            "smooth_for_display": True,
+            "plot_units": "mMI²/Hz",
         },
         "welch": {
             "fs": 4.0,
@@ -38,13 +45,8 @@ _DEFAULT_WORKSPACE = {
             "window": "hann",
         },
         "lombscargle": {
-            "nfreqs": 1000,
+            "nfreqs": 100,
             "fmin_floor": 1e-4,
-        },
-        "carspan": {
-            "freq_resolution": 0.01,
-            "window": "5% cosine bell",
-            "smooth_for_display": True,
         },
         "confidence_interval_alpha": 0.05,
     },
@@ -111,15 +113,15 @@ def LoadWorkspace(json_file=None) -> dict:
 
     if os.path.exists(json_file):
         try:
-            with open(json_file, "r") as f:
+            with open(json_file, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
             workspace = _deep_merge(workspace, loaded)
         except Exception as e:
             logger.warning(f"Could not load workspace file: {e}")
     else:
         _ensure_dirs(workspace)
-        with open(json_file, "w") as f:
-            json.dump(workspace, f, indent=4)
+        with open(json_file, "w", encoding="utf-8") as f:
+            json.dump(workspace, f, indent=4, ensure_ascii=False)
 
     _ensure_dirs(workspace)
 
@@ -161,8 +163,8 @@ def LoadWorkspace(json_file=None) -> dict:
 
 def SaveWorkspace(workspace: dict, json_file) -> None:
     """Save the full workspace dict (all chapters) to a JSON file."""
-    with open(json_file, "w") as f:
-        json.dump(workspace, f, indent=4)
+    with open(json_file, "w", encoding="utf-8") as f:
+        json.dump(workspace, f, indent=4, ensure_ascii=False)
 
 
 def _ensure_dirs(workspace: dict) -> None:

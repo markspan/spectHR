@@ -112,7 +112,7 @@ _EXCLUDED_SECTIONS = {"Directories"}
 # Known enumeration choices for specific leaf keys
 _ENUM_CHOICES: dict[str, list[str]] = {
     # Leaf-key enumerations (apply wherever the key appears)
-    "method": ["welch", "lombscargle", "carspan"],
+    "method": ["carspan", "carspan_strict", "welch", "lombscargle"],
     "window": ["hamming", "hann", "blackman", "bartlett", "boxcar"],
     "filter_type": ["highpass", "lowpass", "bandpass"],
     # Path-specific enumerations (override the leaf entry above for that
@@ -127,6 +127,7 @@ _ENUM_CHOICES: dict[str, list[str]] = {
         "hamming",
         "boxcar",
     ],
+    "FrequencyAnalysis.carspan.plot_units": ["mMI²/Hz", "ms²/Hz"],
 }
 
 
@@ -215,29 +216,25 @@ class ParametersEditorDialog(QDialog):
         layout = QVBoxLayout(group)
         layout.setSpacing(4)
 
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-
-        has_scalars = False
-
+        # Render each item in iteration order: scalars become a label+widget
+        # row, dicts become nested group boxes. Order is preserved exactly.
         for key, value in data.items():
-            path = f"{prefix}.{key}"
+            path = "{}.{}".format(prefix, key)
 
             if isinstance(value, dict):
-                # Nested sub-section → recurse into a nested group box
                 sub_group = self._make_group(key, value, prefix=path)
                 layout.addWidget(sub_group)
-
             else:
-                # Scalar leaf → make a widget
                 widget = self._make_widget(key, value, path=path)
                 self._widgets[path] = (widget, value)
-                form.addRow(_label(key) + ":", widget)
-                has_scalars = True
 
-        if has_scalars:
-            layout.addLayout(form)
+                row = QHBoxLayout()
+                label = QLabel(_label(key) + ":")
+                label.setMinimumWidth(160)
+                label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                row.addWidget(label)
+                row.addWidget(widget, 1)
+                layout.addLayout(row)
 
         return group
 

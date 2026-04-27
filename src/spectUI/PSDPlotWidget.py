@@ -34,6 +34,10 @@ from PySide6.QtWidgets import (
 
 warnings.filterwarnings("ignore")
 
+# Y-axis scaling ignores frequencies below this cutoff so VLF peaks
+# (typically dominated by slow drift) don't squash the LF/HF detail.
+Y_SCALE_F_MIN: float = 0.05
+
 
 def _cfm():
     """
@@ -137,12 +141,14 @@ def _y_max(data: _PlotData, scale_min: float, scale_max: float) -> float:
 
     Includes the upper CI bound up to 3× the PSD peak — so tight CIs
     (Welch) are respected but wide CIs (Lomb-Scargle, short CARSPAN) don't
-    blow up the axis.
+    blow up the axis.  Frequencies below ``Y_SCALE_F_MIN`` are excluded
+    so VLF drift power doesn't dominate the y-limit.
     """
     if data.freqs.size == 0:
         return 0.0
 
-    visible = (data.freqs >= scale_min) & (data.freqs <= scale_max)
+    lo = max(scale_min, Y_SCALE_F_MIN)
+    visible = (data.freqs >= lo) & (data.freqs <= scale_max)
     if not np.any(visible):
         return 0.0
 

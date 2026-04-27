@@ -447,6 +447,7 @@ class CardioFrequencyMetricsMixin:
         convert: float,
         with_ci: bool,
         mask: Optional[np.ndarray] = None,
+        unit: str = "mMI²/Hz",
     ) -> PSDResult:
         """Trim, unit-convert, and package a PSD computation into a PSDResult."""
         if mask is not None:
@@ -457,11 +458,33 @@ class CardioFrequencyMetricsMixin:
         return PSDResult(
             freqs=freqs,
             power=power * convert,
-            unit="mMI²/Hz",
+            unit=unit,
             method=method,
             ci_lower=ci_lo * convert if with_ci else None,
             ci_upper=ci_hi * convert if with_ci else None,
         )
+
+    def _carspan_display(self) -> Tuple[float, str]:
+        """
+        Return ``(convert, unit)`` for the CARSPAN PSD display.
+
+        CARSPAN computes power in events²/Hz.  Two display conventions:
+
+        - ``"mMI²/Hz"``   — modulation index, factor = ``mean_ibi_ms²``.
+                            Matches the CARSPAN tabular band-power output
+                            (Eq. 3.20: S' = S_x / x̄²).
+        - ``"ms²/Hz"``    — IBI signal PSD in ms²/Hz, derived from the rate
+                            PSD via the linearisation δIBI ≈ −δrate / rate²:
+                            factor = ``mean_ibi_s⁴ × 10⁶ = mean_ibi_ms⁴ × 10⁻⁶``.
+                            Matches the CARSPAN figure Y-axis convention.
+        """
+        units = str(CarspanPSD.CARSPAN_PARAMS.get("plot_units", "mMI\u00b2/Hz"))
+        # Compare on ASCII prefix only — robust against JSON encoding mishaps
+        # that could mangle the "²" character on Windows (cp1252 vs UTF-8).
+        if units.lower().startswith("ms"):
+            mean_ibi_ms = self._mean_ibi_ms()
+            return (mean_ibi_ms ** 4) * 1e-6, "ms\u00b2/Hz"
+        return self._mmi2_factor(), "mMI\u00b2/Hz"
 
     def _band_mask(self, freqs: np.ndarray) -> np.ndarray:
         """Mask restricting freqs to ``[_f_min, _f_max]``."""
@@ -501,8 +524,8 @@ class CardioFrequencyMetricsMixin:
         )
 
     def _psd_carspan_strict(self, with_ci: bool = True) -> PSDResult:
-        """Strict CARSPAN PSD, converted Hz → mMI²/Hz (× mean_ibi_ms²)."""
-        convert = self._mmi2_factor()
+        """Strict CARSPAN PSD, converted Hz → display units (mMI²/Hz or ms²/Hz)."""
+        convert, unit = self._carspan_display()
         freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd_strict(
             self._event_times_clean(),
             alpha_ci=CI_ALPHA,
@@ -511,11 +534,12 @@ class CardioFrequencyMetricsMixin:
         return self._as_result(
             "carspan_strict", freqs, power, ci_lo, ci_hi,
             convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+            unit=unit,
         )
 
     def _psd_carspan(self, with_ci: bool = True) -> PSDResult:
-        """Configurable CARSPAN PSD, converted Hz → mMI²/Hz (× mean_ibi_ms²)."""
-        convert = self._mmi2_factor()
+        """Configurable CARSPAN PSD, converted Hz → display units (mMI²/Hz or ms²/Hz)."""
+        convert, unit = self._carspan_display()
         freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd(
             self._event_times_clean(),
             alpha_ci=CI_ALPHA,
@@ -524,4 +548,5 @@ class CardioFrequencyMetricsMixin:
         return self._as_result(
             "carspan", freqs, power, ci_lo, ci_hi,
             convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+            unit=unit,
         )

@@ -30,6 +30,7 @@ CARSPAN_PARAMS = {
     "freq_resolution": 0.01,      # Hz — display grid spacing
     "window": "hann",             # Default window for configurable mode
     "smooth_for_display": True,   # Bin-average to the display grid
+    "plot_units": "mMI²/Hz",      # "mMI²/Hz" or "ms²/Hz" (IBI signal)
 }
 
 
@@ -172,6 +173,16 @@ def _compute(
         freqs, power, bin_counts = _bin_average(freqs, power, display_resolution)
     else:
         bin_counts = np.ones(freqs.size, dtype=int)
+
+    # CARSPAN manual (sec. 3.2, p. 33): "a moving average window over three
+    # frequency points (0.03 Hz bandwidth) is applied before plotting the
+    # spectral functions". This is plot-only smoothing — band-power
+    # integration on the spectHR side uses this same array, so the area is
+    # preserved (3-point MA preserves total sum modulo small boundary
+    # effects), and peaks visually drop ≈3× to match CARSPAN's display.
+    if smooth and power.size >= 3:
+        kernel = np.ones(3, dtype=np.float64) / 3.0
+        power = np.convolve(power, kernel, mode="same")
 
     return freqs, power, bin_counts
 

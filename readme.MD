@@ -69,9 +69,10 @@ spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder,
 
 | Band | Default range | Reflects |
 |------|--------------|---------| 
+| FullRange | 0.02–0.50 Hz | Total spectral power across the HRV range |
 | VLF | 0.02–0.06 Hz | Thermoregulation, hormonal rhythms; requires ≥ 5 min epochs |
-| MF | 0.06–0.14 Hz | Baroreceptor-driven vasomotor oscillations; most sensitive to mental effort |
-| HF | 0.14–0.40 Hz | Respiratory sinus arrhythmia; parasympathetically mediated but confounded by breathing pattern |
+| LF | 0.07–0.14 Hz | Baroreceptor-driven vasomotor oscillations; most sensitive to mental effort |
+| HF | 0.15–0.40 Hz | Respiratory sinus arrhythmia; parasympathetically mediated but confounded by breathing pattern |
 
 The **LF/HF ratio** as a sympatho-vagal balance index is contested ([Billman, 2013](#ref-billman2013)); the CARSPAN tradition prefers absolute band power normalised by mean heart rate (mMI²).
 
@@ -166,13 +167,14 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 ![spectHR](images/PSDWindow.PNG)
 
-The **PSD tab** shows one power spectrum per active epoch, stacked vertically. Three frequency bands are shaded:
+The **PSD tab** shows one power spectrum per active epoch, stacked vertically. Four frequency bands are shaded:
 
+- **FullRange (0.02–0.50 Hz)**, the total HRV spectrum.
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes; requires long recordings.
-- **LF (0.06–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
-- **HF (0.14–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
+- **LF (0.07–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
+- **HF (0.15–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
 
-The shaded grey band is the **confidence interval**. Three PSD methods are available, selected in **WorkSpace → Edit Parameters**. The method takes effect immediately without restarting.
+The shaded grey band is the **confidence interval**. Four PSD methods are available — `carspan`, `carspan_strict`, `welch`, `lombscargle` — selected in **WorkSpace → Edit Parameters**. The method takes effect immediately without restarting.
 
 ---
 
@@ -217,7 +219,7 @@ The plain-text RR-interval export format from the Polar app. See `ExampleData/`.
 
 ### CARSPAN .evt / .nff
 
-CARSPAN event files. If an `.nff` file with the same base name is present, spectHR loads the ECG channel from it.
+CARSPAN event files. If an `.nff` file with the same base name is present, spectHR loads the ECG channel from it. In that case the R-peak timestamps from the `.evt` file are authoritative: the ECG is filtered for display but R-peaks are **not** re-detected from it (the loader sets `rtops_locked` on the resulting `CardioSeries`).
 
 ---
 
@@ -370,7 +372,7 @@ $$\nu \approx \frac{8 \cdot K}{3}$$
 | Resampling frequency | 4 Hz | `fs` |
 | Segment length | 256 samples | `nperseg` |
 | Overlap | 128 samples | `noverlap` |
-| FFT length | same as `nperseg` | `nfft` |
+| FFT length | 1024 | `nfft` |
 | Window | Hann | `window` |
 
 **Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156~\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
@@ -402,7 +404,7 @@ This accounts for the adaptive frequency resolution of Lomb-Scargle compared to 
 
 | Parameter | Default | JSON key |
 |-----------|---------|----------|
-| Number of frequency points | 1000 | `nfreqs` |
+| Number of frequency points | 100 | `nfreqs` |
 | Lower frequency floor | 0.0001 Hz | `fmin_floor` |
 
 </details>
@@ -432,9 +434,14 @@ Assuming periodicity outside the analysis segment $[0, T]$, the power spectral d
 
 $$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
 
-where $w_i$ is the $i$-th coefficient of a tapering window (default: Hanning, as used in CARSPAN; configurable). The window is applied to suppress spectral leakage at the segment boundaries.
+where $w_i$ is the $i$-th coefficient of a tapering window (workspace default: `10% cosine bell`, i.e. a Tukey window with α = 0.20). The window suppresses spectral leakage at the segment boundaries.
 
-**Deviation from CARSPAN:** In CARSPAN, formula 3.19 uses $w_i = 1$ (no window) for the analytical formula, and a 5 % cosine taper is applied separately. spectHR applies a full-length configurable window to each $w_i$ directly in formula 3.19. The practical effect is similar: both suppress leakage at the segment edges.
+**Two CARSPAN variants are provided:**
+
+- **`carspan`** (configurable) — any `scipy.signal.get_window` name (incl. the `"X% cosine bell"` shorthand → Tukey α = X/50). The window is applied by **event index** and the amplitude includes the standard energy correction $2N / (T \cdot S_2)$ (where $S_2 = \sum_i w_i^2$), making the level approximately window-invariant.
+- **`carspan_strict`** — manual-faithful: a Tukey 5 % cosine taper (α = 0.10) applied by **clock position** (each event's weight depends on where its timestamp sits in $[t_0, t_\text{end}]$), and amplitude $2/T$ with no $N/S_2$ correction. This reproduces CARSPAN Eq. 3.19 verbatim.
+
+For typical regular sinus rhythm both variants give the same spectral shape; absolute levels differ by ~10–15 % because of the different taper width and the energy correction. Use `carspan_strict` to reproduce CARSPAN values exactly; use `carspan` for variance-correct, window-tunable estimates.
 
 #### Native frequency grid
 
@@ -479,7 +486,7 @@ Multiplication by $10^6$ scales the result into a convenient numeric range (mill
 | Parameter | Default | JSON key | Effect |
 |-----------|---------|----------|--------|
 | Display grid resolution | 0.01 Hz | `freq_resolution` | Smoothness of displayed curve; does not affect band power |
-| Tapering window | `hann` | `window` | Any `scipy.signal.get_window` name |
+| Tapering window | `10% cosine bell` | `window` | Any `scipy.signal.get_window` name, or `"X% cosine bell"` → Tukey α = X/50 |
 | 3-point display smoothing | `true` | `smooth_for_display` | Matches CARSPAN plot convention |
 
 </details>
@@ -502,9 +509,10 @@ All three methods share the same configurable band definitions:
 
 | Band | Default range | Reflects |
 |------|--------------|---------| 
+| FullRange | 0.02–0.50 Hz | Total spectral power across the HRV range |
 | VLF | 0.02–0.06 Hz | Slow regulatory processes; requires long recordings |
-| LF | 0.06–0.14 Hz | Baroreceptor reflex, mixed sympathetic/parasympathetic |
-| HF | 0.14–0.40 Hz | Respiratory sinus arrhythmia, parasympathetic tone |
+| LF | 0.07–0.14 Hz | Baroreceptor reflex, mixed sympathetic/parasympathetic |
+| HF | 0.15–0.40 Hz | Respiratory sinus arrhythmia, parasympathetic tone |
 
 Band edges are configurable in *Edit Parameters*. If your participants breathe slowly, you may need to extend the HF band to lower frequencies.
 
