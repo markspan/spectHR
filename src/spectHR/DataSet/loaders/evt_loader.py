@@ -165,6 +165,32 @@ def loadEVT(physiodata, filename: Path) -> None:
             )
 
     # --------------------------------------------------
+    # CARSPAN epoch-start convention
+    # --------------------------------------------------
+    # The CARSPAN system counts the last heartbeat *before* the Beginperiod
+    # marker (code 21) as the first beat of the epoch — not the first beat
+    # after the marker.  To reproduce CARSPAN's beat counts and IBI statistics
+    # we therefore replace each epoch start time with the timestamp of the last
+    # R-peak that occurred strictly before the original start-marker time.
+    #
+    # If no R-peak precedes a given start marker (e.g. the fallback single-epoch
+    # whose start equals times[0]), the original marker time is kept unchanged.
+    adjusted_start_times = []
+    for st in start_times:
+        preceding = rtop_times[rtop_times < st]
+        if preceding.size > 0:
+            adjusted = float(preceding[-1])
+            logger.debug(
+                f"Epoch start adjusted: {st:.3f} s → {adjusted:.3f} s "
+                f"(last R-peak before marker, CARSPAN convention)."
+            )
+            adjusted_start_times.append(adjusted)
+        else:
+            # No R-peak before this marker; keep the original marker time.
+            adjusted_start_times.append(float(st))
+    start_times = np.asarray(adjusted_start_times)
+
+    # --------------------------------------------------
     # Register epochs
     # --------------------------------------------------
     # physiodata.epochs.clear()

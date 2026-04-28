@@ -385,6 +385,75 @@ class MainWindow(QMainWindow):
                     if dataset.active_band is None and dataset.band_map:
                         dataset.active_band = next(iter(dataset.band_map))
                     dataset.save(self.savename)
+                else:
+                    _resaved = False
+
+                    # ----------------------------------------------------------
+                    # Migration 1: locked R-tops saved without IBI classification
+                    # ----------------------------------------------------------
+                    # Cached datasets saved before the locked-branch classify_ibi()
+                    # fix have all R-top labels at the default "N" — an impossible
+                    # result for real ECG data of any length.  Re-classify in place;
+                    # no ECG re-filtering needed.
+                    for _cs in dataset.hrv_map.values():
+                        if (
+                            getattr(_cs, "rtops_locked", False)
+                            and _cs.times.size > 1
+                            and all(_lbl == "N" for _lbl in _cs.labels)
+                        ):
+                            logger.info(
+                                "Migration 1: classifying locked R-tops that were "
+                                "saved without IBI classification."
+                            )
+                            _cs.classify_ibi()
+                            _resaved = True
+
+                    # ----------------------------------------------------------
+                    # Migration 2: CARSPAN epoch-start convention
+                    # ----------------------------------------------------------
+                    # Cached datasets saved before the epoch-start fix have epoch
+                    # starts equal to the EVT marker time (e.g. 313.900 s) instead
+                    # of the last R-peak before the marker (e.g. 313.096 s).
+                    #
+                    # Detection: if any non-experiment epoch's start time matches a
+                    # "Start Epoch #N" time in the TaskSeries EventSeries, the old
+                    # convention is still in use.
+                    if "TaskSeries" in dataset.events:
+                        _task_ev = dataset.events["TaskSeries"]
+                        _start_marker_times = {
+                            float(t)
+                            for t, lbl in zip(_task_ev.times, _task_ev.labels)
+                            if str(lbl).lower().startswith("start ")
+                        }
+                        _old_convention = any(
+                            abs(_ep.start - _smt) < 0.001
+                            for _epoch_name, _ep in dataset.epochs.items()
+                            if _epoch_name != "experiment"
+                            for _smt in _start_marker_times
+                        )
+                        if _old_convention:
+                            logger.info(
+                                "Migration 2: updating CARSPAN epoch starts to last "
+                                "R-peak before each start marker."
+                            )
+                            for _cs in dataset.hrv_map.values():
+                                for _epoch_name, _ep in dataset.epochs.items():
+                                    if _epoch_name == "experiment":
+                                        continue
+                                    # Only adjust epochs whose start still matches
+                                    # a marker time (leaves manually-edited epochs
+                                    # that don't match any marker time untouched).
+                                    if any(
+                                        abs(_ep.start - _smt) < 0.001
+                                        for _smt in _start_marker_times
+                                    ):
+                                        _preceding = _cs.times[_cs.times < _ep.start]
+                                        if _preceding.size > 0:
+                                            _ep.start = float(_preceding[-1])
+                            _resaved = True
+
+                    if _resaved:
+                        dataset.save(self.savename)
             else:
                 dataset = PhysioData(Path(dirs["DataDirectory"]) / Path(filename))
                 if dataset.has_ecg:

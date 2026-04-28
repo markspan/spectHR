@@ -267,11 +267,24 @@ class PhysioData:
                 self.hrv_map[band] = cs
             elif getattr(cs, "rtops_locked", False):
                 # R-peak times came from an authoritative source (e.g. CARSPAN
-                # .evt) — keep them as-is. The ECG was still filtered above
+                # .evt) — keep them as-is.  The ECG was still filtered above
                 # for display, but no re-detection runs over the epochs.
                 logger.info(
                     f"Band '{band}': R-peak times locked, skipping re-detection."
                 )
+                # Classification must still run so that IBI labels (N, TL, S, L,
+                # etc.) are populated from the EVT R-top times.  Without this,
+                # all beats remain at the default "N" label set in __init__,
+                # causing metrics that exclude artefact intervals (TL, SL, …)
+                # to use incorrect data — and the user would need to make a
+                # dummy edit in the preprocessing UI to trigger classify_ibi()
+                # indirectly via RTopController.
+                if classify and cs.times.size > 0:
+                    cs.classify_ibi(
+                        window_length=window_length,
+                        n_std=n_std,
+                        max_ibi_sec=max_ibi_sec,
+                    )
             else:
                 for name, epoch in self.epochs.items():
                     if not epoch.active:
