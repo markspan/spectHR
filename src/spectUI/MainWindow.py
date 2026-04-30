@@ -99,10 +99,10 @@ class MainWindow(QMainWindow):
         self.ui.actionEdit_Workspace.setStatusTip("Edit workspace directories")
         self.ui.actionEdit_Workspace.setToolTip("Edit workspace directories")
 
-        self.ui.actionEdit_Settings.triggered.connect(self.EditParameters)
-        self.ui.actionEdit_Settings.setShortcut("Ctrl+P")
-        self.ui.actionEdit_Settings.setStatusTip("Edit workspace parameters")
-        self.ui.actionEdit_Settings.setToolTip("Edit workspace parameters")
+        self.ui.actionSettings.triggered.connect(self.EditParameters)
+        self.ui.actionSettings.setShortcut("Ctrl+P")
+        self.ui.actionSettings.setStatusTip("Edit workspace parameters")
+        self.ui.actionSettings.setToolTip("Edit workspace parameters")
 
         self.ui.actionSave_Workspace.triggered.connect(self.SaveWorkSpace)
         self.ui.actionSave_Workspace.setShortcut("Ctrl+S")

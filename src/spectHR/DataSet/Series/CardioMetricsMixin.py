@@ -247,10 +247,30 @@ class CardioMetricsMixin(HRVMetric):
 
         Lower ratio (SD1 << SD2) indicates parasympathetic dominance.
         Returns NaN if SD2 is zero or either metric is invalid.
+
+        Notes
+        -----
+        For a mathematically uniform IBI series (e.g. synthetic ``[800] * N``)
+        ``cumsum`` introduces ULP-level jitter, so ``Var(IBI)`` and ``Var(dIBI)``
+        end up at the float64 noise floor (~1e-26).  Brennan's formula
+        ``SD2² = 2·Var(IBI) − 0.5·Var(dIBI)`` then produces a tiny positive
+        residual instead of zero, leaving SD2 as ~1e-13 ms — which the explicit
+        ``s2 == 0`` test below cannot detect.  We therefore additionally guard
+        against this degenerate case by checking SDNN (the actual standard
+        deviation of IBIs): if SDNN is effectively zero, the ratio is
+        meaningless and we return NaN.
         """
         s1, s2 = self.sd1(), self.sd2()
         if np.isnan(s1) or np.isnan(s2) or s2 == 0:
             return np.nan
+
+        # Detect a (numerically) uniform IBI series via SDNN.  Any value below
+        # 1e-9 ms (one picosecond) is unambiguously float-precision noise; a
+        # genuine HRV SDNN is at least many microseconds.
+        sdnn = self.sdnn()
+        if np.isnan(sdnn) or sdnn < 1e-9:
+            return np.nan
+
         return float(s1 / s2)
 
     @hrv_metric
@@ -277,10 +297,14 @@ class CardioMetricsMixin(HRVMetric):
         Units follow the active PSD method's ``"units"`` workspace setting
         (default: mMI²; optionally ms² for Welch and Lomb-Scargle).
         Returns NaN if FullRange band is not defined or computation fails.
+
+        ``ValueError`` is also caught: PSD back-ends raise it when the series
+        is too short (fewer than the minimum required IBIs) or contains no
+        valid R-peaks after artefact exclusion (all-TL series).
         """
         try:
             return self.band_power("FullRange")
-        except (KeyError, AttributeError):
+        except (KeyError, AttributeError, ValueError):
             return np.nan
 
     @hrv_metric
@@ -289,10 +313,13 @@ class CardioMetricsMixin(HRVMetric):
 
         Units follow the active PSD method's ``"units"`` workspace setting
         (default: mMI²; optionally ms² for Welch and Lomb-Scargle).
+
+        Returns NaN when the underlying PSD cannot be computed (too few
+        valid IBIs, all beats labelled as artefacts, etc.).
         """
         try:
             return self.band_power("VLF")
-        except (KeyError, AttributeError):
+        except (KeyError, AttributeError, ValueError):
             return np.nan
 
     @hrv_metric
@@ -301,10 +328,13 @@ class CardioMetricsMixin(HRVMetric):
 
         Units follow the active PSD method's ``"units"`` workspace setting
         (default: mMI²; optionally ms² for Welch and Lomb-Scargle).
+
+        Returns NaN when the underlying PSD cannot be computed (too few
+        valid IBIs, all beats labelled as artefacts, etc.).
         """
         try:
             return self.band_power("LF")
-        except (KeyError, AttributeError):
+        except (KeyError, AttributeError, ValueError):
             return np.nan
 
     @hrv_metric
@@ -313,10 +343,13 @@ class CardioMetricsMixin(HRVMetric):
 
         Units follow the active PSD method's ``"units"`` workspace setting
         (default: mMI²; optionally ms² for Welch and Lomb-Scargle).
+
+        Returns NaN when the underlying PSD cannot be computed (too few
+        valid IBIs, all beats labelled as artefacts, etc.).
         """
         try:
             return self.band_power("HF")
-        except (KeyError, AttributeError):
+        except (KeyError, AttributeError, ValueError):
             return np.nan
 
     @hrv_metric
