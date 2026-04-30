@@ -274,6 +274,8 @@ class CardioMetricsMixin(HRVMetric):
     def fullrange_power(self):
         """Total power across the full frequency range (FullRange band).
 
+        Units follow the active PSD method's ``"units"`` workspace setting
+        (default: mMI²; optionally ms² for Welch and Lomb-Scargle).
         Returns NaN if FullRange band is not defined or computation fails.
         """
         try:
@@ -283,7 +285,11 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def vlf_power(self):
-        """Power in the very-low-frequency band (VLF, mMI²)."""
+        """Power in the very-low-frequency band (VLF).
+
+        Units follow the active PSD method's ``"units"`` workspace setting
+        (default: mMI²; optionally ms² for Welch and Lomb-Scargle).
+        """
         try:
             return self.band_power("VLF")
         except (KeyError, AttributeError):
@@ -291,7 +297,11 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def lf_power(self):
-        """Power in the low-frequency band (LF, mMI²)."""
+        """Power in the low-frequency band (LF).
+
+        Units follow the active PSD method's ``"units"`` workspace setting
+        (default: mMI²; optionally ms² for Welch and Lomb-Scargle).
+        """
         try:
             return self.band_power("LF")
         except (KeyError, AttributeError):
@@ -299,7 +309,11 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def hf_power(self):
-        """Power in the high-frequency band (HF, mMI²)."""
+        """Power in the high-frequency band (HF).
+
+        Units follow the active PSD method's ``"units"`` workspace setting
+        (default: mMI²; optionally ms² for Welch and Lomb-Scargle).
+        """
         try:
             return self.band_power("HF")
         except (KeyError, AttributeError):
@@ -307,7 +321,11 @@ class CardioMetricsMixin(HRVMetric):
 
     @hrv_metric
     def lf_hf_ratio(self):
-        """LF/HF ratio. NaN if either band is missing or HF is zero."""
+        """LF/HF ratio (dimensionless). NaN if either band is missing or HF is zero.
+
+        Because both LF and HF are expressed in the same units, the ratio is
+        independent of the ``"units"`` workspace setting.
+        """
         lf, hf = self.lf_power(), self.hf_power()
         if np.isnan(lf) or np.isnan(hf) or hf == 0:
             return np.nan

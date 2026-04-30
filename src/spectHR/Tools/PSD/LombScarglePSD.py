@@ -27,6 +27,7 @@ from scipy.stats import chi2
 LOMBSCARGLE_PARAMS = {
     "nfreqs": 1000,        # Number of frequency evaluation points
     "fmin_floor": 0.0001,  # Lowest frequency (Hz) to avoid DC
+    "units": "mMI²",       # Output units: "mMI²" (modulation index) or "ms²" (raw IBI power)
 }
 
 
@@ -85,7 +86,23 @@ def compute_lombscargle_psd(
     )
     power = (2.0 * T / N) * pgram
 
-    ci_lower, ci_upper = _chi2_ci(power, dof=2, alpha=alpha_ci)
+    # Effective degrees of freedom following Scargle (1982).
+    #
+    # The number of statistically independent frequencies in the
+    # evaluated range [f_min, f_max] is approximately:
+    #
+    #     M = floor(2 · (f_max − f_min) · T)
+    #
+    # Each independent frequency contributes 2 dof (chi-squared).
+    # When the evaluation grid has nfreqs points spread over M
+    # independent frequencies, adjacent points are correlated and
+    # the effective dof per bin scales as 2M / nfreqs.  The result
+    # is clamped to a minimum of 2 (one independent complex estimate).
+    f_range = float(freqs[-1] - freqs[0])
+    M = max(1, int(np.floor(2.0 * f_range * T)))
+    dof_per_bin = max(2.0, 2.0 * M / len(freqs))
+
+    ci_lower, ci_upper = _chi2_ci(power, dof=dof_per_bin, alpha=alpha_ci)
     return freqs, power, ci_lower, ci_upper
 
 

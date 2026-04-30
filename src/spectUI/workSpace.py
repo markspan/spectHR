@@ -43,10 +43,12 @@ _DEFAULT_WORKSPACE = {
             "noverlap": 128,
             "nfft": 1024,
             "window": "hann",
+            "units": "mMI²",   # "mMI²" (normalised, default) or "ms²" (raw IBI power)
         },
         "lombscargle": {
             "nfreqs": 100,
             "fmin_floor": 1e-4,
+            "units": "mMI²",   # "mMI²" (normalised, default) or "ms²" (raw IBI power)
         },
         "confidence_interval_alpha": 0.05,
     },

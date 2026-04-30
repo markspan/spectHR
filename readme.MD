@@ -82,7 +82,7 @@ The **LF/HF ratio** as a sympatho-vagal balance index is contested ([Billman, 20
 
 **Artefacts are critical.** A single missed or spurious R-peak introduces broadband spectral energy that can swamp the genuine HRV signal ([Mulder, 1988](#ref-mulder1988)). This is why spectHR requires the user to inspect and verify the IBI series before computing any metrics.
 
-**Normalisation.** Absolute spectral power in ms² scales with mean IBI squared, increasing at lower heart rates. The CARSPAN mMI² normalisation corrects for this automatically. For the Welch and Lomb-Scargle methods normalisation is not applied automatically: whether and how to correct HRV for mean heart rate is genuinely unresolved ([de Geus et al., 2019](#ref-degeus2019)), and no single recommendation fits all research questions. We have made both corrected and uncorrected approaches available so researchers can choose.
+**Normalisation.** Absolute spectral power in ms² scales with mean IBI squared, increasing at lower heart rates. The CARSPAN mMI² normalisation corrects for this automatically. For the Welch and Lomb-Scargle methods the output unit is configurable: the default is **mMI²** (normalised, heart-rate-independent) but can be switched to **ms²** (raw IBI power, not normalised) via the `"units"` key in *Edit Parameters*. Whether to normalise HRV for mean heart rate is genuinely unresolved ([de Geus et al., 2019](#ref-degeus2019)), and no single recommendation fits all research questions.
 
 <details>
 The two choices show the same frequencies (the rhythms of heart rate variability), but measured differently.
@@ -193,9 +193,7 @@ The **Parameters tab** shows a table with one row per epoch:
 
 - **Time-domain:** count, mean, median, min, max, std, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
-- **Frequency-domain:** VLF, LF, HF power and LF/HF ratio
-  - **ms²** when using Welch or Lomb-Scargle
-  - **mMI²** when using the CARSPAN method
+- **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio — in **mMI²** by default; Welch and Lomb-Scargle can be switched to **ms²** via *Edit Parameters*
 
 Click **Save** to export to CSV.
 
@@ -220,7 +218,10 @@ Changes take effect immediately and are saved to disk.
 
 ### XDF (LabStreamingLayer)
 
-spectHR reads `.xdf` files from [LabStreamingLayer](https://github.com/sccn/labstreaminglayer), designed for use with the [Polar H10](https://www.polar.com/en/sensors/h10-heart-rate-sensor) via [PolarBLE](https://github.com/markspan/PolarBLE). Streams are identified automatically. Epoch markers follow `start <label>` / `stop <label>` or `end <label>` conventions.
+spectHR reads `.xdf` files from [LabStreamingLayer](https://github.com/sccn/labstreaminglayer), designed for use with the [Polar H10](https://www.polar.com/en/sensors/h10-heart-rate-sensor) via [PolarBLE](https://github.com/markspan/PolarBLE). Streams are identified automatically. Epochs are derived in one of two ways:
+
+- **Explicit markers** — if any marker stream contains labels beginning with `start <label>` / `stop <label>` (or `end <label>`), those are used to build named epochs in the usual way.
+- **Keyboard stream fallback** — if no explicit start/stop markers are present but a stream named `Keyboard` exists, spectHR builds consecutive, non-overlapping epochs from every marker that ends with `" pressed"`. Each such marker starts a new epoch named by the key that was pressed (the marker text with `" pressed"` stripped). The epoch ends when the next key is pressed, or at the end of the recording for the final epoch. If the same key is pressed more than once its epochs are numbered (`a #1`, `a #2`, …).
 
 ### Polar .txt
 
@@ -330,7 +331,7 @@ $$\text{SD1} = \sqrt{\tfrac{1}{2} \cdot \mathrm{Var}(\text{IBI}_{i+1} - \text{IB
 
 $$\text{SD2} = \sqrt{2 \cdot \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \mathrm{Var}(\text{IBI}_{i+1} - \text{IBI}_i)}$$
 
-**SD2/SD1**, autonomic balance index.
+**SD1/SD2**, autonomic balance index.
 
 **Ellipse area** $= \pi \cdot \text{SD1} \cdot \text{SD2}$, total HRV.
 
@@ -342,7 +343,7 @@ $$\text{SD2} = \sqrt{2 \cdot \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \mathrm{V
 
 ### Welch's method
 
-The IBI series (in ms) is resampled onto a uniform grid using linear interpolation, divided into overlapping segments, windowed, Fourier-transformed, and averaged. Averaging over segments reduces variance at the cost of frequency resolution. Output units: **ms²/Hz**; band power in **ms²**.
+The IBI series (in ms) is resampled onto a uniform grid using cubic interpolation, divided into overlapping segments, windowed, Fourier-transformed, and averaged. Averaging over segments reduces variance at the cost of frequency resolution. Default output units: **mMI²/Hz**; configurable to **ms²/Hz** via the `"units"` workspace key.
 
 <details>
 <summary>Welch, algorithm detail</summary>
@@ -355,24 +356,19 @@ Band power $B$ in $`[f_l, f_h]`$ is computed by trapezoidal integration with end
 
 $$B = \int_{f_l}^{f_h} \hat{S}(f) df \approx \sum_k \hat{S}(f_k) \Delta f$$
 
-For $K$ non-overlapping segments the degrees of freedom are $\nu = 2K$, giving chi-square confidence intervals:
+The effective degrees of freedom account for the correlation introduced by overlapping segments (Percival & Walden, 1993):
+
+$$\nu = \frac{2K}{1 + 2\!\left(1 - \tfrac{1}{K}\right)\rho^2}$$
 
 $$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, \alpha/2}} \right]$$
 
-where
-
-$$\nu = \frac{2 \cdot K \cdot W_{\text{eff}}}{1 + 2\sum_{k=1}^{K-1}\left(1 - \frac{k}{K}\right)\rho^2(k)}$$
-
 where:
 - $K$ — number of segments
-- $W_{\text{eff}}$ — effective noise bandwidth of the window (e.g. 1.5 for Hann, 1.36 for Hamming)
-- $\rho(k)$ — correlation between segments $k$ steps apart (depends on overlap fraction)
+- $\rho$ — normalised window autocorrelation at lag equal to the segment step, computed numerically from the actual window samples: $\rho = \sum_n w[n]\, w[n + \text{step}] \;/\; \sum_n w[n]^2$
 - $\chi^2_{\nu, p}$ — chi-square quantile at probability $p$ with $\nu$ degrees of freedom
 - $\alpha$ — significance level (e.g. 0.05 for a 95% CI)
 
-For the common case of a Hann window with 50% overlap, this simplifies to approximately:
-
-$$\nu \approx \frac{8 \cdot K}{3}$$
+For non-overlapping segments $\rho = 0$ and $\nu = 2K$.  For a Hann window at 50% overlap $\rho \approx 1/6$, giving $\nu \approx 1.89K$.
 
 **Default parameters** (configurable in *Edit Parameters*):
 
@@ -383,6 +379,7 @@ $$\nu \approx \frac{8 \cdot K}{3}$$
 | Overlap | 128 samples | `noverlap` |
 | FFT length | 1024 | `nfft` |
 | Window | Hann | `window` |
+| Output units | mMI² | `units` |
 
 **Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156~\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
 
@@ -392,7 +389,7 @@ $$\nu \approx \frac{8 \cdot K}{3}$$
 
 ### Lomb-Scargle periodogram
 
-The Lomb-Scargle method evaluates the spectrum directly at the original, irregularly-spaced beat timestamps, no resampling required. The mean IBI is subtracted before estimation to suppress the DC component. Output units: **ms²/Hz**; band power in **ms²**.
+The Lomb-Scargle method evaluates the spectrum directly at the original, irregularly-spaced beat timestamps, no resampling required. The mean IBI is subtracted before estimation to suppress the DC component. Default output units: **mMI²/Hz**; band power in **mMI²**. Configurable to **ms²/Hz** / **ms²** via the `units` workspace key.
 
 <details>
 <summary>Lomb-Scargle, algorithm detail</summary>
@@ -401,13 +398,13 @@ The Lomb-Scargle method evaluates the spectrum directly at the original, irregul
 
 Let $`t_i`$ denote the R-peak times (s) and $`x_i = \text{IBI}_i - \bar{\text{IBI}}`$ (ms) the mean-subtracted IBIs. The angular frequency grid $`\omega = 2\pi f`$ is evaluated over $`[f_\text{min}, f_\text{max}]`$ at `nfreqs` equally spaced points. The periodogram $`P(\omega)`$ is computed by `scipy.signal.lombscargle` with `normalize=False` and scaled to a power density:
 
-$$\hat{S}(f_k) = \frac{2T}{N^2} P(\omega_k)$$
+$$\hat{S}(f_k) = \frac{2T}{N} P(\omega_k)$$
 
-where $`T = t_N - t_1`$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid. Confidence intervals use the Scargle (1982) effective degrees of freedom:
+where $`T = t_N - t_1`$ is the recording duration and $N$ the number of beats. Band power is computed by trapezoidal integration of the output grid. Confidence intervals use the Scargle (1982) effective degrees of freedom.  The number of statistically independent frequencies in the evaluated range is $M = \lfloor 2(f_\text{max} - f_\text{min}) T \rfloor$, giving a total of $2M$ dof spread over `nfreqs` evaluation points:
 
-$$\nu = 2 \cdot \lfloor 2(f_\text{max} - f_\text{min}) T \rceil$$
+$$\nu_\text{per bin} = \max\!\left(2,\ \frac{2M}{\texttt{nfreqs}}\right), \qquad M = \lfloor 2(f_\text{max} - f_\text{min}) T \rfloor$$
 
-This accounts for the adaptive frequency resolution of Lomb-Scargle compared to the regular DFT grid.
+When the grid is coarser than the independent-frequency spacing ($\texttt{nfreqs} \leq M$) this reduces to 2 dof per bin (each point is a fully independent estimate); when the grid is finer (oversampled), adjacent bins are correlated and the effective dof per bin exceeds 2.
 
 **Default parameters** (configurable in *Edit Parameters*):
 
@@ -415,6 +412,7 @@ This accounts for the adaptive frequency resolution of Lomb-Scargle compared to 
 |-----------|---------|----------|
 | Number of frequency points | 100 | `nfreqs` |
 | Lower frequency floor | 0.0001 Hz | `fmin_floor` |
+| Output units | mMI² | `units` |
 
 </details>
 
@@ -488,7 +486,7 @@ $$B'(f_l, f_h) = \frac{B(f_l, f_h)}{\bar{x}^2} \times 10^6 = B(f_l, f_h) \times 
 
 Multiplication by $10^6$ scales the result into a convenient numeric range (milli-Modulation-Index squared, mMI²), consistent with CARSPAN output convention. An important consequence of this normalisation is that mMI² values are largely independent of mean heart rate, making them directly comparable between subjects and sessions.
 
-**Implementation note on units:** The normalisation formula divides by $`\bar{x}^2 = (1/\bar{\text{IBI}}_\text{sec})^2`$, which is equivalent to multiplying by $\bar{\text{IBI}}_\text{sec}^2$. Since IBI values are stored internally in seconds, the code computes `mean_ibi_sec = mean(ibi_ms) / 1000` and then applies `power_raw * mean_ibi_sec² * 1e6`. A common error is to use `mean_ibi_ms²` instead, which would make the result $10^6$ times too small.
+**Implementation note on units:** The normalisation formula divides by $`\bar{x}^2 = (N/T)^2`$, which is equivalent to multiplying by $`(T/N)^2 = \bar{\text{IBI}}_\text{sec}^2`$. Crucially, CARSPAN defines the mean rate as $`\bar{x} = N/T`$ (N events in T seconds), so the mean IBI used here is $`T/N`$, not the arithmetic mean of the N−1 individual intervals $`T/(N-1)`$. The conversion factor applied in code is therefore `mean_ibi_ms²`, which is exactly equal to `mean_ibi_sec² × 10⁶` (since $(T/N \times 1000)^2 = (T/N)^2 \times 10^6$).
 
 **Default parameters** (configurable in *Edit Parameters*):
 
@@ -529,13 +527,13 @@ Band edges are configurable in *Edit Parameters*. If your participants breathe s
 
 ### Units and normalisation
 
-| Method | PSD unit | Band power unit | Normalised by mean HR? |
-|--------|----------|-----------------|----------------------|
-| Welch | ms²/Hz | ms² | No |
-| Lomb-Scargle | ms²/Hz | ms² | No |
-| CARSPAN | mMI²/Hz | mMI² | Yes, $`\times \bar{\text{IBI}}_\text{sec}^2 \times 10^6`$ |
+| Method | PSD unit (default) | Band power unit (default) | Configurable? | Normalised by mean HR? |
+|--------|-------------------|--------------------------|---------------|----------------------|
+| Welch | mMI²/Hz | mMI² | Yes (`units`: `"mMI²"` or `"ms²"`) | Yes (default) |
+| Lomb-Scargle | mMI²/Hz | mMI² | Yes (`units`: `"mMI²"` or `"ms²"`) | Yes (default) |
+| CARSPAN | mMI²/Hz | mMI² | No | Yes, $`\times \bar{\text{IBI}}_\text{sec}^{-2} \times 10^{-6}`$ |
 
-Welch and Lomb-Scargle ms² values scale with mean IBI and should be treated with caution when comparing groups or conditions that differ in resting heart rate. CARSPAN mMI² values are dimensionless and largely heart-rate independent.
+All three methods output mMI² by default, which is dimensionless and largely heart-rate independent, enabling valid comparisons across groups or conditions that differ in resting heart rate. Welch and Lomb-Scargle can be switched to raw ms² output via the `units` workspace key; CARSPAN always outputs mMI².
 
 ---
 

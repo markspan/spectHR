@@ -23,10 +23,11 @@ Unit conversion
 CARSPAN outputs Hz (events²/Hz).  Welch and Lomb-Scargle output ms²/Hz.
 To convert both to mMI²/Hz (Modulation Index, CARSPAN Eq. 3.20):
 
-    CARSPAN (Hz)  → mMI²/Hz:  multiply by mean_ibi_ms² × 10⁶
+    CARSPAN (Hz)  → mMI²/Hz:  multiply by mean_ibi_ms²
                                (because MI = S_xx / x̄² and x̄ = N/T in Hz,
-                                so S'_xx [mMI²] = S_xx [Hz] × (T/N)² × 10⁶
-                                                = S_xx × mean_ibi_s² × 10⁶)
+                                so S'_xx [mMI²] = S_xx × (T/N)² × 10⁶
+                                                = S_xx × mean_ibi_s² × 10⁶
+                                                = S_xx × mean_ibi_ms²)
 
     Welch / L-S (ms²/Hz) → mMI²/Hz:  divide by mean_ibi_ms² then × 10⁶
                                (MI² = Var / mean² → ms²/Hz / ms² → 1/Hz,
@@ -249,16 +250,22 @@ class CardioFrequencyMetricsMixin:
 
     def _mean_ibi_ms(self) -> float:
         """
-        Mean IBI in milliseconds, computed as T / (N − 1) × 1000.
+        Mean IBI in milliseconds for use in the mMI² unit conversion, computed
+        as T / N × 1000 — the reciprocal of the mean heart rate x̄ = N/T.
 
-        Here T = last_time − first_time (total observation span) and
-        N = number of R-peaks.  This avoids bias from excluded intervals
-        and is consistent with the CARSPAN definition x̄ = N/T.
+        Here T = last_time − first_time (span between first and last R-peak)
+        and N = number of clean R-peaks.
+
+        Note: this is *not* the arithmetic mean of the N−1 intervals (T/(N−1)),
+        which is the correct time-domain HRV metric.  Using T/N here keeps the
+        mMI² conversion factor (mean_ibi_ms²) exactly consistent with the
+        CARSPAN definition x̄ = N/T (Eq. 3.20).
 
         Returns
         -------
         float
-            Mean IBI in ms.
+            T/N × 1000 in ms — used exclusively for frequency-domain unit
+            conversion, not for reporting in the HRV parameter table.
         """
         times = self._event_times_clean()
         N = times.size
@@ -266,8 +273,11 @@ class CardioFrequencyMetricsMixin:
             raise ValueError("Need at least 2 R-peak events to compute mean IBI.")
 
         T = float(times[-1] - times[0])
-        # mean IBI = T / (N-1)  in seconds, then × 1000 for ms
-        return (T / (N - 1)) * 1000.0
+        # CARSPAN defines the mean rate as x̄ = N/T (events per second), so
+        # the mean IBI used in the modulation-index conversion is 1/x̄ = T/N,
+        # NOT the statistical average T/(N-1).  Using T/N here ensures that
+        # the mMI² factor (mean_ibi_ms²) exactly matches CARSPAN Eq. 3.20.
+        return (T / N) * 1000.0
 
     def _mmi2_factor(self) -> float:
         """
@@ -464,6 +474,41 @@ class CardioFrequencyMetricsMixin:
             ci_upper=ci_hi * convert if with_ci else None,
         )
 
+    def _welch_display(self) -> Tuple[float, str]:
+        """
+        Return ``(convert, unit)`` for the Welch PSD display.
+
+        Welch computes the IBI power spectrum in ms²/Hz.  Two display
+        conventions are available via the ``"units"`` workspace key:
+
+        - ``"mMI²"`` (default) — normalise by mean IBI squared so that the
+                                  result is heart-rate-independent.
+                                  factor = 10⁶ / mean_ibi_ms²
+        - ``"ms²"``            — keep the raw IBI signal PSD.
+                                  factor = 1  (no conversion)
+        """
+        units = str(WelchPSD.WELCH_PARAMS.get("units", "mMI²"))
+        if units.lower().startswith("ms"):
+            return 1.0, "ms²/Hz"
+        return 1e6 / self._mmi2_factor(), "mMI²/Hz"
+
+    def _lombscargle_display(self) -> Tuple[float, str]:
+        """
+        Return ``(convert, unit)`` for the Lomb-Scargle PSD display.
+
+        Lomb-Scargle computes the IBI power spectrum in ms²/Hz.  Two display
+        conventions are available via the ``"units"`` workspace key:
+
+        - ``"mMI²"`` (default) — normalise by mean IBI squared.
+                                  factor = 10⁶ / mean_ibi_ms²
+        - ``"ms²"``            — keep the raw IBI signal PSD.
+                                  factor = 1  (no conversion)
+        """
+        units = str(LombScarglePSD.LOMBSCARGLE_PARAMS.get("units", "mMI²"))
+        if units.lower().startswith("ms"):
+            return 1.0, "ms²/Hz"
+        return 1e6 / self._mmi2_factor(), "mMI²/Hz"
+
     def _carspan_display(self) -> Tuple[float, str]:
         """
         Return ``(convert, unit)`` for the CARSPAN PSD display.
@@ -492,13 +537,11 @@ class CardioFrequencyMetricsMixin:
 
     def _psd_welch(self, with_ci: bool = True) -> PSDResult:
         """
-        Welch PSD, converted from ms²/Hz → mMI²/Hz (× 10⁶ / mean_ibi_ms²).
-
-        Welch's ms²/Hz becomes dimensionless MI² per Hz when divided by
-        mean_ibi_ms²; the × 10⁶ scales to *milli*-MI².
+        Welch PSD, converted from ms²/Hz to the unit selected by the
+        ``"units"`` workspace parameter (default: mMI²/Hz).
         """
         ibi_times_s, ibi_values_ms = self._ibi_clean_pairs()
-        convert = 1e6 / self._mmi2_factor()
+        convert, unit = self._welch_display()
 
         freqs, power, ci_lo, ci_hi = WelchPSD.compute_welch_psd(
             ibi_times_s, ibi_values_ms, alpha_ci=CI_ALPHA,
@@ -506,12 +549,16 @@ class CardioFrequencyMetricsMixin:
         return self._as_result(
             "welch", freqs, power, ci_lo, ci_hi,
             convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+            unit=unit,
         )
 
     def _psd_lombscargle(self, with_ci: bool = True) -> PSDResult:
-        """Lomb-Scargle PSD, converted ms²/Hz → mMI²/Hz (same factor as Welch)."""
+        """
+        Lomb-Scargle PSD, converted from ms²/Hz to the unit selected by the
+        ``"units"`` workspace parameter (default: mMI²/Hz).
+        """
         ibi_times_s, ibi_values_ms = self._ibi_clean_pairs()
-        convert = 1e6 / self._mmi2_factor()
+        convert, unit = self._lombscargle_display()
 
         freqs, power, ci_lo, ci_hi = LombScarglePSD.compute_lombscargle_psd(
             ibi_times_s, ibi_values_ms,
@@ -521,6 +568,7 @@ class CardioFrequencyMetricsMixin:
         return self._as_result(
             "lombscargle", freqs, power, ci_lo, ci_hi,
             convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+            unit=unit,
         )
 
     def _psd_carspan_strict(self, with_ci: bool = True) -> PSDResult:

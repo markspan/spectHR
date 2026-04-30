@@ -29,6 +29,7 @@ WELCH_PARAMS = {
     "noverlap": 128,    # Overlap between segments
     "nfft": None,       # FFT length (None → nperseg)
     "window": "hann",   # Window function name
+    "units": "mMI²",    # Output units: "mMI²" (modulation index) or "ms²" (raw IBI power)
 }
 
 
@@ -111,10 +112,33 @@ def compute_welch_psd(
         scaling="density",
     )
 
-    # dof ≈ 2 × number of Welch segments.
+    # Effective degrees of freedom with window-overlap correction.
+    #
+    # For K independent segments: ν = 2K.  Overlapping segments are
+    # partially correlated, which reduces ν.  The correction uses the
+    # normalised window autocorrelation ρ at the segment step offset
+    # (Percival & Walden, 1993, §6.7):
+    #
+    #     ν = 2K / (1 + 2(1 − 1/K) ρ²)
+    #
+    # ρ is computed numerically from the actual window samples so that
+    # any window shape (Hann, Tukey, Hamming, …) is handled correctly.
     step = nperseg - noverlap
     n_segments = max(1, 1 + (n_samples - nperseg) // step)
-    ci_lower, ci_upper = _chi2_ci(power, 2 * n_segments, alpha_ci)
+
+    # Retrieve actual window samples for the correlation calculation.
+    w_arr = signal.get_window(window, nperseg, fftbins=False).astype(float)
+    w_sq = float(np.dot(w_arr, w_arr))
+    if step < nperseg and n_segments > 1 and w_sq > 0.0:
+        # Normalised autocorrelation of w at lag = step samples.
+        rho = float(np.dot(w_arr[: nperseg - step], w_arr[step:])) / w_sq
+        dof = 2.0 * n_segments / (1.0 + 2.0 * (1.0 - 1.0 / n_segments) * rho ** 2)
+    else:
+        # Non-overlapping segments or single segment: no correction needed.
+        rho = 0.0
+        dof = float(2 * n_segments)
+
+    ci_lower, ci_upper = _chi2_ci(power, dof, alpha_ci)
 
     return freqs, power, ci_lower, ci_upper
 
