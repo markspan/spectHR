@@ -20,7 +20,8 @@ from typing import Optional, Tuple
 import numpy as np
 from scipy import signal
 from scipy.interpolate import interp1d
-from scipy.stats import chi2
+
+from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples, _resolve_window
 
 
 WELCH_PARAMS = {
@@ -38,17 +39,6 @@ def load_welch_params(config: dict) -> None:
     for key in WELCH_PARAMS:
         if key in config:
             WELCH_PARAMS[key] = config[key]
-
-
-def _resolve_window(window_spec):
-    """Convert ``"X% cosine bell"`` → ``("tukey", alpha)``; pass others through."""
-    if isinstance(window_spec, str) and "cosine bell" in window_spec:
-        try:
-            percent = float(window_spec.split("%")[0].strip())
-            return ("tukey", percent / 50.0)
-        except (ValueError, IndexError):
-            pass
-    return window_spec
 
 
 def compute_welch_psd(
@@ -83,10 +73,7 @@ def compute_welch_psd(
     nfft = int(nfft) if nfft is not None else WELCH_PARAMS.get("nfft")
     window = _resolve_window(window if window is not None else WELCH_PARAMS["window"])
 
-    if ibi_times_s.size < 4:
-        raise ValueError(
-            f"Need at least 4 valid IBI samples for Welch PSD, got {ibi_times_s.size}."
-        )
+    _require_min_samples(ibi_times_s.size, 4, "Welch PSD")
 
     # Resample onto a uniform grid via cubic interpolation.
     dt = 1.0 / fs
@@ -143,13 +130,3 @@ def compute_welch_psd(
     return freqs, power, ci_lower, ci_upper
 
 
-def _chi2_ci(power, dof, alpha):
-    """Chi-squared CI:  S ∈ [ν·Ŝ/χ²_{1-α/2}, ν·Ŝ/χ²_{α/2}]."""
-    if alpha <= 0:
-        return np.zeros_like(power), np.full_like(power, np.inf)
-    if alpha >= 1:
-        return power.copy(), power.copy()
-    dof_arr = np.asarray(dof, dtype=float)
-    lo = chi2.ppf(alpha / 2, dof_arr)
-    hi = chi2.ppf(1 - alpha / 2, dof_arr)
-    return dof_arr * power / hi, dof_arr * power / lo

@@ -21,7 +21,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 from scipy import signal as sp_signal
-from scipy.stats import chi2
+
+from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples
 
 
 LOMBSCARGLE_PARAMS = {
@@ -66,10 +67,7 @@ def compute_lombscargle_psd(
     )
 
     N = ibi_times_s.size
-    if N < 4:
-        raise ValueError(
-            f"Need at least 4 valid IBI samples for Lomb-Scargle PSD, got {N}."
-        )
+    _require_min_samples(N, 4, "Lomb-Scargle PSD")
 
     T = float(ibi_times_s[-1] - ibi_times_s[0])
     if T <= 0:
@@ -104,15 +102,3 @@ def compute_lombscargle_psd(
 
     ci_lower, ci_upper = _chi2_ci(power, dof=dof_per_bin, alpha=alpha_ci)
     return freqs, power, ci_lower, ci_upper
-
-
-def _chi2_ci(power, dof, alpha):
-    """Chi-squared CI:  S ∈ [ν·Ŝ/χ²_{1-α/2}, ν·Ŝ/χ²_{α/2}]."""
-    if alpha <= 0:
-        return np.zeros_like(power), np.full_like(power, np.inf)
-    if alpha >= 1:
-        return power.copy(), power.copy()
-    dof_arr = np.asarray(dof, dtype=float)
-    lo = chi2.ppf(alpha / 2, dof_arr)
-    hi = chi2.ppf(1 - alpha / 2, dof_arr)
-    return dof_arr * power / hi, dof_arr * power / lo

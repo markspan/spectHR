@@ -128,6 +128,8 @@ _ENUM_CHOICES: dict[str, list[str]] = {
         "boxcar",
     ],
     "FrequencyAnalysis.carspan.plot_units": ["mMI²/Hz", "ms²/Hz"],
+    "FrequencyAnalysis.welch.units": ["mMI²", "ms²"],
+    "FrequencyAnalysis.lombscargle.units": ["mMI²", "ms²"],
 }
 
 

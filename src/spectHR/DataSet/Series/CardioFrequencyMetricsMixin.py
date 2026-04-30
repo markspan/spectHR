@@ -187,13 +187,42 @@ class CardioFrequencyMetricsMixin:
     #  Private helpers — extract clean data from the host object
     # ---------------------------------------------------------------
 
+    # ---------------------------------------------------------------
+    #  Label filtering (shared by _ibi_clean_pairs and _event_times_clean)
+    # ---------------------------------------------------------------
+
+    _BAD_LABELS = ("TL", "T")
+    """Beat labels treated as artefacts and excluded from all PSD computations."""
+
+    def _valid_label_mask(self, labels: np.ndarray) -> np.ndarray:
+        """
+        Boolean mask that is True for every beat *not* tagged as an artefact.
+
+        Labels ``"TL"`` (too long) and ``"T"`` (technical artefact) are
+        excluded.  All other labels (``"N"``, ``"S"``, …) are kept.
+
+        Parameters
+        ----------
+        labels : np.ndarray
+            Per-beat label array, same length as the array being masked.
+
+        Returns
+        -------
+        np.ndarray of bool
+            True where the label is acceptable.
+        """
+        valid = np.ones(len(labels), dtype=bool)
+        for bad in self._BAD_LABELS:
+            valid &= labels != bad
+        return valid
+
     def _ibi_clean_pairs(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Return aligned (times, ibi_ms) arrays with invalid intervals removed.
 
         An IBI is invalid if:
         - It is NaN (the trailing element, or a computational artefact).
-        - The beat's label is "TL" (too long) or "T" (technical artefact).
+        - The beat's label is ``"TL"`` (too long) or ``"T"`` (technical artefact).
 
         Returns
         -------
@@ -205,16 +234,9 @@ class CardioFrequencyMetricsMixin:
         ibi_s = self.ibi  # np.diff(times) + trailing NaN, in seconds
         labels = self.labels
 
-        # Build validity mask
-        valid = np.ones(len(ibi_s), dtype=bool)
-
-        # Exclude NaN IBIs
-        valid &= ~np.isnan(ibi_s)
-
-        # Exclude labelled artefacts (TL = too long, T = technical)
+        valid = ~np.isnan(ibi_s)
         if labels is not None and len(labels) == len(ibi_s):
-            for bad_label in ("TL", "T"):
-                valid &= labels != bad_label
+            valid &= self._valid_label_mask(labels)
 
         times_s = self.times[valid]
         values_ms = ibi_s[valid] * 1000.0  # seconds → milliseconds
@@ -223,8 +245,7 @@ class CardioFrequencyMetricsMixin:
 
     def _event_times_clean(self) -> np.ndarray:
         """
-        Return R-peak timestamps for events whose *surrounding* IBIs are
-        valid — i.e. the event participates in at least one valid interval.
+        Return R-peak timestamps excluding beats labelled as artefacts.
 
         For CARSPAN's event-series DFT we need the actual R-peak times,
         not the IBI midpoints.  We keep every beat that is *not* labelled
@@ -241,12 +262,7 @@ class CardioFrequencyMetricsMixin:
         if labels is None or len(labels) == 0:
             return times.copy()
 
-        # Keep beats that are NOT technical artefacts
-        valid = np.ones(len(times), dtype=bool)
-        for bad_label in ("TL", "T"):
-            valid &= labels != bad_label
-
-        return times[valid]
+        return times[self._valid_label_mask(labels)]
 
     def _mean_ibi_ms(self) -> float:
         """
@@ -283,27 +299,17 @@ class CardioFrequencyMetricsMixin:
         """
         Conversion factor from Hz (events²/Hz) to mMI²/Hz.
 
-        CARSPAN Eq. 3.20 defines the modulation index spectrum as:
+        CARSPAN Eq. 3.20 defines the modulation-index spectrum as:
 
-            S'_xx(f) = S_xx(f) / x̄²
+            S'_xx(f) = S_xx(f) / x̄²    (x̄ = N/T, mean heart rate in Hz)
 
-        where x̄ = mean heart rate = N/T (in Hz).  Since
-        1/x̄ = T/N = mean_ibi_s, we have:
+        Since 1/x̄ = T/N = mean_ibi_s:
 
-            S'_xx = S_xx × mean_ibi_s²
+            S'_xx [MI²/Hz] = S_xx × mean_ibi_s²
 
-        To display in **milli**-MI² (× 10⁶):
-
-            factor = mean_ibi_s² × 10⁶ = (mean_ibi_ms / 1000)² × 10⁶
-                   = mean_ibi_ms² × 10⁻⁶ × 10⁶ = mean_ibi_ms²  (… ÷ 1)
-
-        Wait — let's be precise:
-
-            mean_ibi_s = mean_ibi_ms / 1000
-            mean_ibi_s² = mean_ibi_ms² / 10⁶
-            factor = mean_ibi_s² × 10⁶ = mean_ibi_ms²
-
-        So the factor is simply mean_ibi_ms² (!).
+        Scaling to **milli**-MI² multiplies by 10⁶, but
+        mean_ibi_s² × 10⁶ = (mean_ibi_ms / 1000)² × 10⁶ = mean_ibi_ms²,
+        so the factor is simply ``mean_ibi_ms²``.
 
         Returns
         -------
@@ -431,16 +437,29 @@ class CardioFrequencyMetricsMixin:
     # ---------------------------------------------------------------
 
     def _f_max(self) -> float:
-        """Upper frequency limit = max "high" across all configured bands."""
+        """
+        Upper frequency limit = max "high" across all configured bands,
+        including FullRange.
+
+        FullRange.high (default 0.5 Hz) is genuinely higher than HF.high
+        (default 0.4 Hz), so the grid must extend to FullRange.high or the
+        0.4–0.5 Hz slice would be silently excluded from FullRange band power.
+        Extending the grid too far upward has no downside: extra bins only
+        contribute to FullRange integration and do not affect VLF/LF/HF.
+        """
         return max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
 
     def _f_min(self) -> float:
         """
-        Lower frequency limit = min "low" across non-FullRange bands.
+        Lower frequency limit = min "low" across all bands *except* FullRange.
 
-        Excludes FullRange because it's an overview band; using it would
-        admit near-DC bins that inflate apparent VLF power (especially
-        with Lomb-Scargle, whose grid extends down to ``fmin_floor``).
+        With the default configuration FullRange.low == VLF.low (both 0.02 Hz),
+        so the exclusion makes no practical difference.  It is a defensive guard
+        for the case where FullRange.low is configured below all other bands
+        (e.g. 0.001 Hz): admitting near-DC bins into the PSD grid would inflate
+        VLF power estimates and distort the Lomb-Scargle frequency axis.
+        Extending the grid too far downward has an upside cost; extending it
+        upward (see _f_max) does not — hence the asymmetry.
         """
         named = [b["low"] for n, b in HRV_FREQUENCY_BANDS.items() if n != "FullRange"]
         if not named:
@@ -474,40 +493,42 @@ class CardioFrequencyMetricsMixin:
             ci_upper=ci_hi * convert if with_ci else None,
         )
 
-    def _welch_display(self) -> Tuple[float, str]:
+    def _ibi_psd_display(self, units: str) -> Tuple[float, str]:
         """
-        Return ``(convert, unit)`` for the Welch PSD display.
+        Return ``(convert, unit_label)`` for IBI-based PSD methods.
 
-        Welch computes the IBI power spectrum in ms²/Hz.  Two display
-        conventions are available via the ``"units"`` workspace key:
+        Both Welch and Lomb-Scargle produce power in ms²/Hz.  This helper
+        maps the ``"units"`` workspace string to the correct scale factor
+        and display label so that the two display methods stay DRY.
 
-        - ``"mMI²"`` (default) — normalise by mean IBI squared so that the
-                                  result is heart-rate-independent.
-                                  factor = 10⁶ / mean_ibi_ms²
-        - ``"ms²"``            — keep the raw IBI signal PSD.
-                                  factor = 1  (no conversion)
+        Parameters
+        ----------
+        units : str
+            Value of the ``"units"`` workspace key, e.g. ``"mMI²"`` or ``"ms²"``.
+
+        Returns
+        -------
+        convert : float
+            Multiply the raw ms²/Hz values by this to obtain display units.
+        unit_label : str
+            Human-readable unit string for axis labels.
         """
-        units = str(WelchPSD.WELCH_PARAMS.get("units", "mMI²"))
         if units.lower().startswith("ms"):
+            # No conversion: keep raw IBI signal PSD in ms²/Hz.
             return 1.0, "ms²/Hz"
+        # Normalise by mean_ibi_ms² to obtain heart-rate-independent mMI²/Hz.
+        # Derivation: mMI²/Hz = ms²/Hz × 10⁶ / mean_ibi_ms²
         return 1e6 / self._mmi2_factor(), "mMI²/Hz"
+
+    def _welch_display(self) -> Tuple[float, str]:
+        """Return ``(convert, unit)`` for Welch PSD display (delegates to _ibi_psd_display)."""
+        units = str(WelchPSD.WELCH_PARAMS.get("units", "mMI²"))
+        return self._ibi_psd_display(units)
 
     def _lombscargle_display(self) -> Tuple[float, str]:
-        """
-        Return ``(convert, unit)`` for the Lomb-Scargle PSD display.
-
-        Lomb-Scargle computes the IBI power spectrum in ms²/Hz.  Two display
-        conventions are available via the ``"units"`` workspace key:
-
-        - ``"mMI²"`` (default) — normalise by mean IBI squared.
-                                  factor = 10⁶ / mean_ibi_ms²
-        - ``"ms²"``            — keep the raw IBI signal PSD.
-                                  factor = 1  (no conversion)
-        """
+        """Return ``(convert, unit)`` for Lomb-Scargle PSD display (delegates to _ibi_psd_display)."""
         units = str(LombScarglePSD.LOMBSCARGLE_PARAMS.get("units", "mMI²"))
-        if units.lower().startswith("ms"):
-            return 1.0, "ms²/Hz"
-        return 1e6 / self._mmi2_factor(), "mMI²/Hz"
+        return self._ibi_psd_display(units)
 
     def _carspan_display(self) -> Tuple[float, str]:
         """

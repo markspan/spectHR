@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from typing import ClassVar, Optional, TYPE_CHECKING
 import numpy as np
 import scipy.signal as signal
 
@@ -22,6 +22,19 @@ class TimeSeries:
     - Does NOT know about PhysioData, epochs, or stream names
     - Provides identity-neutral views via .view()
     """
+
+    # ------------------------------------------------------------------
+    # ECG polarity heuristic weights (used by detect_ecg_polarity)
+    # ------------------------------------------------------------------
+    # Three independent heuristics are combined into a single score.
+    # Positive total → signal is inverted; negative → normal orientation.
+    # Weights reflect relative reliability: peak prominence is the most
+    # direct indicator (1.0), Hilbert envelope energy is secondary (0.8),
+    # and percentile asymmetry is the weakest signal (0.5).
+    # ClassVar prevents dataclass from treating these as instance fields.
+    _POLARITY_WEIGHT_PEAK:     ClassVar[float] = 1.0
+    _POLARITY_WEIGHT_ENVELOPE: ClassVar[float] = 0.8
+    _POLARITY_WEIGHT_EXTREMA:  ClassVar[float] = 0.5
 
     times: np.ndarray
     values: np.ndarray
@@ -48,7 +61,6 @@ class TimeSeries:
 
         Parameters
         ----------
-
         bandpass : tuple[float, float], optional
             Bandpass filter (Hz) used to emphasize QRS complexes.
         min_peak_distance : float, optional
@@ -134,7 +146,11 @@ class TimeSeries:
         # ------------------------------------------------------------------
         # 5. Aggregate decision
         # ------------------------------------------------------------------
-        total_score = 1.0 * peak_score + 0.8 * envelope_score + 0.5 * extrema_score
+        total_score = (
+            self._POLARITY_WEIGHT_PEAK     * peak_score
+            + self._POLARITY_WEIGHT_ENVELOPE * envelope_score
+            + self._POLARITY_WEIGHT_EXTREMA  * extrema_score
+        )
 
         polarity = "normal" if total_score < 0 else "inverted"
 
@@ -265,6 +281,8 @@ class TimeSeries:
         """
         Return an identity-neutral, zero-copy view on a time interval.
 
+        The returned view shares storage with the parent; mutations via
+        ``__setitem__`` affect the parent series.
         Identity (pd/stream/epoch) is assigned by StreamAccessor, not here.
         """
         if self.times.size == 0:

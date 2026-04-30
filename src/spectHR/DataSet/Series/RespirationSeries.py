@@ -129,8 +129,15 @@ class RespirationSeries:
             if w % 2 == 0:
                 w += 1
             if w >= y_lp.size:
+                # Window must be strictly smaller than the signal; keep it odd.
                 w = y_lp.size - 1 if (y_lp.size - 1) % 2 == 1 else y_lp.size - 2
             w = max(w, 5)
+            if w != smoothing_window:
+                logger.debug(
+                    f"Savitzky-Golay smoothing_window adjusted: "
+                    f"{smoothing_window} → {w} "
+                    f"(signal length {y_lp.size})."
+                )
             p = max(2, min(int(polyorder), w - 2))
             y = savgol_filter(y_lp, window_length=w, polyorder=p, mode="interp")
         else:

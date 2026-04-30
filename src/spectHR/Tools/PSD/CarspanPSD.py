@@ -23,7 +23,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 from scipy.signal import get_window
-from scipy.stats import chi2
+
+from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples, _resolve_window
 
 
 CARSPAN_PARAMS = {
@@ -139,8 +140,7 @@ def _compute(
     )
 
     N = event_times_s.size
-    if N < 4:
-        raise ValueError(f"Need at least 4 R-peak events for CARSPAN PSD, got {N}.")
+    _require_min_samples(N, 4, "CARSPAN PSD")
 
     T = float(event_times_s[-1] - event_times_s[0])
     if T <= 0:
@@ -190,17 +190,6 @@ def _compute(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _resolve_window(window_spec):
-    """Convert ``"X% cosine bell"`` → ``("tukey", alpha)``; pass others through."""
-    if isinstance(window_spec, str) and "cosine bell" in window_spec:
-        try:
-            percent = float(window_spec.split("%")[0].strip())
-            return ("tukey", percent / 50.0)
-        except (ValueError, IndexError):
-            pass
-    return window_spec
 
 
 def _tukey_by_time_fraction(event_times_s, alpha=0.10):
@@ -266,13 +255,3 @@ def _bin_average(native_freqs, native_power, display_resolution):
     )
 
 
-def _chi2_ci(power, dof, alpha):
-    """Chi-squared CI:  S ∈ [ν·Ŝ/χ²_{1-α/2}, ν·Ŝ/χ²_{α/2}].  dof may be array."""
-    if alpha <= 0:
-        return np.zeros_like(power), np.full_like(power, np.inf)
-    if alpha >= 1:
-        return power.copy(), power.copy()
-    dof_arr = np.asarray(dof, dtype=float)
-    lo = chi2.ppf(alpha / 2, dof_arr)
-    hi = chi2.ppf(1 - alpha / 2, dof_arr)
-    return dof_arr * power / hi, dof_arr * power / lo
