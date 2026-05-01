@@ -92,7 +92,7 @@ METHOD: str = "welch"
 CI_ALPHA: float = 0.05
 
 # Frequency bands — loaded from workspace; these are fall-back defaults
-HRV_FREQUENCY_BANDS: Dict[str, Dict] = {
+HRV_FREQUENCY_BANDS: dict[str, dict[str, float | str]] = {
     "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
     "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},
     "HF": {"low": 0.15, "high": 0.40, "color": "red"},
@@ -406,9 +406,7 @@ class CardioFrequencyMetricsMixin:
         # Get the PSD (already in mMI²/Hz)
         result = self.psd(method=method, with_ci=False)
 
-        return _band_power_rectangular(
-            result.freqs, result.power, f_low, f_high
-        )
+        return _band_power_rectangular(result.freqs, result.power, f_low, f_high)
 
     def band_powers(
         self,
@@ -549,7 +547,7 @@ class CardioFrequencyMetricsMixin:
         # that could mangle the "²" character on Windows (cp1252 vs UTF-8).
         if units.lower().startswith("ms"):
             mean_ibi_ms = self._mean_ibi_ms()
-            return (mean_ibi_ms ** 4) * 1e-6, "ms\u00b2/Hz"
+            return (mean_ibi_ms**4) * 1e-6, "ms\u00b2/Hz"
         return self._mmi2_factor(), "mMI\u00b2/Hz"
 
     def _band_mask(self, freqs: np.ndarray) -> np.ndarray:
@@ -565,11 +563,19 @@ class CardioFrequencyMetricsMixin:
         convert, unit = self._welch_display()
 
         freqs, power, ci_lo, ci_hi = WelchPSD.compute_welch_psd(
-            ibi_times_s, ibi_values_ms, alpha_ci=CI_ALPHA,
+            ibi_times_s,
+            ibi_values_ms,
+            alpha_ci=CI_ALPHA,
         )
         return self._as_result(
-            "welch", freqs, power, ci_lo, ci_hi,
-            convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+            "welch",
+            freqs,
+            power,
+            ci_lo,
+            ci_hi,
+            convert=convert,
+            with_ci=with_ci,
+            mask=self._band_mask(freqs),
             unit=unit,
         )
 
@@ -582,13 +588,20 @@ class CardioFrequencyMetricsMixin:
         convert, unit = self._lombscargle_display()
 
         freqs, power, ci_lo, ci_hi = LombScarglePSD.compute_lombscargle_psd(
-            ibi_times_s, ibi_values_ms,
+            ibi_times_s,
+            ibi_values_ms,
             alpha_ci=CI_ALPHA,
             f_max=self._f_max(),
         )
         return self._as_result(
-            "lombscargle", freqs, power, ci_lo, ci_hi,
-            convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+            "lombscargle",
+            freqs,
+            power,
+            ci_lo,
+            ci_hi,
+            convert=convert,
+            with_ci=with_ci,
+            mask=self._band_mask(freqs),
             unit=unit,
         )
 
@@ -601,8 +614,14 @@ class CardioFrequencyMetricsMixin:
             f_max=self._f_max(),
         )
         return self._as_result(
-            "carspan_strict", freqs, power, ci_lo, ci_hi,
-            convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+            "carspan_strict",
+            freqs,
+            power,
+            ci_lo,
+            ci_hi,
+            convert=convert,
+            with_ci=with_ci,
+            mask=self._band_mask(freqs),
             unit=unit,
         )
 
@@ -615,7 +634,13 @@ class CardioFrequencyMetricsMixin:
             f_max=self._f_max(),
         )
         return self._as_result(
-            "carspan", freqs, power, ci_lo, ci_hi,
-            convert=convert, with_ci=with_ci, mask=self._band_mask(freqs),
+            "carspan",
+            freqs,
+            power,
+            ci_lo,
+            ci_hi,
+            convert=convert,
+            with_ci=with_ci,
+            mask=self._band_mask(freqs),
             unit=unit,
         )

@@ -33,10 +33,10 @@ from spectHR.Tools.PSD._psd_utils import (
 
 
 CARSPAN_PARAMS = {
-    "freq_resolution": 0.01,      # Hz — display grid spacing
-    "window": "hann",             # Default window for configurable mode
-    "smooth_for_display": True,   # Bin-average to the display grid
-    "plot_units": "mMI²/Hz",      # "mMI²/Hz" or "ms²/Hz" (IBI signal)
+    "freq_resolution": 0.01,  # Hz — display grid spacing
+    "window": "hann",  # Default window for configurable mode
+    "smooth_for_display": True,  # Bin-average to the display grid
+    "plot_units": "mMI²/Hz",  # "mMI²/Hz" or "ms²/Hz" (IBI signal)
 }
 
 
@@ -154,14 +154,14 @@ def _compute(
     freqs = np.arange(1, k_max + 1) * delta_f
 
     if strict:
-        w = _tukey_by_time_fraction(event_times_s, alpha=alpha_taper)
+        w = _tukey_by_time_fraction(event_times_s, alpha=0.1)
         amplitude = 2.0 / T
     else:
         ws = window_spec
         if isinstance(ws, str) and ws.lower() == "tukey":
             ws = ("tukey", 0.10)
         w = get_window(ws, N, fftbins=False).astype(np.float64)
-        S2 = float(np.sum(w ** 2))
+        S2 = float(np.sum(w**2))
         if S2 == 0:
             raise ValueError("Window sum-of-squares S₂ is zero — degenerate window.")
         amplitude = 2.0 * N / (T * S2)
@@ -170,7 +170,7 @@ def _compute(
     phase = 2.0 * np.pi * np.outer(freqs, event_times_s)
     X_real = np.dot(np.cos(phase), w)
     X_imag = np.dot(-np.sin(phase), w)
-    power = amplitude * (X_real ** 2 + X_imag ** 2)
+    power = amplitude * (X_real**2 + X_imag**2)
 
     if smooth and freqs.size > 0 and delta_f < display_resolution * 0.99:
         freqs, power, bin_counts = _bin_average(freqs, power, display_resolution)
@@ -256,5 +256,3 @@ def _bin_average(native_freqs, native_power, display_resolution):
         np.array(out_power),
         np.array(counts, dtype=int),
     )
-
-
