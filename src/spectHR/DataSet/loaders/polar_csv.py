@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import numpy as np
 import csv
+
+import numpy as np
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.loaders.registry import register_loader
+from spectHR.DataSet.loaders._loader_utils import is_inverted_ecg
 from spectHR.Tools.Logger import logger
 
 
@@ -36,37 +38,24 @@ def load_polar_raw_csv(
             reader = csv.DictReader(f, delimiter=";")
             cols = reader.fieldnames or []
             rows = list(reader)
-    except Exception as exc:
+    except (IOError, OSError, UnicodeDecodeError, csv.Error) as exc:
         raise IOError(f"Failed to read Polar CSV: {filename}") from exc
 
     if "ecg [uV]" not in cols or "timestamp [ms]" not in cols:
         raise ValueError("CSV does not look like a Polar raw ECG export")
 
-    times = np.array([r["timestamp [ms]"] for r in rows], dtype=float) / 1000.0
-    values = np.array([r["ecg [uV]"] for r in rows], dtype=float)
-    # times = df["timestamp [ms]"].to_numpy(dtype=float) / 1000.0
-    # values = df["ecg [uV]"].to_numpy(dtype=float)
-    diffs = np.diff(times)
-    fs = 1.0 / np.mean(diffs[diffs > 0])
+    times  = np.array([r["timestamp [ms]"] for r in rows], dtype=float) / 1000.0
+    values = np.array([r["ecg [uV]"]       for r in rows], dtype=float)
 
     physiodata.has_ecg = True
 
     # ------------------------------------------------------------
-    # POLARITY HEURISTIC (same logic, safer indexing)
+    # POLARITY (shared heuristic with harness_csv.py)
     # ------------------------------------------------------------
     if flip == "auto":
-        n = len(values)
-        i0 = n // 3
-        i1 = 2 * n // 3
-
-        seg = values[i0:i1]
-        magic = abs(seg.mean() - seg.min()) / abs(seg.mean() - seg.max())
-
-        logger.debug(f"ECG polarity heuristic (magic={magic:.3f})")
-
-        if magic > 1.5:
+        if is_inverted_ecg(values):
             values = -values
-
+            logger.debug("Polar ECG: polarity heuristic triggered → flipped")
     elif flip is True:
         values = -values
 

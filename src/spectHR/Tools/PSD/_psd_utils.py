@@ -23,9 +23,10 @@ def _chi2_ci(
     """
     Chi-squared confidence interval for a PSD estimate.
 
-    For a spectral estimate Ŝ with ν degrees of freedom:
+    For a spectral estimate S_hat with nu degrees of freedom:
 
-        S ∈ [ ν·Ŝ / χ²_{1-α/2,ν},  ν·Ŝ / χ²_{α/2,ν} ]
+        S in [ nu * S_hat / chi2_{1-alpha/2,nu},
+               nu * S_hat / chi2_{alpha/2,nu} ]
 
     Parameters
     ----------
@@ -35,7 +36,7 @@ def _chi2_ci(
         Degrees of freedom.  May be scalar (same for all bins) or
         per-bin array (e.g. CARSPAN after bin-averaging).
     alpha : float
-        Significance level (e.g. 0.05 → 95 % CI).
+        Significance level (e.g. 0.05 -> 95 % CI).
 
     Returns
     -------
@@ -57,14 +58,14 @@ def _chi2_ci(
 # Window-spec resolver (shared by Welch and CARSPAN)
 # ---------------------------------------------------------------------------
 
-def _resolve_window(window_spec: str | tuple) -> str | tuple:
+def _resolve_window(window_spec):
     """
     Translate a human-readable cosine-bell spec into a scipy window tuple.
 
-    ``"X% cosine bell"``  →  ``("tukey", X / 50)``
+    ``"X% cosine bell"``  ->  ``("tukey", X / 50)``
 
     Any other value is returned unchanged, so plain scipy names (``"hann"``,
-    ``"hamming"``, …) and already-resolved tuples pass through unmodified.
+    ``"hamming"``, ...) and already-resolved tuples pass through unmodified.
 
     Parameters
     ----------
@@ -86,12 +87,44 @@ def _resolve_window(window_spec: str | tuple) -> str | tuple:
 
 
 # ---------------------------------------------------------------------------
+# Generic parameter-dict updater (used by every PSD back-end's load_*_params)
+# ---------------------------------------------------------------------------
+
+def update_params(target, src):
+    """
+    Update *target* in place from *src*, copying only the keys that already
+    exist in *target*.
+
+    Each PSD back-end exposes a module-level parameter dict
+    (``WELCH_PARAMS``, ``LOMBSCARGLE_PARAMS``, ``CARSPAN_PARAMS``) that the
+    workspace can update via a public ``load_*_params`` function.  Keeping
+    the merge logic here means every back-end uses the same semantics:
+    known keys are overwritten, unknown keys are silently ignored, and
+    ``None`` / empty inputs are a no-op.
+
+    Parameters
+    ----------
+    target : dict
+        Module-level parameter dict to be mutated in place.
+    src : dict or None
+        Workspace-supplied overrides.  When ``None`` or empty, ``target``
+        is left untouched.
+    """
+    if not src:
+        return
+    for key in target:
+        if key in src:
+            target[key] = src[key]
+
+
+# ---------------------------------------------------------------------------
 # Minimum-sample guard (standardises error messages across PSD methods)
 # ---------------------------------------------------------------------------
 
-def _require_min_samples(n: int, min_n: int, context: str) -> None:
+def _require_min_samples(n, min_n, context):
     """
-    Raise a descriptive ``ValueError`` when a sample-count requirement is not met.
+    Raise a descriptive ``ValueError`` when a sample-count requirement is
+    not met.
 
     Parameters
     ----------

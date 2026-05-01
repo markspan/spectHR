@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import pyxdf
-from collections import Counter
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.loaders.registry import register_loader
+from spectHR.DataSet.epoch_builders import build_keyboard_epoch_events
 from spectHR.Tools.Logger import logger
 
 # ------------------------------------------------------------
@@ -334,99 +334,9 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
     # ----------------------------------------------------------------
     # When an XDF file has no explicit epoch markers (no labels beginning
     # with "start " or "stop "), but does contain a stream named "Keyboard",
-    # we derive consecutive, non-overlapping epochs from markers that end
-    # with " pressed":
-    #
-    #   - Each "X pressed" event starts a new epoch named "X".
-    #   - That epoch ends when the next "pressed" marker fires, or at the
-    #     end of the recording for the final epoch.
-    #   - If the same key is pressed more than once, its epochs are numbered
-    #     ("a #1", "a #2", …) so all Epoch dict keys remain unique.
-    #
-    # XDF files that already carry start/stop markers are not affected.
-
-    _has_epoch_markers = any(
-        str(lbl).strip().lower().startswith(("start ", "stop "))
-        for ev in physiodata.events.values()
-        for lbl in ev.labels
-    )
-
-    if not _has_epoch_markers:
-        # Locate the Keyboard stream (case-insensitive name match)
-        _keyboard_ev = next(
-            (ev for ev_name, ev in physiodata.events.items()
-             if ev_name.lower() == "keyboard"),
-            None,
-        )
-
-        if _keyboard_ev is not None:
-            # Collect every marker that ends with " pressed"
-            _pressed_mask = np.asarray(
-                [str(lbl).lower().endswith(" pressed") for lbl in _keyboard_ev.labels],
-                dtype=bool,
-            )
-            _pressed_times  = _keyboard_ev.times[_pressed_mask]
-            _pressed_labels = np.asarray(_keyboard_ev.labels, dtype=object)[_pressed_mask]
-
-            if _pressed_times.size > 0:
-                # Recording end: last timestamp across all loaded timeseries,
-                # or the last pressed-marker time if no timeseries exist.
-                if physiodata.timeseries:
-                    _rec_end = float(max(
-                        ts.times[-1]
-                        for ts in physiodata.timeseries.values()
-                        if ts.times.size
-                    ))
-                else:
-                    _rec_end = float(_pressed_times[-1])
-
-                # Strip " pressed" suffix → base epoch name (typically 1 char)
-                _suffix     = " pressed"
-                _name_bases = [
-                    str(lbl)[: -len(_suffix)].strip()
-                    for lbl in _pressed_labels
-                ]
-
-                # Make names unique when the same key is pressed more than once:
-                # single occurrences keep their bare name; multiples become
-                # "a #1", "a #2", …
-                _name_freq: Counter = Counter(_name_bases)
-                _name_idx:  dict[str, int] = {}
-                _epoch_names: list[str] = []
-                for _base in _name_bases:
-                    if _name_freq[_base] == 1:
-                        _epoch_names.append(_base)
-                    else:
-                        _name_idx[_base] = _name_idx.get(_base, 0) + 1
-                        _epoch_names.append(f"{_base} #{_name_idx[_base]}")
-
-                # Build alternating Start / Stop EventSeries entries.
-                # _normalize_times_and_build_epochs() will consume these.
-                _raw_times:  list[float] = []
-                _raw_labels: list[str]   = []
-
-                for _i, (_t, _name) in enumerate(zip(_pressed_times, _epoch_names)):
-                    _end_t = (
-                        float(_pressed_times[_i + 1])
-                        if _i + 1 < _pressed_times.size
-                        else _rec_end
-                    )
-                    _raw_times.extend([float(_t), _end_t])
-                    _raw_labels.extend([f"Start {_name}", f"Stop {_name}"])
-
-                physiodata.events["KeyboardEpochs"] = EventSeries(
-                    np.asarray(_raw_times, dtype=float),
-                    _raw_labels,
-                )
-                logger.info(
-                    f"Keyboard fallback: created {_pressed_times.size} epoch(s) "
-                    f"from 'pressed' markers — {_epoch_names}"
-                )
-            else:
-                logger.info(
-                    "Keyboard stream found but contains no 'pressed' markers — "
-                    "no fallback epochs created."
-                )
+    # we derive consecutive, non-overlapping epochs from "<key> pressed"
+    # events.  See spectHR.DataSet.epoch_builders.keyboard for details.
+    build_keyboard_epoch_events(physiodata)
 
     if not physiodata.timeseries:
         logger.warning("No usable Polar time series found.")

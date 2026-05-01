@@ -21,7 +21,12 @@ import numpy as np
 from scipy import signal
 from scipy.interpolate import interp1d
 
-from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples, _resolve_window
+from spectHR.Tools.PSD._psd_utils import (
+    _chi2_ci,
+    _require_min_samples,
+    _resolve_window,
+    update_params,
+)
 
 
 WELCH_PARAMS = {
@@ -36,9 +41,7 @@ WELCH_PARAMS = {
 
 def load_welch_params(config: dict) -> None:
     """Update module-level WELCH_PARAMS from a workspace config dict."""
-    for key in WELCH_PARAMS:
-        if key in config:
-            WELCH_PARAMS[key] = config[key]
+    update_params(WELCH_PARAMS, config)
 
 
 def compute_welch_psd(

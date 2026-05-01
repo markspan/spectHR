@@ -24,7 +24,12 @@ from typing import Optional, Tuple
 import numpy as np
 from scipy.signal import get_window
 
-from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples, _resolve_window
+from spectHR.Tools.PSD._psd_utils import (
+    _chi2_ci,
+    _require_min_samples,
+    _resolve_window,
+    update_params,
+)
 
 
 CARSPAN_PARAMS = {
@@ -37,9 +42,7 @@ CARSPAN_PARAMS = {
 
 def load_carspan_params(config: dict) -> None:
     """Update module-level CARSPAN_PARAMS from a workspace config dict."""
-    for key in CARSPAN_PARAMS:
-        if key in config:
-            CARSPAN_PARAMS[key] = config[key]
+    update_params(CARSPAN_PARAMS, config)
 
 
 # ---------------------------------------------------------------------------

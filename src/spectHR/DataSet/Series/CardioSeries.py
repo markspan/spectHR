@@ -10,6 +10,7 @@ from spectHR.DataSet.Series.CardioMetricsMixin import CardioMetricsMixin
 from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
     CardioFrequencyMetricsMixin,
 )
+from spectHR.DataSet.Series.IBIClassificationParams import DEFAULT_IBI_PARAMS
 from spectHR.Tools.Logger import logger
 
 if TYPE_CHECKING:
@@ -69,10 +70,10 @@ class CardioSeries(CardioMetricsMixin, CardioFrequencyMetricsMixin):
         ts,
         *,
         min_peak_distance_ms: float = 300.0,
-        window_length: int = 51,
-        n_std: float = 4.0,
-        max_ibi_sec: float = 2.0,
-        classify: bool = True,
+        window_length: int   = DEFAULT_IBI_PARAMS.window_length,
+        n_std:         float = DEFAULT_IBI_PARAMS.n_std,
+        max_ibi_sec:   float = DEFAULT_IBI_PARAMS.max_ibi_sec,
+        classify:      bool  = True,
     ) -> "CardioSeries":
         """
         Detect R-peaks from an ECG TimeSeries and construct a CardioSeries.
@@ -181,9 +182,9 @@ class CardioSeries(CardioMetricsMixin, CardioFrequencyMetricsMixin):
     def classify_ibi(
         self,
         *,
-        window_length: int = 51,
-        n_std: float = 4.0,
-        max_ibi_sec: float = 2.0,
+        window_length: int   = DEFAULT_IBI_PARAMS.window_length,
+        n_std:         float = DEFAULT_IBI_PARAMS.n_std,
+        max_ibi_sec:   float = DEFAULT_IBI_PARAMS.max_ibi_sec,
     ) -> None:
         """
         Classify IBIs and assign labels.
@@ -295,10 +296,10 @@ class CardioSeries(CardioMetricsMixin, CardioFrequencyMetricsMixin):
         start: float,
         end: float,
         min_peak_distance_ms: float = 300.0,
-        window_length: int = 51,
-        n_std: float = 4.0,
-        max_ibi_sec: float = 2.0,
-        classify: bool = True,
+        window_length: int   = DEFAULT_IBI_PARAMS.window_length,
+        n_std:         float = DEFAULT_IBI_PARAMS.n_std,
+        max_ibi_sec:   float = DEFAULT_IBI_PARAMS.max_ibi_sec,
+        classify:      bool  = True,
     ) -> None:
         """
         Re-detect R-peaks inside [start, end] and merge with peaks outside.

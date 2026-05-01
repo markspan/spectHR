@@ -3,7 +3,7 @@ HRVMetrics.py
 
 Provides:
     - @hrv_metric decorator
-    - HRVMetricMixin for automatic HRV metric discovery
+    - HRVMetric for automatic HRV metric discovery
     - Standard HRV functions ready for use in RTopSeries and RTopSeriesView.
 
 This file is independent and can be imported anywhere.
@@ -22,7 +22,7 @@ def hrv_metric(func: Callable) -> Callable:
     Decorator: Marks a method as an HRV metric.
 
     Any method decorated with @hrv_metric will automatically be included
-    in HRVMetricMixin.metric_table() and metric_table_epoch().
+    in HRVMetric.metric_table() and metric_table_epoch().
 
     The function must:
         - be an instance method: func(self)
@@ -39,7 +39,7 @@ class HRVMetric:
     """
     Adds automatic HRV metric capabilities to a class.
 
-    A class inheriting HRVMetricMixin may define any number of HRV metrics
+    A class inheriting HRVMetric may define any number of HRV metrics
     using the @hrv_metric decorator.
 
     Example:
@@ -84,7 +84,7 @@ class HRVMetric:
             dict: metric_name → metric_value
         """
         if not hasattr(self, "view"):
-            raise AttributeError("Class inheriting HRVMetricMixin must implement .view(start, end).")
+            raise AttributeError("Class inheriting HRVMetric must implement .view(start, end).")
 
         view = self.view(starttime, endtime)
         metrics = self.get_metric_functions()

@@ -1,17 +1,20 @@
 from __future__ import annotations
-import numpy as np
-from typing import Any
+import struct
 from collections import Counter
+from pathlib import Path
+from typing import Any
+
+import numpy as np
 
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.Tools.Logger import logger
-
-from spectHR.DataSet.loaders.EventCodeWindow import EventCodeWindow
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
-from pathlib import Path
-import struct
+from spectHR.Tools.Logger import logger
+
+# NOTE: EventCodeWindow imports PySide6 at module load.  We resolve it lazily
+# (see ``loadEVT`` below) so that ``import spectHR`` works in headless
+# environments — only the GUI path through CARSPAN .evt files needs Qt.
 
 @register_loader(".evt")
 def load_evt(physiodata, filename: str, **kwargs: Any) -> None:
@@ -134,6 +137,10 @@ def loadEVT(physiodata, filename: Path) -> None:
         # ----------------------------------------------
         # GUI-based code selection
         # ----------------------------------------------
+        # Import lazily so the rest of the loader (and ``import spectHR``)
+        # remains usable on machines without PySide6 installed.
+        from spectHR.DataSet.loaders.EventCodeWindow import EventCodeWindow
+
         window = EventCodeWindow(
             other_codes,
             ignore=rtop_code,

@@ -22,7 +22,7 @@ from typing import Optional, Tuple
 import numpy as np
 from scipy import signal as sp_signal
 
-from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples
+from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples, update_params
 
 
 LOMBSCARGLE_PARAMS = {
@@ -34,9 +34,7 @@ LOMBSCARGLE_PARAMS = {
 
 def load_lombscargle_params(config: dict) -> None:
     """Update module-level LOMBSCARGLE_PARAMS from a workspace config dict."""
-    for key in LOMBSCARGLE_PARAMS:
-        if key in config:
-            LOMBSCARGLE_PARAMS[key] = config[key]
+    update_params(LOMBSCARGLE_PARAMS, config)
 
 
 def compute_lombscargle_psd(

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 import pickle
-from typing import Any, Dict
+from typing import Any
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
+from spectHR.DataSet.Series.IBIClassificationParams import DEFAULT_IBI_PARAMS
 from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
 from spectHR.DataSet.Epoch import Epoch, Phase
+from spectHR.DataSet.epoch_builders import build_epochs_from_markers
 from spectHR.DataSet.loaders import get_loader
 from spectHR.DataSet.StreamAccessor import StreamAccessor
 from spectHR.Tools.Logger import logger
@@ -44,14 +46,14 @@ class PhysioData:
         self.basename = Path(filename).stem
 
         # Core containers (always defined)
-        self.timeseries: Dict[str, TimeSeries]         = {}
-        self.events:     Dict[str, EventSeries]        = {}
-        self.epochs:     Dict[str, Epoch]              = {}
-        self.phases:     dict[str, Phase]              = {}
-        self.band_map:   dict[str, dict[str, str]]     = {}
+        self.timeseries:  dict[str, TimeSeries]        = {}
+        self.events:      dict[str, EventSeries]       = {}
+        self.epochs:      dict[str, Epoch]             = {}
+        self.phases:      dict[str, Phase]             = {}
+        self.band_map:    dict[str, dict[str, str]]    = {}
         self.active_band: str | None                   = None
-        self.hrv_map:    dict[str, CardioSeries]       = {}
-        self.rsp_map:    dict[str, RespirationSeries]  = {}
+        self.hrv_map:     dict[str, CardioSeries]      = {}
+        self.rsp_map:     dict[str, RespirationSeries] = {}
 
         # Load using registered loader
         loader = get_loader(filename)
@@ -105,32 +107,14 @@ class PhysioData:
             bounds_start = 0.0
             bounds_end   = 1.0
 
-        epochs: Dict[str, Epoch] = {
-            "experiment": Epoch(active=True, start=bounds_start, end=bounds_end)
-        }
-
-        # Parse marker streams
-        ongoing: Dict[str, float] = {}
-        for ev in self.events.values():
-            times  = ev.times - earliest
-            labels = ev.labels
-            for t, raw in zip(times, labels):
-                text = str(raw).strip().lower()
-                if text.startswith("end "):
-                    text = "stop " + text[4:]
-                if text.startswith("start "):
-                    label = text[6:].strip()
-                    ongoing[label] = float(t)
-                elif text.startswith("stop "):
-                    label = text[5:].strip()
-                    start = ongoing.pop(label, bounds_start)
-                    epochs[label] = Epoch(active=True, start=start, end=float(t))
-
-        # Epochs without explicit stop
-        for label, start in ongoing.items():
-            epochs[label] = Epoch(active=True, start=float(start), end=bounds_end)
-
-        self.epochs = epochs
+        # Delegate the start/stop marker parsing to the shared builder so the
+        # rules live in one place (spectHR.DataSet.epoch_builders.start_stop).
+        self.epochs = build_epochs_from_markers(
+            self.events,
+            earliest=earliest,
+            bounds_start=bounds_start,
+            bounds_end=bounds_end,
+        )
         logger.info(
             f"Built {len(self.epochs)} epochs. "
             f"Normalized time range: {bounds_start:.3f}–{bounds_end:.3f} s."
@@ -197,10 +181,12 @@ class PhysioData:
         filter_order:  int | None = None,
         # Peak detection
         min_peak_distance_ms: float = 300.0,
-        # IBI classification — passed through to classify_ibi()
-        window_length: int   = 51,
-        n_std:         float = 4.0,
-        max_ibi_sec:   float = 2.0,
+        # IBI classification — defaults track DEFAULT_IBI_PARAMS so the three
+        # entry points (preprocess_ecg, from_timeseries, replace_from_timeseries)
+        # stay in lock-step automatically.
+        window_length: int   = DEFAULT_IBI_PARAMS.window_length,
+        n_std:         float = DEFAULT_IBI_PARAMS.n_std,
+        max_ibi_sec:   float = DEFAULT_IBI_PARAMS.max_ibi_sec,
         classify:      bool  = True,
     ) -> None:
         """
