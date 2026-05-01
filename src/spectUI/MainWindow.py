@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.ui)
         self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
         self.setWindowTitle("spectHR - ECG Preprocessing")
-        self.resize(1920, 1280)
+        self.resize(1920, 1080)
         self.ui.Splitter.setSizes([200, 1700])
 
         # Initialize workspace (also applies FrequencyAnalysis bands)
