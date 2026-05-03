@@ -1,7 +1,6 @@
 name: Release (bump tag -> bump version -> Nuitka builds -> GitHub Release)
 
-on:
-  workflow_dispatch: 
+on: 
   push:
     tags:
       - "bump"
