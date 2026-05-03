@@ -167,11 +167,28 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------   
     def Toggle_xkcd_mode(self, checked):
         if checked:
+            # matplotlib:
             self.pltrcdefaults = plt.rcParams.copy()
             plt.xkcd()
             plt.rcParams.update({'font.size': 8})
+            # system font:
+            xkcd_font = QFont("xkcd Script", 12)
+            xkcd_font.setBold(False)    
+            QApplication.setFont(xkcd_font)
+            # Stylesheet on the tab bar. Stylesheets do take precedence over the native style's font lookup:
+            app.setStyleSheet("""
+                QWidget, QTreeView, QTreeWidget, QListView, QMenuBar, QMenu,
+                QGroupBox, QLineEdit, QSpinBox, QComboBox, QDoubleSpinBox,
+                QPushButton, QLabel, QToolTip
+                                    { font-family: 'xkcd Script'; font-size: 12pt; }
+                QTabBar::tab        { font-family: 'xkcd Script'; font-size: 14pt; }
+                QTableWidget        { font-family: 'xkcd Script'; font-size: 12pt; }
+                QHeaderView::section{ font-family: 'xkcd Script'; font-size: 12pt; }
+            """)
         else:
             plt.rcParams.update(self.pltrcdefaults)
+            QApplication.setFont(QApplication.font().defaultFamily())
+            app.setStyleSheet("")  # Reset to default style
             
         # Refresh all plots to apply the new style
         if self.dataset is not None:
@@ -633,6 +650,7 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     default_font = QFont("Segoe UI", 12)
+    #default_font = QFont("xkcd Script", 12)
     default_font.setBold(False)
     app.setStyle("WindowsVista")
     app.setFont(default_font)
