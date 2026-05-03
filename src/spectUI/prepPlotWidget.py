@@ -542,7 +542,8 @@ class PrepPlotWidget(QWidget):
             right=0.995,
             top=0.9,
             bottom=0.05,
-            hspace=0.08,  # tight
+            hspace=0.2,  # tight
+            wspace=0.08,
         )
 
     def _create_navigation_bar(self) -> QWidget:

@@ -88,6 +88,12 @@ class MainWindow(QMainWindow):
         self.workspace = spQt.LoadWorkspace(self.workspace_file)
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
 
+        # add xkcd mode for fun — can be toggled on/off in the settings dialog
+        self.ui.actionXKCD_Mode.triggered.connect(self.Toggle_xkcd_mode)
+        self.ui.actionXKCD_Mode.setCheckable(True)
+        self.ui.actionXKCD_Mode.setStatusTip("Toggle XKCD sketch-style mode")
+        self.ui.actionXKCD_Mode.setToolTip("Toggle XKCD sketch-style mode")
+
         # Menu wiring — Workspace / Directories
         self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
         self.ui.actionOpen_Workspace.setShortcut("Ctrl+O")
@@ -155,6 +161,25 @@ class MainWindow(QMainWindow):
 
         self.dataset = None
 
+    # ------------------------------------------------------------------
+    # UI actions: Taggle the XKCD mode
+    # ------------------------------------------------------------------   
+    def Toggle_xkcd_mode(self, checked):
+        if checked:
+            self.pltrcdefaults = plt.rcParams.copy()
+            plt.xkcd()
+            plt.rcParams.update({'font.size': 8})
+        else:
+            plt.rcParams.update(self.pltrcdefaults)
+            
+        # Refresh all plots to apply the new style
+        if self.dataset is not None:
+            self.show_preprocessing_plot(self.dataset)
+            self.show_hr_plot(self.dataset)
+            self.show_poincare_plot(self.dataset)
+            self.show_epoch_plot(self.dataset)
+            self.show_psd_plot(self.dataset)
+            self.show_parameters_plot(self.dataset)
     # ------------------------------------------------------------------
     # Workspace menu actions
     # ------------------------------------------------------------------
