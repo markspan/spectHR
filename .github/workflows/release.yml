@@ -1,6 +1,6 @@
 name: Release (bump tag -> bump version -> Nuitka builds -> GitHub Release)
 
-on:
+on: 
   push:
     tags:
       - "bump"
