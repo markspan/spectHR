@@ -2,6 +2,7 @@ import json
 import pickle
 import sys
 import os
+import logging
 
 # Force Matplotlib to use the Qt backend inside a PySide6 app (macOS-safe)
 os.environ.setdefault("MPLBACKEND", "QtAgg")
@@ -39,7 +40,6 @@ import spectUI as spQt
 import spectHR.DataSet.Series.CardioMetricsMixin  # ensure the module is loaded
 import spectHR.DataSet.Series.CardioFrequencyMetricsMixin  # ensure the module is loaded
 
-
 def _cm():
     """Return the CardioMetricsMixin *module* (never the class)."""
     return sys.modules["spectHR.DataSet.Series.CardioMetricsMixin"]
@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super(MainWindow, self).__init__()
+        logging.getLogger('matplotlib.font_manager').disabled = True
 
         # Load the UI file
         base_dir = Path(__file__).parent
