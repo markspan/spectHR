@@ -622,8 +622,9 @@ class MainWindow(QMainWindow):
 
         labels, views = zip(*pairs)
 
-        # Create container widget with all plots and uniform scaling
-        psd_widget = spQt.PSDPlotWidget(views, labels)
+        # Create container widget with all plots and uniform scaling.
+        # ``workspace`` is forwarded so PrintScreen knows where to save.
+        psd_widget = spQt.PSDPlotWidget(views, labels, workspace=self.workspace)
         self.welch_psd_layout.addWidget(psd_widget)
 
     def show_parameters_plot(self, data):

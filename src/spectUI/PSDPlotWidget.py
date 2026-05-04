@@ -15,17 +15,25 @@ Design
 
 from __future__ import annotations
 
+import re
 import sys as _sys
 import warnings
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from platformdirs import user_documents_path
+
+from spectHR.Tools.Logger import logger
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QGridLayout,
+    QMessageBox,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -36,7 +44,26 @@ warnings.filterwarnings("ignore")
 
 # Y-axis scaling ignores frequencies below this cutoff so VLF peaks
 # (typically dominated by slow drift) don't squash the LF/HF detail.
-Y_SCALE_F_MIN: float = 0.05
+Y_SCALE_F_MIN: float = 0.08
+
+# Multiplicative step used when the user resizes the y-axis with the
+# arrow keys.  ``Up`` shrinks y-max by this factor (zooms in vertically),
+# ``Down`` grows it by the reciprocal — chosen so the two are symmetric
+# and a few presses give a noticeable but not jarring change.
+_Y_ZOOM_STEP_UP:   float = 0.80   # Up arrow   → y-max × 0.80  (zoom in)
+_Y_ZOOM_STEP_DOWN: float = 1.25   # Down arrow → y-max × 1.25  (zoom out)
+# Floor that prevents y-max from collapsing to zero on long Up presses.
+_Y_TOP_FLOOR:      float = 1e-12
+
+# File formats produced when the user saves the plots via PrintScreen.
+# Both are vector / lossless and suitable for print-ready figures; the
+# user can pick whichever their downstream pipeline prefers.
+_EXPORT_FORMATS: tuple[str, ...] = ("pdf",)
+# Default location used when no workspace is supplied — mirrors the
+# ``OutputDirectory`` default in ``spectUI.workSpace._DEFAULT_WORKSPACE``.
+_DEFAULT_EXPORT_DIR: Path = user_documents_path() / "spectHR" / "export"
+# Characters not allowed in filenames on Windows (and friends elsewhere).
+_FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
 
 def _cfm():
@@ -108,6 +135,19 @@ def _fetch(series, label: str) -> _PlotData:
         method=result.method,
         band_powers=band_powers,
     )
+
+
+def _sanitize_filename(name: str) -> str:
+    """
+    Replace whitespace and filesystem-unsafe characters in *name* with ``_``.
+
+    Used to build cross-platform filenames from dataset and epoch labels —
+    e.g. ``"a #1"`` becomes ``"a_1"``, ``"rest / sit"`` becomes
+    ``"rest_sit"``.  Trailing underscores and leading dots (which would
+    otherwise hide files on Unix) are stripped.
+    """
+    cleaned = _FILENAME_BAD_CHARS.sub("_", name).strip("._")
+    return cleaned
 
 
 def _band_bounds(bands: dict) -> Tuple[float, float, float, float]:
@@ -213,6 +253,8 @@ class PSDPlotWidget(QWidget):
         series_list: List,
         labels: List[str],
         parent: Optional[QWidget] = None,
+        *,
+        workspace: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__(parent)
 
@@ -226,6 +268,14 @@ class PSDPlotWidget(QWidget):
         y_max = max((_y_max(p, scale_min, scale_max) for p in plots), default=0.0)
         y_top = y_max * 1.1 if y_max > 0 else 1.0
 
+        # Remember the inputs so the keyboard handlers can build filenames
+        # and rescale the linked y-axes after construction.
+        self._labels: List[str] = list(labels)
+        self._series_list: List = list(series_list)
+        self._workspace: Optional[Dict[str, Any]] = workspace
+        self._subplots: List[_SinglePSDPlot] = []
+        self._y_top: float = max(float(y_top), _Y_TOP_FLOOR)
+
         # Build the scroll area + grid container.
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -236,6 +286,7 @@ class PSDPlotWidget(QWidget):
 
         for idx, data in enumerate(plots):
             subplot = _SinglePSDPlot(data, x_min, x_max, y_top)
+            self._subplots.append(subplot)
             row, col = divmod(idx, 2)
             container_layout.addWidget(subplot, row, col)
 
@@ -243,6 +294,156 @@ class PSDPlotWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(scroll_area)
         self.setLayout(layout)
+
+        # Accept keyboard focus so the widget participates in the focus
+        # chain (the QShortcut registrations below need that to be true).
+        self.setFocusPolicy(Qt.StrongFocus)
+
+        # Up / Down arrows go through QShortcut rather than keyPressEvent
+        # because the inner QScrollArea consumes arrow keys for scrolling
+        # before they can bubble up.  ``WidgetWithChildrenShortcut`` lets
+        # the shortcut fire whenever focus is anywhere inside this widget.
+        zoom_in = QShortcut(QKeySequence(Qt.Key_Up), self)
+        zoom_in.setContext(Qt.WidgetWithChildrenShortcut)
+        zoom_in.activated.connect(self._zoom_in)
+
+        zoom_out = QShortcut(QKeySequence(Qt.Key_Down), self)
+        zoom_out.setContext(Qt.WidgetWithChildrenShortcut)
+        zoom_out.activated.connect(self._zoom_out)
+
+        # Ctrl+P → save every subplot as print-ready vector files
+        # (PDF + SVG) into the configured export directory.  The bare
+        # PrintScreen key is intentionally NOT used: every major desktop
+        # (Windows clipboard capture, GNOME / KDE screenshot tools,
+        # macOS where the key barely exists) consumes that key before Qt
+        # receives it, so QShortcut never fires.  Ctrl+P is the universal
+        # "Print" gesture and is reliable cross-platform.
+        save_all = QShortcut(QKeySequence("Shift+Ctrl+P"), self)
+        save_all.setContext(Qt.WidgetWithChildrenShortcut)
+        save_all.activated.connect(self._save_all_plots)
+
+    # ------------------------------------------------------------------
+    # Keyboard interaction — linked y-axis zoom across all subplots
+    # ------------------------------------------------------------------
+
+    def _zoom_in(self) -> None:
+        """Up arrow: shrink the shared y-max (zoom in vertically)."""
+        self._set_y_top(self._y_top * _Y_ZOOM_STEP_UP)
+
+    def _zoom_out(self) -> None:
+        """Down arrow: grow the shared y-max (zoom out vertically)."""
+        self._set_y_top(self._y_top * _Y_ZOOM_STEP_DOWN)
+
+    def _set_y_top(self, new_y_top: float) -> None:
+        """
+        Apply ``new_y_top`` to every linked subplot and redraw.
+
+        Clipped to ``_Y_TOP_FLOOR`` so repeated Up presses can't collapse
+        the axis to a zero-height range.
+        """
+        new_y_top = max(float(new_y_top), _Y_TOP_FLOOR)
+        self._y_top = new_y_top
+        for subplot in self._subplots:
+            subplot.ax.set_ylim(bottom=0.0, top=new_y_top)
+            subplot.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
+    # Print-ready export — PrintScreen saves every plot as PDF + SVG
+    # ------------------------------------------------------------------
+
+    def _save_all_plots(self) -> None:
+        """
+        Save every subplot to the export directory in vector formats.
+
+        Output files are written to ``workspace["Directories"]["OutputDirectory"]``
+        when a workspace was supplied at construction; otherwise the
+        platformdirs default (``Documents/spectHR/export``) is used.
+
+        For each subplot we emit one file per format in ``_EXPORT_FORMATS``
+        (currently PDF and SVG — both vector, both lossless).  Existing
+        files with the same name are silently overwritten so re-pressing
+        PrintScreen during interactive y-axis tuning keeps a single set
+        of fresh exports.
+        """
+        export_dir = self._resolve_export_dir()
+        try:
+            export_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            msg = f"PSD export: could not create {export_dir!s}: {exc}"
+            logger.warning(msg)
+            QMessageBox.warning(self, "PSD export failed", msg)
+            return
+
+        prefix = self._dataset_prefix()
+        n_saved = 0
+        failures: list[str] = []
+        for label, subplot in zip(self._labels, self._subplots):
+            stem = self._build_filename_stem(prefix, label)
+            for fmt in _EXPORT_FORMATS:
+                path = export_dir / f"{stem}.{fmt}"
+                try:
+                    # ``bbox_inches="tight"`` trims excess whitespace; the
+                    # figure DPI is irrelevant for vector formats but
+                    # we keep the canvas's native size so the on-screen
+                    # aspect ratio is preserved in the saved file.
+                    subplot.canvas.figure.savefig(
+                        path,
+                        format=fmt,
+                        bbox_inches="tight",
+                    )
+                    n_saved += 1
+                except (OSError, ValueError) as exc:
+                    fail_msg = f"failed to write {path!s}: {exc}"
+                    failures.append(fail_msg)
+                    logger.warning(f"PSD export: {fail_msg}")
+
+        # Compose the same summary message the user sees in the log and the
+        # message box, so the log file and the dialog stay in sync.
+        summary = (
+            f"PSD export: saved {n_saved} file(s) "
+            f"({len(self._subplots)} plot(s) × {len(_EXPORT_FORMATS)} format(s)) "
+            f"to {export_dir!s}"
+        )
+        logger.info(summary)
+
+        # Show the dialog.  If any individual savefig calls failed we
+        # downgrade the icon to a warning and append the error list so the
+        # user notices something went sideways without having to check the
+        # log file.
+        if failures:
+            body = summary + "\n\nProblems:\n  - " + "\n  - ".join(failures)
+            QMessageBox.warning(self, "PSD export (with warnings)", body)
+        else:
+            QMessageBox.information(self, "PSD export", summary)
+
+    def _resolve_export_dir(self) -> Path:
+        """Pick the output directory from the workspace, or fall back to default."""
+        if self._workspace is not None:
+            try:
+                return Path(self._workspace["Directories"]["OutputDirectory"])
+            except (KeyError, TypeError):
+                # Workspace exists but doesn't carry the expected nesting —
+                # log once and fall through to the platformdirs default.
+                logger.warning(
+                    "PSD export: workspace lacks Directories.OutputDirectory; "
+                    "falling back to default export folder."
+                )
+        return _DEFAULT_EXPORT_DIR
+
+    def _dataset_prefix(self) -> str:
+        """Best-effort dataset name extracted from the first view's PhysioData."""
+        for series in self._series_list:
+            pd = getattr(series, "_pd", None)
+            basename = getattr(pd, "basename", None)
+            if basename:
+                return _sanitize_filename(str(basename))
+        return "PSD"
+
+    @staticmethod
+    def _build_filename_stem(prefix: str, label: str) -> str:
+        """``{prefix}_PSD_{label}`` with filesystem-unsafe characters scrubbed."""
+        clean_label = _sanitize_filename(label) or "epoch"
+        return f"{prefix}_PSD_{clean_label}"
 
     # ------------------------------------------------------------------
     # Pure plotting backend
@@ -276,27 +477,40 @@ class PSDPlotWidget(QWidget):
         if data.error is not None or data.freqs.size == 0:
             msg = data.error or "Insufficient data"
             ax.text(
-                0.5, 0.5, msg,
-                ha="center", va="center",
-                transform=ax.transAxes, color="gray",
+                0.5,
+                0.5,
+                msg,
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color="gray",
             )
             return ax
 
         ax.set_xlim(x_min, x_max)
         ax.autoscale(enable=False, axis="x")
-
+        
         # ---- Confidence-interval shading -------------------------------
         if data.ci_lower is not None and data.ci_upper is not None:
             ci_pct = int(round((1.0 - cfm.CI_ALPHA) * 100))
             ax.fill_between(
-                data.freqs, data.ci_lower, data.ci_upper,
-                color="gray", alpha=0.20,
-                label=f"{ci_pct} % CI", zorder=1,
+                data.freqs,
+                data.ci_lower,
+                data.ci_upper,
+                color="gray",
+                alpha=0.20,
+                label=f"{ci_pct} % CI",
+                zorder=1,
             )
             for ci_line in (data.ci_lower, data.ci_upper):
                 ax.plot(
-                    data.freqs, ci_line,
-                    color="gray", lw=0.7, ls="--", alpha=0.55, zorder=2,
+                    data.freqs,
+                    ci_line,
+                    color="gray",
+                    lw=0.7,
+                    ls="--",
+                    alpha=0.55,
+                    zorder=2,
                 )
 
         # ---- PSD line --------------------------------------------------
@@ -382,8 +596,11 @@ def _draw_band_fill(
     p_band = np.concatenate(([p_lo], data.power[fill_mask], [p_hi]))
 
     ax.fill_between(
-        f_band, 0, p_band,
-        color=color, alpha=alpha,
+        f_band,
+        0,
+        p_band,
+        color=color,
+        alpha=alpha,
         label=f"{name}: {label_val} {power_unit} ({n_pts})",
         zorder=4 if name != "FullRange" else 0,
     )

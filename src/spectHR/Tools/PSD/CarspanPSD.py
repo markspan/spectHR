@@ -19,6 +19,7 @@ L. J. M. Mulder, "CARSPAN Manual", Ch. 3.
 
 from __future__ import annotations
 
+import math
 from typing import Optional, Tuple
 
 import numpy as np
@@ -110,7 +111,7 @@ def compute_carspan_psd_strict(
     freqs, power, bin_counts = _compute(
         event_times_s,
         f_max=f_max,
-        smooth=smooth,
+        smooth=True,
         display_resolution=display_resolution,
         strict=True,
         alpha_taper=alpha_taper,
