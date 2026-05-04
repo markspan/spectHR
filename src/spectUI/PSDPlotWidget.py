@@ -65,6 +65,14 @@ _DEFAULT_EXPORT_DIR: Path = user_documents_path() / "spectHR" / "export"
 # Characters not allowed in filenames on Windows (and friends elsewhere).
 _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
+# Display-only scaling applied to ``carspan``/``carspan_strict`` PSD curves
+# when the 3-point smoothing-for-display is on. The smoothing kernel
+# preserves the area but flattens the peaks; the sqrt(3) divisor brings
+# the displayed peak heights back in line with the other methods. Band
+# powers (legend AUC values) are not scaled — they're computed from the
+# unsmoothed integral.
+_CARSPAN_DISPLAY_SCALE: float = 1.0 / np.sqrt(3.0)
+
 
 def _cfm():
     """
@@ -74,6 +82,17 @@ def _cfm():
     reflect the latest workspace configuration, even after reloads.
     """
     return _sys.modules["spectHR.DataSet.Series.CardioFrequencyMetricsMixin"]
+
+
+def _carspan_smoothing_active() -> bool:
+    """True when CARSPAN's display-time 3-point smoothing is enabled."""
+    mod = _sys.modules.get("spectHR.Tools.PSD.CarspanPSD")
+    if mod is None:
+        return False
+    params = getattr(mod, "CARSPAN_PARAMS", None)
+    if not isinstance(params, dict):
+        return False
+    return bool(params.get("smooth_for_display", False))
 
 
 # ---------------------------------------------------------------------------
@@ -121,16 +140,27 @@ def _fetch(series, label: str) -> _PlotData:
         print(f"Warning: band powers failed for {label}: {e}")
         band_powers = {}
 
+    power = np.asarray(result.power).ravel()
+    ci_lower = (
+        np.asarray(result.ci_lower).ravel() if result.ci_lower is not None else None
+    )
+    ci_upper = (
+        np.asarray(result.ci_upper).ravel() if result.ci_upper is not None else None
+    )
+
+    if result.method in ("carspan", "carspan_strict") and _carspan_smoothing_active():
+        power = power * _CARSPAN_DISPLAY_SCALE
+        if ci_lower is not None:
+            ci_lower = ci_lower * _CARSPAN_DISPLAY_SCALE
+        if ci_upper is not None:
+            ci_upper = ci_upper * _CARSPAN_DISPLAY_SCALE
+
     return _PlotData(
         label=label,
         freqs=np.asarray(result.freqs).ravel(),
-        power=np.asarray(result.power).ravel(),
-        ci_lower=(
-            np.asarray(result.ci_lower).ravel() if result.ci_lower is not None else None
-        ),
-        ci_upper=(
-            np.asarray(result.ci_upper).ravel() if result.ci_upper is not None else None
-        ),
+        power=power,
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
         unit=result.unit,
         method=result.method,
         band_powers=band_powers,
