@@ -178,12 +178,12 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 The **PSD tab** shows one power spectrum per active epoch, stacked vertically. Four frequency bands are shaded:
 
-- **FullRange (0.02–0.50 Hz)**, the total HRV spectrum.
+- **FullRange (0.02–0.65 Hz)**, the total HRV spectrum.
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes; requires long recordings.
 - **LF (0.07–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
 - **HF (0.15–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
 
-The shaded grey band is the **confidence interval**. Four PSD methods are available — `carspan`, `carspan_strict`, `welch`, `lombscargle` — selected in **WorkSpace → Edit Parameters**. The method takes effect immediately without restarting.
+Ranges are configurable. The shaded grey band is the **confidence interval**. Four PSD methods are available — `carspan`, `carspan_strict`, `welch`, `lombscargle` — selected in **WorkSpace → Edit Parameters**. The method takes effect immediately without restarting.
 
 ---
 
