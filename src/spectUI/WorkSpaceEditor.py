@@ -3,10 +3,12 @@ from typing import Any
 
 from PySide6.QtWidgets import (
     QApplication,
+    QColorDialog,
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QFormLayout,
+    QGridLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 
 
 # ======================================================================
@@ -144,6 +147,75 @@ def _label(key: str) -> str:
     return s.title()
 
 
+# ----------------------------------------------------------------------
+# Colour-picker button used by the bands matrix
+# ----------------------------------------------------------------------
+
+
+class _ColorButton(QPushButton):
+    """
+    Push button that doubles as a colour swatch and a colour picker.
+
+    The button's *text* is the colour string itself (e.g. ``"darkgreen"``
+    or ``"#aa3322"``) — that way the surrounding ``ParametersEditorDialog``
+    can read the value via ``widget.text()`` exactly like a ``QLineEdit``,
+    no special-casing required.
+
+    Clicking the button opens a ``QColorDialog`` seeded with the current
+    colour. On accept the new colour is stored as ``#rrggbb`` (the format
+    Qt returns) and the swatch is repainted via the stylesheet.
+    """
+
+    def __init__(self, initial: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._color: str = str(initial) if initial is not None else ""
+        self.setMinimumWidth(110)
+        self._refresh()
+        self.clicked.connect(self._pick)
+
+    # --- internal -----------------------------------------------------
+
+    def _refresh(self) -> None:
+        """Re-paint the button so its background reflects ``self._color``."""
+        qc = QColor(self._color) if self._color else QColor()
+        self.setText(self._color)
+        if qc.isValid():
+            # Pick a foreground colour with enough contrast so the colour
+            # name stays readable on top of the swatch. Standard ITU-R
+            # BT.601 luma; the 128 threshold is the usual midpoint.
+            r, g, b, _ = qc.getRgb()
+            luma = 0.299 * r + 0.587 * g + 0.114 * b
+            fg = "black" if luma > 128 else "white"
+            self.setStyleSheet(
+                "QPushButton {"
+                f" background-color: {self._color};"
+                f" color: {fg};"
+                " border: 1px solid #888;"
+                " padding: 4px;"
+                "}"
+            )
+        else:
+            # Invalid / empty value — keep the system look so the user
+            # notices the field is unset.
+            self.setStyleSheet("")
+
+    def _pick(self) -> None:
+        """Open ``QColorDialog`` and store whatever the user picks."""
+        seed = QColor(self._color) if QColor(self._color).isValid() else QColor("white")
+        chosen = QColorDialog.getColor(seed, self, "Pick a band colour")
+        if chosen.isValid():
+            # ``name()`` returns ``#rrggbb`` — universally accepted by
+            # both matplotlib and Qt, even though the original workspace
+            # may have used SVG colour names like ``"darkgreen"``.
+            self._color = chosen.name()
+            self._refresh()
+
+
+# ----------------------------------------------------------------------
+# Generic parameters editor
+# ----------------------------------------------------------------------
+
+
 class ParametersEditorDialog(QDialog):
     """
     Generic dialog that reads *all* non-directory sections from the workspace
@@ -213,6 +285,16 @@ class ParametersEditorDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _make_group(self, title: str, data: dict, prefix: str) -> QGroupBox:
+        # Render as a matrix only when this dict-of-dicts is *actually*
+        # shaped like a band table — every inner dict must carry
+        # numeric ``low`` / ``high`` and a non-empty string ``color``.
+        # Plain ``key in v`` is too loose: an earlier loose check could
+        # have written ``low: None / high: None / color: None`` into
+        # unrelated sections (e.g. CardioParameters.IbiClassification)
+        # on save, and we must not pick those back up as bands.
+        if data and all(self._looks_like_band_spec(v) for v in data.values()):
+            return self._make_table_group(title, data, prefix)
+
         group = QGroupBox(_label(title))
         group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         layout = QVBoxLayout(group)
@@ -239,6 +321,94 @@ class ParametersEditorDialog(QDialog):
                 layout.addLayout(row)
 
         return group
+
+    # ------------------------------------------------------------------
+    # Matrix renderer for dict-of-dicts sections (bands)
+    # ------------------------------------------------------------------
+
+    # Columns rendered in the band matrix, in display order. Each entry
+    # is ``(inner_key, header)``. Any inner keys NOT listed here (e.g.
+    # ``alpha`` on the FullRange band) are silently preserved by the
+    # deep-copy in ``get_parameters`` — they survive the round-trip
+    # without showing up in the editor.
+    _TABLE_COLUMNS: tuple[tuple[str, str], ...] = (
+        ("low", "Start"),
+        ("high", "End"),
+        ("color", "Color"),
+    )
+
+    @staticmethod
+    def _looks_like_band_spec(v: Any) -> bool:
+        """True iff *v* is a dict that genuinely describes a frequency band.
+
+        Requires numeric ``low`` and ``high`` and a non-empty string
+        ``color``. Bare presence of the keys is not enough — a bug in an
+        earlier version could leave ``low / high / color`` set to
+        ``None`` in unrelated dicts and we must not promote those to
+        a matrix.
+        """
+        if not isinstance(v, dict):
+            return False
+        low, high, color = v.get("low"), v.get("high"), v.get("color")
+        if not isinstance(low, (int, float)) or isinstance(low, bool):
+            return False
+        if not isinstance(high, (int, float)) or isinstance(high, bool):
+            return False
+        if not isinstance(color, str) or not color.strip():
+            return False
+        return True
+
+    def _make_table_group(self, title: str, data: dict, prefix: str) -> QGroupBox:
+        """Render *data* as a matrix: row per outer key, columns per inner key.
+
+        Used for the FrequencyAnalysis bands section. The outer key (band
+        name) is shown as a read-only label — renaming a band would
+        change its semantic meaning, so renames belong in the JSON
+        directly. ``low`` / ``high`` get plain line edits; ``color``
+        gets a swatch button that opens ``QColorDialog``.
+        """
+        group = QGroupBox(_label(title))
+        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        grid = QGridLayout(group)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(4)
+
+        # ---- header row ----
+        header_name = QLabel("<b>Name</b>")
+        grid.addWidget(header_name, 0, 0)
+        for col_idx, (_, header) in enumerate(self._TABLE_COLUMNS, start=1):
+            grid.addWidget(QLabel(f"<b>{header}</b>"), 0, col_idx)
+
+        # ---- data rows ----
+        for row_idx, (row_key, row_value) in enumerate(data.items(), start=1):
+            # Name cell — read-only.
+            name_label = QLabel(row_key)
+            name_label.setMinimumWidth(120)
+            grid.addWidget(name_label, row_idx, 0)
+
+            for col_idx, (inner_key, _) in enumerate(self._TABLE_COLUMNS, start=1):
+                cell_value = row_value.get(inner_key)
+                cell_path = "{}.{}.{}".format(prefix, row_key, inner_key)
+                widget = self._make_cell_widget(inner_key, cell_value)
+                self._widgets[cell_path] = (widget, cell_value)
+                grid.addWidget(widget, row_idx, col_idx)
+
+        return group
+
+    def _make_cell_widget(self, inner_key: str, value: Any) -> QWidget:
+        """Pick the widget for one cell of the band matrix.
+
+        ``color`` cells get a ``_ColorButton`` so the user can pick
+        visually; everything else falls back to ``QLineEdit`` (the
+        round-trip coercion in ``_coerce`` preserves the original
+        Python type).
+        """
+        if inner_key == "color":
+            return _ColorButton("" if value is None else str(value))
+        edit = QLineEdit("" if value is None else str(value))
+        edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        return edit
 
     def _make_widget(self, key: str, value: Any, path: str = "") -> QWidget:
         """Return a QComboBox for known enumerations, QLineEdit otherwise.

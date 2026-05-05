@@ -78,7 +78,10 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self.ui)
         self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
-        self.setWindowTitle("spectHR - ECG Preprocessing")
+        self.ui.actionAdd_Epoch.setStatusTip("Add a new epoch spanning the full recording")
+        self.ui.actionAdd_Epoch.setToolTip("Add a new epoch spanning the full recording")   
+        self.ui.actionAdd_Epoch.setShortcut("Ctrl+N")
+        self.setWindowTitle("spectHR - ECG / HRV Analysis")
         self.resize(1920, 1080)
         self.ui.Splitter.setSizes([200, 1700])
 
@@ -89,12 +92,6 @@ class MainWindow(QMainWindow):
         self.workspace_file = user_documents_path() / "DefaultWorkSpace.json"
         self.workspace = spQt.LoadWorkspace(self.workspace_file)
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
-
-        # add xkcd mode for fun — can be toggled on/off in the settings dialog
-        self.ui.actionXKCD_Mode.triggered.connect(self.Toggle_xkcd_mode)
-        self.ui.actionXKCD_Mode.setCheckable(True)
-        self.ui.actionXKCD_Mode.setStatusTip("Toggle XKCD sketch-style mode")
-        self.ui.actionXKCD_Mode.setToolTip("Toggle XKCD sketch-style mode")
 
         # Menu wiring — Workspace / Directories
         self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
@@ -108,9 +105,8 @@ class MainWindow(QMainWindow):
         self.ui.actionEdit_Workspace.setToolTip("Edit workspace directories")
 
         self.ui.actionSettings.triggered.connect(self.EditParameters)
-        self.ui.actionSettings.setShortcut("Ctrl+P")
-        self.ui.actionSettings.setStatusTip("Edit workspace parameters")
-        self.ui.actionSettings.setToolTip("Edit workspace parameters")
+        self.ui.actionSettings.setStatusTip("Edit parameters")
+        self.ui.actionSettings.setToolTip("Edit parameters")
 
         self.ui.actionSave_Workspace.triggered.connect(self.SaveWorkSpace)
         self.ui.actionSave_Workspace.setShortcut("Ctrl+S")
@@ -163,42 +159,7 @@ class MainWindow(QMainWindow):
 
         self.dataset = None
 
-    # ------------------------------------------------------------------
-    # UI actions: Taggle the XKCD mode
-    # ------------------------------------------------------------------   
-    def Toggle_xkcd_mode(self, checked):
-        if checked:
-            # matplotlib:
-            self.pltrcdefaults = plt.rcParams.copy()
-            plt.xkcd()
-            plt.rcParams.update({'font.size': 8})
-            # system font:
-            xkcd_font = QFont("xkcd Script", 12)
-            xkcd_font.setBold(False)    
-            QApplication.setFont(xkcd_font)
-            # Stylesheet on the tab bar. Stylesheets do take precedence over the native style's font lookup:
-            app.setStyleSheet("""
-                QWidget, QTreeView, QTreeWidget, QListView, QMenuBar, QMenu,
-                QGroupBox, QLineEdit, QSpinBox, QComboBox, QDoubleSpinBox,
-                QPushButton, QLabel, QToolTip
-                                    { font-family: 'xkcd Script'; font-size: 12pt; }
-                QTabBar::tab        { font-family: 'xkcd Script'; font-size: 14pt; }
-                QTableWidget        { font-family: 'xkcd Script'; font-size: 12pt; }
-                QHeaderView::section{ font-family: 'xkcd Script'; font-size: 12pt; }
-            """)
-        else:
-            plt.rcParams.update(self.pltrcdefaults)
-            QApplication.setFont(QApplication.font().defaultFamily())
-            app.setStyleSheet("")  # Reset to default style
-            
-        # Refresh all plots to apply the new style
-        if self.dataset is not None:
-            self.show_preprocessing_plot(self.dataset)
-            self.show_hr_plot(self.dataset)
-            self.show_poincare_plot(self.dataset)
-            self.show_epoch_plot(self.dataset)
-            self.show_psd_plot(self.dataset)
-            self.show_parameters_plot(self.dataset)
+
     # ------------------------------------------------------------------
     # Workspace menu actions
     # ------------------------------------------------------------------
@@ -652,7 +613,6 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     default_font = QFont("Segoe UI", 12)
-    #default_font = QFont("xkcd Script", 12)
     default_font.setBold(False)
     app.setStyle("WindowsVista")
     app.setFont(default_font)

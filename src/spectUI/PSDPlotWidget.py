@@ -247,9 +247,21 @@ class _SinglePSDPlot(QWidget):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.canvas: FigureCanvas = FigureCanvas(Figure(figsize=(5, 4)))
+        # facecolor='white' forces a white figure regardless of the Qt
+        # system theme; without this, matplotlib follows its rcParams
+        # default which can pick up a light grey on some platforms.
+        self.canvas: FigureCanvas = FigureCanvas(
+            Figure(figsize=(5, 4), facecolor="white")
+        )
         self.ax: Axes = self.canvas.figure.add_subplot(111)
+        self.ax.set_facecolor("white")
+        # The QWidget surrounding the canvas would otherwise show the
+        # system palette colour around the figure margins (visible as a
+        # light-grey border). Force its background to white so the
+        # subplot looks like a single white tile.
+        self.setStyleSheet("background-color: white;")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.canvas)
         self.setLayout(layout)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -307,10 +319,19 @@ class PSDPlotWidget(QWidget):
         self._subplots: List[_SinglePSDPlot] = []
         self._y_top: float = max(float(y_top), _Y_TOP_FLOOR)
 
-        # Build the scroll area + grid container.
+        # Build the scroll area + grid container. Both get a white
+        # background so the 5-pixel gaps between subplots and the
+        # scroll-area margins don't show through as system grey. Setting
+        # the stylesheet on this widget alone propagates to its
+        # descendants, but we set it on each level explicitly to avoid
+        # any platform-specific quirks where stylesheet inheritance is
+        # broken by a non-default palette on a child widget.
+        self.setStyleSheet("background-color: white;")
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("background-color: white;")
         container = QWidget()
+        container.setStyleSheet("background-color: white;")
         container_layout = QGridLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(5)
@@ -614,7 +635,7 @@ def _draw_band_fill(
     color = spec.get("color", "gray")
     alpha = spec.get("alpha", 0.35)
     bp_val = data.band_powers.get(name, np.nan)
-    label_val = f"{bp_val:.4f}" if np.isfinite(bp_val) else "n/a"
+    label_val = f"{bp_val:.1f}" if np.isfinite(bp_val) else "n/a"
 
     # Point count uses the *configured* band (so it matches the integrated power).
     n_pts = int(np.sum((data.freqs >= f0) & (data.freqs <= f1)))
