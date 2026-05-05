@@ -36,6 +36,11 @@ _DEFAULT_WORKSPACE = {
             "window": "10% cosine bell",
             "smooth_for_display": True,
             "plot_units": "mMI²/Hz",
+            # Regular-grid DC removal (subtract the DFT of a mean-rate
+            # impulse train before squaring). Off by default — toggle
+            # on via Edit Parameters when VLF leakage from the mean
+            # rate dominates. Strict mode applies this unconditionally.
+            "dc_removal": False,
         },
         "welch": {
             "fs": 4.0,

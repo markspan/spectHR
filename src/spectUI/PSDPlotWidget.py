@@ -70,7 +70,8 @@ _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 # preserves the area but flattens the peaks; the sqrt(3) divisor brings
 # the displayed peak heights back in line with the other methods. Band
 # powers (legend AUC values) are not scaled — they're computed from the
-# unsmoothed integral.
+# unsmoothed integral. This is a display-only adjustment to make the 
+# CARSPAN curves more visually comparable to the CARSPAN manual.
 _CARSPAN_DISPLAY_SCALE: float = 1.0 / np.sqrt(3.0)
 
 

@@ -445,10 +445,26 @@ where $w_i$ is the $i$-th coefficient of a tapering window (workspace default: `
 
 **Two CARSPAN variants are provided:**
 
-- **`carspan`** (configurable) — any `scipy.signal.get_window` name (incl. the `"X% cosine bell"` shorthand → Tukey α = X/50). The window is applied by **event index** and the amplitude includes the standard energy correction $2N / (T \cdot S_2)$ (where $S_2 = \sum_i w_i^2$), making the level approximately window-invariant.
-- **`carspan_strict`** — manual-faithful: a Tukey 5 % cosine taper (α = 0.10) applied by **clock position** (each event's weight depends on where its timestamp sits in $[t_0, t_\text{end}]$), and amplitude $2/T$ with no $N/S_2$ correction. This reproduces CARSPAN Eq. 3.19 verbatim.
+- **`carspan`** (configurable) — any `scipy.signal.get_window` name (incl. the `"X% cosine bell"` shorthand → Tukey α = X/50). The window is applied by **event index** and the amplitude includes the standard energy correction $2N / (T \cdot S_2)$ (where $S_2 = \sum_i w_i^2$), making the level approximately window-invariant. The bare DFT of the impulse train is used by default (no DC removal); turn on the same regular-grid DC removal that strict mode uses by setting `dc_removal: true` in the workspace.
+- **`carspan_strict`** — manual-faithful: a Tukey 5 % cosine taper (α = 0.10) applied by **event index**, amplitude $2/T$ with no $N/S_2$ correction, and an explicit *regular-grid DC removal* (see the next subsection, applied unconditionally). This matches what the reference CARSPAN Pascal source (`T_AnaFunctions.pas`, function `SOC`) actually computes.
 
-For typical regular sinus rhythm both variants give the same spectral shape; absolute levels differ by ~10–15 % because of the different taper width and the energy correction. Use `carspan_strict` to reproduce CARSPAN values exactly; use `carspan` for variance-correct, window-tunable estimates.
+For typical regular sinus rhythm both variants give the same spectral shape at LF/HF; the **strict** variant is markedly cleaner in the VLF region because of the DC-removal subtraction. Use `carspan_strict` to reproduce CARSPAN values; use `carspan` for variance-correct, window-tunable estimates.
+
+#### Regular-grid DC removal (strict mode)
+
+The CARSPAN manual states Eq. 3.19 as a plain DFT of the windowed impulse train. The reference Pascal implementation, however, also subtracts the DFT of a perfectly periodic impulse train at the mean rate before squaring. This is *not* documented as a separate step in the manual but is essential for matching CARSPAN's actual output, particularly at low frequencies.
+
+For each event index $i$, the strict DFT becomes:
+
+$$X(f_k) = \sum_{i=1}^{N} w_i \left[ e^{-2\pi j f_k T_i} - e^{-2\pi j f_k \,\mathrm{ExpT}_i} \right]$$
+
+with $T_i$ the actual cumulative event time and $\mathrm{ExpT}_i = (i+1)\,\Delta T$ the expected position on a regular grid at the mean IBI $\Delta T = T/(N-1)$. At $f = 0$ both phasors equal $1$, so their difference is exactly zero and the DC component is removed. Equally important, the second sum is the DFT of a perfectly periodic impulse train at the mean rate; subtracting it cancels the spectral leakage that this mean rate would otherwise leak into the VLF / LF bands.
+
+In the reference Pascal this is implemented by maintaining two parallel phasor accumulators (`A` for actual time, `AIBI` for expected time) and accumulating their *difference* `Amp · (A - AIBI)` per event. spectHR does the equivalent vectorised computation: it builds the actual-time and expected-time phase matrices, takes their cosine/sine difference, and contracts against the window vector. The result is mathematically identical to what CARSPAN produces.
+
+For approximately regular rhythms this correction is small at LF / HF but dominant at VLF — without it spectHR's low-frequency power was several times too high.
+
+**Available in configurable mode too.** The same DC removal can be enabled in the configurable `carspan` variant via the workspace key `FrequencyAnalysis.carspan.dc_removal` (also editable from *Edit Parameters*). It defaults to `false` to preserve the historical behaviour of that variant; flip it to `true` when you want VLF / mean-rate leakage cleaned up while still using a custom window or the variance-correct $2N / (T \cdot S_2)$ amplitude. Strict mode applies DC removal unconditionally and ignores this flag.
 
 #### Native frequency grid
 
@@ -495,6 +511,7 @@ Multiplication by $10^6$ scales the result into a convenient numeric range (mill
 | Display grid resolution | 0.01 Hz | `freq_resolution` | Smoothness of displayed curve; does not affect band power |
 | Tapering window | `10% cosine bell` | `window` | Any `scipy.signal.get_window` name, or `"X% cosine bell"` → Tukey α = X/50 |
 | 3-point display smoothing | `true` | `smooth_for_display` | Matches CARSPAN plot convention |
+| Regular-grid DC removal (configurable mode) | `false` | `dc_removal` | Subtract the DFT of a mean-rate impulse train before squaring; cleans up VLF. Strict mode applies this unconditionally. |
 
 </details>
 
