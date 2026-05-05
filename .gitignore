@@ -42,3 +42,10 @@ mytree
 *.ttf
 /MainWindow.dist
 /.claude
+
+# Data
+ExampleData/Test_D2.xdf
+ExampleData/p999.xdf
+
+*.vhdr
+*.vmrk
