@@ -66,7 +66,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 ## What is spectHR?
 
-![spectHR](images/MainWindow.PNG)
+![spectHR](images/MainWindow.png)
 
 **spectHR** is a free, open-source desktop application for Heart Rate Variability (HRV) analysis. It is built for researchers and students who want to move from a raw cardiovascular recording to interpretable HRV metrics without writing any code, and without trusting a black box.
 
@@ -176,7 +176,7 @@ Right-clicking a file gives you **Reload Raw**, **Invert ECG Polarity**, and **R
 
 Once the peaks look correct, switch to the **IBI Series tab** to see heart rate over time in beats per minute. If a breathing signal is available it is shown as a faint green overlay.
 
-![Heart Rate Series](images/IBIWindow.PNG)
+![Heart Rate Series](images/IBIWindow.png)
 
 ---
 
@@ -184,14 +184,14 @@ Once the peaks look correct, switch to the **IBI Series tab** to see heart rate 
 
 HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. You can also add epochs manually via **Actions → Add Epoch** and trim them by dragging their edges. Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
 
-![Epochs](images/EpochsWindow.PNG)
+![Epochs](images/EpochsWindow.png)
 ---
 
 ## Step 4, Explore autonomic dynamics (Poincaré tab)
 
 The **Poincaré tab** shows a scatter plot where each point represents one heartbeat: its IBI on the x-axis and the following IBI on the y-axis. A healthy autonomic system produces a characteristic elliptical cloud elongated along the diagonal. The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD2) reflects slower variability. Each active epoch is drawn in a different colour with its own ellipse overlaid.
 
-![Poincare Plot](images/PoincareWindow.PNG)
+![Poincare Plot](images/PoincareWindow.png)
 
 <details>
 <summary>A note on SD1 and SD2</summary>
