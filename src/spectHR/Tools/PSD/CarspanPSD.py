@@ -72,14 +72,7 @@ CARSPAN_PARAMS = {
     "window": "hann",  # Default window for configurable mode
     "smooth_for_display": True,  # Bin-average to the display grid
     "plot_units": "mMI²/Hz",  # "mMI²/Hz" or "ms²/Hz" (IBI signal)
-    # Regular-grid DC removal in **configurable** mode. When True the
-    # configurable variant subtracts the DFT of a regular-grid impulse
-    # train at the mean rate before squaring — the same trick the strict
-    # mode uses to kill DC and drain low-frequency mean-rate leakage.
-    # Default False preserves the historical configurable-mode behaviour;
-    # flip to True via the workspace if you want VLF cleaned up.
-    # (Strict mode always applies DC removal regardless of this flag.)
-    "dc_removal": False,
+    "dc_removal": False,# (Strict mode always applies DC removal regardless of this flag.)
 }
 
 
@@ -171,7 +164,7 @@ def compute_carspan_psd_strict(
     Returns
     -------
     freqs, power, ci_lower, ci_upper : np.ndarray
-        Power and bounds in Hz (events²/Hz).
+        Power and bounds (both inclusive) in Hz (events²/Hz).
     """
     freqs, power, bin_counts = _compute(
         event_times_s,
@@ -230,7 +223,7 @@ def _compute(
     freqs = np.arange(1, k_max + 1) * delta_f
 
     if strict:
-        # CARSPAN's reference Pascal applies the taper to the impulse array
+        # CARSPAN's PDelphi code applies the taper to the impulse array
         # *by event index*, not by clock fraction (T_AnaFunctions.pas:358,
         # function SOC: ``Taper(NData, TaperPercent)``). For α = 0.10 this
         # produces the manual's "5 % cosine bell per side". scipy's
