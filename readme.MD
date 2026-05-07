@@ -5,33 +5,60 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 ---
 
-- [What is spectHR?](#what-is-specthr)
-- [Theoretical background](#theoretical-background)
-  - [Mental effort, not stress](#mental-effort-not-stress)
-  - [Frequency bands](#frequency-bands-1)
-  - [Practical considerations](#practical-considerations)
-- [Getting started](#getting-started)
-- [The interface at a glance](#the-interface-at-a-glance)
-- [Step 1, Check and clean the ECG](#step-1-check-and-clean-the-ecg-preprocessing-tab)
-- [Step 2, Inspect the heart rate series](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
-- [Step 3, Define your analysis segments](#step-3-define-your-analysis-segments-epochs-tab)
-- [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
-- [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
-- [Step 6, Export your results](#step-6-export-your-results-parameters-tab)
-- [Configuring the analysis](#configuring-the-analysis)
-- [Data Formats](#data-formats)
-- [IBI Classification](#ibi-classification)
-- [Breathing Signal Extraction](#breathing-signal-extraction)
-- [Poincaré Metrics](#poincaré-metrics)
-- [Power Spectral Density, method details](#power-spectral-density-method-details)
-  - [Welch's method](#welchs-method)
-  - [Lomb-Scargle periodogram](#lomb-scargle-periodogram)
-  - [CARSPAN method](#carspan-method)
-  - [Frequency bands](#frequency-bands)
-  - [Units and normalisation](#units-and-normalisation)
-- [Installation](#installation)
-- [Contributing](#contributing)
-- [License](#license)
+- [spectHR: An Interactive HRV Analysis Tool](#specthr-an-interactive-hrv-analysis-tool)
+  - [What is spectHR?](#what-is-specthr)
+  - [Theoretical background](#theoretical-background)
+    - [Mental effort, not stress](#mental-effort-not-stress)
+    - [Frequency bands](#frequency-bands)
+    - [Practical considerations](#practical-considerations)
+  - [Getting started](#getting-started)
+  - [The interface at a glance](#the-interface-at-a-glance)
+  - [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
+  - [Step 2, Inspect the heart rate series (IBI Series tab)](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
+  - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
+  - [](#)
+  - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
+  - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
+  - [Step 6, Export your results (Parameters tab)](#step-6-export-your-results-parameters-tab)
+  - [Configuring the analysis](#configuring-the-analysis)
+  - [Data Formats](#data-formats)
+    - [XDF (LabStreamingLayer)](#xdf-labstreaminglayer)
+    - [Polar .txt](#polar-txt)
+    - [CARSPAN .evt / .nff](#carspan-evt--nff)
+  - [IBI Classification](#ibi-classification)
+    - [Classification algorithm](#classification-algorithm)
+    - [Comparison with CARSPAN](#comparison-with-carspan)
+      - [1. Refractory period, implemented at detection, not classification](#1-refractory-period-implemented-at-detection-not-classification)
+      - [2. Window type, centred rather than causal](#2-window-type-centred-rather-than-causal)
+      - [3. Window unit, beats rather than seconds](#3-window-unit-beats-rather-than-seconds)
+      - [4. Successive difference criterion, not implemented](#4-successive-difference-criterion-not-implemented)
+      - [5. Min/Max SD clipping, not implemented](#5-minmax-sd-clipping-not-implemented)
+      - [6. Automatic interpolation, not implemented](#6-automatic-interpolation-not-implemented)
+  - [Breathing Signal Extraction](#breathing-signal-extraction)
+  - [Poincaré Metrics](#poincaré-metrics)
+  - [Power Spectral Density, method details](#power-spectral-density-method-details)
+    - [Welch's method](#welchs-method)
+    - [Welch, algorithm detail](#welch-algorithm-detail)
+    - [Lomb-Scargle periodogram](#lomb-scargle-periodogram)
+    - [Lomb-Scargle, algorithm detail](#lomb-scargle-algorithm-detail)
+    - [CARSPAN method](#carspan-method)
+    - [CARSPAN, algorithm detail](#carspan-algorithm-detail)
+      - [The R-peak event series](#the-r-peak-event-series)
+      - [Power spectral density (formula 3.19)](#power-spectral-density-formula-319)
+      - [Regular-grid DC removal (strict mode)](#regular-grid-dc-removal-strict-mode)
+      - [Native frequency grid](#native-frequency-grid)
+      - [Display grid and smoothing](#display-grid-and-smoothing)
+      - [Band power (formula 3.28)](#band-power-formula-328)
+      - [Normalisation to mMI² (formulae 3.20 and 3.29)](#normalisation-to-mmi-formulae-320-and-329)
+    - [Confidence intervals](#confidence-intervals)
+    - [Frequency bands](#frequency-bands-1)
+    - [Units and normalisation](#units-and-normalisation)
+  - [Installation](#installation)
+    - [Windows](#windows)
+    - [macOS](#macos)
+  - [Contributing](#contributing)
+  - [License](#license)
+  - [References](#references)
 
 ---
 
@@ -149,17 +176,22 @@ Right-clicking a file gives you **Reload Raw**, **Invert ECG Polarity**, and **R
 
 Once the peaks look correct, switch to the **IBI Series tab** to see heart rate over time in beats per minute. If a breathing signal is available it is shown as a faint green overlay.
 
+![Heart Rate Series](images/IBIWindow.PNG)
+
 ---
 
 ## Step 3, Define your analysis segments (Epochs tab)
 
 HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. You can also add epochs manually via **Actions → Add Epoch** and trim them by dragging their edges. Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
 
+![Epochs](images/EpochsWindow.PNG)
 ---
 
 ## Step 4, Explore autonomic dynamics (Poincaré tab)
 
 The **Poincaré tab** shows a scatter plot where each point represents one heartbeat: its IBI on the x-axis and the following IBI on the y-axis. A healthy autonomic system produces a characteristic elliptical cloud elongated along the diagonal. The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD2) reflects slower variability. Each active epoch is drawn in a different colour with its own ellipse overlaid.
+
+![Poincare Plot](images/PoincareWindow.PNG)
 
 <details>
 <summary>A note on SD1 and SD2</summary>
