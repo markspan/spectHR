@@ -66,7 +66,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 ## What is spectHR?
 
-![spectHR](images/MainWindow.png)
+![spectHR](images/MainWindow.PNG)
 
 **spectHR** is a free, open-source desktop application for Heart Rate Variability (HRV) analysis. It is built for researchers and students who want to move from a raw cardiovascular recording to interpretable HRV metrics without writing any code, and without trusting a black box.
 
