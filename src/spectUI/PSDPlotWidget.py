@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from numpy.ma import sqrt
 from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
@@ -66,8 +65,6 @@ _DEFAULT_EXPORT_DIR: Path = user_documents_path() / "spectHR" / "export"
 # Characters not allowed in filenames on Windows (and friends elsewhere).
 _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
-_CARSPAN_DISPLAY_SCALE: float = 1.0 
-
 
 def _cfm():
     """
@@ -77,17 +74,6 @@ def _cfm():
     reflect the latest workspace configuration, even after reloads.
     """
     return _sys.modules["spectHR.DataSet.Series.CardioFrequencyMetricsMixin"]
-
-
-def _carspan_smoothing_active() -> bool:
-    """True when CARSPAN's display-time 3-point smoothing is enabled."""
-    mod = _sys.modules.get("spectHR.Tools.PSD.CarspanPSD")
-    if mod is None:
-        return False
-    params = getattr(mod, "CARSPAN_PARAMS", None)
-    if not isinstance(params, dict):
-        return False
-    return bool(params.get("smooth_for_display", False))
 
 
 # ---------------------------------------------------------------------------
@@ -135,31 +121,38 @@ def _fetch(series, label: str) -> _PlotData:
         print(f"Warning: band powers failed for {label}: {e}")
         band_powers = {}
 
-    power = np.asarray(result.power).ravel()
-    ci_lower = (
-        np.asarray(result.ci_lower).ravel() if result.ci_lower is not None else None
-    )
-    ci_upper = (
-        np.asarray(result.ci_upper).ravel() if result.ci_upper is not None else None
-    )
-
-    if result.method in ("carspan", "carspan_strict") and _carspan_smoothing_active():
-        power = power * _CARSPAN_DISPLAY_SCALE
-        if ci_lower is not None:
-            ci_lower = ci_lower * _CARSPAN_DISPLAY_SCALE
-        if ci_upper is not None:
-            ci_upper = ci_upper * _CARSPAN_DISPLAY_SCALE
-
     return _PlotData(
         label=label,
         freqs=np.asarray(result.freqs).ravel(),
-        power=power,
-        ci_lower=ci_lower,
-        ci_upper=ci_upper,
+        power=np.asarray(result.power).ravel(),
+        ci_lower=(
+            np.asarray(result.ci_lower).ravel() if result.ci_lower is not None else None
+        ),
+        ci_upper=(
+            np.asarray(result.ci_upper).ravel() if result.ci_upper is not None else None
+        ),
         unit=result.unit,
         method=result.method,
         band_powers=band_powers,
     )
+
+
+def _strip_per_hz(unit: str) -> str:
+    """
+    Drop a ``/Hz`` suffix from a PSD unit string, returning the band-power unit.
+
+    Band power is the PSD integrated over a frequency band, so its unit
+    is the PSD unit divided by Hz (i.e. the PSD unit string with the
+    ``/Hz`` removed). Falls back to the original string if no ``/Hz``
+    is present, so unconventional unit labels round-trip cleanly.
+    """
+    if not unit:
+        return ""
+    stripped = unit.strip()
+    for suffix in ("/Hz", "/hz", " /Hz", " /hz"):
+        if stripped.endswith(suffix):
+            return stripped[: -len(suffix)].rstrip()
+    return stripped
 
 
 def _sanitize_filename(name: str) -> str:
@@ -563,7 +556,12 @@ class PSDPlotWidget(QWidget):
         ax.plot(data.freqs, data.power, "k", lw=1.0, alpha=0.85, zorder=3)
 
         # ---- Frequency-band fills + legend -----------------------------
-        power_unit = "mMI²"
+        # Band power has the dimension of the PSD integrated over Hz, so
+        # the unit is the PSD unit minus the "/Hz" suffix. ``data.unit``
+        # already reflects the workspace ``plot_units`` choice ("mMI²/Hz"
+        # or "ms²/Hz" for CARSPAN, the units workspace key for Welch /
+        # Lomb-Scargle), so the legend stays in sync automatically.
+        power_unit = _strip_per_hz(data.unit)
         draw_extents = _band_draw_extents(cfm.HRV_FREQUENCY_BANDS)
         for name, spec in cfm.HRV_FREQUENCY_BANDS.items():
             d_lo, d_hi = draw_extents[name]

@@ -41,6 +41,10 @@ _DEFAULT_WORKSPACE = {
             # on via Edit Parameters when VLF leakage from the mean
             # rate dominates. Strict mode applies this unconditionally.
             "dc_removal": False,
+            # Match Edges: round band edges (low/high) to the display
+            # resolution before integrating, so band power is bin-for-bin
+            # identical to CARSPAN's Calculate_Power. Off by default.
+            "match_edges": False,
         },
         "welch": {
             "fs": 4.0,

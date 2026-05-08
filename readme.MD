@@ -564,6 +564,22 @@ power; in practice the difference is below 1 % for any sensible
 choice. To reproduce CARSPAN's numbers exactly, leave
 `freq_resolution` at its default `0.01`.
 
+**Match Edges.** spectHR honours user-chosen band edges at full
+float precision by default — if you set `LF.low = 0.072`, the mask
+is `freqs >= 0.072` and the 0.07 Hz bin is excluded. CARSPAN
+behaves differently: `GetMinBandFreq` / `GetMaxBandFreq`
+([T_Output.pas:131,150]) round band edges to the display
+resolution via `SimpleRoundTo` *before* `Calculate_Power` indexes
+the spectrum, so off-grid edges snap to the nearest grid point.
+Enable `match_edges` in the workspace (`FrequencyAnalysis.carspan.match_edges`,
+also editable from *Edit Parameters*) to reproduce that behaviour
+bit-for-bit: `f_low` and `f_high` are rounded to multiples of
+`freq_resolution` (banker's rounding, matching the reference
+Pascal) before masking. With default band edges (all multiples of
+0.01 Hz) the flag is a no-op; it only matters when a user picks
+edges off the display grid. Off by default to keep raw float
+edges intact.
+
 #### Normalisation to mMI² (formulae 3.20 and 3.29)
 
 The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is normalised by the squared mean of the R-peak event series. For the unit-impulse representation, the mean equals the mean heart rate $\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}$. The normalised band power is:
@@ -582,6 +598,7 @@ Multiplication by $10^6$ scales the result into a convenient numeric range (mill
 | Tapering window | `10% cosine bell` | `window` | Any `scipy.signal.get_window` name, or `"X% cosine bell"` → Tukey α = X/50 |
 | 3-point display smoothing | `true` | `smooth_for_display` | Matches CARSPAN plot convention |
 | Regular-grid DC removal (configurable mode) | `false` | `dc_removal` | Subtract the DFT of a mean-rate impulse train before squaring; cleans up VLF. Strict mode applies this unconditionally. |
+| Match Edges | `false` | `match_edges` | Round band edges to `freq_resolution` before integrating; reproduces CARSPAN's `GetMinBandFreq` / `GetMaxBandFreq` bin selection. |
 
 </details>
 

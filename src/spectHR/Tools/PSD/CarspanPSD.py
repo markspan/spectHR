@@ -73,6 +73,12 @@ CARSPAN_PARAMS = {
     "smooth_for_display": True,  # Bin-average to the display grid
     "plot_units": "mMI²/Hz",  # "mMI²/Hz" or "ms²/Hz" (IBI signal)
     "dc_removal": False,# (Strict mode always applies DC removal regardless of this flag.)
+    # "Match Edges" — when True, band-power integration rounds the
+    # band edges (low / high) to the nearest multiple of
+    # ``freq_resolution`` before masking, reproducing CARSPAN's
+    # ``GetMinBandFreq`` / ``GetMaxBandFreq`` behaviour. Off by default
+    # so user-chosen edges are honoured at full float precision.
+    "match_edges": False,
 }
 
 

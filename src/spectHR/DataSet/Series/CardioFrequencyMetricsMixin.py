@@ -129,21 +129,68 @@ def load_ci_alpha(alpha: float) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _carspan_edge_quantum() -> Optional[float]:
+    """
+    Read the CARSPAN "Match Edges" toggle and return the rounding step.
+
+    Returns the display resolution (Δf, e.g. 0.01 Hz) when the workspace
+    flag ``FrequencyAnalysis.carspan.match_edges`` is True, ``None``
+    otherwise. ``None`` means ``_band_power_rectangular`` uses raw band
+    edges; a positive value triggers banker's rounding of the edges to
+    the display grid before masking — the bin selection then matches
+    CARSPAN's ``Calculate_Power`` exactly.
+    """
+    params = getattr(CarspanPSD, "CARSPAN_PARAMS", None)
+    if not isinstance(params, dict):
+        return None
+    if not bool(params.get("match_edges", False)):
+        return None
+    quantum = params.get("freq_resolution", 0.01)
+    try:
+        quantum_f = float(quantum)
+    except (TypeError, ValueError):
+        return None
+    return quantum_f if quantum_f > 0 else None
+
+
 def _band_power_rectangular(
     freqs: np.ndarray,
     power: np.ndarray,
     f_low: float,
     f_high: float,
+    *,
+    edge_quantum: Optional[float] = None,
 ) -> float:
     """
     Rectangular-rule band power integration (CARSPAN Eq. 3.28):
 
         B = Σ S_xx(fₖ) · Δf     for f_low ≤ fₖ ≤ f_high
 
-    Both boundaries are inclusive.  Uses spacings between consecutive grid
+    Both boundaries are inclusive. Uses spacings between consecutive grid
     points, so it adapts to both uniform (Welch, L-S) and native-CARSPAN
     grids.
+
+    Parameters
+    ----------
+    edge_quantum : float, optional
+        When given, ``f_low`` and ``f_high`` are rounded to the nearest
+        multiple of ``edge_quantum`` *before* masking. This reproduces
+        CARSPAN's "Match Edges" behaviour: ``GetMinBandFreq`` /
+        ``GetMaxBandFreq`` ([T_Output.pas:131,150]) round band edges to
+        the display resolution (typically 0.01 Hz) via ``SimpleRoundTo``
+        before ``Calculate_Power`` indexes the spectrum array. With this
+        flag on and band edges initially off-grid (e.g. 0.025 Hz), the
+        included bins match CARSPAN bin-for-bin. When ``None`` (default),
+        the raw float edges are used — useful when the user picks band
+        boundaries that intentionally fall between grid points.
     """
+    if edge_quantum is not None and edge_quantum > 0:
+        # Banker's rounding (Python and Pascal both use round-half-even
+        # by default), so 0.025 → 0.02 and 0.026 → 0.03 — identical to
+        # CARSPAN's SimpleRoundTo.
+        f_low = round(f_low / edge_quantum) * edge_quantum
+        f_high = round(f_high / edge_quantum) * edge_quantum
+
     mask = (freqs >= f_low) & (freqs <= f_high)
     band_freqs = freqs[mask]
     band_power = power[mask]
@@ -411,10 +458,14 @@ class CardioFrequencyMetricsMixin:
         method_name = (method or METHOD)
         if method_name in ("carspan", "carspan_strict"):
             result = self._psd_carspan_native(method_name)
+            edge_quantum = _carspan_edge_quantum()
         else:
             result = self.psd(method=method, with_ci=False)
+            edge_quantum = None
 
-        return _band_power_rectangular(result.freqs, result.power, f_low, f_high)
+        return _band_power_rectangular(
+            result.freqs, result.power, f_low, f_high, edge_quantum=edge_quantum
+        )
 
     def band_powers(
         self,
@@ -436,13 +487,19 @@ class CardioFrequencyMetricsMixin:
         method_name = (method or METHOD)
         if method_name in ("carspan", "carspan_strict"):
             result = self._psd_carspan_native(method_name)
+            edge_quantum = _carspan_edge_quantum()
         else:
             result = self.psd(method=method, with_ci=False)
+            edge_quantum = None
 
         powers = {}
         for name, band in HRV_FREQUENCY_BANDS.items():
             powers[name] = _band_power_rectangular(
-                result.freqs, result.power, band["low"], band["high"]
+                result.freqs,
+                result.power,
+                band["low"],
+                band["high"],
+                edge_quantum=edge_quantum,
             )
         return powers
 
