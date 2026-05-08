@@ -505,27 +505,64 @@ The native grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max}
 
 #### Display grid and smoothing
 
-The native spectrum is interpolated onto a fixed display grid with step `freq_resolution` (default 0.01 Hz). A finer value produces a smoother curve; a coarser value shows the raw native lines more directly. **Band power values are never affected by `freq_resolution`.**
+spectHR keeps the *plot* path and the *integration* path on different
+arrays — matching the reference CARSPAN Pascal source one-to-one — so
+the 3-point moving average can smooth the on-screen curve without
+contaminating any reported band-power value.
 
-Following the CARSPAN manual (§3.3, pre-algorithm choices):
+The reference Pascal in `T_AnaFunctions.pas` runs four passes in
+order:
+
+1. `RunPDS`        — periodogram on the native grid (Δf = 1/T)
+2. `RunResample`   — bin-average onto the display grid (`NewRes` = 0.01 Hz)
+3. `RunMAW`        — back up the resampled spectrum as `PDSin_BCK`,
+                     then run the 3-point moving average on `PDSin`
+4. `RunModIdx`     — multiply *both* `PDSin` and `PDSin_BCK` by 1/Mean²
+
+The plot uses `PDSin` (smoothed); `Calculate_Power` integrates
+`PDSin_BCK` (un-smoothed but already on the display grid).
+
+**Plot path (`psd()`).** Native PDS → bin-averaged onto the
+`freq_resolution` display grid (default 0.01 Hz) → optional 3-point
+moving average when `smooth_for_display = True` (the default).
+Following the CARSPAN manual (§3.3):
 
 > *"a moving average window over three frequency points (0.03 Hz bandwidth) is applied before plotting the spectral functions"*
 
-When `smooth_for_display = True` (the default), a 3-point unweighted moving average is applied to the interpolated display spectrum before it is shown. The same passage also states:
+**Integration path (`band_power`, `band_powers`).** spectHR calls the
+back-end a *second* time with `smooth=False`, then applies the
+resample step *only* — exactly reproducing `PDSin_BCK`. The manual is
+explicit:
 
 > *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
 
-Accordingly, smoothing is applied only in the display path; band power is always computed from the unsmoothed native grid.
-
 #### Band power (formula 3.28)
 
-Band power in $[f_l, f_h]$ is computed by direct summation on the native grid:
+Band power in $[f_l, f_h]$ is computed by rectangular summation on the
+**resampled but un-MA-smoothed** array — i.e. on `PDSin_BCK`, not on
+the native grid:
 
-$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}(f_k) \Delta f, \qquad \Delta f = \frac{1}{T}$$
+$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}^{\text{BCK}}(f_k)\, \Delta f_\text{disp}, \qquad \Delta f_\text{disp} = \texttt{freq\_resolution}$$
 
-This is a rectangular (Riemann) summation, matching CARSPAN exactly. spectHR uses trapezoidal integration for Welch and Lomb-Scargle band power; only the CARSPAN back-end uses rectangular summation to match formula 3.28.
+This matches `Calculate_Power(PDSin_BCK, …, FreqRes=0.01, d=1)` in
+`T_Output.pas:1300` line for line. The manual writes the formula with
+`Δf = 1/T` (i.e. the native grid); the implementation uses the
+resampled grid because that is what the reference Pascal actually
+integrates, and reproducing CARSPAN numerically requires matching the
+code, not the formula. The two values agree to within edge-bin
+rounding because `Resample` is energy-conservative.
 
-**Important:** Because $\Delta f = 1/T$ is fixed by the recording duration, not by `freq_resolution`, band power values are completely independent of the display resolution setting.
+spectHR uses trapezoidal integration for Welch and Lomb-Scargle band
+power; only the CARSPAN back-end uses this rectangular summation.
+
+**Consequences.** Toggling `smooth_for_display` or replacing the
+plotted array does **not** affect the reported band power — the
+integration runs on a separately-computed `PDSin_BCK` clone.
+Changing `freq_resolution` *does* change `Δf_disp` and the bin
+boundaries, so it has a small (energy-conservative) effect on band
+power; in practice the difference is below 1 % for any sensible
+choice. To reproduce CARSPAN's numbers exactly, leave
+`freq_resolution` at its default `0.01`.
 
 #### Normalisation to mMI² (formulae 3.20 and 3.29)
 

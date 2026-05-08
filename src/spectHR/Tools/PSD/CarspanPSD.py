@@ -223,13 +223,18 @@ def _compute(
     freqs = np.arange(1, k_max + 1) * delta_f
 
     if strict:
-        # CARSPAN's PDelphi code applies the taper to the impulse array
-        # *by event index*, not by clock fraction (T_AnaFunctions.pas:358,
-        # function SOC: ``Taper(NData, TaperPercent)``). For α = 0.10 this
-        # produces the manual's "5 % cosine bell per side". scipy's
-        # get_window with fftbins=False gives the symmetric window CARSPAN
-        # expects.
-        w = get_window(("tukey", alpha_taper), N, fftbins=False).astype(np.float64)
+        # CARSPAN's Pascal Taper (T_AnaFunctions.pas:128-161) walks the
+        # first / last N_taper samples and applies sin²(π·(i+1)/(2·N_taper))
+        # by event index — note the (i+1) offset, which means sample 0
+        # gets a small but *non-zero* weight, unlike scipy's tukey which
+        # zeros it out.  We therefore build the window ourselves to match
+        # CARSPAN bit-for-bit.  The loop runs over N_used = N_R−1 events
+        # (CARSPAN sums IBIs, indexed by IBI = 0..N_IBI−1; see SOC line 364).
+        #
+        # ``alpha_taper = 0.10`` corresponds to ``TaperPercent = 5`` per
+        # side in the Pascal source (RunDFT line 1952).
+        n_taper_pct = max(1, int(round((alpha_taper * 50.0) * (N - 1) / 100.0)))
+        w = _carspan_taper(N - 1, n_taper_pct)
         amplitude = 2.0 / T
     else:
         ws = window_spec
@@ -243,10 +248,19 @@ def _compute(
 
     # ----- DFT of the (possibly mean-detrended) impulse train -----------
     #
-    # We split the complex exponentials into real/imag to avoid complex
-    # numpy arrays (faster and clearer when reasoning about the phasor
-    # subtraction below).
-    phase_actual = 2.0 * np.pi * np.outer(freqs, event_times_s)
+    # CARSPAN's SOC (T_AnaFunctions.pas:297-414) loops over IBI = 0..N_IBI-1
+    # — i.e. it sums over R-peaks 1..N_R-1 (skipping the first R-peak at
+    # t=0) using the cumulative IBI sum as the actual time.  In strict
+    # mode we follow that convention exactly so the Tᵢ array CARSPAN
+    # plugs into the DFT and the one we plug in are identical.  The
+    # configurable variant keeps the older "all events" behaviour for
+    # backward compatibility — flip the flag below if you want
+    # configurable mode to align too.
+    if strict:
+        actual_times = event_times_s[1:].astype(np.float64)
+    else:
+        actual_times = event_times_s.astype(np.float64)
+    phase_actual = 2.0 * np.pi * np.outer(freqs, actual_times)
 
     if use_dc_removal:
         # CARSPAN-style regular-grid DC removal.
@@ -269,15 +283,29 @@ def _compute(
         # ``CARSPAN_PARAMS["dc_removal"]`` (workspace key
         # ``FrequencyAnalysis.carspan.dc_removal``).
         #
-        # We use np.linspace(t₀, tₙ₋₁, N) so the regular grid spans the
-        # same total duration as the events. That matches the Pascal's
-        # ``ExpT[N-1] ≈ N·ΔT`` (with ΔT = T/(N-1)) up to a one-step
-        # alignment that does not affect the spectral magnitude.
-        exp_times = np.linspace(
-            float(event_times_s[0]),
-            float(event_times_s[-1]),
-            N,
-        )
+        # CARSPAN's expected-time grid is offset from t₀ by ΔT and runs
+        # for N_IBI = N_R − 1 points: ExpTᵢ = (i+1)·ΔT (relative to t₀)
+        # for i = 0..N_IBI−1, with ΔT = T/(N_IBI−1) = T/(N_R−2).  The last
+        # expected time is therefore (N_R−1)/(N_R−2)·T — slightly *past*
+        # the actual end time, by design (Pascal SOC line 317-369).  We
+        # mirror that exactly when ``strict`` so the DC-removal cancels
+        # the same way it does in the reference implementation.
+        if strict:
+            n_used = N - 1
+            delta_T = T / float(n_used - 1) if n_used > 1 else T
+            exp_times = (
+                float(event_times_s[0])
+                + (np.arange(n_used, dtype=np.float64) + 1) * delta_T
+            )
+        else:
+            # Configurable mode keeps the historical span-matched grid;
+            # ``np.linspace`` zeros the first/last events but is slightly
+            # easier to reason about for users who want a plain DFT.
+            exp_times = np.linspace(
+                float(event_times_s[0]),
+                float(event_times_s[-1]),
+                N,
+            )
         phase_expected = 2.0 * np.pi * np.outer(freqs, exp_times)
 
         # X(f) = Σ wᵢ · [exp(-2πj f Tᵢ) - exp(-2πj f ExpTᵢ)]
@@ -318,16 +346,54 @@ def _compute(
 # ---------------------------------------------------------------------------
 
 
+def _carspan_taper(length: int, n_taper: int) -> np.ndarray:
+    """
+    CARSPAN-style cosine-bell taper, applied to a unit array.
+
+    Mirrors ``T_AnaFunctions.pas:128-161`` (procedure ``Taper``):
+
+        Fac := pi / (2 * NrOfTaperSmp);
+        for LeftSmp := 1 to NrOfTaperSmp do begin
+            FArg := LeftSmp * Fac;
+            if LeftSmp <> NrOfTaperSmp then FCos := cos(FArg)
+            else                            FCos := 0;     # forced 1 at the inner edge
+            FMult := 1 - sqr(FCos);                        # = sin^2(FArg)
+            Data[LeftSmp - 1] *= FMult;
+            Data[length - LeftSmp] *= FMult;
+        end;
+
+    Note the (LeftSmp) — *not* (LeftSmp − 1) — index in the cosine
+    argument: sample 0 receives weight ``sin^2(pi / (2 * N_taper))``
+    rather than 0.  scipy.signal.get_window(("tukey", ...)) zeros the
+    first sample, so we cannot use it for bit-for-bit parity.
+    """
+    w = np.ones(length, dtype=np.float64)
+    if length < 2 or n_taper < 1:
+        return w
+    n_taper = min(n_taper, length // 2)
+    fac = np.pi / (2.0 * n_taper)
+    for left_smp in range(1, n_taper + 1):
+        right_smp = length - left_smp
+        f_arg = left_smp * fac
+        # Pascal: if LeftSmp <> NrOfTaperSmp then FCos := cos(FArg) else FCos := 0
+        f_cos = 0.0 if left_smp == n_taper else np.cos(f_arg)
+        f_mult = 1.0 - f_cos * f_cos
+        w[left_smp - 1] *= f_mult
+        w[right_smp]    *= f_mult
+    return w
+
+
 def _bin_average(native_freqs, native_power, display_resolution):
     """
     Bin-average the native grid onto a display grid starting at 2 × resolution.
 
-    Returns (display_freqs, display_power, bin_counts).  Effective dof per
-    display bin is ``2 × bin_counts`` — averaging k native bins raises the
-    chi-squared dof from 2 (single DFT) to 2k.
+    Returns ``(display_freqs, display_power, bin_counts)``.  Effective dof
+    per display bin is ``2 × bin_counts`` --- averaging k native bins
+    raises the chi-squared dof from 2 (single DFT) to 2k.
 
-    The first display bin is centred at 2·Δ (e.g. 0.020 Hz for Δ=0.01 Hz),
-    so native bins below 1.5·Δ (near-DC, high 1/f power) are excluded.
+    The first display bin is centred at 2·Δ (e.g. 0.020 Hz for
+    Δ = 0.01 Hz), so native bins below 1.5·Δ (near-DC, high
+    1/f power) are excluded.
     """
     f_max = native_freqs[-1]
     first_edge = 1.5 * display_resolution

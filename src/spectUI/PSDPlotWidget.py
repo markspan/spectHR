@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from numpy.ma import sqrt
 from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
@@ -65,14 +66,7 @@ _DEFAULT_EXPORT_DIR: Path = user_documents_path() / "spectHR" / "export"
 # Characters not allowed in filenames on Windows (and friends elsewhere).
 _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
-# Display-only scaling applied to ``carspan``/``carspan_strict`` PSD curves
-# when the 3-point smoothing-for-display is on. The smoothing kernel
-# preserves the area but flattens the peaks; the sqrt(3) divisor brings
-# the displayed peak heights back in line with the other methods. Band
-# powers (legend AUC values) are not scaled — they're computed from the
-# unsmoothed integral. This is a display-only adjustment to make the 
-# CARSPAN curves more visually comparable to the CARSPAN manual.
-_CARSPAN_DISPLAY_SCALE: float = 1.0 / np.sqrt(3.0)
+_CARSPAN_DISPLAY_SCALE: float = 1.0 
 
 
 def _cfm():

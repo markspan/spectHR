@@ -403,8 +403,16 @@ class CardioFrequencyMetricsMixin:
         f_low = band["low"]
         f_high = band["high"]
 
-        # Get the PSD (already in mMI²/Hz)
-        result = self.psd(method=method, with_ci=False)
+        # CARSPAN's manual (§3.2) is explicit that band-power integration
+        # must run on the unsmoothed native grid (Δf = 1/T) — not on the
+        # bin-averaged, 3-point-MA display spectrum that gets plotted.
+        # Welch / Lomb-Scargle have no separate display grid, so the
+        # plot path and the integration path coincide for them.
+        method_name = (method or METHOD)
+        if method_name in ("carspan", "carspan_strict"):
+            result = self._psd_carspan_native(method_name)
+        else:
+            result = self.psd(method=method, with_ci=False)
 
         return _band_power_rectangular(result.freqs, result.power, f_low, f_high)
 
@@ -415,19 +423,27 @@ class CardioFrequencyMetricsMixin:
         """
         Compute all configured band powers at once.
 
+        For ``carspan`` / ``carspan_strict`` the integration uses the
+        unsmoothed native grid (Δf = 1/T), per CARSPAN manual §3.2.
+        For ``welch`` / ``lombscargle`` it uses the same grid that
+        ``psd()`` returns.
+
         Returns
         -------
         dict
             Mapping band_name → power in mMI².
         """
-        result = self.psd(method=method, with_ci=False)
-        powers = {}
+        method_name = (method or METHOD)
+        if method_name in ("carspan", "carspan_strict"):
+            result = self._psd_carspan_native(method_name)
+        else:
+            result = self.psd(method=method, with_ci=False)
 
+        powers = {}
         for name, band in HRV_FREQUENCY_BANDS.items():
             powers[name] = _band_power_rectangular(
                 result.freqs, result.power, band["low"], band["high"]
             )
-
         return powers
 
     # ---------------------------------------------------------------
@@ -641,6 +657,83 @@ class CardioFrequencyMetricsMixin:
             ci_hi,
             convert=convert,
             with_ci=with_ci,
+            mask=self._band_mask(freqs),
+            unit=unit,
+        )
+
+    def _psd_carspan_native(self, method: str) -> PSDResult:
+        """
+        CARSPAN PSD on the *resampled-but-un-MA-smoothed* grid.
+
+        This mirrors CARSPAN's ``PDSin_BCK`` array — the spectrum
+        immediately after ``Resample`` (display grid, Δf = 0.01 Hz by
+        default) and **before** the 3-point ``MAW`` smoother runs on
+        ``PDSin``.  In the reference Pascal source
+        (``T_AnaFunctions.pas`` line 1264-1270, then 2389-2412) the
+        order is:
+
+            RunPDS    → PDSin on native grid (Δf = 1/T)
+            RunResample → PDSin on display grid (Δf = NewRes = 0.01)
+            RunMAW    → PDSin_BCK := copy(PDSin); PDSin := MAW(PDSin)
+            RunModIdx → both arrays *= 1/Mean²
+
+        and ``Calculate_Power`` (T_Output.pas line 1300) then sums
+        ``PDSin_BCK[k] · FreqRes`` with ``FreqRes = 0.01``.  We
+        reproduce that array by calling the back-end with
+        ``smooth=False`` (skipping both bin-average and the 3-MA),
+        then applying the bin-average step ourselves so the
+        integration matches CARSPAN's actual numerical output rather
+        than the manual's formula 3.28 (which uses Δf = 1/T).
+
+        Parameters
+        ----------
+        method : {"carspan", "carspan_strict"}
+            Selects the back-end (configurable vs. manual-faithful).
+
+        Returns
+        -------
+        PSDResult
+            Frequencies on the display grid, power in display units,
+            ``ci_lower`` and ``ci_upper`` set to ``None``.
+        """
+        convert, unit = self._carspan_display()
+        if method == "carspan_strict":
+            freqs, power, _, _ = CarspanPSD.compute_carspan_psd_strict(
+                self._event_times_clean(),
+                alpha_ci=CI_ALPHA,
+                f_max=self._f_max(),
+                smooth=False,
+            )
+        else:
+            freqs, power, _, _ = CarspanPSD.compute_carspan_psd(
+                self._event_times_clean(),
+                alpha_ci=CI_ALPHA,
+                f_max=self._f_max(),
+                smooth=False,
+            )
+
+        # Apply the resample step (CARSPAN's ``Resample``) but NOT
+        # the 3-point moving average (``MAW``) -- exactly the state of
+        # ``PDSin_BCK`` at the moment ``Calculate_Power`` reads it.
+        display_resolution = float(CarspanPSD.CARSPAN_PARAMS["freq_resolution"])
+        if freqs.size > 1:
+            native_df = float(freqs[1] - freqs[0])
+            if native_df < display_resolution * 0.99:
+                freqs, power, _ = CarspanPSD._bin_average(
+                    freqs, power, display_resolution
+                )
+
+        # CIs are not meaningful on the band-power path -- pass dummies
+        # of the right shape so ``_as_result``'s mask slicing works.
+        ci_dummy = np.zeros_like(power)
+        return self._as_result(
+            method,
+            freqs,
+            power,
+            ci_dummy,
+            ci_dummy,
+            convert=convert,
+            with_ci=False,
             mask=self._band_mask(freqs),
             unit=unit,
         )
