@@ -5,33 +5,61 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 ---
 
-- [What is spectHR?](#what-is-specthr)
-- [Theoretical background](#theoretical-background)
-  - [Mental effort, not stress](#mental-effort-not-stress)
-  - [Frequency bands](#frequency-bands-1)
-  - [Practical considerations](#practical-considerations)
-- [Getting started](#getting-started)
-- [The interface at a glance](#the-interface-at-a-glance)
-- [Step 1, Check and clean the ECG](#step-1-check-and-clean-the-ecg-preprocessing-tab)
-- [Step 2, Inspect the heart rate series](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
-- [Step 3, Define your analysis segments](#step-3-define-your-analysis-segments-epochs-tab)
-- [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
-- [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
-- [Step 6, Export your results](#step-6-export-your-results-parameters-tab)
-- [Configuring the analysis](#configuring-the-analysis)
-- [Data Formats](#data-formats)
-- [IBI Classification](#ibi-classification)
-- [Breathing Signal Extraction](#breathing-signal-extraction)
-- [Poincaré Metrics](#poincaré-metrics)
-- [Power Spectral Density, method details](#power-spectral-density-method-details)
-  - [Welch's method](#welchs-method)
-  - [Lomb-Scargle periodogram](#lomb-scargle-periodogram)
-  - [CARSPAN method](#carspan-method)
-  - [Frequency bands](#frequency-bands)
-  - [Units and normalisation](#units-and-normalisation)
-- [Installation](#installation)
-- [Contributing](#contributing)
-- [License](#license)
+- [spectHR: An Interactive HRV Analysis Tool](#specthr-an-interactive-hrv-analysis-tool)
+  - [What is spectHR?](#what-is-specthr)
+  - [Theoretical background](#theoretical-background)
+    - [Mental effort, not stress](#mental-effort-not-stress)
+    - [Frequency bands](#frequency-bands)
+    - [Practical considerations](#practical-considerations)
+  - [Getting started](#getting-started)
+  - [The interface at a glance](#the-interface-at-a-glance)
+  - [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
+  - [Step 2, Inspect the heart rate series (IBI Series tab)](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
+  - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
+  - [](#)
+  - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
+  - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
+  - [Step 6, Export your results (Parameters tab)](#step-6-export-your-results-parameters-tab)
+  - [Configuring the analysis](#configuring-the-analysis)
+  - [Data Formats](#data-formats)
+    - [XDF (LabStreamingLayer)](#xdf-labstreaminglayer)
+    - [Polar .txt](#polar-txt)
+    - [CARSPAN .evt / .nff](#carspan-evt--nff)
+  - [IBI Classification](#ibi-classification)
+    - [Classification algorithm](#classification-algorithm)
+    - [Comparison with CARSPAN](#comparison-with-carspan)
+      - [1. Refractory period, implemented at detection, not classification](#1-refractory-period-implemented-at-detection-not-classification)
+      - [2. Window type, centred rather than causal](#2-window-type-centred-rather-than-causal)
+      - [3. Window unit, beats rather than seconds](#3-window-unit-beats-rather-than-seconds)
+      - [4. Successive difference criterion, not implemented](#4-successive-difference-criterion-not-implemented)
+      - [5. Min/Max SD clipping, not implemented](#5-minmax-sd-clipping-not-implemented)
+      - [6. Automatic interpolation, not implemented](#6-automatic-interpolation-not-implemented)
+  - [Breathing Signal Extraction](#breathing-signal-extraction)
+  - [Poincaré Metrics](#poincaré-metrics)
+  - [Power Spectral Density, method details](#power-spectral-density-method-details)
+    - [Welch's method](#welchs-method)
+    - [Welch, algorithm detail](#welch-algorithm-detail)
+    - [Lomb-Scargle periodogram](#lomb-scargle-periodogram)
+    - [Lomb-Scargle, algorithm detail](#lomb-scargle-algorithm-detail)
+    - [CARSPAN method](#carspan-method)
+    - [CARSPAN, algorithm detail](#carspan-algorithm-detail)
+      - [The R-peak event series](#the-r-peak-event-series)
+      - [Power spectral density (formula 3.19)](#power-spectral-density-formula-319)
+      - [Regular-grid DC removal (strict mode)](#regular-grid-dc-removal-strict-mode)
+      - [Native frequency grid](#native-frequency-grid)
+      - [Display grid and smoothing](#display-grid-and-smoothing)
+      - [Band power (formula 3.28)](#band-power-formula-328)
+      - [Normalisation to mMI² (formulae 3.20 and 3.29)](#normalisation-to-mmi-formulae-320-and-329)
+    - [Confidence intervals](#confidence-intervals)
+    - [Frequency bands](#frequency-bands-1)
+    - [Units and normalisation](#units-and-normalisation)
+  - [Installation](#installation)
+    - [Windows](#windows)
+    - [Linux](#linux)
+    - [macOS](#macos)
+  - [Contributing](#contributing)
+  - [License](#license)
+  - [References](#references)
 
 ---
 
@@ -149,17 +177,22 @@ Right-clicking a file gives you **Reload Raw**, **Invert ECG Polarity**, and **R
 
 Once the peaks look correct, switch to the **IBI Series tab** to see heart rate over time in beats per minute. If a breathing signal is available it is shown as a faint green overlay.
 
+![Heart Rate Series](images/IBIWindow.png)
+
 ---
 
 ## Step 3, Define your analysis segments (Epochs tab)
 
 HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. You can also add epochs manually via **Actions → Add Epoch** and trim them by dragging their edges. Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
 
+![Epochs](images/EpochsWindow.png)
 ---
 
 ## Step 4, Explore autonomic dynamics (Poincaré tab)
 
 The **Poincaré tab** shows a scatter plot where each point represents one heartbeat: its IBI on the x-axis and the following IBI on the y-axis. A healthy autonomic system produces a characteristic elliptical cloud elongated along the diagonal. The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD2) reflects slower variability. Each active epoch is drawn in a different colour with its own ellipse overlaid.
+
+![Poincare Plot](images/PoincareWindow.png)
 
 <details>
 <summary>A note on SD1 and SD2</summary>
@@ -176,7 +209,7 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 ![spectHR](images/PSDWindow.PNG)
 
-The **PSD tab** shows one power spectrum per active epoch, stacked vertically. Four frequency bands are shaded:
+The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded:
 
 - **FullRange (0.02–0.65 Hz)**, the total HRV spectrum.
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes; requires long recordings.
@@ -446,7 +479,7 @@ where $w_i$ is the $i$-th coefficient of a tapering window (workspace default: `
 **Two CARSPAN variants are provided:**
 
 - **`carspan`** (configurable) — any `scipy.signal.get_window` name (incl. the `"X% cosine bell"` shorthand → Tukey α = X/50). The window is applied by **event index** and the amplitude includes the standard energy correction $2N / (T \cdot S_2)$ (where $S_2 = \sum_i w_i^2$), making the level approximately window-invariant. The bare DFT of the impulse train is used by default (no DC removal); turn on the same regular-grid DC removal that strict mode uses by setting `dc_removal: true` in the workspace.
-- **`carspan_strict`** — manual-faithful: a Tukey 5 % cosine taper (α = 0.10) applied by **event index**, amplitude $2/T$ with no $N/S_2$ correction, and an explicit *regular-grid DC removal* (see the next subsection, applied unconditionally). This matches what the reference CARSPAN Pascal source (`T_AnaFunctions.pas`, function `SOC`) actually computes.
+- **`carspan_strict`** — manual-faithful: a Tukey 5 % cosine taper (α = 0.10) applied by **event index**, amplitude $2/T$ with no $N/S_2$ correction, and an explicit *regular-grid DC removal* (see the next subsection, applied unconditionally). This matches what the reference CARSPAN Pascal source (`T_AnaFunctions.pas`, function *Spectrum of Counts*: `SOC`) actually computes.
 
 For typical regular sinus rhythm both variants give the same spectral shape at LF/HF; the **strict** variant is markedly cleaner in the VLF region because of the DC-removal subtraction. Use `carspan_strict` to reproduce CARSPAN values; use `carspan` for variance-correct, window-tunable estimates.
 
@@ -472,27 +505,64 @@ The native grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max}
 
 #### Display grid and smoothing
 
-The native spectrum is interpolated onto a fixed display grid with step `freq_resolution` (default 0.01 Hz). A finer value produces a smoother curve; a coarser value shows the raw native lines more directly. **Band power values are never affected by `freq_resolution`.**
+spectHR keeps the *plot* path and the *integration* path on different
+arrays — matching the reference CARSPAN Pascal source one-to-one — so
+the 3-point moving average can smooth the on-screen curve without
+contaminating any reported band-power value.
 
-Following the CARSPAN manual (§3.3, pre-algorithm choices):
+The reference Pascal in `T_AnaFunctions.pas` runs four passes in
+order:
+
+1. `RunPDS`        — periodogram on the native grid (Δf = 1/T)
+2. `RunResample`   — bin-average onto the display grid (`NewRes` = 0.01 Hz)
+3. `RunMAW`        — back up the resampled spectrum as `PDSin_BCK`,
+                     then run the 3-point moving average on `PDSin`
+4. `RunModIdx`     — multiply *both* `PDSin` and `PDSin_BCK` by 1/Mean²
+
+The plot uses `PDSin` (smoothed); `Calculate_Power` integrates
+`PDSin_BCK` (un-smoothed but already on the display grid).
+
+**Plot path (`psd()`).** Native PDS → bin-averaged onto the
+`freq_resolution` display grid (default 0.01 Hz) → optional 3-point
+moving average when `smooth_for_display = True` (the default).
+Following the CARSPAN manual (§3.3):
 
 > *"a moving average window over three frequency points (0.03 Hz bandwidth) is applied before plotting the spectral functions"*
 
-When `smooth_for_display = True` (the default), a 3-point unweighted moving average is applied to the interpolated display spectrum before it is shown. The same passage also states:
+**Integration path (`band_power`, `band_powers`).** spectHR calls the
+back-end a *second* time with `smooth=False`, then applies the
+resample step *only* — exactly reproducing `PDSin_BCK`. The manual is
+explicit:
 
 > *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
 
-Accordingly, smoothing is applied only in the display path; band power is always computed from the unsmoothed native grid.
-
 #### Band power (formula 3.28)
 
-Band power in $[f_l, f_h]$ is computed by direct summation on the native grid:
+Band power in $[f_l, f_h]$ is computed by rectangular summation on the
+**resampled but un-MA-smoothed** array — i.e. on `PDSin_BCK`, not on
+the native grid:
 
-$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}(f_k) \Delta f, \qquad \Delta f = \frac{1}{T}$$
+$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}^{\text{BCK}}(f_k)\, \Delta f_\text{disp}, \qquad \Delta f_\text{disp} = \texttt{freq\_resolution}$$
 
-This is a rectangular (Riemann) summation, matching CARSPAN exactly. spectHR uses trapezoidal integration for Welch and Lomb-Scargle band power; only the CARSPAN back-end uses rectangular summation to match formula 3.28.
+This matches `Calculate_Power(PDSin_BCK, …, FreqRes=0.01, d=1)` in
+`T_Output.pas:1300` line for line. The manual writes the formula with
+`Δf = 1/T` (i.e. the native grid); the implementation uses the
+resampled grid because that is what the reference Pascal actually
+integrates, and reproducing CARSPAN numerically requires matching the
+code, not the formula. The two values agree to within edge-bin
+rounding because `Resample` is energy-conservative.
 
-**Important:** Because $\Delta f = 1/T$ is fixed by the recording duration, not by `freq_resolution`, band power values are completely independent of the display resolution setting.
+spectHR uses trapezoidal integration for Welch and Lomb-Scargle band
+power; only the CARSPAN back-end uses this rectangular summation.
+
+**Consequences.** Toggling `smooth_for_display` or replacing the
+plotted array does **not** affect the reported band power — the
+integration runs on a separately-computed `PDSin_BCK` clone.
+Changing `freq_resolution` *does* change `Δf_disp` and the bin
+boundaries, so it has a small (energy-conservative) effect on band
+power; in practice the difference is below 1 % for any sensible
+choice. To reproduce CARSPAN's numbers exactly, leave
+`freq_resolution` at its default `0.01`.
 
 #### Normalisation to mMI² (formulae 3.20 and 3.29)
 
@@ -556,9 +626,14 @@ All three methods output mMI² by default, which is dimensionless and largely he
 
 ## Installation
 
+Realeases are compiled using *Nuitka*. They are fully self-contained.
 ### Windows
 
 Download `spectHR-Windows-vX.Y.Z.zip` from the [Releases](https://github.com/markspan/spectHR/releases) page, extract, and run `spectHR.exe`. No Python installation is required.
+
+### Linux
+
+Download `spectHR-Linux-vX.Y.Z.zip` from the [Releases](https://github.com/markspan/spectHR/releases) page, extract, and run `spectHR`. No Python installation is required.
 
 ### macOS
 
