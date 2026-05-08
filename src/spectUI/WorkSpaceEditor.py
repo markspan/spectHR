@@ -213,6 +213,28 @@ class _ColorButton(QPushButton):
 
 
 # ----------------------------------------------------------------------
+# Bool dropdown — used wherever a workspace value is a Python bool
+# ----------------------------------------------------------------------
+
+
+def _make_bool_combo(value: bool) -> QComboBox:
+    """
+    Build a ``True`` / ``False`` dropdown pre-selected to *value*.
+
+    Item text is the literal Python repr (``"True"`` / ``"False"``) so
+    that ``ParametersEditorDialog._coerce`` round-trips it back to a
+    Python ``bool`` via its existing ``isinstance(original, bool)``
+    branch — no special-cased read path needed.
+    """
+    combo = QComboBox()
+    combo.addItem("True")
+    combo.addItem("False")
+    combo.setCurrentIndex(0 if bool(value) else 1)
+    combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    return combo
+
+
+# ----------------------------------------------------------------------
 # Generic parameters editor
 # ----------------------------------------------------------------------
 
@@ -401,12 +423,15 @@ class ParametersEditorDialog(QDialog):
         """Pick the widget for one cell of the band matrix.
 
         ``color`` cells get a ``_ColorButton`` so the user can pick
-        visually; everything else falls back to ``QLineEdit`` (the
-        round-trip coercion in ``_coerce`` preserves the original
-        Python type).
+        visually; bools get the True / False dropdown so the matrix
+        stays consistent with the scalar editor; everything else falls
+        back to ``QLineEdit`` (the round-trip coercion in ``_coerce``
+        preserves the original Python type).
         """
         if inner_key == "color":
             return _ColorButton("" if value is None else str(value))
+        if isinstance(value, bool):
+            return _make_bool_combo(value)
         edit = QLineEdit("" if value is None else str(value))
         edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return edit
@@ -418,7 +443,18 @@ class ParametersEditorDialog(QDialog):
         ``"FrequencyAnalysis.carspan.window"``) win over leaf-key entries
         (e.g. ``"window"``). This lets the same key name offer different
         choice sets in different sections.
+
+        Booleans always render as a True / False dropdown regardless of
+        the enum tables — typing "True" / "False" into a free-text field
+        is awkward and easy to mistype. ``_coerce`` already converts the
+        dropdown's text back to a Python bool on read, so the round-trip
+        is invisible to the rest of the dialog.
         """
+        # Bool check must precede any int check (and ``isinstance(True, int)``
+        # would match an int-typed ``_ENUM_CHOICES`` lookup), so do it first.
+        if isinstance(value, bool):
+            return _make_bool_combo(value)
+
         choices = _ENUM_CHOICES.get(path) or _ENUM_CHOICES.get(key)
         if choices is not None:
             combo = QComboBox()

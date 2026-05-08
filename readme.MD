@@ -483,6 +483,21 @@ where $w_i$ is the $i$-th coefficient of a tapering window (workspace default: `
 
 For typical regular sinus rhythm both variants give the same spectral shape at LF/HF; the **strict** variant is markedly cleaner in the VLF region because of the DC-removal subtraction. Use `carspan_strict` to reproduce CARSPAN values; use `carspan` for variance-correct, window-tunable estimates.
 
+**Why the two are not interchangeable.** Several pieces of the strict bundle are different code paths, not parameter values, so you cannot fully reproduce `carspan_strict` from the configurable `carspan` settings:
+
+| Behaviour | `carspan_strict` | `carspan` (configurable) | Reachable via workspace? |
+|---|---|---|---|
+| Window function | Pascal `sin²(π·(i+1)/(2·N_taper))` taper — sample 0 has *non-zero* weight (scipy's tukey zeros it) | any `scipy.signal.get_window` name | ✗ — no scipy window matches the Pascal taper bit-for-bit |
+| Window length | `N − 1` events | `N` events | ✗ |
+| Amplitude pre-factor | `2 / T` | `2N / (T · S₂)` | ✗ — would need `S₂ = N/2`, which no normal window satisfies |
+| First event | skipped (CARSPAN `SOC` convention) | included | ✗ |
+| DC reference grid | `t₀ + (i+1)·ΔT`, length `N − 1`, ΔT = T/(N−2) | `linspace(t₀, t_end, N)` | ✗ |
+| **Regular-grid DC removal** | **always on** | **opt-in via** `dc_removal: true` | ✓ |
+| 3-MA + bin-average smoothing | on | on by default (`smooth_for_display: true`) | ✓ — already matches |
+| mMI² mean convention | arithmetic mean of rate, `(1/N_IBI) · Σ 1/IBI` | harmonic mean / `N/T` | ✗ — hard-coded per method in the mixin |
+
+The closest the configurable side can get is enabling `dc_removal: true`, which cleans up VLF leakage. Window, amplitude, skip-first, DC reference grid, and mean convention will still differ. To reproduce the reference Pascal exactly, pick `method: "carspan_strict"` rather than tuning `carspan`.
+
 #### Regular-grid DC removal (strict mode)
 
 The CARSPAN manual states Eq. 3.19 as a plain DFT of the windowed impulse train. The reference Pascal implementation, however, also subtracts the DFT of a perfectly periodic impulse train at the mean rate before squaring. This is *not* documented as a separate step in the manual but is essential for matching CARSPAN's actual output, particularly at low frequencies.
@@ -564,22 +579,6 @@ power; in practice the difference is below 1 % for any sensible
 choice. To reproduce CARSPAN's numbers exactly, leave
 `freq_resolution` at its default `0.01`.
 
-**Match Edges.** spectHR honours user-chosen band edges at full
-float precision by default — if you set `LF.low = 0.072`, the mask
-is `freqs >= 0.072` and the 0.07 Hz bin is excluded. CARSPAN
-behaves differently: `GetMinBandFreq` / `GetMaxBandFreq`
-([T_Output.pas:131,150]) round band edges to the display
-resolution via `SimpleRoundTo` *before* `Calculate_Power` indexes
-the spectrum, so off-grid edges snap to the nearest grid point.
-Enable `match_edges` in the workspace (`FrequencyAnalysis.carspan.match_edges`,
-also editable from *Edit Parameters*) to reproduce that behaviour
-bit-for-bit: `f_low` and `f_high` are rounded to multiples of
-`freq_resolution` (banker's rounding, matching the reference
-Pascal) before masking. With default band edges (all multiples of
-0.01 Hz) the flag is a no-op; it only matters when a user picks
-edges off the display grid. Off by default to keep raw float
-edges intact.
-
 #### Normalisation to mMI² (formulae 3.20 and 3.29)
 
 The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is normalised by the squared mean of the R-peak event series. For the unit-impulse representation, the mean equals the mean heart rate $\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}$. The normalised band power is:
@@ -590,6 +589,12 @@ Multiplication by $10^6$ scales the result into a convenient numeric range (mill
 
 **Implementation note on units:** The normalisation formula divides by $`\bar{x}^2 = (N/T)^2`$, which is equivalent to multiplying by $`(T/N)^2 = \bar{\text{IBI}}_\text{sec}^2`$. Crucially, CARSPAN defines the mean rate as $`\bar{x} = N/T`$ (N events in T seconds), so the mean IBI used here is $`T/N`$, not the arithmetic mean of the N−1 individual intervals $`T/(N-1)`$. The conversion factor applied in code is therefore `mean_ibi_ms²`, which is exactly equal to `mean_ibi_sec² × 10⁶` (since $(T/N \times 1000)^2 = (T/N)^2 \times 10^6$).
 
+**Strict mode uses the arithmetic-mean-of-rate convention.** The `carspan_strict` path follows the reference CARSPAN Pascal source verbatim — and that source defines the mean differently from the manual's Eq. 3.20. In `T_AnaFunctions.pas` (function `SOC`), the mean rate used in the modulation-index normalisation is
+
+$$\bar{x}_\text{AM} \;=\; \frac{1}{N_\text{IBI}} \sum_i \frac{1}{\text{IBI}_i}$$
+
+i.e. the *arithmetic mean of the instantaneous heart rates*, equivalent to the *harmonic mean of the IBI values*. By Jensen's inequality this is always ≥ $`N/T`$, equal only when all IBI are identical; for typical resting HRV with ~5–8 % RR variability the two differ by ~0.3–0.8 % in the resulting mMI² values. spectHR therefore routes the strict path through `_mean_ibi_ms_arithmetic`, while `carspan` (configurable), `welch` and `lombscargle` keep the simpler $`T/N`$ convention from the manual. This split makes `carspan_strict` faithful to the Pascal implementation and the other methods faithful to the manual formula.
+
 **Default parameters** (configurable in *Edit Parameters*):
 
 | Parameter | Default | JSON key | Effect |
@@ -598,7 +603,6 @@ Multiplication by $10^6$ scales the result into a convenient numeric range (mill
 | Tapering window | `10% cosine bell` | `window` | Any `scipy.signal.get_window` name, or `"X% cosine bell"` → Tukey α = X/50 |
 | 3-point display smoothing | `true` | `smooth_for_display` | Matches CARSPAN plot convention |
 | Regular-grid DC removal (configurable mode) | `false` | `dc_removal` | Subtract the DFT of a mean-rate impulse train before squaring; cleans up VLF. Strict mode applies this unconditionally. |
-| Match Edges | `false` | `match_edges` | Round band edges to `freq_resolution` before integrating; reproduces CARSPAN's `GetMinBandFreq` / `GetMaxBandFreq` bin selection. |
 
 </details>
 

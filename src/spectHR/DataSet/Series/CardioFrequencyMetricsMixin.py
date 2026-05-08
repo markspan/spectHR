@@ -103,6 +103,12 @@ def load_frequency_bands(bands_config: dict) -> None:
     """
     Replace the module-level HRV_FREQUENCY_BANDS from workspace config.
 
+    Side effect: pushes the highest band edge into
+    ``CarspanPSD.CARSPAN_PARAMS["f_max"]`` so the CARSPAN PSD grid
+    automatically extends just far enough to integrate every band the
+    user has configured. The PSD module itself takes no kwarg for this
+    — the value flows here on every workspace load.
+
     Parameters
     ----------
     bands_config : dict
@@ -110,6 +116,14 @@ def load_frequency_bands(bands_config: dict) -> None:
     """
     global HRV_FREQUENCY_BANDS
     HRV_FREQUENCY_BANDS = dict(bands_config)
+    try:
+        highest_edge = max(
+            float(b["high"]) for b in HRV_FREQUENCY_BANDS.values() if "high" in b
+        )
+    except ValueError:
+        # Empty band table — leave the existing f_max in place.
+        return
+    CarspanPSD.CARSPAN_PARAMS["f_max"] = highest_edge
 
 
 def load_method(method: str) -> None:
@@ -129,37 +143,11 @@ def load_ci_alpha(alpha: float) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _carspan_edge_quantum() -> Optional[float]:
-    """
-    Read the CARSPAN "Match Edges" toggle and return the rounding step.
-
-    Returns the display resolution (Δf, e.g. 0.01 Hz) when the workspace
-    flag ``FrequencyAnalysis.carspan.match_edges`` is True, ``None``
-    otherwise. ``None`` means ``_band_power_rectangular`` uses raw band
-    edges; a positive value triggers banker's rounding of the edges to
-    the display grid before masking — the bin selection then matches
-    CARSPAN's ``Calculate_Power`` exactly.
-    """
-    params = getattr(CarspanPSD, "CARSPAN_PARAMS", None)
-    if not isinstance(params, dict):
-        return None
-    if not bool(params.get("match_edges", False)):
-        return None
-    quantum = params.get("freq_resolution", 0.01)
-    try:
-        quantum_f = float(quantum)
-    except (TypeError, ValueError):
-        return None
-    return quantum_f if quantum_f > 0 else None
-
-
 def _band_power_rectangular(
     freqs: np.ndarray,
     power: np.ndarray,
     f_low: float,
     f_high: float,
-    *,
-    edge_quantum: Optional[float] = None,
 ) -> float:
     """
     Rectangular-rule band power integration (CARSPAN Eq. 3.28):
@@ -169,28 +157,7 @@ def _band_power_rectangular(
     Both boundaries are inclusive. Uses spacings between consecutive grid
     points, so it adapts to both uniform (Welch, L-S) and native-CARSPAN
     grids.
-
-    Parameters
-    ----------
-    edge_quantum : float, optional
-        When given, ``f_low`` and ``f_high`` are rounded to the nearest
-        multiple of ``edge_quantum`` *before* masking. This reproduces
-        CARSPAN's "Match Edges" behaviour: ``GetMinBandFreq`` /
-        ``GetMaxBandFreq`` ([T_Output.pas:131,150]) round band edges to
-        the display resolution (typically 0.01 Hz) via ``SimpleRoundTo``
-        before ``Calculate_Power`` indexes the spectrum array. With this
-        flag on and band edges initially off-grid (e.g. 0.025 Hz), the
-        included bins match CARSPAN bin-for-bin. When ``None`` (default),
-        the raw float edges are used — useful when the user picks band
-        boundaries that intentionally fall between grid points.
     """
-    if edge_quantum is not None and edge_quantum > 0:
-        # Banker's rounding (Python and Pascal both use round-half-even
-        # by default), so 0.025 → 0.02 and 0.026 → 0.03 — identical to
-        # CARSPAN's SimpleRoundTo.
-        f_low = round(f_low / edge_quantum) * edge_quantum
-        f_high = round(f_high / edge_quantum) * edge_quantum
-
     mask = (freqs >= f_low) & (freqs <= f_high)
     band_freqs = freqs[mask]
     band_power = power[mask]
@@ -342,15 +309,61 @@ class CardioFrequencyMetricsMixin:
         # the mMI² factor (mean_ibi_ms²) exactly matches CARSPAN Eq. 3.20.
         return (T / N) * 1000.0
 
-    def _mmi2_factor(self) -> float:
+    def _mean_ibi_ms_arithmetic(self) -> float:
+        """
+        Mean IBI in ms under CARSPAN's *strict* arithmetic-mean-of-rate convention.
+
+        The reference CARSPAN Pascal (function ``SOC`` in
+        ``T_AnaFunctions.pas``, lines 332-342) computes the mean rate
+        used in the modulation-index normalisation as
+
+            x̄_AM  =  (1/N_ibi) · Σ (1 / IBI_i)
+
+        i.e. the *arithmetic mean of the instantaneous heart rates*.
+        Note this is the **harmonic mean of the IBI values** — Jensen's
+        inequality means it is *not* equal to ``N/T`` (which is what
+        ``_mean_ibi_ms`` returns and what the manual's Eq. 3.20 says
+        verbatim). For typical resting HRV with σ_rate / μ_rate ≈ 5–8 %,
+        the two differ by ~0.3–0.8 % in the resulting mMI² values.
+
+        We use this only for the ``carspan_strict`` path, where the
+        explicit goal is bit-for-bit parity with the Pascal
+        implementation. Other methods (``carspan``, ``welch``,
+        ``lombscargle``) keep the simpler ``T/N`` formula.
+
+        Returns
+        -------
+        float
+            ``1000 / x̄_AM`` in ms, i.e. the IBI value whose reciprocal
+            equals the arithmetic mean of the instantaneous rates.
+        """
+        # Pull the cleaned IBI series in seconds. ``_ibi_clean_pairs``
+        # returns (event_times_s, ibi_values_ms) — we want the IBI in
+        # seconds for the 1/IBI accumulation, matching the Pascal which
+        # accumulates 1/IBI_i with IBI in the source-data unit.
+        _, ibi_values_ms = self._ibi_clean_pairs()
+        if ibi_values_ms.size == 0:
+            raise ValueError(
+                "Need at least one IBI to compute the arithmetic-mean rate."
+            )
+        ibi_values_s = ibi_values_ms.astype(np.float64) * 1e-3
+        # Guard against any zero / non-finite entries that survived
+        # cleaning — 1/0 would otherwise pollute the mean.
+        valid = np.isfinite(ibi_values_s) & (ibi_values_s > 0)
+        if not np.any(valid):
+            raise ValueError("All cleaned IBI values are non-positive or NaN.")
+        am_rate_hz = float(np.mean(1.0 / ibi_values_s[valid]))
+        return 1000.0 / am_rate_hz
+
+    def _mmi2_factor(self, method: Optional[str] = None) -> float:
         """
         Conversion factor from Hz (events²/Hz) to mMI²/Hz.
 
         CARSPAN Eq. 3.20 defines the modulation-index spectrum as:
 
-            S'_xx(f) = S_xx(f) / x̄²    (x̄ = N/T, mean heart rate in Hz)
+            S'_xx(f) = S_xx(f) / x̄²    (x̄ = mean heart rate in Hz)
 
-        Since 1/x̄ = T/N = mean_ibi_s:
+        Since 1/x̄ = mean_ibi_s:
 
             S'_xx [MI²/Hz] = S_xx × mean_ibi_s²
 
@@ -358,12 +371,24 @@ class CardioFrequencyMetricsMixin:
         mean_ibi_s² × 10⁶ = (mean_ibi_ms / 1000)² × 10⁶ = mean_ibi_ms²,
         so the factor is simply ``mean_ibi_ms²``.
 
+        Two definitions of x̄ are supported:
+
+        * ``method == "carspan_strict"`` — arithmetic mean of the
+          instantaneous rates ``(1/N_ibi) · Σ (1/IBI_i)``, matching the
+          reference CARSPAN Pascal's ``SOC`` exactly.
+        * anything else (default) — manual / spectHR convention
+          ``x̄ = N/T`` (equivalent to ``1/mean(IBI)`` over the analysis
+          span). Used by ``carspan``, ``welch`` and ``lombscargle``.
+
         Returns
         -------
         float
             mean_ibi_ms² — multiply CARSPAN Hz output by this to get mMI²/Hz.
         """
-        mean_ibi = self._mean_ibi_ms()
+        if method == "carspan_strict":
+            mean_ibi = self._mean_ibi_ms_arithmetic()
+        else:
+            mean_ibi = self._mean_ibi_ms()
         return mean_ibi**2
 
     # ---------------------------------------------------------------
@@ -458,14 +483,10 @@ class CardioFrequencyMetricsMixin:
         method_name = (method or METHOD)
         if method_name in ("carspan", "carspan_strict"):
             result = self._psd_carspan_native(method_name)
-            edge_quantum = _carspan_edge_quantum()
         else:
             result = self.psd(method=method, with_ci=False)
-            edge_quantum = None
 
-        return _band_power_rectangular(
-            result.freqs, result.power, f_low, f_high, edge_quantum=edge_quantum
-        )
+        return _band_power_rectangular(result.freqs, result.power, f_low, f_high)
 
     def band_powers(
         self,
@@ -487,19 +508,13 @@ class CardioFrequencyMetricsMixin:
         method_name = (method or METHOD)
         if method_name in ("carspan", "carspan_strict"):
             result = self._psd_carspan_native(method_name)
-            edge_quantum = _carspan_edge_quantum()
         else:
             result = self.psd(method=method, with_ci=False)
-            edge_quantum = None
 
         powers = {}
         for name, band in HRV_FREQUENCY_BANDS.items():
             powers[name] = _band_power_rectangular(
-                result.freqs,
-                result.power,
-                band["low"],
-                band["high"],
-                edge_quantum=edge_quantum,
+                result.freqs, result.power, band["low"], band["high"]
             )
         return powers
 
@@ -601,7 +616,7 @@ class CardioFrequencyMetricsMixin:
         units = str(LombScarglePSD.LOMBSCARGLE_PARAMS.get("units", "mMI²"))
         return self._ibi_psd_display(units)
 
-    def _carspan_display(self) -> Tuple[float, str]:
+    def _carspan_display(self, method: Optional[str] = None) -> Tuple[float, str]:
         """
         Return ``(convert, unit)`` for the CARSPAN PSD display.
 
@@ -618,10 +633,17 @@ class CardioFrequencyMetricsMixin:
         units = str(CarspanPSD.CARSPAN_PARAMS.get("plot_units", "mMI\u00b2/Hz"))
         # Compare on ASCII prefix only — robust against JSON encoding mishaps
         # that could mangle the "²" character on Windows (cp1252 vs UTF-8).
-        if units.lower().startswith("ms"):
+        # Pick the IBI convention up-front so ms\u00b2/Hz and mMI\u00b2/Hz both
+        # land on the same arithmetic-vs-harmonic choice for a given
+        # method. ``carspan_strict`` uses the AM-of-rate value from the
+        # reference Pascal SOC; everything else uses T/N.
+        if method == "carspan_strict":
+            mean_ibi_ms = self._mean_ibi_ms_arithmetic()
+        else:
             mean_ibi_ms = self._mean_ibi_ms()
+        if units.lower().startswith("ms"):
             return (mean_ibi_ms**4) * 1e-6, "ms\u00b2/Hz"
-        return self._mmi2_factor(), "mMI\u00b2/Hz"
+        return mean_ibi_ms**2, "mMI\u00b2/Hz"
 
     def _band_mask(self, freqs: np.ndarray) -> np.ndarray:
         """Mask restricting freqs to ``[_f_min, _f_max]``."""
@@ -680,11 +702,10 @@ class CardioFrequencyMetricsMixin:
 
     def _psd_carspan_strict(self, with_ci: bool = True) -> PSDResult:
         """Strict CARSPAN PSD, converted Hz → display units (mMI²/Hz or ms²/Hz)."""
-        convert, unit = self._carspan_display()
+        convert, unit = self._carspan_display(method="carspan_strict")
         freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd_strict(
             self._event_times_clean(),
             alpha_ci=CI_ALPHA,
-            f_max=self._f_max(),
         )
         return self._as_result(
             "carspan_strict",
@@ -700,11 +721,10 @@ class CardioFrequencyMetricsMixin:
 
     def _psd_carspan(self, with_ci: bool = True) -> PSDResult:
         """Configurable CARSPAN PSD, converted Hz → display units (mMI²/Hz or ms²/Hz)."""
-        convert, unit = self._carspan_display()
+        convert, unit = self._carspan_display(method="carspan")
         freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd(
             self._event_times_clean(),
             alpha_ci=CI_ALPHA,
-            f_max=self._f_max(),
         )
         return self._as_result(
             "carspan",
@@ -753,19 +773,17 @@ class CardioFrequencyMetricsMixin:
             Frequencies on the display grid, power in display units,
             ``ci_lower`` and ``ci_upper`` set to ``None``.
         """
-        convert, unit = self._carspan_display()
+        convert, unit = self._carspan_display(method=method)
         if method == "carspan_strict":
             freqs, power, _, _ = CarspanPSD.compute_carspan_psd_strict(
                 self._event_times_clean(),
                 alpha_ci=CI_ALPHA,
-                f_max=self._f_max(),
                 smooth=False,
             )
         else:
             freqs, power, _, _ = CarspanPSD.compute_carspan_psd(
                 self._event_times_clean(),
                 alpha_ci=CI_ALPHA,
-                f_max=self._f_max(),
                 smooth=False,
             )
 
