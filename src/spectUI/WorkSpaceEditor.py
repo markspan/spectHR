@@ -125,6 +125,7 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     "FrequencyAnalysis.carspan.window": [
         "5% cosine bell",
         "10% cosine bell",
+        "20% cosine bell",
         "25% cosine bell",
         "hann",
         "hamming",
