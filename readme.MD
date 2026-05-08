@@ -557,7 +557,9 @@ Band power in $[f_l, f_h]$ is computed by rectangular summation on the
 **resampled but un-MA-smoothed** array — i.e. on `PDSin_BCK`, not on
 the native grid:
 
-$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}^{\text{BCK}}(f_k)\, \Delta f_\text{disp}, \qquad \Delta f_\text{disp} = \texttt{freq\_resolution}$$
+$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}^{\text{BCK}}(f_k)\, \Delta f_\text{disp}$$
+
+where $\Delta f_\text{disp}$ is the workspace `freq_resolution` setting (default 0.01 Hz).
 
 This matches `Calculate_Power(PDSin_BCK, …, FreqRes=0.01, d=1)` in
 `T_Output.pas:1300` line for line. The manual writes the formula with
