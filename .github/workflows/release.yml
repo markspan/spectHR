@@ -301,10 +301,14 @@ jobs:
           $version = "${{ needs.prepare.outputs.version }}"
           $outdir  = "dist/Windows"
           if (!(Test-Path "$outdir/spectHR.exe")) { throw "Missing $outdir/spectHR.exe" }
+          if (!(Test-Path "ExampleData")) { throw "Missing ExampleData/ at repo root" }
 
           $zip = "$outdir/spectHR-Windows-v$version.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
-          Compress-Archive -Path "$outdir/spectHR.exe" -DestinationPath $zip
+          # ``-Path`` accepts multiple roots; each one lands at the top
+          # of the archive, so the .exe and the ExampleData/ folder sit
+          # side-by-side inside the zip.
+          Compress-Archive -Path "$outdir/spectHR.exe","ExampleData" -DestinationPath $zip
           Remove-Item "$outdir/spectHR.exe" -Force
 
       - name: Package macOS artifact
@@ -322,11 +326,20 @@ jobs:
             exit 1
           fi
 
+          if [ ! -d "ExampleData" ]; then
+            echo "Missing ExampleData/ at repo root"
+            exit 1
+          fi
+
           APP_NAME="spectHR-macOS-v$VERSION.app"
           mv "$APP_PATH" "$OUTDIR/$APP_NAME"
 
-          ( cd "$OUTDIR" && /usr/bin/zip -r "spectHR-macOS-v$VERSION.zip" "$APP_NAME" )
-          rm -rf "$OUTDIR/$APP_NAME"
+          # Stage ExampleData/ next to the .app so both end up at the
+          # archive root after ``cd "$OUTDIR" && zip -r``.
+          cp -R ExampleData "$OUTDIR/ExampleData"
+
+          ( cd "$OUTDIR" && /usr/bin/zip -r "spectHR-macOS-v$VERSION.zip" "$APP_NAME" "ExampleData" )
+          rm -rf "$OUTDIR/$APP_NAME" "$OUTDIR/ExampleData"
 
       - name: Package Linux artifact
         if: runner.os == 'Linux'
@@ -343,8 +356,18 @@ jobs:
             exit 1
           fi
 
-          ( cd "$OUTDIR" && tar -czf "spectHR-Linux-v$VERSION.tar.gz" "spectHR-Linux-v$VERSION" )
+          if [ ! -d "ExampleData" ]; then
+            echo "Missing ExampleData/ at repo root"
+            exit 1
+          fi
+
+          # Stage ExampleData/ next to the binary so both sit at the
+          # archive root after ``cd "$OUTDIR" && tar``.
+          cp -R ExampleData "$OUTDIR/ExampleData"
+
+          ( cd "$OUTDIR" && tar -czf "spectHR-Linux-v$VERSION.tar.gz" "spectHR-Linux-v$VERSION" "ExampleData" )
           rm -f "$BIN"
+          rm -rf "$OUTDIR/ExampleData"
 
       - name: Upload artifact (only packaged files)
         uses: actions/upload-artifact@v4
