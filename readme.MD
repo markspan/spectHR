@@ -105,7 +105,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 ![spectHR](images/MainWindow.PNG)
 
-**spectHR** is a free, open-source desktop application for Heart Rate Variability (HRV) analysis. It is built for researchers and students who want to move from a raw cardiovascular recording to interpretable HRV metrics without writing any code, and without trusting a black box.
+**spectHR** is a free, open-source desktop application for Heart Rate Variability (HRV) analysis. It is built for researchers and students who want to move from a raw electrocardiogram (ECG) to interpretable HRV metrics without writing any code, and without trusting a black box.
 
 Heart rate variability reflects the fluctuations inter-beat intervals (IBI). These fluctuations are regulated by the autonomic nervous system: higher HRV generally indicates flexible, healthy regulation; lower HRV is associated with stress, disease, or fatigue. By analysing the power in different frequency bands of the IBI series, spectHR lets you separate the parasympathetic (HF) and sympathetic/parasympathetic (LF) contributions to heart rate control in each named epoch of your recording.
 
@@ -177,7 +177,7 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | Tab | What you do there |
 |-----|------------------|
 | **Preprocessing** | Verify and correct R-peak detection |
-| **IBI Series** | Review the heart rate time course |
+| **IBI Series** | Review the IBI timeseries |
 | **Poincaré** | Explore beat-to-beat dynamics visually |
 | **Epochs** | Draw and adjust your analysis segments |
 | **PSD** | Read the frequency-domain power spectrum per epoch |
