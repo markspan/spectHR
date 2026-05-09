@@ -28,7 +28,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 <summary><a href="#the-interface-at-a-glance"><strong>The interface at a glance</strong></a></summary>
 
 - [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
-- [Step 2, Inspect the heart rate series (IBI Series tab)](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
+- [Step 2, Inspect the IBI timeseries (IBI Series tab)](#step-2-inspect-the-ibi-series-tab)
 - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
@@ -209,7 +209,7 @@ Right-clicking a file gives you **Reload Raw**, **Invert ECG Polarity**, and **R
 
 ---
 
-### Step 2, Inspect the heart rate series (IBI Series tab)
+### Step 2, Inspect the IBI timeseries (IBI Series tab)
 
 Once the peaks look correct, switch to the **IBI Series tab** to see heart rate over time in beats per minute. If a breathing signal is available it is shown as a faint green overlay.
 
