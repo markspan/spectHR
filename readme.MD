@@ -3,7 +3,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 ---
 
-<details>
+<details open>
 <summary><a href="#what-is-specthr"><strong>What is spectHR?</strong></a></summary>
 </details>
 
