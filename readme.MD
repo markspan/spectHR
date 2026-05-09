@@ -1,7 +1,5 @@
-<details>
 <summary>⚠️ CAUTION</summary>
 This project is a work in progress. Blood pressure analysis is not yet implemented. Breathing signal extraction and visualisation are functional but should be treated as experimental.
-</details>
 
 ---
 
