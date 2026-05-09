@@ -248,7 +248,7 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded:
 
 - **FullRange (0.02–0.65 Hz)**, the total HRV spectrum.
-- **VLF (0.02–0.06 Hz)**, slow regulatory processes; requires long recordings.
+- **VLF (0.02–0.06 Hz)**, slow regulatory processes.
 - **LF (0.07–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
 - **HF (0.15–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
 
