@@ -238,7 +238,7 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 ![spectHR](images/PSDWindow.PNG)
 
-The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded:
+The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded (usefull defaults in brackets):
 
 - **FullRange (0.02–0.65 Hz)**, the total HRV spectrum.
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes.
