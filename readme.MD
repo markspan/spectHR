@@ -5,59 +5,31 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 ---
 
-- [spectHR: An Interactive HRV Analysis Tool](#specthr-an-interactive-hrv-analysis-tool)
-  - [What is spectHR?](#what-is-specthr)
-  - [Theoretical background](#theoretical-background)
-    - [Mental effort, not stress](#mental-effort-not-stress)
-    - [Frequency bands](#frequency-bands)
-    - [Practical considerations](#practical-considerations)
-  - [Getting started](#getting-started)
-  - [The interface at a glance](#the-interface-at-a-glance)
-  - [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
-  - [Step 2, Inspect the heart rate series (IBI Series tab)](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
-  - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
-  - [](#)
-  - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
-  - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
-  - [Step 6, Export your results (Parameters tab)](#step-6-export-your-results-parameters-tab)
-  - [Configuring the analysis](#configuring-the-analysis)
-  - [Data Formats](#data-formats)
-    - [XDF (LabStreamingLayer)](#xdf-labstreaminglayer)
-    - [Polar .txt](#polar-txt)
-    - [CARSPAN .evt / .nff](#carspan-evt--nff)
-  - [IBI Classification](#ibi-classification)
-    - [Classification algorithm](#classification-algorithm)
-    - [Comparison with CARSPAN](#comparison-with-carspan)
-      - [1. Refractory period, implemented at detection, not classification](#1-refractory-period-implemented-at-detection-not-classification)
-      - [2. Window type, centred rather than causal](#2-window-type-centred-rather-than-causal)
-      - [3. Window unit, beats rather than seconds](#3-window-unit-beats-rather-than-seconds)
-      - [4. Successive difference criterion, not implemented](#4-successive-difference-criterion-not-implemented)
-      - [5. Min/Max SD clipping, not implemented](#5-minmax-sd-clipping-not-implemented)
-      - [6. Automatic interpolation, not implemented](#6-automatic-interpolation-not-implemented)
-  - [Breathing Signal Extraction](#breathing-signal-extraction)
-  - [Poincaré Metrics](#poincaré-metrics)
-  - [Power Spectral Density, method details](#power-spectral-density-method-details)
-    - [Welch's method](#welchs-method)
-    - [Welch, algorithm detail](#welch-algorithm-detail)
-    - [CARSPAN method](#carspan-method)
-    - [CARSPAN, algorithm detail](#carspan-algorithm-detail)
-      - [The R-peak event series](#the-r-peak-event-series)
-      - [Power spectral density (formula 3.19)](#power-spectral-density-formula-319)
-      - [Regular-grid DC removal (strict mode)](#regular-grid-dc-removal-strict-mode)
-      - [Native frequency grid](#native-frequency-grid)
-      - [Display grid and smoothing](#display-grid-and-smoothing)
-      - [Band power (formula 3.28)](#band-power-formula-328)
-      - [Normalisation to mMI² (formulae 3.20 and 3.29)](#normalisation-to-mmi-formulae-320-and-329)
-    - [Confidence intervals](#confidence-intervals)
-    - [Frequency bands](#frequency-bands-1)
-    - [Units and normalisation](#units-and-normalisation)
-  - [Installation](#installation)
-    - [Windows](#windows)
-    - [Linux](#linux)
-    - [macOS](#macos)
-  - [Contributing](#contributing)
-  - [License](#license)
-  - [References](#references)
+<details>
+<summary><strong>spectHR: An Interactive HRV Analysis Tool</strong></summary>
+
+- [What is spectHR?](#what-is-specthr)
+- [Theoretical background](#theoretical-background)
+- [Getting started](#getting-started)
+- [The interface at a glance](#the-interface-at-a-glance)
+- [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
+- [Step 2, Inspect the heart rate series (IBI Series tab)](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
+- [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
+- [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
+- [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
+- [Step 6, Export your results (Parameters tab)](#step-6-export-your-results-parameters-tab)
+- [Configuring the analysis](#configuring-the-analysis)
+- [Data Formats](#data-formats)
+- [IBI Classification](#ibi-classification)
+- [Breathing Signal Extraction](#breathing-signal-extraction)
+- [Poincaré Metrics](#poincaré-metrics)
+- [Power Spectral Density, method details](#power-spectral-density-method-details)
+- [Installation](#installation)
+- [Contributing](#contributing)
+- [License](#license)
+- [References](#references)
+
+</details>
 
 ---
 
@@ -374,20 +346,20 @@ $$\text{SD2} = \sqrt{2 \cdot \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \mathrm{V
 
 ### Welch's method
 
-The IBI series (in ms) is resampled onto a uniform grid using cubic interpolation, divided into overlapping segments, windowed, Fourier-transformed, and averaged. Averaging over segments reduces variance at the cost of frequency resolution. Default output units: **mMI²/Hz**; configurable to **ms²/Hz** via the `"units"` workspace key.
+The IBI series (in ms) is resampled onto a uniform time grid with cubic interpolation, divided into overlapping segments, windowed, Fourier-transformed, and averaged. Averaging across segments reduces variance at the cost of frequency resolution. Default output: **mMI²/Hz**; configurable to **ms²/Hz** via the `"units"` workspace key.
 
 <details>
 <summary>Welch, algorithm detail</summary>
 
 ### Welch, algorithm detail
 
-Let $`x(t)`$ denote the IBI series (ms) resampled at $`f_s`$ Hz. `scipy.signal.welch` is called with `scaling='density'`, returning the one-sided PSD in ms²/Hz.
+Let $`x(t)`$ denote the IBI series (in ms), resampled at $`f_s`$ Hz. `scipy.signal.welch` is invoked with `scaling='density'` and returns a one-sided PSD in ms²/Hz.
 
-Band power $B$ in $`[f_l, f_h]`$ is computed by trapezoidal integration with endpoint interpolation:
+Band power $B$ in $`[f_l, f_h]`$ is obtained by trapezoidal integration with endpoint interpolation:
 
 $$B = \int_{f_l}^{f_h} \hat{S}(f) df \approx \sum_k \hat{S}(f_k) \Delta f$$
 
-The effective degrees of freedom account for the correlation introduced by overlapping segments (Percival & Walden, 1993):
+Because consecutive segments overlap, they are not statistically independent. The effective degrees of freedom are reduced accordingly (Percival & Walden, 1993):
 
 $$\nu = \frac{2K}{1 + 2\!\left(1 - \tfrac{1}{K}\right)\rho^2}$$
 
@@ -399,7 +371,7 @@ where:
 - $\chi^2_{\nu, p}$ — chi-square quantile at probability $p$ with $\nu$ degrees of freedom
 - $\alpha$ — significance level (e.g. 0.05 for a 95% CI)
 
-For non-overlapping segments $\rho = 0$ and $\nu = 2K$.  For a Hann window at 50% overlap $\rho \approx 1/6$, giving $\nu \approx 1.89K$.
+For non-overlapping segments $\rho = 0$ and $\nu = 2K$. For a Hann window at 50 % overlap $\rho \approx 1/6$, giving $\nu \approx 1.89\,K$ — close to the value for fully independent segments.
 
 **Default parameters** (configurable in *Edit Parameters*):
 
@@ -412,7 +384,7 @@ For non-overlapping segments $\rho = 0$ and $\nu = 2K$.  For a Hann window at 50
 | Window | Hann | `window` |
 | Output units | mMI² | `units` |
 
-**Note on resampling:** The 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156~\text{Hz}$, which is adequate for the HRV bands. At short epochs where the number of IBI samples is less than `nperseg`, the segment length is reduced to the number of available samples and overlap is halved automatically.
+**Note on resampling.** A 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156~\text{Hz}$, which is adequate for the standard HRV bands. For short epochs where the available IBI samples are fewer than `nperseg`, the segment length is reduced to the available count and the overlap is halved automatically.
 
 </details>
 
@@ -420,7 +392,7 @@ For non-overlapping segments $\rho = 0$ and $\nu = 2K$.  For a Hann window at 50
 
 ### CARSPAN method
 
-The CARSPAN method implements the direct Discrete Fourier Transform on R-peak event times, following the algorithm described by Mulder [(1988)](#ref-mulder1988) and used in the CARSPAN software package. No resampling is performed. The spectrum is computed on the native frequency grid $f_k = k/T$ (resolution $\Delta f = 1/T$), then interpolated onto a fixed display grid. Band power is computed on the native grid following CARSPAN formula 3.28. Output units: **mMI²**.
+CARSPAN takes a different approach. Instead of resampling the IBI series onto a uniform time grid, it operates directly on the R-peak times and computes the Fourier transform of those events — the algorithm Mulder [(1988)](#ref-mulder1988) developed for the original CARSPAN software. No resampling, no interpolation in time. The spectrum is computed on a native frequency grid $f_k = k/T$ (resolution $\Delta f = 1/T$), bin-averaged onto a fixed display grid for plotting, and band power is computed by direct summation following the manual's formula 3.28. Output units: **mMI²**.
 
 <details>
 <summary>CARSPAN, algorithm detail</summary>
@@ -429,28 +401,28 @@ The CARSPAN method implements the direct Discrete Fourier Transform on R-peak ev
 
 #### The R-peak event series
 
-Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heart rate signal is represented as a series of unit impulses at the R-peak occurrence times $t_i$ (in seconds):
+Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heartbeat is modelled as a sequence of unit impulses at the R-peak times $t_i$:
 
 $$x(t) = \sum_{i=1}^{N} \delta(t - t_i)$$
 
-This is the *Integral Pulse Frequency Modulation* (IPFM) model representation. The spectrum of this series reflects **heart rate** variability, not IBI variability directly. CARSPAN normalises out the mean heart rate afterwards (formula 3.20) to make the two equivalent.
+This is the *Integral Pulse Frequency Modulation* (IPFM) representation. Its spectrum reflects **heart-rate** variability, not IBI variability directly. The manual's formula 3.20 normalises out the mean heart rate afterwards, which makes the two equivalent for spectral purposes.
 
 #### Power spectral density (formula 3.19)
 
-Assuming periodicity outside the analysis segment $[0, T]$, the power spectral density at discrete frequencies $f_k = k/T$ is:
+Treating the signal outside the analysis window $[0, T]$ as a periodic continuation, the PSD at discrete frequencies $f_k = k/T$ is:
 
-$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i e^{-2\pi j f_k t_i}\right|^2 = \frac{2}{T}\left[\left(\sum_{i=1}^{N} w_i \cos(2\pi f_k t_i)\right)^2 + \left(\sum_{i=1}^{N} w_i \sin(2\pi f_k t_i)\right)^2\right]$$
+$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i e^{-2\pi j f_k t_i}\right|^2$$
 
-where $w_i$ is the $i$-th coefficient of a tapering window (workspace default: `10% cosine bell`, i.e. a Tukey window with α = 0.20). The window suppresses spectral leakage at the segment boundaries.
+The $w_i$ are tapering-window weights (default: `10% cosine bell`, a Tukey window with α = 0.20). The window tapers the signal smoothly to zero at both ends, suppressing spectral leakage at the segment boundaries.
 
-**Two CARSPAN variants are provided:**
+**Two variants are available:**
 
-- **`carspan`** (configurable) — any `scipy.signal.get_window` name (incl. the `"X% cosine bell"` shorthand → Tukey α = X/50). The window is applied by **event index** and the amplitude includes the standard energy correction $2N / (T \cdot S_2)$ (where $S_2 = \sum_i w_i^2$), making the level approximately window-invariant. The bare DFT of the impulse train is used by default (no DC removal); turn on the same regular-grid DC removal that strict mode uses by setting `dc_removal: true` in the workspace.
-- **`carspan_strict`** — manual-faithful: a Tukey 5 % cosine taper (α = 0.10) applied by **event index**, amplitude $2/T$ with no $N/S_2$ correction, and an explicit *regular-grid DC removal* (see the next subsection, applied unconditionally). This matches what the reference CARSPAN implementation actually computes.
+- **`carspan`** (configurable) — any `scipy.signal.get_window` name (the `"X% cosine bell"` shorthand maps to Tukey α = X/50). Window applied by **event index**; amplitude includes the standard $2N / (T \cdot S_2)$ correction (with $S_2 = \sum_i w_i^2$) so the level remains approximately consistent across window choices. DC removal is off by default; set `dc_removal: true` in the workspace to enable it.
+- **`carspan_strict`** — manual-faithful: Tukey 5 % cosine taper (α = 0.10) applied by **event index**, amplitude $2/T$ with no $N/S_2$ correction, and the regular-grid DC removal described below, applied unconditionally. This corresponds to what the reference CARSPAN implementation actually computes.
 
-For typical regular sinus rhythm both variants give the same spectral shape at LF/HF; the **strict** variant is markedly cleaner in the VLF region because of the DC-removal subtraction. Use `carspan_strict` to reproduce CARSPAN values; use `carspan` for variance-correct, window-tunable estimates.
+For a regular sinus rhythm the two variants produce the same spectral shape at LF/HF; the strict variant is noticeably cleaner at VLF because of the DC subtraction. Use `carspan_strict` to reproduce CARSPAN's reported values; use `carspan` for a tunable, variance-correct estimate.
 
-**Why the two are not interchangeable.** Several pieces of the strict bundle are different code paths, not parameter values, so you cannot fully reproduce `carspan_strict` from the configurable `carspan` settings:
+**Why they are not interchangeable.** Several elements of the strict bundle are different code paths rather than parameter values, so `carspan_strict` cannot be reproduced exactly from the configurable `carspan` settings:
 
 | Behaviour | `carspan_strict` | `carspan` (configurable) | Reachable via workspace? |
 |---|---|---|---|
@@ -463,57 +435,57 @@ For typical regular sinus rhythm both variants give the same spectral shape at L
 | 3-MA + bin-average smoothing | on | on by default (`smooth_for_display: true`) | ✓ — already matches |
 | mMI² mean convention | arithmetic mean of rate | harmonic mean of rate (`N/T`) | ✗ — hard-coded per method |
 
-The closest the configurable side can get is enabling `dc_removal: true`, which cleans up VLF leakage. Window, amplitude, skip-first, DC reference grid, and mean convention will still differ. To reproduce CARSPAN exactly, pick `method: "carspan_strict"` rather than tuning `carspan`.
+The closest the configurable mode can get is `dc_removal: true`, which cleans up the VLF leakage. The window, amplitude, skip-first, DC reference grid, and mean convention still differ. To reproduce CARSPAN exactly, select `method: "carspan_strict"` rather than tuning `carspan`.
 
 #### Regular-grid DC removal (strict mode)
 
-The CARSPAN manual writes Eq. 3.19 as a plain DFT of the windowed impulse train. The reference implementation goes one step further: before squaring, it subtracts the DFT of a perfectly periodic impulse train at the mean rate. This step is not stated as such in the manual but is essential for matching CARSPAN's actual output, particularly at low frequencies.
+The manual writes Eq. 3.19 as a plain DFT of the windowed impulse train. The reference CARSPAN implementation goes one step further: before squaring, it subtracts the DFT of a perfectly periodic impulse train at the mean rate. The manual does not flag this as a separate step, but it is essential for matching CARSPAN's actual output, particularly at low frequencies.
 
-The mechanism is straightforward. At $f = 0$ both DFTs are equal, so their difference is exactly zero and the DC component is removed. Beyond DC, the subtraction also cancels the spectral leakage that the mean-rate impulse train would otherwise spill into the VLF / LF bands. For approximately regular rhythms the correction is small at LF / HF but dominant at VLF — without it the low-frequency power is several times too high.
+The mechanism is straightforward. At $f = 0$ both DFTs equal 1, so their difference is exactly zero and the DC component is removed. Beyond DC, the subtraction also cancels the spectral leakage that a mean-rate impulse train would otherwise contribute to the VLF and LF bands. For an approximately regular rhythm the correction is small at LF and HF but dominant at VLF; without it, the low-frequency power is several times too high.
 
-**Available in configurable mode too.** The same DC removal can be enabled for the configurable `carspan` variant via the workspace key `FrequencyAnalysis.carspan.dc_removal` (also editable from *Edit Parameters*). It defaults to `false` to preserve the historical behaviour of that variant; flip it to `true` when you want VLF / mean-rate leakage cleaned up while still using a custom window or the variance-correct $2N / (T \cdot S_2)$ amplitude. Strict mode applies DC removal unconditionally and ignores this flag.
+**Available in configurable mode as well.** Setting `FrequencyAnalysis.carspan.dc_removal` to `true` (also editable from *Edit Parameters*) enables the same subtraction in the configurable `carspan` variant. It defaults to `false` to preserve the historical behaviour of that variant; enable it when you need the VLF cleanup while retaining a custom window or the variance-correct $2N / (T \cdot S_2)$ amplitude. Strict mode applies the subtraction unconditionally and ignores this flag.
 
 #### Native frequency grid
 
-The native grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max} \cdot T \rceil / T$, with spacing $\Delta f = 1/T$. The DC component ($k = 0$) is excluded because it carries no HRV information.
+The grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max} \cdot T \rceil / T$, with spacing $\Delta f = 1/T$. The DC bin ($k = 0$) is excluded; it carries no HRV information.
 
 #### Display grid and smoothing
 
-spectHR keeps the *plot* path and the *integration* path on separate arrays so the 3-point moving average can smooth the on-screen curve without contaminating any reported band-power value.
+The *plot* path and the *integration* path operate on separate arrays, so the 3-point moving average can smooth the on-screen curve without affecting the reported band-power values.
 
-**Plot path (`psd()`).** Native spectrum → bin-averaged onto the `freq_resolution` display grid (default 0.01 Hz) → optional 3-point moving average when `smooth_for_display = True` (the default). Following the CARSPAN manual (§3.3):
+**Plot path (`psd()`).** Native spectrum → bin-averaged onto the `freq_resolution` display grid (default 0.01 Hz) → optional 3-point moving average when `smooth_for_display = True` (the default). Following the manual (§3.3):
 
 > *"a moving average window over three frequency points (0.03 Hz bandwidth) is applied before plotting the spectral functions"*
 
-**Integration path (`band_power`, `band_powers`).** spectHR calls the back-end a second time with `smooth=False` and applies the resample step only — same display grid, but unsmoothed. The manual is explicit:
+**Integration path (`band_power`, `band_powers`).** spectHR calls the back-end a second time with `smooth=False` and applies only the resample step — same display grid, but no moving average. The manual is equally explicit on this point:
 
 > *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
 
 #### Band power (formula 3.28)
 
-Band power in $[f_l, f_h]$ is computed by rectangular summation on the resampled, un-smoothed display-grid spectrum:
+Band power in $[f_l, f_h]$ is computed by rectangular summation on the resampled, unsmoothed display-grid spectrum:
 
 $$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}(f_k)\, \Delta f_\text{disp}$$
 
 where $\Delta f_\text{disp}$ is the workspace `freq_resolution` setting (default 0.01 Hz).
 
-The manual writes the formula on the native grid (Δf = 1/T); spectHR uses the resampled grid because that is what the reference CARSPAN implementation integrates. The two values agree to within edge-bin rounding because the resample step is energy-conservative.
+The manual writes this on the native grid (Δf = 1/T); spectHR uses the resampled grid because that is what the reference CARSPAN implementation integrates. The two values agree to within edge-bin rounding, since the resample step is energy-conservative.
 
-spectHR uses trapezoidal integration for Welch band power; only the CARSPAN back-end uses this rectangular summation.
+Welch band power uses trapezoidal integration; only the CARSPAN back-end uses this rectangular summation.
 
-**Consequences.** Toggling `smooth_for_display` does **not** affect the reported band power — the integration runs on a separately computed unsmoothed copy. Changing `freq_resolution` *does* change Δf_disp and the bin boundaries, so it has a small (energy-conservative) effect on band power; in practice the difference is below 1 % for any sensible choice. To reproduce CARSPAN's numbers exactly, leave `freq_resolution` at its default `0.01`.
+**Practical consequences.** Toggling `smooth_for_display` does not affect band power — integration runs on a separately computed unsmoothed copy. Changing `freq_resolution` *does* shift Δf_disp and the bin boundaries, so it has a small effect on band power: energy is preserved overall, but edge-bin rounding shifts slightly. For typical band definitions the difference remains below 1 %. To reproduce CARSPAN's reported values exactly, leave `freq_resolution` at `0.01`.
 
 #### Normalisation to mMI² (formulae 3.20 and 3.29)
 
-The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is normalised by the squared mean of the R-peak event series. For the unit-impulse representation, the mean equals the mean heart rate $\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}$. The normalised band power is:
+The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is divided by the squared mean of the event series. For unit impulses this equals the squared mean heart rate $\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}$. The normalised band power is:
 
 $$B'(f_l, f_h) = \frac{B(f_l, f_h)}{\bar{x}^2} \times 10^6 = B(f_l, f_h) \times \bar{\text{IBI}}_\text{sec}^2 \times 10^6 \quad [\text{mMI}^2]$$
 
-Multiplication by $10^6$ scales the result into a convenient numeric range (milli-Modulation-Index squared, mMI²), consistent with CARSPAN output convention. An important consequence of this normalisation is that mMI² values are largely independent of mean heart rate, making them directly comparable between subjects and sessions.
+The factor $10^6$ scales the result into a convenient numeric range — milli-Modulation-Index squared, mMI². A consequence of this normalisation is that mMI² values are largely independent of mean heart rate, allowing direct comparison across subjects or sessions with different resting heart rates.
 
-**Note on the mean.** CARSPAN defines the mean rate as $`\bar{x} = N/T`$ (N events in T seconds), so the mean IBI used in the conversion is $`T/N`$, not the arithmetic mean of the N − 1 individual intervals $`T/(N-1)`$. For typical recordings the two differ by less than the width of one IBI.
+**Note on the mean.** CARSPAN defines the mean rate as $`\bar{x} = N/T`$ (N events in T seconds), so the mean IBI used in the conversion is $`T/N`$, not the arithmetic mean of the N − 1 individual intervals $`T/(N-1)`$. For typical recordings the difference is well under the width of one IBI.
 
-**Strict mode uses the arithmetic-mean-of-rate convention.** The `carspan_strict` path follows the reference CARSPAN implementation, which defines the mean rate slightly differently from the manual's Eq. 3.20: it uses the arithmetic mean of the per-beat instantaneous rates rather than $N/T$. By Jensen's inequality the arithmetic mean is always ≥ $`N/T`$, equal only when all IBI are identical; for typical resting HRV with ~5–8 % RR variability the two differ by ~0.3–0.8 % in the resulting mMI² values. spectHR therefore uses the arithmetic-mean convention for the strict path, while `carspan` (configurable) and `welch` keep the simpler $`T/N`$ convention from the manual. This split makes `carspan_strict` faithful to the reference implementation and the other methods faithful to the manual formula.
+**Strict mode uses a different mean.** The reference CARSPAN code defines the mean rate slightly differently from its own manual: it uses the *arithmetic mean* of the per-beat instantaneous rates rather than $N/T$. By Jensen's inequality the arithmetic mean is always ≥ $`N/T`$, with equality only for a perfectly regular rhythm. For resting HRV with ~5–8 % RR variability the two differ by ~0.3–0.8 % in the resulting mMI² values. spectHR therefore applies the arithmetic-mean convention only for `carspan_strict`; `carspan` (configurable) and `welch` retain the simpler $`T/N`$ from the manual. This split keeps `carspan_strict` faithful to the reference implementation and the others faithful to the manual.
 
 **Default parameters** (configurable in *Edit Parameters*):
 
@@ -530,17 +502,17 @@ Multiplication by $10^6$ scales the result into a convenient numeric range (mill
 
 ### Confidence intervals
 
-spectHR adds confidence intervals to all three PSD methods. CARSPAN itself does not compute CIs, this is a spectHR extension. The CI reflects how much the spectral estimate would vary if the measurement were repeated under identical conditions. All three methods use a chi-square CI of the form:
+CARSPAN itself does not report confidence intervals; this is a spectHR addition. The CI reflects the variability of the spectral estimate that would be expected if the measurement were repeated under identical conditions. Both methods use a chi-square CI of the form:
 
 $$\frac{\nu \cdot \hat{S}(f)}{\chi^2_{1-\alpha/2, \nu}} \leq S(f) \leq \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\alpha/2, \nu}}$$
 
-The difference lies in how the degrees of freedom $\nu$ are determined.
+The methods differ in how the degrees of freedom $\nu$ are determined.
 
 ---
 
 ### Frequency bands
 
-All three methods share the same configurable band definitions:
+All methods share the same configurable band definitions:
 
 | Band | Default range | Reflects |
 |------|--------------|---------| 
