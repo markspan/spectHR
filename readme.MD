@@ -1,11 +1,6 @@
-<p align="center">
-  <img src="images/specthr_logo.png" alt="spectHR logo" width="160" />
-</p>
-
 <details>
 <summary>⚠️ CAUTION</summary>
 This project is a work in progress. Blood pressure analysis is not yet implemented. Breathing signal extraction and visualisation are functional but should be treated as experimental.
-</details>
 
 ---
 
