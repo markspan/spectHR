@@ -7,8 +7,6 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 <summary><a href="#what-is-specthr"><strong>What is spectHR?</strong></a></summary>
 </details>
 
-<p>▾&nbsp;&nbsp;<a href="#what-is-specthr"><strong>What is spectHR?</strong></a></p>
-
 <details>
 <summary><a href="#theoretical-background"><strong>Theoretical background</strong></a></summary>
 
