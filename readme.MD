@@ -2,8 +2,10 @@
   <img src="images/specthr_logo.png" alt="spectHR logo" width="160" />
 </p>
 
+<details open>
 <summary>⚠️ CAUTION</summary>
 This project is a work in progress. Blood pressure analysis is not yet implemented. Breathing signal extraction and visualisation are functional but should be treated as experimental.
+</details>
 
 ---
 
@@ -28,7 +30,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 <summary><a href="#the-interface-at-a-glance"><strong>The interface at a glance</strong></a></summary>
 
 - [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
-- [Step 2, Inspect the IBI timeseries (IBI Series tab)](#step-2-inspect-the-ibi-series-tab)
+- [Step 2, Inspect the IBI timeseries (IBI Series tab)](#step-2-inspect-the-ibi-timeseries-ibi-series-tab)
 - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
