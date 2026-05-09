@@ -133,15 +133,6 @@ HRV does not measure perceived stress. It measures a physiological state: the co
 
 spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder, 1988](#ref-mulder1988)), following the CARSPAN convention. Band boundaries are **user-configurable** to accommodate different research traditions.
 
-| Band | Default range | Reflects |
-|------|--------------|---------| 
-| FullRange | 0.02–0.50 Hz | Total spectral power across the HRV range |
-| VLF | 0.02–0.06 Hz | Thermoregulation, hormonal rhythms; requires ≥ 5 min epochs |
-| LF | 0.07–0.14 Hz | Baroreceptor-driven vasomotor oscillations; most sensitive to mental effort |
-| HF | 0.15–0.40 Hz | Respiratory sinus arrhythmia; parasympathetically mediated but confounded by breathing pattern |
-
-The **LF/HF ratio** as a sympatho-vagal balance index is contested ([Billman, 2013](#ref-billman2013)); the CARSPAN tradition prefers absolute band power normalised by mean heart rate (mMI²).
-
 ### Practical considerations
 
 **Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals — visible in spectHR's shaded CI band. Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2018) showed that a 10-second ECG yields a valid RMSSD estimate in large samples.
