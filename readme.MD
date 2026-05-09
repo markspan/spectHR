@@ -18,7 +18,9 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 </details>
 
+<details>
 <summary><a href="#getting-started"><strong>Getting started</strong></a></summary>
+</details>
 
 <details>
 <summary><a href="#the-interface-at-a-glance"><strong>The interface at a glance</strong></a></summary>
