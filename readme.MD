@@ -16,7 +16,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 </details>
 
-<details>
+<details open>
 <summary><a href="#getting-started"><strong>Getting started</strong></a></summary>
 </details>
 
@@ -32,7 +32,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 </details>
 
-<details>
+<details open>
 <summary><a href="#configuring-the-analysis"><strong>Configuring the analysis</strong></a></summary>
 </details>
 
@@ -53,11 +53,11 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 </details>
 
-<details>
+<details open>
 <summary><a href="#breathing-signal-extraction"><strong>Breathing Signal Extraction</strong></a></summary>
 </details>
 
-<details>
+<details open>
 <summary><a href="#poincaré-metrics"><strong>Poincaré Metrics</strong></a></summary>
 </details>
 
@@ -81,15 +81,15 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 </details>
 
-<details>
+<details open>
 <summary><a href="#contributing"><strong>Contributing</strong></a></summary>
 </details>
 
-<details>
+<details open>
 <summary><a href="#license"><strong>License</strong></a></summary>
 </details>
 
-<details>
+<details open>
 <summary><a href="#references"><strong>References</strong></a></summary>
 </details>
 
