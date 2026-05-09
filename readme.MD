@@ -6,29 +6,93 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 ---
 
 <details>
-<summary><strong>spectHR: An Interactive HRV Analysis Tool</strong></summary>
+<summary><a href="#what-is-specthr"><strong>What is spectHR?</strong></a></summary>
+</details>
 
-- [What is spectHR?](#what-is-specthr)
-- [Theoretical background](#theoretical-background)
-- [Getting started](#getting-started)
-- [The interface at a glance](#the-interface-at-a-glance)
+<details>
+<summary><a href="#theoretical-background"><strong>Theoretical background</strong></a></summary>
+
+- [Mental effort, not stress](#mental-effort-not-stress)
+- [Frequency bands](#frequency-bands)
+- [Practical considerations](#practical-considerations)
+
+</details>
+
+<details>
+<summary><a href="#getting-started"><strong>Getting started</strong></a></summary>
+</details>
+
+<details>
+<summary><a href="#the-interface-at-a-glance"><strong>The interface at a glance</strong></a></summary>
+
 - [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
 - [Step 2, Inspect the heart rate series (IBI Series tab)](#step-2-inspect-the-heart-rate-series-ibi-series-tab)
 - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
 - [Step 6, Export your results (Parameters tab)](#step-6-export-your-results-parameters-tab)
-- [Configuring the analysis](#configuring-the-analysis)
-- [Data Formats](#data-formats)
-- [IBI Classification](#ibi-classification)
-- [Breathing Signal Extraction](#breathing-signal-extraction)
-- [Poincaré Metrics](#poincaré-metrics)
-- [Power Spectral Density, method details](#power-spectral-density-method-details)
-- [Installation](#installation)
-- [Contributing](#contributing)
-- [License](#license)
-- [References](#references)
 
+</details>
+
+<details>
+<summary><a href="#configuring-the-analysis"><strong>Configuring the analysis</strong></a></summary>
+</details>
+
+<details>
+<summary><a href="#data-formats"><strong>Data Formats</strong></a></summary>
+
+- [XDF (LabStreamingLayer)](#xdf-labstreaminglayer)
+- [Polar .txt](#polar-txt)
+- [CARSPAN .evt / .nff](#carspan-evt--nff)
+
+</details>
+
+<details>
+<summary><a href="#ibi-classification"><strong>IBI Classification</strong></a></summary>
+
+- [Classification algorithm](#classification-algorithm)
+- [Comparison with CARSPAN](#comparison-with-carspan)
+
+</details>
+
+<details>
+<summary><a href="#breathing-signal-extraction"><strong>Breathing Signal Extraction</strong></a></summary>
+</details>
+
+<details>
+<summary><a href="#poincaré-metrics"><strong>Poincaré Metrics</strong></a></summary>
+</details>
+
+<details>
+<summary><a href="#power-spectral-density-method-details"><strong>Power Spectral Density, method details</strong></a></summary>
+
+- [Welch's method](#welchs-method)
+- [CARSPAN method](#carspan-method)
+- [Confidence intervals](#confidence-intervals)
+- [Frequency bands](#frequency-bands-1)
+- [Units and normalisation](#units-and-normalisation)
+
+</details>
+
+<details>
+<summary><a href="#installation"><strong>Installation</strong></a></summary>
+
+- [Windows](#windows)
+- [Linux](#linux)
+- [macOS](#macos)
+
+</details>
+
+<details>
+<summary><a href="#contributing"><strong>Contributing</strong></a></summary>
+</details>
+
+<details>
+<summary><a href="#license"><strong>License</strong></a></summary>
+</details>
+
+<details>
+<summary><a href="#references"><strong>References</strong></a></summary>
 </details>
 
 ---
@@ -119,7 +183,7 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 
 ---
 
-## Step 1, Check and clean the ECG (Preprocessing tab)
+### Step 1, Check and clean the ECG (Preprocessing tab)
 
 This is the most important step. The quality of every metric downstream depends entirely on whether the R-peaks have been detected correctly.
 
@@ -143,7 +207,7 @@ Right-clicking a file gives you **Reload Raw**, **Invert ECG Polarity**, and **R
 
 ---
 
-## Step 2, Inspect the heart rate series (IBI Series tab)
+### Step 2, Inspect the heart rate series (IBI Series tab)
 
 Once the peaks look correct, switch to the **IBI Series tab** to see heart rate over time in beats per minute. If a breathing signal is available it is shown as a faint green overlay.
 
@@ -151,14 +215,14 @@ Once the peaks look correct, switch to the **IBI Series tab** to see heart rate 
 
 ---
 
-## Step 3, Define your analysis segments (Epochs tab)
+### Step 3, Define your analysis segments (Epochs tab)
 
 HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. You can also add epochs manually via **Actions → Add Epoch** and trim them by dragging their edges. Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
 
 ![Epochs](images/EpochsWindow.png)
 ---
 
-## Step 4, Explore autonomic dynamics (Poincaré tab)
+### Step 4, Explore autonomic dynamics (Poincaré tab)
 
 The **Poincaré tab** shows a scatter plot where each point represents one heartbeat: its IBI on the x-axis and the following IBI on the y-axis. A healthy autonomic system produces a characteristic elliptical cloud elongated along the diagonal. The short axis (SD1) reflects rapid, beat-to-beat variability; the long axis (SD2) reflects slower variability. Each active epoch is drawn in a different colour with its own ellipse overlaid.
 
@@ -175,7 +239,7 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 ---
 
-## Step 5, Examine frequency-domain HRV (PSD tab)
+### Step 5, Examine frequency-domain HRV (PSD tab)
 
 ![spectHR](images/PSDWindow.PNG)
 
@@ -190,7 +254,7 @@ Ranges are configurable. The shaded grey band is the **confidence interval**. Th
 
 ---
 
-## Step 6, Export your results (Parameters tab)
+### Step 6, Export your results (Parameters tab)
 
 The **Parameters tab** shows a table with one row per epoch:
 
