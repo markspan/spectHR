@@ -511,13 +511,9 @@ $$B'(f_l, f_h) = \frac{B(f_l, f_h)}{\bar{x}^2} \times 10^6 = B(f_l, f_h) \times 
 
 Multiplication by $10^6$ scales the result into a convenient numeric range (milli-Modulation-Index squared, mMI²), consistent with CARSPAN output convention. An important consequence of this normalisation is that mMI² values are largely independent of mean heart rate, making them directly comparable between subjects and sessions.
 
-**Implementation note on units:** The normalisation formula divides by $`\bar{x}^2 = (N/T)^2`$, which is equivalent to multiplying by $`(T/N)^2 = \bar{\text{IBI}}_\text{sec}^2`$. Crucially, CARSPAN defines the mean rate as $`\bar{x} = N/T`$ (N events in T seconds), so the mean IBI used here is $`T/N`$, not the arithmetic mean of the N−1 individual intervals $`T/(N-1)`$. The conversion factor applied in code is therefore `mean_ibi_ms²`, which is exactly equal to `mean_ibi_sec² × 10⁶` (since $(T/N \times 1000)^2 = (T/N)^2 \times 10^6$).
+**Note on the mean.** CARSPAN defines the mean rate as $`\bar{x} = N/T`$ (N events in T seconds), so the mean IBI used in the conversion is $`T/N`$, not the arithmetic mean of the N − 1 individual intervals $`T/(N-1)`$. For typical recordings the two differ by less than the width of one IBI.
 
-**Strict mode uses the arithmetic-mean-of-rate convention.** The `carspan_strict` path follows the reference CARSPAN Pascal source verbatim — and that source defines the mean differently from the manual's Eq. 3.20. In `T_AnaFunctions.pas` (function `SOC`), the mean rate used in the modulation-index normalisation is
-
-$$\bar{x}_\text{AM} \;=\; \frac{1}{N_\text{IBI}} \sum_i \frac{1}{\text{IBI}_i}$$
-
-i.e. the *arithmetic mean of the instantaneous heart rates*, equivalent to the *harmonic mean of the IBI values*. By Jensen's inequality this is always ≥ $`N/T`$, equal only when all IBI are identical; for typical resting HRV with ~5–8 % RR variability the two differ by ~0.3–0.8 % in the resulting mMI² values. spectHR therefore routes the strict path through `_mean_ibi_ms_arithmetic`, while `carspan` (configurable) and `welch` keep the simpler $`T/N`$ convention from the manual. This split makes `carspan_strict` faithful to the Pascal implementation and the other methods faithful to the manual formula.
+**Strict mode uses the arithmetic-mean-of-rate convention.** The `carspan_strict` path follows the reference CARSPAN implementation, which defines the mean rate slightly differently from the manual's Eq. 3.20: it uses the arithmetic mean of the per-beat instantaneous rates rather than $N/T$. By Jensen's inequality the arithmetic mean is always ≥ $`N/T`$, equal only when all IBI are identical; for typical resting HRV with ~5–8 % RR variability the two differ by ~0.3–0.8 % in the resulting mMI² values. spectHR therefore uses the arithmetic-mean convention for the strict path, while `carspan` (configurable) and `welch` keep the simpler $`T/N`$ convention from the manual. This split makes `carspan_strict` faithful to the reference implementation and the other methods faithful to the manual formula.
 
 **Default parameters** (configurable in *Edit Parameters*):
 
