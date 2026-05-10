@@ -309,13 +309,6 @@ After R-peak detection, each inter-beat interval is classified before any metric
 | SNS | Short-Normal-Short triplet | Light sea green |
 | T | Degenerate (NaN or zero duration); excluded from all metrics | — |
 
-<details>
-<summary>Terminology</summary>
-
-**Terminology:** The CARSPAN documentation occasionally uses the term *Energy* where *Power* is the correct term. spectHR uses *Power* consistently throughout.
-
-</details>
-
 ---
 
 <details>
