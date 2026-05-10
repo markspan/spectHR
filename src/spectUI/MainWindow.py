@@ -81,7 +81,7 @@ class MainWindow(QMainWindow):
         self.ui.actionAdd_Epoch.setStatusTip("Add a new epoch spanning the full recording")
         self.ui.actionAdd_Epoch.setToolTip("Add a new epoch spanning the full recording")   
         self.ui.actionAdd_Epoch.setShortcut("Ctrl+N")
-        self.setWindowTitle("spectHR (v1.1.11) - ECG / HRV Analysis")
+        self.setWindowTitle("spectHR (v1.2.0) - ECG / HRV Analysis")
         self.resize(1920, 1080)
         self.ui.Splitter.setSizes([200, 1700])
 

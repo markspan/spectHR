@@ -133,15 +133,6 @@ HRV does not measure perceived stress. It measures a physiological state: the co
 
 spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder, 1988](#ref-mulder1988)), following the CARSPAN convention. Band boundaries are **user-configurable** to accommodate different research traditions.
 
-| Band | Default range | Reflects |
-|------|--------------|---------| 
-| FullRange | 0.02–0.50 Hz | Total spectral power across the HRV range |
-| VLF | 0.02–0.06 Hz | Thermoregulation, hormonal rhythms; requires ≥ 5 min epochs |
-| LF | 0.07–0.14 Hz | Baroreceptor-driven vasomotor oscillations; most sensitive to mental effort |
-| HF | 0.15–0.40 Hz | Respiratory sinus arrhythmia; parasympathetically mediated but confounded by breathing pattern |
-
-The **LF/HF ratio** as a sympatho-vagal balance index is contested ([Billman, 2013](#ref-billman2013)); the CARSPAN tradition prefers absolute band power normalised by mean heart rate (mMI²).
-
 ### Practical considerations
 
 **Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals — visible in spectHR's shaded CI band. Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2018) showed that a 10-second ECG yields a valid RMSSD estimate in large samples.
@@ -247,7 +238,7 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 ![spectHR](images/PSDWindow.PNG)
 
-The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded:
+The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded (usefull defaults in brackets):
 
 - **FullRange (0.02–0.65 Hz)**, the total HRV spectrum.
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes.
@@ -318,13 +309,6 @@ After R-peak detection, each inter-beat interval is classified before any metric
 | SNS | Short-Normal-Short triplet | Light sea green |
 | T | Degenerate (NaN or zero duration); excluded from all metrics | — |
 
-<details>
-<summary>Terminology</summary>
-
-**Terminology:** The CARSPAN documentation occasionally uses the term *Energy* where *Power* is the correct term. spectHR uses *Power* consistently throughout.
-
-</details>
-
 ---
 
 <details>
@@ -352,9 +336,8 @@ Let $\text{IBI}_i$ denote the $i$-th inter-beat interval and let $\bar{\text{IBI
 | Threshold $`N`$ | 4.0 std | `n_std` |
 | TL ceiling $`T_{\max}`$ | 2.0 s | `max_ibi_sec` |
 
-</details>
-
 ---
+<details>
 
 ### Comparison with CARSPAN
 
@@ -383,6 +366,9 @@ CARSPAN clips the standard deviation used for thresholding to a minimum of 5 % a
 #### 6. Automatic interpolation, not implemented
 
 CARSPAN automatically corrects detected artefacts by linear interpolation, inserting estimated beats and adding normally-distributed noise to prevent variance reduction. spectHR does not perform automatic correction. Every flagged beat is shown in the Preprocessing tab and can be corrected manually. Intervals left uncorrected and labelled TL or T are excluded from all metric calculations. This reflects spectHR's core principle: **you**, not the algorithm, decide what to do with each artefact.
+
+</details>
+</details>
 
 ---
 
@@ -606,7 +592,7 @@ Both methods output mMI² by default, which is dimensionless and largely heart-r
 
 ## Installation
 
-Realeases are compiled using *Nuitka*. They are fully self-contained.
+Releases are compiled using *Nuitka*. They are fully self-contained.
 ### Windows
 
 Download `spectHR-Windows-vX.Y.Z.zip` from the [Releases](https://github.com/markspan/spectHR/releases) page, extract, and run `spectHR.exe`. No Python installation is required.
