@@ -343,9 +343,8 @@ Let $\text{IBI}_i$ denote the $i$-th inter-beat interval and let $\bar{\text{IBI
 | Threshold $`N`$ | 4.0 std | `n_std` |
 | TL ceiling $`T_{\max}`$ | 2.0 s | `max_ibi_sec` |
 
-</details>
-
 ---
+<details>
 
 ### Comparison with CARSPAN
 
@@ -374,7 +373,8 @@ CARSPAN clips the standard deviation used for thresholding to a minimum of 5 % a
 #### 6. Automatic interpolation, not implemented
 
 CARSPAN automatically corrects detected artefacts by linear interpolation, inserting estimated beats and adding normally-distributed noise to prevent variance reduction. spectHR does not perform automatic correction. Every flagged beat is shown in the Preprocessing tab and can be corrected manually. Intervals left uncorrected and labelled TL or T are excluded from all metric calculations. This reflects spectHR's core principle: **you**, not the algorithm, decide what to do with each artefact.
-
+</details>
+</details>
 ---
 
 ## Breathing Signal Extraction
