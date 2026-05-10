@@ -592,7 +592,7 @@ Both methods output mMI² by default, which is dimensionless and largely heart-r
 
 ## Installation
 
-Realeases are compiled using *Nuitka*. They are fully self-contained.
+Releases are compiled using *Nuitka*. They are fully self-contained.
 ### Windows
 
 Download `spectHR-Windows-vX.Y.Z.zip` from the [Releases](https://github.com/markspan/spectHR/releases) page, extract, and run `spectHR.exe`. No Python installation is required.
