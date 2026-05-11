@@ -48,7 +48,7 @@ caller (CardioFrequencyMetricsMixin).
 References
 ----------
 L. J. M. Mulder, "CARSPAN Manual", Ch. 3.
-CARSPAN Pascal source ``T_AnaFunctions.pas`` (function ``SOC``).
+CARSPAN Pascal source ``T_AnaFunctions.pas`` (function ``SOC`` (spectrum of counts!)).
 """
 
 from __future__ import annotations
