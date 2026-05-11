@@ -28,6 +28,7 @@ from spectHR.DataSet.Series.TimeSeries import TimeSeries
 # View state & helpers
 # ======================================================================
 
+
 @dataclass
 class ViewState:
     """
@@ -87,6 +88,7 @@ class OverviewWindow:
 # ======================================================================
 # HRPlotWidget (UI + plotting)
 # ======================================================================
+
 
 class HRPlotWidget(QWidget):
     """
@@ -151,7 +153,6 @@ class HRPlotWidget(QWidget):
 
         self.setVisible(False)
 
-
     def _has_resp_phases(self) -> bool:
         """
         True iff PhysioData carries Phase intervals for the active band.
@@ -163,7 +164,6 @@ class HRPlotWidget(QWidget):
         if not isinstance(phases, dict) or band is None:
             return False
         return (f"inh-{band}" in phases) or (f"exh-{band}" in phases)
-
 
     def _draw_phase_backgrounds(
         self,
@@ -201,7 +201,7 @@ class HRPlotWidget(QWidget):
                 float(end),
                 color=color,
                 alpha=alpha,
-                zorder=0,     # behind line plots
+                zorder=0,  # behind line plots
                 linewidth=0,
             )
 
@@ -283,7 +283,9 @@ class HRPlotWidget(QWidget):
                 icon = qta.icon(icon_name)
                 if rotate:
                     pixmap = icon.pixmap(QSize(48, 48))
-                    transform = QTransform().rotate(rotate if isinstance(rotate, int) else 0)
+                    transform = QTransform().rotate(
+                        rotate if isinstance(rotate, int) else 0
+                    )
                     rotated_pixmap = pixmap.transformed(transform)
                     icon = QIcon(rotated_pixmap)
                 btn.setIcon(icon)
@@ -304,14 +306,22 @@ class HRPlotWidget(QWidget):
                 btn.setToolTip(tooltip)
             return btn
 
-        begin = make_btn("fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start")
+        begin = make_btn(
+            "fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"
+        )
         left = make_btn("fa6s.backward", self.pan_left, tooltip="Pan Left")
-        prev = make_btn("fa6s.square-caret-left", self.prev, tooltip="Previous non-normal R-top")
+        prev = make_btn(
+            "fa6s.square-caret-left", self.prev, tooltip="Previous non-normal R-top"
+        )
         zoom_in = make_btn("ei.zoom-in", self.zoom_in, tooltip="Zoom In")
         zoom_out = make_btn("ei.zoom-out", self.zoom_out, tooltip="Zoom Out")
-        nxt = make_btn("fa6s.square-caret-right", self.next, tooltip="Next non-normal R-top")
+        nxt = make_btn(
+            "fa6s.square-caret-right", self.next, tooltip="Next non-normal R-top"
+        )
         right = make_btn("fa6s.forward", self.pan_right, tooltip="Pan Right")
-        end = make_btn("fa6s.right-to-bracket", self.go_to_end, rotate=False, tooltip="Goto End")
+        end = make_btn(
+            "fa6s.right-to-bracket", self.go_to_end, rotate=False, tooltip="Goto End"
+        )
 
         nav_layout = QHBoxLayout()
         nav_layout.setContentsMargins(0, 0, 0, 0)
@@ -407,7 +417,6 @@ class HRPlotWidget(QWidget):
 
         self.ax_heartrate = ax_hr
         self.ax_overview = ax_overview
-        
 
     def _reuse_axes_from_figure(self) -> None:
         axes = self.hrfig.axes
@@ -423,7 +432,7 @@ class HRPlotWidget(QWidget):
         """
         # Hide toolbar/header for embedded use
         self.hrfig.canvas.toolbar_visible = False  # type: ignore[attr-defined]
-        self.hrfig.canvas.header_visible = False   # type: ignore[attr-defined]
+        self.hrfig.canvas.header_visible = False  # type: ignore[attr-defined]
         self.hrfig.tight_layout()
 
         # Rebuild Qt canvas
@@ -447,9 +456,15 @@ class HRPlotWidget(QWidget):
         if self._mpl_cid_release is not None:
             self.hrfig.canvas.mpl_disconnect(self._mpl_cid_release)
 
-        self._mpl_cid_press = self.hrfig.canvas.mpl_connect("button_press_event", self._on_press)
-        self._mpl_cid_move = self.hrfig.canvas.mpl_connect("motion_notify_event", self._on_motion)
-        self._mpl_cid_release = self.hrfig.canvas.mpl_connect("button_release_event", self._on_release)
+        self._mpl_cid_press = self.hrfig.canvas.mpl_connect(
+            "button_press_event", self._on_press
+        )
+        self._mpl_cid_move = self.hrfig.canvas.mpl_connect(
+            "motion_notify_event", self._on_motion
+        )
+        self._mpl_cid_release = self.hrfig.canvas.mpl_connect(
+            "button_release_event", self._on_release
+        )
 
     # ==============================================================
     # Rendering pipeline
@@ -462,9 +477,10 @@ class HRPlotWidget(QWidget):
         ax.spines["right"].set_visible(False)
         ax.spines["top"].set_visible(False)
 
-
     @staticmethod
-    def _set_time_axis(ax: Axes, x_min: float, x_max: float, *, show_xlabel: bool) -> None:
+    def _set_time_axis(
+        ax: Axes, x_min: float, x_max: float, *, show_xlabel: bool
+    ) -> None:
         """Set x-limits, ticks, and optionally the x-axis label."""
         ax.set_xlim(x_min, x_max)
 
@@ -486,7 +502,7 @@ class HRPlotWidget(QWidget):
         assert self.ax_overview is not None
 
         self._draw_heartrate()
-        self._draw_breathing()   # <-- always call; it will no-op if no breathing
+        self._draw_breathing()  # <-- always call; it will no-op if no breathing
         self._draw_overview()
 
         self.canvas.draw_idle()
@@ -499,11 +515,18 @@ class HRPlotWidget(QWidget):
         heartrate = self.data["heartrate"].timeseries
 
         self.ax_heartrate.clear()
-        self.ax_heartrate.plot(heartrate.times, heartrate.values, color="red", linewidth=2, alpha=1.0)
+        self.ax_heartrate.plot(
+            heartrate.times, heartrate.values, color="red", linewidth=2, alpha=1.0
+        )
         # title
-        self.ax_heartrate.set_title("Heartrate Signal")
+        self.ax_heartrate.set_title("IBI Timeseries Signal")
         self._style_axis_clean(self.ax_heartrate)
-        self._set_time_axis(self.ax_heartrate, self.data.view.x_min, self.data.view.x_max, show_xlabel=False)
+        self._set_time_axis(
+            self.ax_heartrate,
+            self.data.view.x_min,
+            self.data.view.x_max,
+            show_xlabel=False,
+        )
 
     def _draw_breathing(self) -> None:
         """
@@ -533,7 +556,6 @@ class HRPlotWidget(QWidget):
         ax_hr = self.ax_heartrate
         self._ax_br_twin = ax_hr.twinx()
 
-        
         # Optional: phase shading on the HR axis (or on ax_br; pick one)
         if self._has_resp_phases():
             self._draw_phase_backgrounds(
@@ -561,7 +583,7 @@ class HRPlotWidget(QWidget):
 
         # Keep behind the HR trace
         self._ax_br_twin.set_zorder(0)
-        self._style_axis_clean(self._ax_br_twin)   # removes top/left/right spines too
+        self._style_axis_clean(self._ax_br_twin)  # removes top/left/right spines too
         # and typically you do NOT want an x-label on the twin axis:
         self._ax_br_twin.set_xlabel("")
 
@@ -575,15 +597,19 @@ class HRPlotWidget(QWidget):
         assert self.data.view is not None
 
         heartrate = self.data["heartrate"].timeseries
-        
+
         # Redraw the overview axis completely.
         self.ax_overview.clear()
         self.ax_overview.plot(
-            heartrate.times, heartrate.values,
-            linewidth=0.25, alpha=1, color="green"
+            heartrate.times, heartrate.values, linewidth=0.25, alpha=1, color="green"
         )
         self._style_axis_clean(self.ax_overview)
-        self._set_time_axis(self.ax_overview, float(heartrate.times.min()), float(heartrate.times.max()), show_xlabel=True)
+        self._set_time_axis(
+            self.ax_overview,
+            float(heartrate.times.min()),
+            float(heartrate.times.max()),
+            show_xlabel=True,
+        )
 
         # Recreate the rectangle every time — most robust behaviour.
         y0, y1 = self.ax_overview.get_ylim()
@@ -653,7 +679,9 @@ class HRPlotWidget(QWidget):
         """
         assert self.data.view is not None
         width = self.data.view.width()
-        new_min, new_max = self._constrained_window(self.data.view.x_min - width, self.data.view.x_max - width)
+        new_min, new_max = self._constrained_window(
+            self.data.view.x_min - width, self.data.view.x_max - width
+        )
         self._set_window(new_min, new_max)
 
     def pan_right(self) -> None:
@@ -662,7 +690,9 @@ class HRPlotWidget(QWidget):
         """
         assert self.data.view is not None
         width = self.data.view.width()
-        new_min, new_max = self._constrained_window(self.data.view.x_min + width, self.data.view.x_max + width)
+        new_min, new_max = self._constrained_window(
+            self.data.view.x_min + width, self.data.view.x_max + width
+        )
         self._set_window(new_min, new_max)
 
     def go_to_start(self) -> None:
@@ -685,7 +715,7 @@ class HRPlotWidget(QWidget):
         end = float(heartrate.times.max())
         self._set_window(end - width, end)
 
-    def next(self) -> None: 
+    def next(self) -> None:
         """
         Jump to next non-normal R-top (label != 'N') after current x_max.
         """
@@ -739,7 +769,6 @@ class HRPlotWidget(QWidget):
             else:
                 self.data.view.drag_mode = "center"
 
-
     def _on_motion(self, event) -> None:
         """
         Matplotlib mouse motion callback (while dragging window).
@@ -748,7 +777,11 @@ class HRPlotWidget(QWidget):
             return
 
         if event.inaxes is self.ax_overview and self.data.view.drag_mode is not None:
-            if event.xdata is None or self.data.view.initial_xmin is None or self.data.view.initial_xmax is None:
+            if (
+                event.xdata is None
+                or self.data.view.initial_xmin is None
+                or self.data.view.initial_xmax is None
+            ):
                 return
 
             width = self.data.view.initial_xmax - self.data.view.initial_xmin
@@ -759,7 +792,9 @@ class HRPlotWidget(QWidget):
                 x_min = self.data.view.x_min
                 x_max = max(event.xdata, self.data.view.x_min + 0.1)
             else:  # center
-                dx = event.xdata - 0.5 * (self.data.view.initial_xmin + self.data.view.initial_xmax)
+                dx = event.xdata - 0.5 * (
+                    self.data.view.initial_xmin + self.data.view.initial_xmax
+                )
                 x_min = self.data.view.initial_xmin + dx
                 x_max = self.data.view.initial_xmax + dx
 
@@ -779,7 +814,6 @@ class HRPlotWidget(QWidget):
         self.data.view.drag_mode = None
         self.redraw()
 
-
     # ==============================================================
     # Styling helpers
     # ==============================================================
@@ -793,4 +827,3 @@ class HRPlotWidget(QWidget):
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
         ax.spines["top"].set_visible(False)
-

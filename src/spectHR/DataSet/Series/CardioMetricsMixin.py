@@ -55,6 +55,7 @@ class CardioMetricsMixin(HRVMetric):
     METRIC_ORDER = [
         "count",
         "mean",
+        "stationarity",
         "median",
         "min",
         "max",
@@ -141,6 +142,16 @@ class CardioMetricsMixin(HRVMetric):
     def count(self):
         """Total number of valid inter-beat intervals (count of R-peaks - 1)."""
         return int(self._ibi_clean_ms().size)
+
+    @hrv_metric
+    def stationarity(self):
+        """Stationarity of inter-beat intervals over time."""
+
+        return (
+            np.corrcoef(self._ibi_clean_ms(), self.times[:-1])[0, 1]
+            if self.count() > 2
+            else np.nan
+        )
 
     @hrv_metric
     def mean(self):
@@ -363,4 +374,3 @@ class CardioMetricsMixin(HRVMetric):
         if np.isnan(lf) or np.isnan(hf) or hf == 0:
             return np.nan
         return float(lf / hf)
-

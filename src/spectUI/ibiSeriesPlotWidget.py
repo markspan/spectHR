@@ -438,7 +438,7 @@ class IBISeriesPlotWidget(QWidget):
         ax.plot(
             heartrate_time,
             heartrate_level,
-            label="HeartRate",
+            label="Interbeat Interval (IBI)",
             color="red",
             linewidth=0.8,
             alpha=1,
