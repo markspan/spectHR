@@ -15,6 +15,7 @@ power spectra", IEEE Trans. Audio Electroacoust., 1967.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 import numpy as np
@@ -25,23 +26,37 @@ from spectHR.Tools.PSD._psd_utils import (
     _chi2_ci,
     _require_min_samples,
     _resolve_window,
-    update_params,
 )
 
 
-WELCH_PARAMS = {
-    "fs": 4.0,          # Resampling frequency (Hz)
-    "nperseg": 256,     # Samples per segment
-    "noverlap": 128,    # Overlap between segments
-    "nfft": None,       # FFT length (None → nperseg)
-    "window": "hann",   # Window function name
-    "units": "mMI²",    # Output units: "mMI²" (modulation index) or "ms²" (raw IBI power)
-}
+@dataclass(frozen=True)
+class WelchOptions:
+    """Configuration for ``compute_welch_psd``.
+
+    All values are pure Python defaults; the spectUI layer overrides
+    them from the workspace JSON by building a fresh ``WelchOptions``.
+    """
+
+    fs: float = 4.0
+    """Resampling frequency in Hz used before the Welch averaging."""
+
+    nperseg: int = 256
+    """Samples per Welch segment."""
+
+    noverlap: int = 128
+    """Overlap (samples) between consecutive segments."""
+
+    nfft: Optional[int] = None
+    """FFT length; falls through to ``nperseg`` when None."""
+
+    window: str = "hann"
+    """``scipy.signal.get_window`` name."""
+
+    units: str = "mMI²"
+    """Output unit chosen by the caller's display layer: ``"mMI²"`` (normalised) or ``"ms²"`` (raw)."""
 
 
-def load_welch_params(config: dict) -> None:
-    """Update module-level WELCH_PARAMS from a workspace config dict."""
-    update_params(WELCH_PARAMS, config)
+_DEFAULT_WELCH_OPTIONS = WelchOptions()
 
 
 def compute_welch_psd(
@@ -49,11 +64,7 @@ def compute_welch_psd(
     ibi_values_ms: np.ndarray,
     *,
     alpha_ci: float = 0.05,
-    fs: Optional[float] = None,
-    nperseg: Optional[int] = None,
-    noverlap: Optional[int] = None,
-    nfft: Optional[int] = None,
-    window: Optional[str] = None,
+    options: Optional[WelchOptions] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Welch PSD of an IBI series with chi-squared confidence intervals.
@@ -64,17 +75,21 @@ def compute_welch_psd(
         Timestamps (s) and IBI durations (ms) of each valid IBI.
     alpha_ci : float
         CI significance level (default 0.05 → 95 % CI).
+    options : WelchOptions, optional
+        Welch tuning. Defaults to ``WelchOptions()`` when not provided.
 
     Returns
     -------
     freqs, power, ci_lower, ci_upper : np.ndarray
         Power and bounds in ms²/Hz.  Each Welch segment adds ~2 dof.
     """
-    fs = float(fs if fs is not None else WELCH_PARAMS["fs"])
-    nperseg = int(nperseg if nperseg is not None else WELCH_PARAMS["nperseg"])
-    noverlap = int(noverlap if noverlap is not None else WELCH_PARAMS["noverlap"])
-    nfft = int(nfft) if nfft is not None else WELCH_PARAMS.get("nfft")
-    window = _resolve_window(window if window is not None else WELCH_PARAMS["window"])
+    opts = options if options is not None else _DEFAULT_WELCH_OPTIONS
+
+    fs = float(opts.fs)
+    nperseg = int(opts.nperseg)
+    noverlap = int(opts.noverlap)
+    nfft = int(opts.nfft) if opts.nfft is not None else None
+    window = _resolve_window(opts.window)
 
     _require_min_samples(ibi_times_s.size, 4, "Welch PSD")
 
@@ -116,20 +131,14 @@ def compute_welch_psd(
     step = nperseg - noverlap
     n_segments = max(1, 1 + (n_samples - nperseg) // step)
 
-    # Retrieve actual window samples for the correlation calculation.
     w_arr = signal.get_window(window, nperseg, fftbins=False).astype(float)
     w_sq = float(np.dot(w_arr, w_arr))
     if step < nperseg and n_segments > 1 and w_sq > 0.0:
-        # Normalised autocorrelation of w at lag = step samples.
         rho = float(np.dot(w_arr[: nperseg - step], w_arr[step:])) / w_sq
         dof = 2.0 * n_segments / (1.0 + 2.0 * (1.0 - 1.0 / n_segments) * rho ** 2)
     else:
-        # Non-overlapping segments or single segment: no correction needed.
         rho = 0.0
         dof = float(2 * n_segments)
 
     ci_lower, ci_upper = _chi2_ci(power, dof, alpha_ci)
-
     return freqs, power, ci_lower, ci_upper
-
-

@@ -17,24 +17,30 @@ Astrophys. J. 263, 1982.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import numpy as np
 from scipy import signal as sp_signal
 
-from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples, update_params
+from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples
 
 
-LOMBSCARGLE_PARAMS = {
-    "nfreqs": 1000,        # Number of frequency evaluation points
-    "fmin_floor": 0.0001,  # Lowest frequency (Hz) to avoid DC
-    "units": "mMI²",       # Output units: "mMI²" (modulation index) or "ms²" (raw IBI power)
-}
+@dataclass(frozen=True)
+class LombscargleOptions:
+    """Configuration for ``compute_lombscargle_psd``."""
+
+    nfreqs: int = 1000
+    """Number of frequency evaluation points across ``[f_min, f_max]``."""
+
+    fmin_floor: float = 1e-4
+    """Lower frequency floor in Hz, to keep the DC bin out of the grid."""
+
+    units: str = "mMI²"
+    """Output unit hint for the caller's display layer: ``"mMI²"`` or ``"ms²"``."""
 
 
-def load_lombscargle_params(config: dict) -> None:
-    """Update module-level LOMBSCARGLE_PARAMS from a workspace config dict."""
-    update_params(LOMBSCARGLE_PARAMS, config)
+_DEFAULT_LS_OPTIONS = LombscargleOptions()
 
 
 def compute_lombscargle_psd(
@@ -43,8 +49,7 @@ def compute_lombscargle_psd(
     *,
     alpha_ci: float = 0.05,
     f_max: float = 0.5,
-    nfreqs: Optional[int] = None,
-    fmin_floor: Optional[float] = None,
+    options: Optional[LombscargleOptions] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Lomb-Scargle PSD with chi-squared confidence intervals.
@@ -54,15 +59,22 @@ def compute_lombscargle_psd(
     by 2T/N yields a density S(f) with S(f₀) = A²T/2, matching the
     convention ∫S(f)df ≈ variance.
 
+    Parameters
+    ----------
+    f_max : float
+        Upper frequency bound of the evaluation grid (Hz).
+    options : LombscargleOptions, optional
+        Tuning. Defaults to ``LombscargleOptions()`` when not provided.
+
     Returns
     -------
     freqs, power, ci_lower, ci_upper : np.ndarray
         Power and bounds in ms²/Hz.  Each bin has 2 dof (single-segment).
     """
-    nfreqs = int(nfreqs if nfreqs is not None else LOMBSCARGLE_PARAMS["nfreqs"])
-    fmin_floor = float(
-        fmin_floor if fmin_floor is not None else LOMBSCARGLE_PARAMS["fmin_floor"]
-    )
+    opts = options if options is not None else _DEFAULT_LS_OPTIONS
+
+    nfreqs = int(opts.nfreqs)
+    fmin_floor = float(opts.fmin_floor)
 
     N = ibi_times_s.size
     _require_min_samples(N, 4, "Lomb-Scargle PSD")

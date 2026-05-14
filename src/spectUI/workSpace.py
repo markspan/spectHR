@@ -2,16 +2,16 @@ import copy
 import json
 import os
 from pathlib import Path
+from typing import Any, Dict
 
 from spectHR.Tools.Logger import logger
 from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
-    load_frequency_bands,
-    load_ci_alpha,
-    load_method,
+    BandSpec,
+    PsdMethod,
 )
-from spectHR.Tools.PSD.WelchPSD import load_welch_params
-from spectHR.Tools.PSD.LombScarglePSD import load_lombscargle_params
-from spectHR.Tools.PSD.CarspanPSD import load_carspan_params
+from spectHR.Tools.PSD.WelchPSD import WelchOptions
+from spectHR.Tools.PSD.LombScarglePSD import LombscargleOptions
+from spectHR.Tools.PSD.CarspanPSD import CarspanOptions
 
 from platformdirs import user_documents_path
 from PySide6.QtWidgets import QTreeWidgetItem
@@ -26,7 +26,7 @@ _DEFAULT_WORKSPACE = {
     "FrequencyAnalysis": {
         "method": "carspan",
         "bands": {
-            "FullRange": {"low": 0.02, "high": 0.5, "color": "gray", "alpha": 0.05},
+            "FullRange": {"low": 0.02, "high": 0.5, "color": "gray", "alpha": 0.35},
             "VLF": {"low": 0.02, "high": 0.06, "color": "blue"},
             "LF": {"low": 0.07, "high": 0.14, "color": "darkgreen"},
             "HF": {"low": 0.15, "high": 0.40, "color": "red"},
@@ -36,10 +36,6 @@ _DEFAULT_WORKSPACE = {
             "window": "10% cosine bell",
             "smooth_for_display": True,
             "plot_units": "mMI²/Hz",
-            # Regular-grid DC removal (subtract the DFT of a mean-rate
-            # impulse train before squaring). Off by default — toggle
-            # on via Edit Parameters when VLF leakage from the mean
-            # rate dominates. Strict mode applies this unconditionally.
             "dc_removal": False,
         },
         "welch": {
@@ -48,12 +44,12 @@ _DEFAULT_WORKSPACE = {
             "noverlap": 128,
             "nfft": 1024,
             "window": "hann",
-            "units": "mMI²",   # "mMI²" (normalised, default) or "ms²" (raw IBI power)
+            "units": "mMI²",
         },
         "lombscargle": {
             "nfreqs": 100,
             "fmin_floor": 1e-4,
-            "units": "mMI²",   # "mMI²" (normalised, default) or "ms²" (raw IBI power)
+            "units": "mMI²",
         },
         "confidence_interval_alpha": 0.05,
     },
@@ -84,25 +80,14 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def LoadWorkspace(json_file=None) -> dict:
-    """
-    Load the workspace from a JSON file and apply all configuration sections.
+    """Load the workspace JSON, create the file from defaults if missing.
 
-    If no file is given, ~/Documents/DefaultWorkSpace.json is used.
-    If the file does not exist it is created with the built-in defaults.
-
-    Side effects
-    ------------
-    - Creates CacheDirectory and OutputDirectory if absent.
-    - Calls load_frequency_bands()    — updates HRV_FREQUENCY_BANDS.
-    - Calls load_welch_params()       — updates WELCH_PARAMS.
-    - Calls load_lombscargle_params() — updates LOMBSCARGLE_PARAMS.
-    - Calls load_carspan_params()     — updates CARSPAN_PARAMS.
-    - Calls load_ci_alpha()           — updates CI_ALPHA.
-    - Calls load_method()             — updates METHOD
-                                        ("welch", "lombscargle", or "carspan").
-
-    CardioParameters is returned in the dict for callers to read directly
-    (preProcessFile.py, PhysioData.preprocess_ecg).
+    Side effects are intentionally minimal: this function only reads /
+    writes the JSON file and ensures cache / output directories exist.
+    PSD configuration is **not** pushed into any module-level globals —
+    callers should use :func:`psd_method_from_workspace` to build a
+    :class:`PsdMethod` and assign it to each series via
+    ``series.psd_method = …``.
 
     Returns
     -------
@@ -131,40 +116,6 @@ def LoadWorkspace(json_file=None) -> dict:
             json.dump(workspace, f, indent=4, ensure_ascii=False)
 
     _ensure_dirs(workspace)
-
-    # Apply FrequencyAnalysis to CardioMetricsMixin module-level globals
-    fa = workspace.get("FrequencyAnalysis", {})
-
-    try:
-        load_frequency_bands(fa["bands"])
-    except (KeyError, Exception) as e:
-        logger.warning(f"Could not apply frequency bands: {e}")
-
-    try:
-        load_welch_params(fa["welch"])
-    except (KeyError, Exception) as e:
-        logger.warning(f"Could not apply Welch params: {e}")
-
-    try:
-        load_lombscargle_params(fa["lombscargle"])
-    except (KeyError, Exception) as e:
-        logger.warning(f"Could not apply Lomb-Scargle params: {e}")
-
-    try:  # <-- nieuw
-        load_carspan_params(fa["carspan"])
-    except (KeyError, Exception) as e:
-        logger.warning(f"Could not apply CARSPAN params: {e}")
-
-    try:
-        load_ci_alpha(fa["confidence_interval_alpha"])
-    except (KeyError, Exception) as e:
-        logger.warning(f"Could not apply CI alpha: {e}")
-
-    try:
-        load_method(fa["method"])
-    except (KeyError, Exception) as e:
-        logger.warning(f"Could not apply PSD method: {e}")
-
     return workspace
 
 
@@ -181,6 +132,102 @@ def _ensure_dirs(workspace: dict) -> None:
         path = dirs.get(key)
         if path and not os.path.exists(path):
             os.makedirs(path)
+
+
+# ---------------------------------------------------------------------------
+# Workspace → PsdMethod translation
+# ---------------------------------------------------------------------------
+
+
+def _bands_from_workspace(bands_dict: Dict[str, dict]) -> Dict[str, BandSpec]:
+    """Convert the workspace bands subdict to ``Dict[str, BandSpec]``."""
+    out: Dict[str, BandSpec] = {}
+    for name, spec in bands_dict.items():
+        out[name] = BandSpec(
+            low=float(spec["low"]),
+            high=float(spec["high"]),
+            color=str(spec.get("color", "gray")),
+            alpha=(float(spec["alpha"]) if "alpha" in spec else None),
+        )
+    return out
+
+
+def _filter_kwargs(cls, raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep only the keys *cls* accepts; silently drop unknown ones.
+
+    Lets the workspace JSON carry forward-compatible extra keys without
+    blowing up the dataclass constructor.
+    """
+    try:
+        allowed = {f.name for f in cls.__dataclass_fields__.values()}
+    except AttributeError:
+        allowed = set()
+    return {k: v for k, v in raw.items() if k in allowed}
+
+
+def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
+    """Build a :class:`PsdMethod` from a workspace dict.
+
+    The UI calls this once after :func:`LoadWorkspace` and again after
+    every Edit-Parameters save, then assigns the result to every
+    series instance via ``series.psd_method = method``.
+    """
+    fa = workspace.get("FrequencyAnalysis", {}) or {}
+
+    bands = _bands_from_workspace(fa.get("bands", {}))
+    # ``f_max`` must extend at least to the highest configured band edge,
+    # otherwise the band-power integration would silently truncate
+    # FullRange. Override whatever the JSON has.
+    f_max = max((b.high for b in bands.values()), default=0.5)
+
+    welch_cfg = _filter_kwargs(WelchOptions, dict(fa.get("welch", {})))
+    welch_opts = WelchOptions(**welch_cfg)
+
+    ls_cfg = _filter_kwargs(LombscargleOptions, dict(fa.get("lombscargle", {})))
+    ls_opts = LombscargleOptions(**ls_cfg)
+
+    carspan_cfg = _filter_kwargs(CarspanOptions, dict(fa.get("carspan", {})))
+    carspan_cfg["f_max"] = f_max
+    carspan_opts = CarspanOptions(**carspan_cfg)
+
+    algorithm = str(fa.get("method", "carspan"))
+    # CARSPAN-strict uses the arithmetic-mean-of-rate convention; every
+    # other algorithm uses the simpler T/N harmonic mean.
+    mean_convention = "arithmetic" if algorithm == "carspan_strict" else "harmonic"
+
+    return PsdMethod(
+        algorithm=algorithm,
+        bands=bands,
+        alpha_ci=float(fa.get("confidence_interval_alpha", 0.05)),
+        mean_convention=mean_convention,
+        welch=welch_opts,
+        lombscargle=ls_opts,
+        carspan=carspan_opts,
+    )
+
+
+def apply_psd_method_to_dataset(dataset, psd_method: PsdMethod) -> None:
+    """Assign *psd_method* to every master CardioSeries in *dataset*.
+
+    ``dataset.hrv_map`` is the canonical layout: ``{band_id ->
+    CardioSeries}``. Setting ``psd_method`` on each master series is
+    enough because ``CardioSeriesView`` delegates the attribute to its
+    parent — so all per-epoch views created via
+    ``CardioSeries[epoch_label]`` automatically pick up the same value.
+
+    ``dataset.hrv`` is a *property* that returns the master series for
+    the active band, so we don't iterate over it. Silently skips
+    anything that doesn't look like a series object.
+    """
+    master_map = getattr(dataset, "hrv_map", None)
+    if isinstance(master_map, dict):
+        for series in master_map.values():
+            try:
+                series.psd_method = psd_method
+            except Exception:
+                # Defensive only — the in-tree CardioSeries does not use
+                # __slots__, so this assignment normally succeeds.
+                pass
 
 
 def PopulateTree(treewidget, workspace: dict) -> None:

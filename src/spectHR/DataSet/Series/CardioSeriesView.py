@@ -72,6 +72,23 @@ class CardioSeriesView(CardioMetricsMixin, CardioFrequencyMetricsMixin):
         return np.concatenate([np.diff(t), np.array([np.nan], dtype=float)])
 
     # ------------------------------------------------------------------
+    # PSD configuration — delegate to parent so the master CardioSeries
+    # is the single source of truth. Per-epoch views (created on demand
+    # via ``CardioSeries[label]``) are short-lived, so setting
+    # psd_method on each one is fragile; setting it on the parent and
+    # reading it through this property keeps every view in lock-step
+    # with whatever the UI most recently pushed.
+    # ------------------------------------------------------------------
+
+    @property
+    def psd_method(self):  # type: ignore[override]
+        return getattr(self._parent, "psd_method", None)
+
+    @psd_method.setter
+    def psd_method(self, value) -> None:
+        self._parent.psd_method = value
+
+    # ------------------------------------------------------------------
     # Slicing
     # ------------------------------------------------------------------
 

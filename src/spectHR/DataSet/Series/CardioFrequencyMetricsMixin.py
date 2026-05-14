@@ -12,11 +12,27 @@ It is designed to be mixed into a ``CardioSeries`` class that provides:
     self.ibi        np.ndarray property (np.diff(times) with trailing NaN)
     self.labels     np.ndarray of per-beat labels ("N", "TL", "T", …)
 
+Configuration is **not** loaded from any global state in this module.
+The UI (spectUI) builds a :class:`PsdMethod` dataclass from the
+workspace JSON and assigns it to each series instance::
+
+    series.psd_method = PsdMethod(algorithm="welch", bands={...}, ...)
+
+Subsequent calls to ``series.psd()`` / ``series.band_power()`` /
+``series.band_powers()`` read from that instance attribute. An
+explicit ``psd_method=`` keyword on the call overrides the instance
+attribute for a single computation.
+
 Data classes
 ------------
 ``PSDResult``  — immutable container returned by every PSD method, holding
                  frequencies, power, optional confidence bounds, unit string,
-                 and method name.
+                 and algorithm name.
+``BandSpec``   — one row of the band table (low, high, color, alpha).
+``PsdMethod``  — full PSD configuration: algorithm name, band table,
+                 alpha_ci, mean-rate convention, and the three back-end
+                 option bundles (WelchOptions, LombscargleOptions,
+                 CarspanOptions).
 
 Unit conversion
 ---------------
@@ -37,7 +53,7 @@ To convert both to mMI²/Hz (Modulation Index, CARSPAN Eq. 3.20):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Dict, Literal, Optional, Tuple
 
 import numpy as np
 
@@ -45,33 +61,27 @@ import numpy as np
 from spectHR.Tools.PSD import WelchPSD
 from spectHR.Tools.PSD import LombScarglePSD
 from spectHR.Tools.PSD import CarspanPSD
+from spectHR.Tools.PSD.WelchPSD import WelchOptions
+from spectHR.Tools.PSD.LombScarglePSD import LombscargleOptions
+from spectHR.Tools.PSD.CarspanPSD import CarspanOptions
 
 
 # ---------------------------------------------------------------------------
-# PSDResult data class
+# Type aliases
+# ---------------------------------------------------------------------------
+
+Algorithm = Literal["welch", "lombscargle", "carspan", "carspan_strict"]
+MeanConvention = Literal["harmonic", "arithmetic"]
+
+
+# ---------------------------------------------------------------------------
+# PSDResult
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class PSDResult:
-    """
-    Immutable container for a PSD computation result.
-
-    Attributes
-    ----------
-    freqs : np.ndarray
-        Frequency axis in Hz.
-    power : np.ndarray
-        Power spectral density values.
-    unit : str
-        Physical unit of *power* (e.g. ``"mMI²/Hz"``).
-    method : str
-        Name of the method that produced this result.
-    ci_lower : np.ndarray or None
-        Lower confidence-interval bound (same unit as *power*).
-    ci_upper : np.ndarray or None
-        Upper confidence-interval bound.
-    """
+    """Immutable container for a PSD computation result."""
 
     freqs: np.ndarray
     power: np.ndarray
@@ -82,60 +92,57 @@ class PSDResult:
 
 
 # ---------------------------------------------------------------------------
-# Module-level configuration (mirrors existing pattern in CardioMetricsMixin)
+# BandSpec + PsdMethod
 # ---------------------------------------------------------------------------
 
-# Active PSD method: "welch", "lombscargle", "carspan", or "carspan_strict"
-METHOD: str = "welch"
 
-# Confidence-interval significance level
-CI_ALPHA: float = 0.05
+@dataclass(frozen=True)
+class BandSpec:
+    """One HRV band: edges (Hz) plus display attributes."""
 
-# Frequency bands — loaded from workspace; these are fall-back defaults
-HRV_FREQUENCY_BANDS: dict[str, dict[str, float | str]] = {
-    "VLF": {"low": 0.003, "high": 0.04, "color": "blue"},
-    "LF": {"low": 0.04, "high": 0.15, "color": "darkgreen"},
-    "HF": {"low": 0.15, "high": 0.40, "color": "red"},
-}
+    low: float
+    high: float
+    color: str = "gray"
+    alpha: Optional[float] = None
+    """Optional display alpha for the band fill (None → widget default)."""
 
 
-def load_frequency_bands(bands_config: dict) -> None:
+def _default_bands() -> Dict[str, BandSpec]:
+    """Fallback band table used when no PsdMethod is supplied.
+
+    Matches the spectUI workspace defaults.
     """
-    Replace the module-level HRV_FREQUENCY_BANDS from workspace config.
+    return {
+        "FullRange": BandSpec(low=0.02, high=0.5, color="gray", alpha=0.05),
+        "VLF": BandSpec(low=0.02, high=0.06, color="blue"),
+        "LF": BandSpec(low=0.07, high=0.14, color="darkgreen"),
+        "HF": BandSpec(low=0.15, high=0.40, color="red"),
+    }
 
-    Side effect: pushes the highest band edge into
-    ``CarspanPSD.CARSPAN_PARAMS["f_max"]`` so the CARSPAN PSD grid
-    automatically extends just far enough to integrate every band the
-    user has configured. The PSD module itself takes no kwarg for this
-    — the value flows here on every workspace load.
 
-    Parameters
-    ----------
-    bands_config : dict
-        Mapping of band name → {``"low"``, ``"high"``, ``"color"``}.
+@dataclass(frozen=True)
+class PsdMethod:
+    """Full PSD configuration: which algorithm, with which options.
+
+    Built by the spectUI layer from a workspace dict and assigned to
+    each series instance via ``series.psd_method = …``.
     """
-    global HRV_FREQUENCY_BANDS
-    HRV_FREQUENCY_BANDS = dict(bands_config)
-    try:
-        highest_edge = max(
-            float(b["high"]) for b in HRV_FREQUENCY_BANDS.values() if "high" in b
-        )
-    except ValueError:
-        # Empty band table — leave the existing f_max in place.
-        return
-    CarspanPSD.CARSPAN_PARAMS["f_max"] = highest_edge
+
+    algorithm: Algorithm = "carspan"
+    bands: Dict[str, BandSpec] = field(default_factory=_default_bands)
+    alpha_ci: float = 0.05
+    mean_convention: MeanConvention = "harmonic"
+    """Mean rate convention used to convert events²/Hz → mMI²/Hz. ``"harmonic"``
+    (= ``T/N``) is the manual definition; ``"arithmetic"`` (= ``Σ 1/IBI / N``)
+    is what the reference CARSPAN Pascal SOC uses and is picked automatically
+    by the UI for ``algorithm == "carspan_strict"``."""
+
+    welch: WelchOptions = field(default_factory=WelchOptions)
+    lombscargle: LombscargleOptions = field(default_factory=LombscargleOptions)
+    carspan: CarspanOptions = field(default_factory=CarspanOptions)
 
 
-def load_method(method: str) -> None:
-    """Set the active PSD method (``"welch"``, ``"lombscargle"``, ``"carspan"``, ``"carspan_strict"``)."""
-    global METHOD
-    METHOD = method
-
-
-def load_ci_alpha(alpha: float) -> None:
-    """Set the confidence-interval significance level."""
-    global CI_ALPHA
-    CI_ALPHA = alpha
+_DEFAULT_PSD_METHOD = PsdMethod()
 
 
 # ---------------------------------------------------------------------------
@@ -149,13 +156,11 @@ def _band_power_rectangular(
     f_low: float,
     f_high: float,
 ) -> float:
-    """
-    Rectangular-rule band power integration (CARSPAN Eq. 3.28):
+    """Rectangular-rule band power integration (CARSPAN Eq. 3.28).
 
-        B = Σ S_xx(fₖ) · Δf     for f_low ≤ fₖ ≤ f_high
-
-    Both boundaries are inclusive. Uses spacings between consecutive grid
-    points, so it adapts to both uniform (Welch, L-S) and native-CARSPAN
+    ``B = Σ S_xx(fₖ) · Δf`` for ``f_low ≤ fₖ ≤ f_high``, both endpoints
+    inclusive. Per-bin Δf is the centred neighbour spacing, so the
+    integration adapts to both uniform (Welch, L-S) and native-CARSPAN
     grids.
     """
     mask = (freqs >= f_low) & (freqs <= f_high)
@@ -187,43 +192,37 @@ def _band_power_rectangular(
 
 
 class CardioFrequencyMetricsMixin:
-    """
-    Mixin that adds frequency-domain HRV methods to a CardioSeries.
+    """Mixin that adds frequency-domain HRV methods to a CardioSeries.
 
     Expects the host class to provide:
 
     - ``self.times``   : np.ndarray — R-peak timestamps (s)
     - ``self.ibi``     : np.ndarray — inter-beat intervals (s), trailing NaN
     - ``self.labels``  : np.ndarray — per-beat labels
+
+    The UI assigns the active configuration via
+    ``series.psd_method = PsdMethod(...)``; an unset attribute is
+    treated as the default ``PsdMethod()``.
     """
 
-    # ---------------------------------------------------------------
-    #  Private helpers — extract clean data from the host object
-    # ---------------------------------------------------------------
+    # Per-instance configuration. The class-level default acts as a
+    # safety net; the UI overrides it for every loaded series. Frozen
+    # dataclass means it is safe to share a single PsdMethod across
+    # many series.
+    psd_method: Optional[PsdMethod] = None
 
     # ---------------------------------------------------------------
-    #  Label filtering (shared by _ibi_clean_pairs and _event_times_clean)
+    #  Label filtering
     # ---------------------------------------------------------------
 
     _BAD_LABELS = ("TL", "T")
     """Beat labels treated as artefacts and excluded from all PSD computations."""
 
     def _valid_label_mask(self, labels: np.ndarray) -> np.ndarray:
-        """
-        Boolean mask that is True for every beat *not* tagged as an artefact.
+        """Boolean mask that is True for every beat *not* tagged as an artefact.
 
         Labels ``"TL"`` (too long) and ``"T"`` (technical artefact) are
         excluded.  All other labels (``"N"``, ``"S"``, …) are kept.
-
-        Parameters
-        ----------
-        labels : np.ndarray
-            Per-beat label array, same length as the array being masked.
-
-        Returns
-        -------
-        np.ndarray of bool
-            True where the label is acceptable.
         """
         valid = np.ones(len(labels), dtype=bool)
         for bad in self._BAD_LABELS:
@@ -231,20 +230,7 @@ class CardioFrequencyMetricsMixin:
         return valid
 
     def _ibi_clean_pairs(self) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Return aligned (times, ibi_ms) arrays with invalid intervals removed.
-
-        An IBI is invalid if:
-        - It is NaN (the trailing element, or a computational artefact).
-        - The beat's label is ``"TL"`` (too long) or ``"T"`` (technical artefact).
-
-        Returns
-        -------
-        ibi_times_s : np.ndarray, shape (M,)
-            Timestamps (s) of the R-peak at the *start* of each valid IBI.
-        ibi_values_ms : np.ndarray, shape (M,)
-            Duration of each valid IBI in milliseconds.
-        """
+        """Return aligned (times, ibi_ms) arrays with invalid intervals removed."""
         ibi_s = self.ibi  # np.diff(times) + trailing NaN, in seconds
         labels = self.labels
 
@@ -258,18 +244,7 @@ class CardioFrequencyMetricsMixin:
         return times_s, values_ms
 
     def _event_times_clean(self) -> np.ndarray:
-        """
-        Return R-peak timestamps excluding beats labelled as artefacts.
-
-        For CARSPAN's event-series DFT we need the actual R-peak times,
-        not the IBI midpoints.  We keep every beat that is *not* labelled
-        as a technical artefact.
-
-        Returns
-        -------
-        np.ndarray, shape (N,)
-            Clean R-peak timestamps in seconds.
-        """
+        """Return R-peak timestamps excluding beats labelled as artefacts."""
         labels = self.labels
         times = self.times
 
@@ -278,118 +253,56 @@ class CardioFrequencyMetricsMixin:
 
         return times[self._valid_label_mask(labels)]
 
+    # ---------------------------------------------------------------
+    #  Mean-IBI helpers (used by the mMI² conversion factor)
+    # ---------------------------------------------------------------
+
     def _mean_ibi_ms(self) -> float:
-        """
-        Mean IBI in milliseconds for use in the mMI² unit conversion, computed
-        as T / N × 1000 — the reciprocal of the mean heart rate x̄ = N/T.
+        """Mean IBI in milliseconds under the manual's ``x̄ = N/T`` convention.
 
-        Here T = last_time − first_time (span between first and last R-peak)
-        and N = number of clean R-peaks.
-
-        Note: this is *not* the arithmetic mean of the N−1 intervals (T/(N−1)),
-        which is the correct time-domain HRV metric.  Using T/N here keeps the
-        mMI² conversion factor (mean_ibi_ms²) exactly consistent with the
-        CARSPAN definition x̄ = N/T (Eq. 3.20).
-
-        Returns
-        -------
-        float
-            T/N × 1000 in ms — used exclusively for frequency-domain unit
-            conversion, not for reporting in the HRV parameter table.
+        Used by every method except ``carspan_strict``. ``T/N × 1000``.
         """
         times = self._event_times_clean()
         N = times.size
         if N < 2:
             raise ValueError("Need at least 2 R-peak events to compute mean IBI.")
-
         T = float(times[-1] - times[0])
-        # CARSPAN defines the mean rate as x̄ = N/T (events per second), so
-        # the mean IBI used in the modulation-index conversion is 1/x̄ = T/N,
-        # NOT the statistical average T/(N-1).  Using T/N here ensures that
-        # the mMI² factor (mean_ibi_ms²) exactly matches CARSPAN Eq. 3.20.
         return (T / N) * 1000.0
 
     def _mean_ibi_ms_arithmetic(self) -> float:
+        """Mean IBI in ms under CARSPAN's strict arithmetic-mean-of-rate convention.
+
+        ``1000 / mean(1/IBI_i)`` over the cleaned IBI series. Matches the
+        reference Pascal ``SOC`` exactly. Used by ``carspan_strict``.
         """
-        Mean IBI in ms under CARSPAN's *strict* arithmetic-mean-of-rate convention.
-
-        The reference CARSPAN Pascal (function ``SOC`` in
-        ``T_AnaFunctions.pas``, lines 332-342) computes the mean rate
-        used in the modulation-index normalisation as
-
-            x̄_AM  =  (1/N_ibi) · Σ (1 / IBI_i)
-
-        i.e. the *arithmetic mean of the instantaneous heart rates*.
-        Note this is the **harmonic mean of the IBI values** — Jensen's
-        inequality means it is *not* equal to ``N/T`` (which is what
-        ``_mean_ibi_ms`` returns and what the manual's Eq. 3.20 says
-        verbatim). For typical resting HRV with σ_rate / μ_rate ≈ 5–8 %,
-        the two differ by ~0.3–0.8 % in the resulting mMI² values.
-
-        We use this only for the ``carspan_strict`` path, where the
-        explicit goal is bit-for-bit parity with the Pascal
-        implementation. Other methods (``carspan``, ``welch``,
-        ``lombscargle``) keep the simpler ``T/N`` formula.
-
-        Returns
-        -------
-        float
-            ``1000 / x̄_AM`` in ms, i.e. the IBI value whose reciprocal
-            equals the arithmetic mean of the instantaneous rates.
-        """
-        # Pull the cleaned IBI series in seconds. ``_ibi_clean_pairs``
-        # returns (event_times_s, ibi_values_ms) — we want the IBI in
-        # seconds for the 1/IBI accumulation, matching the Pascal which
-        # accumulates 1/IBI_i with IBI in the source-data unit.
         _, ibi_values_ms = self._ibi_clean_pairs()
         if ibi_values_ms.size == 0:
             raise ValueError(
                 "Need at least one IBI to compute the arithmetic-mean rate."
             )
         ibi_values_s = ibi_values_ms.astype(np.float64) * 1e-3
-        # Guard against any zero / non-finite entries that survived
-        # cleaning — 1/0 would otherwise pollute the mean.
         valid = np.isfinite(ibi_values_s) & (ibi_values_s > 0)
         if not np.any(valid):
             raise ValueError("All cleaned IBI values are non-positive or NaN.")
         am_rate_hz = float(np.mean(1.0 / ibi_values_s[valid]))
         return 1000.0 / am_rate_hz
 
-    def _mmi2_factor(self, method: Optional[str] = None) -> float:
+    def _mmi2_factor(self, mean_convention: MeanConvention) -> float:
+        """Conversion factor from Hz (events²/Hz) to mMI²/Hz.
+
+        With ``x̄`` = mean rate in Hz::
+
+            S'_xx [mMI²/Hz] = S_xx × mean_ibi_ms²
+
+        Returns the ``mean_ibi_ms²`` factor using the chosen mean
+        convention. See :func:`_mean_ibi_ms` and
+        :func:`_mean_ibi_ms_arithmetic` for the two conventions.
         """
-        Conversion factor from Hz (events²/Hz) to mMI²/Hz.
-
-        CARSPAN Eq. 3.20 defines the modulation-index spectrum as:
-
-            S'_xx(f) = S_xx(f) / x̄²    (x̄ = mean heart rate in Hz)
-
-        Since 1/x̄ = mean_ibi_s:
-
-            S'_xx [MI²/Hz] = S_xx × mean_ibi_s²
-
-        Scaling to **milli**-MI² multiplies by 10⁶, but
-        mean_ibi_s² × 10⁶ = (mean_ibi_ms / 1000)² × 10⁶ = mean_ibi_ms²,
-        so the factor is simply ``mean_ibi_ms²``.
-
-        Two definitions of x̄ are supported:
-
-        * ``method == "carspan_strict"`` — arithmetic mean of the
-          instantaneous rates ``(1/N_ibi) · Σ (1/IBI_i)``, matching the
-          reference CARSPAN Pascal's ``SOC`` exactly.
-        * anything else (default) — manual / spectHR convention
-          ``x̄ = N/T`` (equivalent to ``1/mean(IBI)`` over the analysis
-          span). Used by ``carspan``, ``welch`` and ``lombscargle``.
-
-        Returns
-        -------
-        float
-            mean_ibi_ms² — multiply CARSPAN Hz output by this to get mMI²/Hz.
-        """
-        if method == "carspan_strict":
+        if mean_convention == "arithmetic":
             mean_ibi = self._mean_ibi_ms_arithmetic()
         else:
             mean_ibi = self._mean_ibi_ms()
-        return mean_ibi**2
+        return mean_ibi ** 2
 
     # ---------------------------------------------------------------
     #  Public API — PSD
@@ -397,168 +310,139 @@ class CardioFrequencyMetricsMixin:
 
     def psd(
         self,
-        method: Optional[str] = None,
+        *,
+        psd_method: Optional[PsdMethod] = None,
         with_ci: bool = True,
     ) -> PSDResult:
-        """
-        Compute the power spectral density, normalised to **mMI²/Hz**.
+        """Compute the power spectral density, normalised to **mMI²/Hz**.
 
         Parameters
         ----------
-        method : str, optional
-            One of ``"welch"``, ``"lombscargle"``, ``"carspan"``,
-            ``"carspan_strict"``.  Defaults to the module-level ``METHOD``.
+        psd_method : PsdMethod, optional
+            Explicit configuration override. Falls back to
+            ``self.psd_method`` and then to ``PsdMethod()``.
         with_ci : bool
             If True (default), include confidence-interval bounds.
-
-        Returns
-        -------
-        PSDResult
-            Frequencies, power (mMI²/Hz), optional CI bounds, unit, method.
-
-        Notes
-        -----
-        Welch and Lomb-Scargle analyse the **IBI series** (interval durations),
-        while CARSPAN analyses the **event series** (R-peak times as unit
-        impulses).  These are fundamentally different representations of the
-        same cardiac process.  Both are normalised to mMI²/Hz (modulation
-        index), but absolute values are **not directly comparable** across
-        representation types.  Within each representation family, results
-        are consistent and comparable (e.g. Welch vs. Lomb-Scargle).
         """
-        method = method or METHOD
+        method = self._resolve_method(psd_method)
 
-        if method == "welch":
-            return self._psd_welch(with_ci=with_ci)
-        elif method == "lombscargle":
-            return self._psd_lombscargle(with_ci=with_ci)
-        elif method == "carspan_strict":
-            return self._psd_carspan_strict(with_ci=with_ci)
-        elif method == "carspan":
-            return self._psd_carspan(with_ci=with_ci)
-        else:
-            raise ValueError(
-                f"Unknown PSD method '{method}'. "
-                "Choose from: welch, lombscargle, carspan, carspan_strict."
-            )
+        if method.algorithm == "welch":
+            return self._psd_welch(method, with_ci=with_ci)
+        if method.algorithm == "lombscargle":
+            return self._psd_lombscargle(method, with_ci=with_ci)
+        if method.algorithm == "carspan_strict":
+            return self._psd_carspan_strict(method, with_ci=with_ci)
+        if method.algorithm == "carspan":
+            return self._psd_carspan(method, with_ci=with_ci)
+        raise ValueError(
+            f"Unknown PSD algorithm '{method.algorithm}'. "
+            "Choose from: welch, lombscargle, carspan, carspan_strict."
+        )
 
     def band_power(
         self,
         band_name: str,
-        method: Optional[str] = None,
+        *,
+        psd_method: Optional[PsdMethod] = None,
     ) -> float:
-        """
-        Integrated band power in **mMI²**.
-
-        Uses rectangular summation (CARSPAN Eq. 3.28) on the native PSD grid.
-
-        Parameters
-        ----------
-        band_name : str
-            Key into ``HRV_FREQUENCY_BANDS`` (e.g. ``"VLF"``, ``"LF"``,
-            ``"HF"``).
-        method : str, optional
-            PSD method.  Defaults to module-level ``METHOD``.
-
-        Returns
-        -------
-        float
-            Band power in mMI².
-        """
-        if band_name not in HRV_FREQUENCY_BANDS:
+        """Integrated band power for one named band, in **mMI²**."""
+        method = self._resolve_method(psd_method)
+        if band_name not in method.bands:
             raise KeyError(
                 f"Unknown band '{band_name}'. "
-                f"Available: {list(HRV_FREQUENCY_BANDS.keys())}"
+                f"Available: {list(method.bands.keys())}"
             )
+        band = method.bands[band_name]
 
-        band = HRV_FREQUENCY_BANDS[band_name]
-        f_low = band["low"]
-        f_high = band["high"]
-
-        # CARSPAN's manual (§3.2) is explicit that band-power integration
-        # must run on the unsmoothed native grid (Δf = 1/T) — not on the
-        # bin-averaged, 3-point-MA display spectrum that gets plotted.
-        # Welch / Lomb-Scargle have no separate display grid, so the
-        # plot path and the integration path coincide for them.
-        method_name = (method or METHOD)
-        if method_name in ("carspan", "carspan_strict"):
-            result = self._psd_carspan_native(method_name)
+        # CARSPAN integrates on the unsmoothed native grid (manual §3.2).
+        # Welch / Lomb-Scargle have no separate display grid.
+        if method.algorithm in ("carspan", "carspan_strict"):
+            result = self._psd_carspan_native(method)
         else:
-            result = self.psd(method=method, with_ci=False)
+            result = self.psd(psd_method=method, with_ci=False)
 
-        return _band_power_rectangular(result.freqs, result.power, f_low, f_high)
+        return _band_power_rectangular(result.freqs, result.power, band.low, band.high)
 
     def band_powers(
         self,
-        method: Optional[str] = None,
+        *,
+        psd_method: Optional[PsdMethod] = None,
     ) -> Dict[str, float]:
-        """
-        Compute all configured band powers at once.
+        """Compute all configured band powers at once."""
+        method = self._resolve_method(psd_method)
 
-        For ``carspan`` / ``carspan_strict`` the integration uses the
-        unsmoothed native grid (Δf = 1/T), per CARSPAN manual §3.2.
-        For ``welch`` / ``lombscargle`` it uses the same grid that
-        ``psd()`` returns.
-
-        Returns
-        -------
-        dict
-            Mapping band_name → power in mMI².
-        """
-        method_name = (method or METHOD)
-        if method_name in ("carspan", "carspan_strict"):
-            result = self._psd_carspan_native(method_name)
+        if method.algorithm in ("carspan", "carspan_strict"):
+            result = self._psd_carspan_native(method)
         else:
-            result = self.psd(method=method, with_ci=False)
+            result = self.psd(psd_method=method, with_ci=False)
 
-        powers = {}
-        for name, band in HRV_FREQUENCY_BANDS.items():
-            powers[name] = _band_power_rectangular(
-                result.freqs, result.power, band["low"], band["high"]
+        return {
+            name: _band_power_rectangular(
+                result.freqs, result.power, band.low, band.high
             )
-        return powers
+            for name, band in method.bands.items()
+        }
 
     # ---------------------------------------------------------------
-    #  Private dispatchers — one per back-end
+    #  Resolve psd_method with sensible fall-backs
     # ---------------------------------------------------------------
 
-    def _f_max(self) -> float:
-        """
-        Upper frequency limit = max "high" across all configured bands,
-        including FullRange.
+    def _resolve_method(self, override: Optional[PsdMethod]) -> PsdMethod:
+        """Pick which :class:`PsdMethod` to use for this call.
 
-        FullRange.high (default 0.5 Hz) is genuinely higher than HF.high
-        (default 0.4 Hz), so the grid must extend to FullRange.high or the
-        0.4–0.5 Hz slice would be silently excluded from FullRange band power.
-        Extending the grid too far upward has no downside: extra bins only
-        contribute to FullRange integration and do not affect VLF/LF/HF.
+        Order of preference: explicit override → ``self.psd_method``
+        → module-level default.
         """
-        return max(b["high"] for b in HRV_FREQUENCY_BANDS.values())
+        if override is not None:
+            return override
+        instance_attr = getattr(self, "psd_method", None)
+        if instance_attr is not None:
+            return instance_attr
+        return _DEFAULT_PSD_METHOD
 
-    def _f_min(self) -> float:
-        """
-        Lower frequency limit = min "low" across all bands *except* FullRange.
+    # ---------------------------------------------------------------
+    #  Frequency bounds (used to mask the PSD output)
+    # ---------------------------------------------------------------
+
+    def _f_max(self, bands: Dict[str, BandSpec]) -> float:
+        """Upper frequency limit = max ``high`` across all configured bands."""
+        return max(b.high for b in bands.values())
+
+    def _f_min(self, bands: Dict[str, BandSpec]) -> float:
+        """Lower frequency limit = min ``low`` across all bands except FullRange.
 
         With the default configuration FullRange.low == VLF.low (both 0.02 Hz),
-        so the exclusion makes no practical difference.  It is a defensive guard
-        for the case where FullRange.low is configured below all other bands
-        (e.g. 0.001 Hz): admitting near-DC bins into the PSD grid would inflate
-        VLF power estimates and distort the Lomb-Scargle frequency axis.
-        Extending the grid too far downward has an upside cost; extending it
-        upward (see _f_max) does not — hence the asymmetry.
+        so the exclusion makes no practical difference.  It is a defensive
+        guard for the case where FullRange.low is configured below all other
+        bands (e.g. 0.001 Hz): admitting near-DC bins into the PSD grid
+        would inflate VLF power estimates and distort the Lomb-Scargle
+        frequency axis. Extending the grid too far upward has no downside
+        (see _f_max), but extending it too far downward does — hence the
+        asymmetry.
         """
-        named = [b["low"] for n, b in HRV_FREQUENCY_BANDS.items() if n != "FullRange"]
+        named = [b.low for n, b in bands.items() if n != "FullRange"]
         if not named:
-            return min(b["low"] for b in HRV_FREQUENCY_BANDS.values())
+            return min(b.low for b in bands.values())
         return min(named)
+
+    def _band_mask(
+        self, freqs: np.ndarray, bands: Dict[str, BandSpec]
+    ) -> np.ndarray:
+        """Mask restricting *freqs* to the configured band range."""
+        return (freqs >= self._f_min(bands)) & (freqs <= self._f_max(bands))
+
+    # ---------------------------------------------------------------
+    #  Result assembly + unit conversion
+    # ---------------------------------------------------------------
 
     def _as_result(
         self,
-        method: str,
+        algorithm: str,
         freqs: np.ndarray,
         power: np.ndarray,
         ci_lo: np.ndarray,
         ci_hi: np.ndarray,
+        *,
         convert: float,
         with_ci: bool,
         mask: Optional[np.ndarray] = None,
@@ -574,93 +458,62 @@ class CardioFrequencyMetricsMixin:
             freqs=freqs,
             power=power * convert,
             unit=unit,
-            method=method,
+            method=algorithm,
             ci_lower=ci_lo * convert if with_ci else None,
             ci_upper=ci_hi * convert if with_ci else None,
         )
 
     def _ibi_psd_display(self, units: str) -> Tuple[float, str]:
-        """
-        Return ``(convert, unit_label)`` for IBI-based PSD methods.
+        """Return ``(convert, unit_label)`` for IBI-based PSD methods.
 
-        Both Welch and Lomb-Scargle produce power in ms²/Hz.  This helper
-        maps the ``"units"`` workspace string to the correct scale factor
-        and display label so that the two display methods stay DRY.
-
-        Parameters
-        ----------
-        units : str
-            Value of the ``"units"`` workspace key, e.g. ``"mMI²"`` or ``"ms²"``.
-
-        Returns
-        -------
-        convert : float
-            Multiply the raw ms²/Hz values by this to obtain display units.
-        unit_label : str
-            Human-readable unit string for axis labels.
+        Both Welch and Lomb-Scargle produce power in ms²/Hz. Maps the
+        ``"units"`` workspace string to the correct scale factor and
+        display label.
         """
         if units.lower().startswith("ms"):
-            # No conversion: keep raw IBI signal PSD in ms²/Hz.
             return 1.0, "ms²/Hz"
-        # Normalise by mean_ibi_ms² to obtain heart-rate-independent mMI²/Hz.
-        # Derivation: mMI²/Hz = ms²/Hz × 10⁶ / mean_ibi_ms²
-        return 1e6 / self._mmi2_factor(), "mMI²/Hz"
+        # Note: this path uses the harmonic mean (T/N). IBI methods do
+        # not use the arithmetic-mean convention — that's CARSPAN strict
+        # only.
+        return 1e6 / self._mmi2_factor("harmonic"), "mMI²/Hz"
 
-    def _welch_display(self) -> Tuple[float, str]:
-        """Return ``(convert, unit)`` for Welch PSD display (delegates to _ibi_psd_display)."""
-        units = str(WelchPSD.WELCH_PARAMS.get("units", "mMI²"))
-        return self._ibi_psd_display(units)
+    def _welch_display(self, opts: WelchOptions) -> Tuple[float, str]:
+        return self._ibi_psd_display(opts.units)
 
-    def _lombscargle_display(self) -> Tuple[float, str]:
-        """Return ``(convert, unit)`` for Lomb-Scargle PSD display (delegates to _ibi_psd_display)."""
-        units = str(LombScarglePSD.LOMBSCARGLE_PARAMS.get("units", "mMI²"))
-        return self._ibi_psd_display(units)
+    def _lombscargle_display(self, opts: LombscargleOptions) -> Tuple[float, str]:
+        return self._ibi_psd_display(opts.units)
 
-    def _carspan_display(self, method: Optional[str] = None) -> Tuple[float, str]:
-        """
-        Return ``(convert, unit)`` for the CARSPAN PSD display.
-
-        CARSPAN computes power in events²/Hz.  Two display conventions:
-
-        - ``"mMI²/Hz"``   — modulation index, factor = ``mean_ibi_ms²``.
-                            Matches the CARSPAN tabular band-power output
-                            (Eq. 3.20: S' = S_x / x̄²).
-        - ``"ms²/Hz"``    — IBI signal PSD in ms²/Hz, derived from the rate
-                            PSD via the linearisation δIBI ≈ −δrate / rate²:
-                            factor = ``mean_ibi_s⁴ × 10⁶ = mean_ibi_ms⁴ × 10⁻⁶``.
-                            Matches the CARSPAN figure Y-axis convention.
-        """
-        units = str(CarspanPSD.CARSPAN_PARAMS.get("plot_units", "mMI\u00b2/Hz"))
-        # Compare on ASCII prefix only — robust against JSON encoding mishaps
-        # that could mangle the "²" character on Windows (cp1252 vs UTF-8).
-        # Pick the IBI convention up-front so ms\u00b2/Hz and mMI\u00b2/Hz both
-        # land on the same arithmetic-vs-harmonic choice for a given
-        # method. ``carspan_strict`` uses the AM-of-rate value from the
-        # reference Pascal SOC; everything else uses T/N.
-        if method == "carspan_strict":
+    def _carspan_display(
+        self,
+        carspan_opts: CarspanOptions,
+        mean_convention: MeanConvention,
+    ) -> Tuple[float, str]:
+        """Return ``(convert, unit)`` for the CARSPAN PSD display."""
+        units = str(carspan_opts.plot_units)
+        if mean_convention == "arithmetic":
             mean_ibi_ms = self._mean_ibi_ms_arithmetic()
         else:
             mean_ibi_ms = self._mean_ibi_ms()
+        # Compare on ASCII prefix only — robust against JSON encoding
+        # mishaps that could mangle the "²" character (cp1252 vs UTF-8).
         if units.lower().startswith("ms"):
-            return (mean_ibi_ms**4) * 1e-6, "ms\u00b2/Hz"
-        return mean_ibi_ms**2, "mMI\u00b2/Hz"
+            return (mean_ibi_ms ** 4) * 1e-6, "ms²/Hz"
+        return mean_ibi_ms ** 2, "mMI²/Hz"
 
-    def _band_mask(self, freqs: np.ndarray) -> np.ndarray:
-        """Mask restricting freqs to ``[_f_min, _f_max]``."""
-        return (freqs >= self._f_min()) & (freqs <= self._f_max())
+    # ---------------------------------------------------------------
+    #  Back-end dispatchers (one per algorithm)
+    # ---------------------------------------------------------------
 
-    def _psd_welch(self, with_ci: bool = True) -> PSDResult:
-        """
-        Welch PSD, converted from ms²/Hz to the unit selected by the
-        ``"units"`` workspace parameter (default: mMI²/Hz).
-        """
+    def _psd_welch(self, method: PsdMethod, *, with_ci: bool = True) -> PSDResult:
+        """Welch PSD, converted from ms²/Hz to the unit chosen by the options."""
         ibi_times_s, ibi_values_ms = self._ibi_clean_pairs()
-        convert, unit = self._welch_display()
+        convert, unit = self._welch_display(method.welch)
 
         freqs, power, ci_lo, ci_hi = WelchPSD.compute_welch_psd(
             ibi_times_s,
             ibi_values_ms,
-            alpha_ci=CI_ALPHA,
+            alpha_ci=method.alpha_ci,
+            options=method.welch,
         )
         return self._as_result(
             "welch",
@@ -670,23 +523,23 @@ class CardioFrequencyMetricsMixin:
             ci_hi,
             convert=convert,
             with_ci=with_ci,
-            mask=self._band_mask(freqs),
+            mask=self._band_mask(freqs, method.bands),
             unit=unit,
         )
 
-    def _psd_lombscargle(self, with_ci: bool = True) -> PSDResult:
-        """
-        Lomb-Scargle PSD, converted from ms²/Hz to the unit selected by the
-        ``"units"`` workspace parameter (default: mMI²/Hz).
-        """
+    def _psd_lombscargle(
+        self, method: PsdMethod, *, with_ci: bool = True
+    ) -> PSDResult:
+        """Lomb-Scargle PSD, converted from ms²/Hz."""
         ibi_times_s, ibi_values_ms = self._ibi_clean_pairs()
-        convert, unit = self._lombscargle_display()
+        convert, unit = self._lombscargle_display(method.lombscargle)
 
         freqs, power, ci_lo, ci_hi = LombScarglePSD.compute_lombscargle_psd(
             ibi_times_s,
             ibi_values_ms,
-            alpha_ci=CI_ALPHA,
-            f_max=self._f_max(),
+            alpha_ci=method.alpha_ci,
+            f_max=self._f_max(method.bands),
+            options=method.lombscargle,
         )
         return self._as_result(
             "lombscargle",
@@ -696,35 +549,17 @@ class CardioFrequencyMetricsMixin:
             ci_hi,
             convert=convert,
             with_ci=with_ci,
-            mask=self._band_mask(freqs),
+            mask=self._band_mask(freqs, method.bands),
             unit=unit,
         )
 
-    def _psd_carspan_strict(self, with_ci: bool = True) -> PSDResult:
-        """Strict CARSPAN PSD, converted Hz → display units (mMI²/Hz or ms²/Hz)."""
-        convert, unit = self._carspan_display(method="carspan_strict")
-        freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd_strict(
-            self._event_times_clean(),
-            alpha_ci=CI_ALPHA,
-        )
-        return self._as_result(
-            "carspan_strict",
-            freqs,
-            power,
-            ci_lo,
-            ci_hi,
-            convert=convert,
-            with_ci=with_ci,
-            mask=self._band_mask(freqs),
-            unit=unit,
-        )
-
-    def _psd_carspan(self, with_ci: bool = True) -> PSDResult:
-        """Configurable CARSPAN PSD, converted Hz → display units (mMI²/Hz or ms²/Hz)."""
-        convert, unit = self._carspan_display(method="carspan")
+    def _psd_carspan(self, method: PsdMethod, *, with_ci: bool = True) -> PSDResult:
+        """Configurable CARSPAN PSD."""
+        convert, unit = self._carspan_display(method.carspan, method.mean_convention)
         freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd(
             self._event_times_clean(),
-            alpha_ci=CI_ALPHA,
+            alpha_ci=method.alpha_ci,
+            options=method.carspan,
         )
         return self._as_result(
             "carspan",
@@ -734,63 +569,79 @@ class CardioFrequencyMetricsMixin:
             ci_hi,
             convert=convert,
             with_ci=with_ci,
-            mask=self._band_mask(freqs),
+            mask=self._band_mask(freqs, method.bands),
             unit=unit,
         )
 
-    def _psd_carspan_native(self, method: str) -> PSDResult:
-        """
-        CARSPAN PSD on the *resampled-but-un-MA-smoothed* grid.
+    def _psd_carspan_strict(
+        self, method: PsdMethod, *, with_ci: bool = True
+    ) -> PSDResult:
+        """Strict (manual-faithful) CARSPAN PSD."""
+        convert, unit = self._carspan_display(method.carspan, method.mean_convention)
+        freqs, power, ci_lo, ci_hi = CarspanPSD.compute_carspan_psd_strict(
+            self._event_times_clean(),
+            alpha_ci=method.alpha_ci,
+            smooth=bool(method.carspan.smooth_for_display),
+            f_max=float(method.carspan.f_max),
+        )
+        return self._as_result(
+            "carspan_strict",
+            freqs,
+            power,
+            ci_lo,
+            ci_hi,
+            convert=convert,
+            with_ci=with_ci,
+            mask=self._band_mask(freqs, method.bands),
+            unit=unit,
+        )
+
+    def _psd_carspan_native(self, method: PsdMethod) -> PSDResult:
+        """CARSPAN PSD on the resampled-but-un-MA-smoothed grid.
 
         This mirrors CARSPAN's ``PDSin_BCK`` array — the spectrum
-        immediately after ``Resample`` (display grid, Δf = 0.01 Hz by
-        default) and **before** the 3-point ``MAW`` smoother runs on
-        ``PDSin``.  In the reference Pascal source
-        (``T_AnaFunctions.pas`` line 1264-1270, then 2389-2412) the
-        order is:
-
-            RunPDS    → PDSin on native grid (Δf = 1/T)
-            RunResample → PDSin on display grid (Δf = NewRes = 0.01)
-            RunMAW    → PDSin_BCK := copy(PDSin); PDSin := MAW(PDSin)
-            RunModIdx → both arrays *= 1/Mean²
-
-        and ``Calculate_Power`` (T_Output.pas line 1300) then sums
-        ``PDSin_BCK[k] · FreqRes`` with ``FreqRes = 0.01``.  We
-        reproduce that array by calling the back-end with
-        ``smooth=False`` (skipping both bin-average and the 3-MA),
-        then applying the bin-average step ourselves so the
-        integration matches CARSPAN's actual numerical output rather
-        than the manual's formula 3.28 (which uses Δf = 1/T).
-
-        Parameters
-        ----------
-        method : {"carspan", "carspan_strict"}
-            Selects the back-end (configurable vs. manual-faithful).
-
-        Returns
-        -------
-        PSDResult
-            Frequencies on the display grid, power in display units,
-            ``ci_lower`` and ``ci_upper`` set to ``None``.
+        immediately after resample and **before** the 3-point MA
+        smoother runs. The integration path (``band_power`` /
+        ``band_powers``) uses this rather than the smoothed display
+        grid: the smoothing changes peak heights but not band power, so
+        omitting it keeps the reported values clean.
         """
-        convert, unit = self._carspan_display(method=method)
-        if method == "carspan_strict":
+        convert, unit = self._carspan_display(method.carspan, method.mean_convention)
+
+        if method.algorithm == "carspan_strict":
             freqs, power, _, _ = CarspanPSD.compute_carspan_psd_strict(
                 self._event_times_clean(),
-                alpha_ci=CI_ALPHA,
+                alpha_ci=method.alpha_ci,
                 smooth=False,
+                f_max=float(method.carspan.f_max),
             )
         else:
+            # Configurable: clone the options with smooth turned off
+            # so the bin-average step still runs but the 3-point MA
+            # does not.
+            unsmoothed = CarspanOptions(
+                freq_resolution=method.carspan.freq_resolution,
+                smooth_for_display=False,
+                f_max=method.carspan.f_max,
+                window=method.carspan.window,
+                taper=method.carspan.taper,
+                alpha_taper=method.carspan.alpha_taper,
+                amplitude_correction=method.carspan.amplitude_correction,
+                skip_first_event=method.carspan.skip_first_event,
+                dc_removal=method.carspan.dc_removal,
+                dc_grid=method.carspan.dc_grid,
+                plot_units=method.carspan.plot_units,
+            )
             freqs, power, _, _ = CarspanPSD.compute_carspan_psd(
                 self._event_times_clean(),
-                alpha_ci=CI_ALPHA,
-                smooth=False,
+                alpha_ci=method.alpha_ci,
+                options=unsmoothed,
             )
 
-        # Apply the resample step (CARSPAN's ``Resample``) but NOT
-        # the 3-point moving average (``MAW``) -- exactly the state of
-        # ``PDSin_BCK`` at the moment ``Calculate_Power`` reads it.
-        display_resolution = float(CarspanPSD.CARSPAN_PARAMS["freq_resolution"])
+        # Apply the resample step (CARSPAN's ``Resample``) but NOT the
+        # 3-point MA — exactly the state of ``PDSin_BCK`` at the moment
+        # ``Calculate_Power`` reads it.
+        display_resolution = float(method.carspan.freq_resolution)
         if freqs.size > 1:
             native_df = float(freqs[1] - freqs[0])
             if native_df < display_resolution * 0.99:
@@ -798,17 +649,15 @@ class CardioFrequencyMetricsMixin:
                     freqs, power, display_resolution
                 )
 
-        # CIs are not meaningful on the band-power path -- pass dummies
-        # of the right shape so ``_as_result``'s mask slicing works.
         ci_dummy = np.zeros_like(power)
         return self._as_result(
-            method,
+            method.algorithm,
             freqs,
             power,
             ci_dummy,
             ci_dummy,
             convert=convert,
             with_ci=False,
-            mask=self._band_mask(freqs),
+            mask=self._band_mask(freqs, method.bands),
             unit=unit,
         )

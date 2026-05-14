@@ -16,7 +16,6 @@ Design
 from __future__ import annotations
 
 import re
-import sys as _sys
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +25,7 @@ import numpy as np
 from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
+from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import PsdMethod
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -66,14 +66,27 @@ _DEFAULT_EXPORT_DIR: Path = user_documents_path() / "spectHR" / "export"
 _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
 
-def _cfm():
-    """
-    Return the CardioFrequencyMetricsMixin module at call time.
+def _bands_from_workspace(workspace: Optional[Dict[str, Any]]) -> Dict[str, dict]:
+    """Return the workspace's bands dict (dict-of-dicts) for plotting.
 
-    Lazy lookup so that ``METHOD``, ``CI_ALPHA`` and ``HRV_FREQUENCY_BANDS``
-    reflect the latest workspace configuration, even after reloads.
+    The plotting helpers (``_band_bounds``, ``_band_draw_extents``,
+    ``_draw_band_fill``) work on this raw dict form. A separate
+    :class:`PsdMethod` is built from the same data and pushed to each
+    series via ``series.psd_method = …`` for the *compute* path.
     """
-    return _sys.modules["spectHR.DataSet.Series.CardioFrequencyMetricsMixin"]
+    if workspace is None:
+        return {}
+    return dict(
+        (workspace.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
+    )
+
+
+def _ci_alpha_from_workspace(workspace: Optional[Dict[str, Any]]) -> float:
+    """Read ``confidence_interval_alpha`` from the workspace, default 0.05."""
+    if workspace is None:
+        return 0.05
+    fa = workspace.get("FrequencyAnalysis", {}) or {}
+    return float(fa.get("confidence_interval_alpha", 0.05))
 
 
 # ---------------------------------------------------------------------------
@@ -96,10 +109,23 @@ class _PlotData:
     error: Optional[str] = None  # set if PSD could not be computed
 
 
-def _fetch(series, label: str) -> _PlotData:
-    """Call ``series.psd()`` and ``series.band_powers()`` — never raises."""
+def _fetch(
+    series, label: str, psd_method: Optional[PsdMethod] = None
+) -> _PlotData:
+    """Call ``series.psd()`` and ``series.band_powers()`` — never raises.
+
+    ``psd_method`` (when given) is passed through as an explicit
+    override on the series call; otherwise the series' own
+    ``psd_method`` attribute (set by the UI on dataset load) is used.
+    """
+    psd_kwargs = {"with_ci": True}
+    bp_kwargs: Dict[str, Any] = {}
+    if psd_method is not None:
+        psd_kwargs["psd_method"] = psd_method
+        bp_kwargs["psd_method"] = psd_method
+
     try:
-        result = series.psd(with_ci=True)
+        result = series.psd(**psd_kwargs)
     except Exception as e:
         return _PlotData(
             label=label,
@@ -114,7 +140,7 @@ def _fetch(series, label: str) -> _PlotData:
         )
 
     try:
-        band_powers = series.band_powers()
+        band_powers = series.band_powers(**bp_kwargs)
         if not isinstance(band_powers, dict):
             band_powers = {}
     except Exception as e:
@@ -232,6 +258,9 @@ class _SinglePSDPlot(QWidget):
         x_max: float,
         y_top: float,
         parent: Optional[QWidget] = None,
+        *,
+        bands: Optional[Dict[str, dict]] = None,
+        ci_alpha: float = 0.05,
     ) -> None:
         super().__init__(parent)
         # facecolor='white' forces a white figure regardless of the Qt
@@ -253,7 +282,10 @@ class _SinglePSDPlot(QWidget):
         self.setLayout(layout)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        PSDPlotWidget.plot_on_axis(self.ax, data, x_min, x_max)
+        PSDPlotWidget.plot_on_axis(
+            self.ax, data, x_min, x_max,
+            bands=bands or {}, ci_alpha=ci_alpha,
+        )
         self.ax.set_title(f"PSD – {data.label}")
         self.ax.set_ylim(bottom=0.0, top=max(y_top, 1e-12))
         self.canvas.draw()
@@ -288,8 +320,14 @@ class PSDPlotWidget(QWidget):
     ) -> None:
         super().__init__(parent)
 
-        cfm = _cfm()
-        x_min, x_max, scale_min, scale_max = _band_bounds(cfm.HRV_FREQUENCY_BANDS)
+        # Everything the widget needs comes from the workspace dict —
+        # the library reads no globals. The series should already have
+        # ``psd_method`` set by the UI (MainWindow does this on dataset
+        # load and after Edit Parameters), so we pass psd_method=None
+        # here and let each series use its own attribute.
+        bands_dict = _bands_from_workspace(workspace)
+        ci_alpha = _ci_alpha_from_workspace(workspace)
+        x_min, x_max, scale_min, scale_max = _band_bounds(bands_dict)
 
         # One call to the PSD backends per series; compute y-max before drawing.
         plots: List[_PlotData] = [
@@ -303,6 +341,8 @@ class PSDPlotWidget(QWidget):
         self._labels: List[str] = list(labels)
         self._series_list: List = list(series_list)
         self._workspace: Optional[Dict[str, Any]] = workspace
+        self._bands_dict: Dict[str, dict] = bands_dict
+        self._ci_alpha: float = ci_alpha
         self._subplots: List[_SinglePSDPlot] = []
         self._y_top: float = max(float(y_top), _Y_TOP_FLOOR)
 
@@ -324,7 +364,10 @@ class PSDPlotWidget(QWidget):
         container_layout.setSpacing(5)
 
         for idx, data in enumerate(plots):
-            subplot = _SinglePSDPlot(data, x_min, x_max, y_top)
+            subplot = _SinglePSDPlot(
+                data, x_min, x_max, y_top,
+                bands=bands_dict, ci_alpha=ci_alpha,
+            )
             self._subplots.append(subplot)
             row, col = divmod(idx, 2)
             container_layout.addWidget(subplot, row, col)
@@ -495,6 +538,8 @@ class PSDPlotWidget(QWidget):
         x_min: float,
         x_max: float,
         *,
+        bands: Optional[Dict[str, dict]] = None,
+        ci_alpha: float = 0.05,
         logscale: bool = False,
     ) -> Axes:
         """
@@ -508,10 +553,16 @@ class PSDPlotWidget(QWidget):
             Pre-computed PSD values, CI bounds, and band powers.
         x_min, x_max : float
             X-axis range (Hz).
+        bands : dict, optional
+            Workspace bands dict (dict-of-dicts). Used to draw the
+            named-band fills and their legend entries.
+        ci_alpha : float
+            Confidence-interval significance level used by the series'
+            PSD computation; drives the ``"NN % CI"`` legend label.
         logscale : bool
             If True, use a logarithmic y-axis.
         """
-        cfm = _cfm()
+        bands = bands or {}
 
         if data.error is not None or data.freqs.size == 0:
             msg = data.error or "Insufficient data"
@@ -528,10 +579,10 @@ class PSDPlotWidget(QWidget):
 
         ax.set_xlim(x_min, x_max)
         ax.autoscale(enable=False, axis="x")
-        
+
         # ---- Confidence-interval shading -------------------------------
         if data.ci_lower is not None and data.ci_upper is not None:
-            ci_pct = int(round((1.0 - cfm.CI_ALPHA) * 100))
+            ci_pct = int(round((1.0 - ci_alpha) * 100))
             ax.fill_between(
                 data.freqs,
                 data.ci_lower,
@@ -562,8 +613,8 @@ class PSDPlotWidget(QWidget):
         # or "ms²/Hz" for CARSPAN, the units workspace key for Welch /
         # Lomb-Scargle), so the legend stays in sync automatically.
         power_unit = _strip_per_hz(data.unit)
-        draw_extents = _band_draw_extents(cfm.HRV_FREQUENCY_BANDS)
-        for name, spec in cfm.HRV_FREQUENCY_BANDS.items():
+        draw_extents = _band_draw_extents(bands)
+        for name, spec in bands.items():
             d_lo, d_hi = draw_extents[name]
             _draw_band_fill(ax, data, name, spec, power_unit, d_lo, d_hi)
 

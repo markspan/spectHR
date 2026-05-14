@@ -491,6 +491,35 @@ For a regular sinus rhythm the two variants produce the same spectral shape at L
 
 The closest the configurable mode can get is `dc_removal: true`, which cleans up the VLF leakage. The window, amplitude, skip-first, DC reference grid, and mean convention still differ. To reproduce CARSPAN exactly, select `method: "carspan_strict"` rather than tuning `carspan`.
 
+<details>
+<summary>Note for developers using the Python API directly</summary>
+
+The ✗ rows above describe what's reachable from the **workspace** (the JSON file and the Edit Parameters dialog). The workspace only exposes a handful of `carspan` knobs (`freq_resolution`, `window`, `smooth_for_display`, `plot_units`, `dc_removal`), which is why the strict bundle can't be assembled from those settings alone.
+
+When calling the Python API directly, every strict behaviour is an individual field on `CarspanOptions` and can be mixed and matched freely:
+
+```python
+from spectHR.Tools.PSD.CarspanPSD import CarspanOptions, compute_carspan_psd
+
+opts = CarspanOptions(
+    taper="carspan_index",         # Pascal-faithful index taper
+    alpha_taper=0.10,              # 5 % cosine bell per side
+    amplitude_correction=False,    # → amplitude 2/T (vs. 2N/(T·S₂))
+    skip_first_event=True,         # match Pascal SOC loop indexing
+    dc_removal=True,
+    dc_grid="carspan_strict",      # asymmetric reference grid
+    smooth_for_display=True,
+    f_max=0.5,
+)
+freqs, power, ci_lo, ci_hi = compute_carspan_psd(times, options=opts)
+```
+
+That `opts` bundle reproduces `compute_carspan_psd_strict` bit-for-bit; the helper `carspan_strict_options()` in `CarspanPSD.py` builds exactly this set. The reason the workspace doesn't expose these individually is that the strict bundle is a tightly coupled set of choices — mixing only some of them rarely makes physical sense — so the UI deliberately offers the *preset* (`method: "carspan_strict"`) rather than ten individual checkboxes.
+
+Same story for the mean-rate convention: the mixin's `PsdMethod.mean_convention` is `"arithmetic"` for strict and `"harmonic"` everywhere else, picked automatically by `psd_method_from_workspace` based on the algorithm name. Library callers can override it by constructing a `PsdMethod` themselves and setting `series.psd_method = …`.
+
+</details>
+
 #### Regular-grid DC removal (strict mode)
 
 The manual writes Eq. 3.19 as a plain DFT of the windowed impulse train. The reference CARSPAN implementation goes one step further: before squaring, it subtracts the DFT of a perfectly periodic impulse train at the mean rate. The manual does not flag this as a separate step, but it is essential for matching CARSPAN's actual output, particularly at low frequencies.

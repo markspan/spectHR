@@ -87,37 +87,6 @@ def _resolve_window(window_spec):
 
 
 # ---------------------------------------------------------------------------
-# Generic parameter-dict updater (used by every PSD back-end's load_*_params)
-# ---------------------------------------------------------------------------
-
-def update_params(target, src):
-    """
-    Update *target* in place from *src*, copying only the keys that already
-    exist in *target*.
-
-    Each PSD back-end exposes a module-level parameter dict
-    (``WELCH_PARAMS``, ``LOMBSCARGLE_PARAMS``, ``CARSPAN_PARAMS``) that the
-    workspace can update via a public ``load_*_params`` function.  Keeping
-    the merge logic here means every back-end uses the same semantics:
-    known keys are overwritten, unknown keys are silently ignored, and
-    ``None`` / empty inputs are a no-op.
-
-    Parameters
-    ----------
-    target : dict
-        Module-level parameter dict to be mutated in place.
-    src : dict or None
-        Workspace-supplied overrides.  When ``None`` or empty, ``target``
-        is left untouched.
-    """
-    if not src:
-        return
-    for key in target:
-        if key in src:
-            target[key] = src[key]
-
-
-# ---------------------------------------------------------------------------
 # Minimum-sample guard (standardises error messages across PSD methods)
 # ---------------------------------------------------------------------------
 

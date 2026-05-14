@@ -213,15 +213,25 @@ class HRPlotWidget(QWidget):
         """
         Compute a heart-rate TimeSeries (bpm) from a CardioSeries or CardioSeriesView.
 
+        Only beats labelled ``"N"`` (normal) contribute to the trace.
+        Every other label (``"L"``, ``"S"``, ``"TL"``, ``"SL"``,
+        ``"SNS"`` …) is treated as an artefact and dropped — drawing
+        them in the IBI plot makes long / short / outlier intervals
+        look like part of the physiological signal, which they are
+        not. The R-peak overlay markers (drawn elsewhere) still show
+        every beat in its own colour, so the user can still see where
+        the artefacts are.
+
         Parameters
         ----------
         hrv : CardioSeries | CardioSeriesView
-            R-peak times in seconds.
+            R-peak times in seconds. Expected to expose ``.times``,
+            ``.ibi`` and ``.labels``.
 
         Returns
         -------
         TimeSeries
-            Irregularly sampled heart rate time series.
+            Irregularly sampled heart-rate time series over normal beats only.
         """
 
         times = np.asarray(hrv.times, dtype=float)
@@ -230,8 +240,19 @@ class HRPlotWidget(QWidget):
         if times.size < 2:
             return TimeSeries(np.array([]), np.array([]))
 
-        # Valid IBIs (ignore last NaN, non-positive values)
+        # Filter out NaN / non-positive IBIs (the trailing NaN at the
+        # end of the series, plus any computational artefacts).
         valid = np.isfinite(ibi) & (ibi > 0)
+
+        # Then drop everything that isn't a normal beat. ``labels`` may
+        # be missing on legacy datasets or shorter than ``ibi`` if the
+        # host didn't sync them; in that case fall through to the
+        # purely-numeric filter so we don't blank the plot entirely.
+        labels = getattr(hrv, "labels", None)
+        if labels is not None:
+            labels_arr = np.asarray(labels)
+            if labels_arr.shape == ibi.shape:
+                valid &= labels_arr == "N"
 
         ibi = ibi[valid]
         hr = 60.0 / ibi

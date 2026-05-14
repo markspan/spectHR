@@ -18,29 +18,8 @@ import numpy as np
 from spectHR.DataSet.HRVMetrics import HRVMetric, hrv_metric
 
 
-# ============================================================================
-# Module-level loader functions (re-exported from specialized modules)
-# ============================================================================
-# Import and re-export loaders so they're accessible via this module
-# for backward compatibility with MainWindow and other code.
-
-from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
-    load_frequency_bands,
-    load_method,
-    load_ci_alpha,
-)
-from spectHR.Tools.PSD.WelchPSD import load_welch_params
-from spectHR.Tools.PSD.LombScarglePSD import load_lombscargle_params
-from spectHR.Tools.PSD.CarspanPSD import load_carspan_params
-
 __all__ = [
     "CardioMetricsMixin",
-    "load_frequency_bands",
-    "load_method",
-    "load_ci_alpha",
-    "load_welch_params",
-    "load_lombscargle_params",
-    "load_carspan_params",
 ]
 
 

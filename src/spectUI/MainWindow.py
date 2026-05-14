@@ -213,35 +213,19 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logger.warning(f"Could not save workspace after parameter edit: {e}")
 
-            # 2. Re-apply FrequencyAnalysis globals in-process
-            fa = self.workspace.get("FrequencyAnalysis", {})
-            try:
-                _cm().load_frequency_bands(fa["bands"])
-            except Exception as e:
-                logger.warning(f"Could not apply frequency bands: {e}")
-            try:
-                _cm().load_welch_params(fa["welch"])
-            except Exception as e:
-                logger.warning(f"Could not apply Welch params: {e}")
-            try:
-                _cm().load_lombscargle_params(fa["lombscargle"])
-            except Exception as e:
-                logger.warning(f"Could not apply Lomb-Scargle params: {e}")
-            try:
-                _cm().load_carspan_params(fa["carspan"])  # <-- was missing
-            except Exception as e:
-                logger.warning(f"Could not apply CARSPAN params: {e}")
-            try:
-                _cm().load_method(fa["method"])
-            except Exception as e:
-                logger.warning(f"Could not apply PSD method: {e}")
-            try:
-                _cm().load_ci_alpha(fa["confidence_interval_alpha"])
-            except Exception as e:
-                logger.warning(f"Could not apply CI alpha: {e}")
-
-            # 3. Refresh the PSD plot immediately if a dataset is loaded
+            # 2. Rebuild the PsdMethod from the updated workspace and
+            #    push it onto every loaded series. The library reads
+            #    nothing from globals; each series carries its own
+            #    PsdMethod, which is what drives subsequent
+            #    psd() / band_power() / band_powers() calls.
             if self.dataset is not None:
+                try:
+                    psd_method = spQt.psd_method_from_workspace(self.workspace)
+                    spQt.apply_psd_method_to_dataset(self.dataset, psd_method)
+                except Exception as e:
+                    logger.warning(f"Could not rebuild PsdMethod: {e}")
+
+                # 3. Refresh the PSD plot immediately if a dataset is loaded
                 self.show_psd_plot(self.dataset)
 
     # ------------------------------------------------------------------
@@ -495,6 +479,14 @@ class MainWindow(QMainWindow):
                     return
 
             self.dataset = dataset
+            # Push the current PsdMethod onto every series in the dataset
+            # so subsequent psd() / band_power() calls have a config to
+            # read from. Library code never touches workspace JSON.
+            try:
+                psd_method = spQt.psd_method_from_workspace(self.workspace)
+                spQt.apply_psd_method_to_dataset(self.dataset, psd_method)
+            except Exception as e:
+                logger.warning(f"Could not attach PsdMethod to dataset: {e}")
             if hasattr(dataset, "has_ecg") and dataset.has_ecg:
                 self.show_preprocessing_plot(self.dataset)
                 self.ui.Views.setTabVisible(0, True)
@@ -526,6 +518,11 @@ class MainWindow(QMainWindow):
                 dataset.save(self.savename)
 
             self.dataset = dataset
+            try:
+                psd_method = spQt.psd_method_from_workspace(self.workspace)
+                spQt.apply_psd_method_to_dataset(self.dataset, psd_method)
+            except Exception as e:
+                logger.warning(f"Could not attach PsdMethod to dataset: {e}")
             self.show_preprocessing_plot(self.dataset)
             self.show_hr_plot(self.dataset)
             self.show_poincare_plot(self.dataset)
