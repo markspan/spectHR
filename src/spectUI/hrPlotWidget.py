@@ -213,14 +213,15 @@ class HRPlotWidget(QWidget):
         """
         Compute a heart-rate TimeSeries (bpm) from a CardioSeries or CardioSeriesView.
 
-        Only beats labelled ``"N"`` (normal) contribute to the trace.
+        Only beats labelled ``"N"`` (normal) carry a finite HR value.
         Every other label (``"L"``, ``"S"``, ``"TL"``, ``"SL"``,
-        ``"SNS"`` …) is treated as an artefact and dropped — drawing
-        them in the IBI plot makes long / short / outlier intervals
-        look like part of the physiological signal, which they are
-        not. The R-peak overlay markers (drawn elsewhere) still show
-        every beat in its own colour, so the user can still see where
-        the artefacts are.
+        ``"SNS"`` …) and every non-finite / non-positive IBI is
+        replaced with ``NaN`` in the output series. ``matplotlib.plot``
+        treats ``NaN`` in the y-array as a break in the line, so the
+        rendered trace is **discontinuous across the gap** instead of
+        bridging straight over the artefact. Drawing a continuous line
+        through a dropped beat would suggest a smooth transition that
+        didn't happen physiologically.
 
         Parameters
         ----------
@@ -231,7 +232,8 @@ class HRPlotWidget(QWidget):
         Returns
         -------
         TimeSeries
-            Irregularly sampled heart-rate time series over normal beats only.
+            Irregularly sampled HR series the same length as the input,
+            with ``NaN`` at every invalid / artefactual position.
         """
 
         times = np.asarray(hrv.times, dtype=float)
@@ -240,25 +242,29 @@ class HRPlotWidget(QWidget):
         if times.size < 2:
             return TimeSeries(np.array([]), np.array([]))
 
-        # Filter out NaN / non-positive IBIs (the trailing NaN at the
-        # end of the series, plus any computational artefacts).
+        # Per-IBI validity: finite, positive, and the beat is normal.
         valid = np.isfinite(ibi) & (ibi > 0)
-
-        # Then drop everything that isn't a normal beat. ``labels`` may
-        # be missing on legacy datasets or shorter than ``ibi`` if the
-        # host didn't sync them; in that case fall through to the
-        # purely-numeric filter so we don't blank the plot entirely.
         labels = getattr(hrv, "labels", None)
         if labels is not None:
             labels_arr = np.asarray(labels)
             if labels_arr.shape == ibi.shape:
                 valid &= labels_arr == "N"
 
-        ibi = ibi[valid]
-        hr = 60.0 / ibi
+        # Same-length output: HR at valid positions, NaN elsewhere.
+        # The NaN entries are what makes matplotlib break the line at
+        # exactly the right place — there's no bridging across the
+        # invalid stretch.
+        hr = np.full_like(ibi, np.nan)
+        hr[valid] = 60.0 / ibi[valid]
 
-        # HR timestamps at IBI midpoints
-        hr_times = times[valid] + (ibi / 2.0)
+        # X-coordinates: midpoint of the IBI when valid (the standard
+        # location for an HR estimate), the R-peak time itself when
+        # not. The invalid x doesn't get drawn (its y is NaN), but we
+        # keep it finite so neighbouring segments can still autoscale
+        # cleanly.
+        hr_times = times.copy()
+        hr_times[valid] = times[valid] + ibi[valid] / 2.0
+
         return TimeSeries(hr_times, hr)
 
     @property

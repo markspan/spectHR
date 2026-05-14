@@ -100,8 +100,42 @@ class PoincarePlotWidget(QWidget):
             if w is not None:
                 w.setParent(None)
 
+    # Labels that mark an IBI as artefactual. Matches the convention used
+    # by CardioFrequencyMetricsMixin (``_BAD_LABELS = ("TL", "T")``): TL =
+    # "too long" interval, T = technical artefact. Both must be excluded
+    # from the Poincaré scatter, otherwise a single dropped beat leaves
+    # a pair of outliers (one too-long, one too-short) that completely
+    # blow up the plot's autoscaling and ellipse fit.
+    _BAD_LABELS: tuple[str, ...] = ("TL", "T")
+
+    def _valid_ibi_mask(self, rt) -> np.ndarray:
+        """Return a per-IBI bool mask: True where the IBI is finite and
+        the beat is not labelled as an artefact.
+
+        Falls back to a purely-numeric filter (finite + positive) when
+        labels are missing or mis-aligned, so legacy datasets without
+        label arrays still render.
+        """
+        ibi = np.asarray(rt.ibi, dtype=float)
+        valid = np.isfinite(ibi) & (ibi > 0)
+
+        labels = getattr(rt, "labels", None)
+        if labels is not None:
+            labels_arr = np.asarray(labels)
+            if labels_arr.shape == ibi.shape:
+                for bad in self._BAD_LABELS:
+                    valid &= labels_arr != bad
+        return valid
+
     def _draw_plot(self) -> None:
-        """Draw scatter + ellipse for each epoch."""
+        """Draw scatter + ellipse for each epoch.
+
+        IBIs labelled as artefacts (``TL`` / ``T``) are dropped from
+        the scatter. Pairs ``(ibi[n], ibi[n+1])`` are kept only when
+        **both** members are valid — bridging across a dropped beat
+        would join non-consecutive intervals and lie about beat-to-beat
+        dynamics.
+        """
         assert self.dataset is not None
 
         for name, epoch in self.dataset.epochs.items():
@@ -110,8 +144,15 @@ class PoincarePlotWidget(QWidget):
             if rt.ibi.size < 2:
                 continue
 
-            x = rt.ibi[:-1]
-            y = rt.ibi[1:]
+            # Per-IBI validity, then pair-wise: both consecutive
+            # intervals must be valid to participate in the scatter.
+            valid = self._valid_ibi_mask(rt)
+            pair_mask = valid[:-1] & valid[1:]
+            x = rt.ibi[:-1][pair_mask]
+            y = rt.ibi[1:][pair_mask]
+
+            if x.size == 0:
+                continue
 
             scatter = self.ax.scatter(x, y, alpha=0.25, label=name)
             scatter.epoch = name
