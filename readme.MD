@@ -448,85 +448,134 @@ For non-overlapping segments $\rho = 0$ and $\nu = 2K$. For a Hann window at 50 
 
 CARSPAN takes a different approach. Instead of resampling the IBI series onto a uniform time grid, it operates directly on the R-peak times and computes the Fourier transform of those events — the algorithm Mulder [(1988)](#ref-mulder1988) developed for the original CARSPAN software. No resampling, no interpolation in time. The spectrum is computed on a native frequency grid $f_k = k/T$ (resolution $\Delta f = 1/T$), bin-averaged onto a fixed display grid for plotting, and band power is computed by direct summation following the manual's formula 3.28. Output units: **mMI²**.
 
+spectHR ships two CARSPAN variants. They are **structurally different algorithms**, not different settings of the same algorithm:
+
+- **`carspan_strict`** — the **IBI-amplitude DFT** of manual Eq. 3.21 (Pascal `SOC` branch `IsRPDataCol=False`). This is the variant the manual uses to produce its reference numbers. The band powers `cs.band_powers()` reproduces match the CARSPAN manual's epoch #2 reference (p. 121) to within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
+- **`carspan`** — the **unit-impulse SOC** of manual Eq. 3.19 (Pascal `SOC` branch `IsRPDataCol=True`). Treats every R-peak as a unit impulse. Useful when you want fine-grained control over the window, amplitude correction, or reference-grid DC subtraction (knobs that don't apply to the IBI-amplitude path).
+
+The two produce similar shapes at LF and HF for a regular sinus rhythm but differ noticeably at VLF (because of how each handles DC) and in absolute magnitude (because they weight events differently).
+
 <details>
 <summary>CARSPAN, algorithm detail</summary>
 
 ### CARSPAN, algorithm detail
 
-#### The R-peak event series
+#### Two views of the same signal
 
-Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heartbeat is modelled as a sequence of unit impulses at the R-peak times $t_i$:
+Mulder's manual gives two algebraically equivalent ways to write the CARSPAN spectrum, depending on what you treat as the "data" entering the DFT.
+
+**Unit-impulse view (Eq. 3.19; used by `carspan`).** Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heartbeat is modelled as a sequence of unit impulses at the R-peak times $t_i$:
 
 $$x(t) = \sum_{i=1}^{N} \delta(t - t_i)$$
 
-This is the *Integral Pulse Frequency Modulation* (IPFM) representation. Its spectrum reflects **heart-rate** variability, not IBI variability directly. The manual's formula 3.20 normalises out the mean heart rate afterwards, which makes the two equivalent for spectral purposes.
+This is the *Integral Pulse Frequency Modulation* (IPFM) representation. Treating the signal outside the analysis window $[0, T]$ as a periodic continuation, the PSD at discrete frequencies $f_k = k/T$ is:
 
-#### Power spectral density (formula 3.19)
+$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i\, e^{-2\pi j f_k t_i}\right|^2$$
 
-Treating the signal outside the analysis window $[0, T]$ as a periodic continuation, the PSD at discrete frequencies $f_k = k/T$ is:
+The $w_i$ are tapering-window weights. The output is in events²/Hz; conversion to mMI²/Hz is done by the mixin layer.
 
-$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i e^{-2\pi j f_k t_i}\right|^2$$
+**IBI-amplitude view (Eq. 3.21; used by `carspan_strict`).** The same recording, expressed as a sum over IBI amplitudes weighted by their local interval $t_i$:
 
-The $w_i$ are tapering-window weights (default: `10% cosine bell`, a Tukey window with α = 0.20). The window tapers the signal smoothly to zero at both ends, suppressing spectral leakage at the segment boundaries.
+$$\tilde S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} t_i\, x_i\, e^{-2\pi j f_k T_i}\right|^2$$
 
-**Two variants are available:**
+where $x_i$ is the arithmetic-mean-subtracted IBI in ms, $t_i$ the local IBI duration in seconds, and $T_i = \sum_{j \le i} t_j$ the cumulative time of the $i$-th beat. The output is in ms²/Hz directly (variance per Hz), and the mixin layer normalises to mMI²/Hz by multiplying by $10^6 / \overline{\text{IBI}}_\text{ms}^2$ — the milli-squared form of manual Eq. 3.20.
 
-- **`carspan`** (configurable) — any `scipy.signal.get_window` name (the `"X% cosine bell"` shorthand maps to Tukey α = X/50). Window applied by **event index**; amplitude includes the standard $2N / (T \cdot S_2)$ correction (with $S_2 = \sum_i w_i^2$) so the level remains approximately consistent across window choices. DC removal is off by default; set `dc_removal: true` in the workspace to enable it.
-- **`carspan_strict`** — manual-faithful: Tukey 5 % cosine taper (α = 0.10) applied by **event index**, amplitude $2/T$ with no $N/S_2$ correction, and the regular-grid DC removal described below, applied unconditionally. This corresponds to what the reference CARSPAN implementation actually computes.
+The two views describe the *same physical signal* and would integrate to the same total energy under continuous-signal idealisations. In the discrete sampled implementation they produce different magnitudes (per-bin scaling differs by ~$\overline{\text{IBI}}^2$). The strict path is the one whose discrete output matches the manual's tabulated reference values.
 
-For a regular sinus rhythm the two variants produce the same spectral shape at LF/HF; the strict variant is noticeably cleaner at VLF because of the DC subtraction. Use `carspan_strict` to reproduce CARSPAN's reported values; use `carspan` for a tunable, variance-correct estimate.
+**Which one matches the manual?** The strict path: verified against epoch #2 of `example1.EVT` (CARSPAN manual p. 121) to within ~2 % on every band, ~0.03 % on LF.
 
-**Why they are not interchangeable.** Several elements of the strict bundle are different code paths rather than parameter values, so `carspan_strict` cannot be reproduced exactly from the configurable `carspan` settings:
+Internally, both variants run through the same `compute_carspan_psd` function in `CarspanPSD.py`; the `signal` field of `CarspanOptions` (`"events"` vs `"ibi_amplitude"`) selects the algorithm. The `carspan_strict_options()` helper builds the preset that locks in the manual-faithful choices for the IBI-amplitude path.
 
-| Behaviour | `carspan_strict` | `carspan` (configurable) | Reachable via workspace? |
-|---|---|---|---|
-| Window function | CARSPAN cosine-bell index taper — sample 0 has a small non-zero weight (scipy's tukey zeros it) | any `scipy.signal.get_window` name | ✗ — no scipy window matches the CARSPAN taper exactly |
-| Window length | `N − 1` events | `N` events | ✗ |
-| Amplitude pre-factor | `2 / T` | `2N / (T · S₂)` | ✗ |
-| First event | skipped (CARSPAN convention) | included | ✗ |
-| DC reference grid | regular-rate grid offset by ΔT, length `N − 1` | span-matched grid, length `N` | ✗ |
-| **Regular-grid DC removal** | **always on** | **opt-in via** `dc_removal: true` | ✓ |
-| 3-MA + bin-average smoothing | on | on by default (`smooth_for_display: true`) | ✓ — already matches |
-| mMI² mean convention | arithmetic mean of rate | harmonic mean of rate (`N/T`) | ✗ — hard-coded per method |
+#### Differences between the two paths
 
-The closest the configurable mode can get is `dc_removal: true`, which cleans up the VLF leakage. The window, amplitude, skip-first, DC reference grid, and mean convention still differ. To reproduce CARSPAN exactly, select `method: "carspan_strict"` rather than tuning `carspan`.
+| Behaviour | `carspan_strict` (Eq. 3.21) | `carspan` (Eq. 3.19, configurable) |
+|---|---|---|
+| `signal` field of `CarspanOptions` | `"ibi_amplitude"` | `"events"` (default) |
+| What the DFT sees | IBI amplitude $(x_i - \bar x) \cdot t_i$ per beat | unit impulses, windowed |
+| DC removal | mean-subtraction of the IBI amplitudes (built-in) | optional reference-grid subtraction (`dc_removal: true`) |
+| Window function (default) | Pascal's index taper, `TaperPercent=5` (set by `carspan_strict_options()`) | any `scipy.signal.get_window` name (default `10% cosine bell` → Tukey α = 0.20) |
+| Amplitude pre-factor | $2/T$ (fixed by Eq. 3.21) | $2N / (T \cdot S_2)$ by default (variance-correct); $2/T$ when `amplitude_correction: false` |
+| First event | included (all $N$ IBIs participate; `skip_first_event` ignored on this branch) | included by default; `skip_first_event: true` drops the first R-peak |
+| Native grid | $f_k = k/T$ for $k = 1..\lfloor f_\text{max}\,T\rfloor$ | same |
+| Display resample | Pascal's `Resample_R` (fractional-coverage weighted mean) | same |
+| 3-MA display smoothing | on by default (`smooth_for_display: true`) | on by default |
+| mMI² mean convention | arithmetic mean of rate (= harmonic mean of IBI) | harmonic mean of rate (= $T/N$) |
+| Workspace key | `method: "carspan_strict"` | `method: "carspan"` |
+
+Two practical consequences:
+
+1. To compare against CARSPAN's manual or any published `(IBI)`-prefixed CARSPAN output, use `carspan_strict`. To explore *what would happen if I had used a different window, or no DC subtraction, or amplitude correction*, use `carspan`.
+2. `dc_removal`, `dc_grid`, `amplitude_correction`, and `skip_first_event` are **only meaningful when `signal == "events"`**. With `signal == "ibi_amplitude"` the compute layer ignores them: the manual's Eq. 3.21 fixes the amplitude at $2/T$, mean subtraction does the DC removal at the signal level, and all $N$ IBIs participate.
+
+#### How do I make `carspan` perform like `carspan_strict`?
+
+`carspan_strict` is — by design — the same code as `carspan` with the `carspan_strict_options()` preset applied. If you want to keep `method: "carspan"` in your workspace but flip the algorithm under the hood, the single knob that matters is **`signal`**:
+
+```json
+"FrequencyAnalysis": {
+  "method": "carspan",
+  "carspan": {
+    "signal": "ibi_amplitude"
+  }
+}
+```
+
+Setting `signal: "ibi_amplitude"` switches the compute path from the unit-impulse SOC (Eq. 3.19) to the manual-faithful IBI-amplitude DFT (Eq. 3.21). The other strict-bundle knobs (`taper`, `alpha_taper`, `amplitude_correction`, `skip_first_event`, `dc_removal`, `dc_grid`) are all **ignored** on the `ibi_amplitude` branch — the manual fixes their behaviour, so you don't have to set them. The only field still worth setting deliberately is the window (`taper: "carspan_index"` + `alpha_taper: 0.10` gives Pascal's 5 % index taper, which is what `carspan_strict_options()` picks; any other scipy window also works).
+
+One subtlety: the **mean convention** is auto-derived from the workspace `method` field — `psd_method_from_workspace` sets `mean_convention = "arithmetic"` only when `method == "carspan_strict"`. With `method: "carspan"` + `signal: "ibi_amplitude"` you'll get the IBI-amplitude DFT computed correctly but normalised by `T/N` (harmonic mean of IBI) instead of the arithmetic-mean-of-rate convention Pascal uses. For typical 5–8 % RR variability that's a ~0.3–0.8 % difference in the reported mMI² values (epoch #2 of `example1.EVT`: ~0.5 % on LF, comfortably within the ~2 % the manual itself rounds to). If that residual difference matters, set `method: "carspan_strict"` instead — that's the single switch that picks *both* the IBI-amplitude algorithm and the arithmetic-mean-of-rate convention.
+
+The same answer in summary form:
+
+| Goal | What to set |
+|---|---|
+| Match the manual exactly (recommended) | `method: "carspan_strict"` |
+| Use `carspan` but get strict-style numbers | `method: "carspan"`, `carspan.signal: "ibi_amplitude"` (≈ 0.5 % off from strict due to mean convention) |
+| Configurable unit-impulse SOC | `method: "carspan"`, `carspan.signal: "events"` (default) |
 
 <details>
 <summary>Note for developers using the Python API directly</summary>
 
-The ✗ rows above describe what's reachable from the **workspace** (the JSON file and the Edit Parameters dialog). The workspace only exposes a handful of `carspan` knobs (`freq_resolution`, `window`, `smooth_for_display`, `plot_units`, `dc_removal`), which is why the strict bundle can't be assembled from those settings alone.
-
-When calling the Python API directly, every strict behaviour is an individual field on `CarspanOptions` and can be mixed and matched freely:
+Both variants go through the same `compute_carspan_psd` function — the `signal` field of `CarspanOptions` picks the algorithm:
 
 ```python
-from spectHR.Tools.PSD.CarspanPSD import CarspanOptions, compute_carspan_psd
-
-opts = CarspanOptions(
-    taper="carspan_index",         # Pascal-faithful index taper
-    alpha_taper=0.10,              # 5 % cosine bell per side
-    amplitude_correction=False,    # → amplitude 2/T (vs. 2N/(T·S₂))
-    skip_first_event=True,         # match Pascal SOC loop indexing
-    dc_removal=True,
-    dc_grid="carspan_strict",      # asymmetric reference grid
-    smooth_for_display=True,
-    f_max=0.5,
+from spectHR.Tools.PSD.CarspanPSD import (
+    CarspanOptions, compute_carspan_psd, carspan_strict_options,
 )
-freqs, power, ci_lo, ci_hi = compute_carspan_psd(times, options=opts)
+
+# Manual-faithful (IBI-amplitude DFT, Eq. 3.21):
+result = compute_carspan_psd(
+    rpeak_times,
+    options=carspan_strict_options(smooth_for_display=True, f_max=0.5),
+)
+# result.power is in ms²/Hz on the 0.01 Hz display grid; the mixin
+# layer applies the × 10⁶ / mean² conversion for mMI²/Hz.
+
+# Configurable unit-impulse SOC (Eq. 3.19):
+result = compute_carspan_psd(
+    rpeak_times,
+    options=CarspanOptions(
+        signal="events",                # default
+        taper="carspan_index",
+        alpha_taper=0.10,
+        amplitude_correction=False,
+        skip_first_event=True,
+        dc_removal=True,
+        dc_grid="carspan_strict",
+    ),
+)
 ```
 
-That `opts` bundle reproduces `compute_carspan_psd_strict` bit-for-bit; the helper `carspan_strict_options()` in `CarspanPSD.py` builds exactly this set. The reason the workspace doesn't expose these individually is that the strict bundle is a tightly coupled set of choices — mixing only some of them rarely makes physical sense — so the UI deliberately offers the *preset* (`method: "carspan_strict"`) rather than ten individual checkboxes.
+The convenience function `compute_carspan_psd_strict(...)` is a thin wrapper around the first form above (with a rename of the result's `method` field from `"carspan"` to `"carspan_strict"` so downstream code can tell the two apart). `carspan_strict_options()` is the single place that locks in the manual's choices for the IBI-amplitude path (5 % index taper, etc.); if you want a Pascal-faithful preset with one knob flipped (e.g. no 3-MA smoothing), call `replace(carspan_strict_options(), smooth_for_display=False)`.
 
-Same story for the mean-rate convention: the mixin's `PsdMethod.mean_convention` is `"arithmetic"` for strict and `"harmonic"` everywhere else, picked automatically by `psd_method_from_workspace` based on the algorithm name. Library callers can override it by constructing a `PsdMethod` themselves and setting `series.psd_method = …`.
+The mixin's `PsdMethod.mean_convention` is `"arithmetic"` for `carspan_strict` and `"harmonic"` everywhere else, picked automatically by `psd_method_from_workspace` based on the algorithm name. Library callers can override it by constructing a `PsdMethod` themselves and setting `series.psd_method = …`.
 
 </details>
 
-#### Regular-grid DC removal (strict mode)
+#### Reference-grid DC removal (configurable mode only)
 
-The manual writes Eq. 3.19 as a plain DFT of the windowed impulse train. The reference CARSPAN implementation goes one step further: before squaring, it subtracts the DFT of a perfectly periodic impulse train at the mean rate. The manual does not flag this as a separate step, but it is essential for matching CARSPAN's actual output, particularly at low frequencies.
+The Pascal `SOC` branch for unit impulses (`IsRPDataCol=True`) does one extra trick the manual doesn't flag: before squaring, it subtracts the DFT of a perfectly periodic impulse train at the mean rate. At $f = 0$ both DFTs equal 1, so their difference is exactly zero and DC is removed. Beyond DC, the subtraction also cancels the spectral leakage that a mean-rate impulse train would otherwise contribute to the VLF region. For an approximately regular rhythm the correction is small at LF and HF but dominant at VLF.
 
-The mechanism is straightforward. At $f = 0$ both DFTs equal 1, so their difference is exactly zero and the DC component is removed. Beyond DC, the subtraction also cancels the spectral leakage that a mean-rate impulse train would otherwise contribute to the VLF and LF bands. For an approximately regular rhythm the correction is small at LF and HF but dominant at VLF; without it, the low-frequency power is several times too high.
-
-**Available in configurable mode as well.** Setting `FrequencyAnalysis.carspan.dc_removal` to `true` (also editable from *Edit Parameters*) enables the same subtraction in the configurable `carspan` variant. It defaults to `false` to preserve the historical behaviour of that variant; enable it when you need the VLF cleanup while retaining a custom window or the variance-correct $2N / (T \cdot S_2)$ amplitude. Strict mode applies the subtraction unconditionally and ignores this flag.
+In spectHR this is `FrequencyAnalysis.carspan.dc_removal` (also editable in *Edit Parameters*), only applicable to the configurable `carspan` variant. It defaults to `false` to preserve historical behaviour; turn it on when you need the VLF cleanup while retaining a custom window or the variance-correct amplitude. The IBI-amplitude `carspan_strict` path does **not** use this mechanism — its mean-subtraction step does the DC removal at the signal level (manual Eq. 3.21).
 
 #### Native frequency grid
 
@@ -560,15 +609,23 @@ Welch band power uses trapezoidal integration; only the CARSPAN back-end uses th
 
 #### Normalisation to mMI² (formulae 3.20 and 3.29)
 
-The raw spectrum is in units of events²/Hz. To make it dimensionless and independent of mean heart rate, it is divided by the squared mean of the event series. For unit impulses this equals the squared mean heart rate $\bar{x} = 1 / \bar{\text{IBI}}_\text{sec}$. The normalised band power is:
+To make spectra independent of mean heart rate, both CARSPAN variants are reported in **milli-Modulation-Index squared** (mMI²/Hz for the spectrum, mMI² for band power) — but the conversion from each variant's native unit is different.
 
-$$B'(f_l, f_h) = \frac{B(f_l, f_h)}{\bar{x}^2} \times 10^6 = B(f_l, f_h) \times \bar{\text{IBI}}_\text{sec}^2 \times 10^6 \quad [\text{mMI}^2]$$
+**Strict (IBI-amplitude DFT, Eq. 3.21).** The raw spectrum is already in ms²/Hz (variance of the IBI per Hz). Eq. 3.20 normalises by $\bar x^2$ and the milli² convention adds a factor of $10^6$, giving:
 
-The factor $10^6$ scales the result into a convenient numeric range — milli-Modulation-Index squared, mMI². A consequence of this normalisation is that mMI² values are largely independent of mean heart rate, allowing direct comparison across subjects or sessions with different resting heart rates.
+$$B'(f_l, f_h) = \frac{10^6}{\overline{\text{IBI}}_\text{ms}^2}\, B(f_l, f_h) \quad [\text{mMI}^2]$$
 
-**Note on the mean.** CARSPAN defines the mean rate as $`\bar{x} = N/T`$ (N events in T seconds), so the mean IBI used in the conversion is $`T/N`$, not the arithmetic mean of the N − 1 individual intervals $`T/(N-1)`$. For typical recordings the difference is well under the width of one IBI.
+The mean IBI here is the **harmonic mean** of IBI (= arithmetic mean of the per-beat instantaneous rate) — that's what Pascal's `SOC` uses inside `IsRPDataCol=False`. It differs from $T/N$ by ~0.3–0.8 % at typical resting HRV.
 
-**Strict mode uses a different mean.** The reference CARSPAN code defines the mean rate slightly differently from its own manual: it uses the *arithmetic mean* of the per-beat instantaneous rates rather than $N/T$. By Jensen's inequality the arithmetic mean is always ≥ $`N/T`$, with equality only for a perfectly regular rhythm. For resting HRV with ~5–8 % RR variability the two differ by ~0.3–0.8 % in the resulting mMI² values. spectHR therefore applies the arithmetic-mean convention only for `carspan_strict`; `carspan` (configurable) and `welch` retain the simpler $`T/N`$ from the manual. This split keeps `carspan_strict` faithful to the reference implementation and the others faithful to the manual.
+**Configurable (unit-impulse SOC, Eq. 3.19).** The raw spectrum is in events²/Hz. Eq. 3.20 divides by the squared mean rate $\bar x = 1/\overline{\text{IBI}}_\text{sec}$ to get a dimensionless modulation index, which the implementation re-expresses as a multiply-by-$\overline{\text{IBI}}_\text{ms}^2$ on the events²/Hz spectrum (legacy mapping kept for back-compat):
+
+$$B'(f_l, f_h) = \overline{\text{IBI}}_\text{ms}^2 \cdot B(f_l, f_h) \quad [\text{mMI}^2]$$
+
+Here the mean IBI is the manual's $T/N$ (harmonic mean of rate), not the arithmetic-mean-of-rate flavour. Reason: the configurable path predates the careful Pascal audit and is kept for back-compat; if you need the manual-faithful answer, use `carspan_strict`.
+
+In both cases the factor $10^6$ (explicit above for strict, implicit in the events²/Hz scaling for configurable) is the "milli" prefix squared: it puts typical resting mMI² values into the ~10–10 000 range rather than the ~10⁻⁵–10⁻² range that raw MI² would give. A consequence is that mMI² band powers are largely independent of mean heart rate, allowing direct comparison across subjects with different resting heart rates.
+
+**Bottom line.** The two CARSPAN paths share the same band-power *idea* (variance of IBI in a frequency band, normalised by mean), but get there by different routes and with slightly different mean conventions. For numerical agreement with the CARSPAN manual or any `(IBI)`-prefixed CARSPAN output, use `carspan_strict`. The `PsdMethod.mean_convention` field (`"arithmetic"` vs `"harmonic"`) selects between the two; `psd_method_from_workspace` picks the right one automatically based on the algorithm name.
 
 **Default parameters** (configurable in *Edit Parameters*):
 

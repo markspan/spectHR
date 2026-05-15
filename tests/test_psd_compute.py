@@ -362,29 +362,76 @@ class TestComputeCarspanPsd:
 
 
 class TestCarspanStrictParity:
-    """The strict wrapper must equal ``compute_carspan_psd(carspan_strict_options())``."""
+    """The strict path is the :func:`carspan_strict_options` preset
+    applied through :func:`compute_carspan_psd`.
+
+    :func:`compute_carspan_psd_strict` is a thin wrapper that calls
+    ``compute_carspan_psd(options=carspan_strict_options(...))`` and
+    rebrands the ``method`` field on the result. Its output is therefore
+    numerically identical to ``compute_carspan_psd`` with the same
+    options, modulo the ``method`` string.
+    """
 
     def test_strict_wrapper_matches_preset(self):
         times = _event_times(n_beats=300)
         a = compute_carspan_psd_strict(times)
         b = compute_carspan_psd(times, options=carspan_strict_options())
-        # method differs (the wrapper marks it carspan_strict), but the
-        # numbers must be bit-identical.
         assert np.array_equal(a.freqs, b.freqs)
         assert np.array_equal(a.power, b.power)
+        # method differs (the wrapper rebrands), units agree.
         assert a.method == "carspan_strict"
         assert b.method == "carspan"
+        assert a.unit == b.unit == "ms²/Hz"
 
-    def test_strict_smooth_off_changes_grid(self):
+    def test_strict_uses_ibi_amplitude_signal(self):
+        """The strict preset must set ``signal="ibi_amplitude"`` so the
+        compute layer takes the manual Eq. 3.21 branch."""
+        opts = carspan_strict_options()
+        assert opts.signal == "ibi_amplitude"
+
+    def test_strict_returns_resampled_grid_in_ms2_per_hz(self):
+        """The strict preset's spectrum comes back on the 0.01 Hz
+        display grid (Pascal's ``Resample`` runs unconditionally inside
+        ``compute_carspan_psd``), with ``ms²/Hz`` as the raw unit (the
+        IBI-amplitude DFT of Eq. 3.21)."""
         times = _event_times(n_beats=300)
-        smoothed = compute_carspan_psd_strict(times, smooth=True)
-        raw      = compute_carspan_psd_strict(times, smooth=False)
-        # The raw native-grid spectrum is finer (more bins).
-        assert raw.freqs.size > smoothed.freqs.size
+        r = compute_carspan_psd_strict(times)
+        assert r.method == "carspan_strict"
+        assert r.unit == "ms²/Hz"
+        assert r.freqs[0] == pytest.approx(0.01)
+        assert r.freqs[-1] <= 0.5 + 1e-9
+        assert r.ci_lower is not None and r.ci_lower.shape == r.power.shape
+        assert r.ci_upper is not None and r.ci_upper.shape == r.power.shape
+
+    def test_strict_differs_from_default_events_signal(self):
+        """When you flip ``signal`` back to ``"events"`` on the same
+        otherwise-strict bundle, the spectrum must change (different
+        algorithm)."""
+        times = _event_times(n_beats=300)
+        from dataclasses import replace as _replace
+        strict_opts = carspan_strict_options()
+        events_opts = _replace(strict_opts, signal="events")
+        strict = compute_carspan_psd(times, options=strict_opts)
+        events = compute_carspan_psd(times, options=events_opts)
+        # Same display grid (both go through the same Resample step).
+        assert np.array_equal(strict.freqs, events.freqs)
+        # But the spectra differ — IBI-amplitude vs unit-impulse.
+        assert not np.allclose(strict.power, events.power)
+        # And the units reflect the different native scales.
+        assert strict.unit == "ms²/Hz"
+        assert events.unit == "Hz"
+
+    def test_strict_carries_chi2_ci(self):
+        times = _event_times(n_beats=300)
+        r = compute_carspan_psd_strict(times)
+        # CI lower ≤ power ≤ CI upper for every bin (chi² CI on positive
+        # periodogram values).
+        assert np.all(r.ci_lower <= r.power + 1e-12)
+        assert np.all(r.ci_upper >= r.power - 1e-12)
 
     def test_dc_removal_drains_low_frequency(self):
-        """With DC removal on, the lowest-frequency bin of the strict
-        path should be much smaller than without it."""
+        """Configurable CARSPAN: with reference-grid DC removal on, the
+        lowest-frequency bin should be much smaller than without it."""
         times = _event_times(n_beats=300, jitter_s=0.02)
         with_dc    = compute_carspan_psd(
             times, options=CarspanOptions(dc_removal=True)

@@ -28,9 +28,29 @@ so per-epoch views pick it up automatically.
 
 Unit conversion
 ---------------
-CARSPAN outputs Hz (events²/Hz).  Welch and Lomb-Scargle output ms²/Hz.
-Both are converted to mMI²/Hz (Modulation Index, CARSPAN Eq. 3.20) at
-the mixin layer using the ``mean_ibi_ms²`` factor.
+The mixin layer is the single place where the various PSD back-ends'
+native units are translated into the display unit (mMI²/Hz or ms²/Hz).
+There are **three** native units in play:
+
+* ``compute_carspan_psd`` (configurable, unit-impulse SOC of Eq. 3.19)
+  → returns ``events²/Hz``.  Convert to mMI²/Hz by ``× mean_ms²``
+  (legacy mapping kept for back-compat; see ``_carspan_display``).
+* ``compute_carspan_psd_strict`` (IBI-amplitude DFT of Eq. 3.21)
+  → returns ``ms²/Hz`` (variance per Hz, as the manual writes it).
+  Convert to mMI²/Hz by ``× 10⁶ / mean_ms²`` (Eq. 3.20 + milli²).
+  This is the path that reproduces the CARSPAN manual's reference
+  numbers — verified against epoch #2 of ``example1.EVT`` to within
+  ~2 % on every band.
+* ``compute_welch_psd`` / ``compute_lombscargle_psd`` (regular Welch /
+  Lomb-Scargle of the IBI series) → ``ms²/Hz`` natively.  Convert to
+  mMI²/Hz by ``× 10⁶ / mean_ms²``.
+
+The strict CARSPAN path also uses the **arithmetic mean of the
+per-beat instantaneous rate** (= harmonic mean of IBI) for the mMI²
+conversion — Pascal's ``SOC`` computes the same. The configurable
+CARSPAN and the two IBI methods use the simpler harmonic mean ``T/N``
+from the manual. The split is controlled by ``PsdMethod.mean_convention``
+(``"arithmetic"`` for strict, ``"harmonic"`` everywhere else).
 """
 
 from __future__ import annotations
@@ -690,12 +710,33 @@ class CardioMetricsMixin(HRVMetric):
         carspan_opts: CarspanOptions,
         mean_convention: MeanConvention,
     ) -> Tuple[float, str]:
-        """Return ``(convert, unit)`` for the CARSPAN display path."""
+        """Return ``(convert, unit)`` for the CARSPAN display path.
+
+        Dispatch is driven by ``carspan_opts.signal``: the two CARSPAN
+        variants produce different raw spectra and therefore need
+        different unit conversions to reach mMI²/Hz:
+
+        * ``signal="ibi_amplitude"`` (manual Eq. 3.21) — raw spectrum
+          is already in **ms²/Hz**. To express in mMI²/Hz, multiply by
+          ``10⁶ / mean_ms²`` (manual Eq. 3.20 + milli²).
+        * ``signal="events"`` (manual Eq. 3.19) — raw spectrum is in
+          events²/Hz (unit-impulse DFT). Legacy mapping uses ``mean_ms²``
+          (kept for back-compat).
+        """
         units = str(carspan_opts.plot_units)
         if mean_convention == "arithmetic":
             mean_ibi_ms = self._mean_ibi_ms_arithmetic()
         else:
             mean_ibi_ms = self._mean_ibi_ms()
+
+        if getattr(carspan_opts, "signal", "events") == "ibi_amplitude":
+            # IBI-amplitude raw spectrum is already in ms²/Hz (Eq. 3.21).
+            if units.lower().startswith("ms"):
+                return 1.0, "ms²/Hz"
+            # mMI²/Hz = ms²/Hz × 10⁶ / mean_ms² (Eq. 3.20 + milli²).
+            return 1.0e6 / (mean_ibi_ms ** 2), "mMI²/Hz"
+
+        # Unit-impulse SOC path — legacy conversion.
         if units.lower().startswith("ms"):
             # ms²/Hz: mean_ibi_s⁴ × 10⁶ = mean_ibi_ms⁴ × 10⁻⁶
             return (mean_ibi_ms ** 4) * 1e-6, "ms²/Hz"
@@ -743,6 +784,12 @@ class CardioMetricsMixin(HRVMetric):
         )
 
     def _psd_carspan(self, method: PsdMethod, *, with_ci: bool = True) -> PSDResult:
+        """Dispatch through the unified CARSPAN compute path.
+
+        Used for both ``algorithm="carspan"`` (configurable, any
+        ``CarspanOptions``) and ``algorithm="carspan_strict"`` (which
+        first forces ``method.carspan`` to :func:`carspan_strict_options`).
+        """
         convert, unit = self._carspan_display(method.carspan, method.mean_convention)
         raw = CarspanPSD.compute_carspan_psd(
             self._event_times_clean(),
@@ -760,20 +807,26 @@ class CardioMetricsMixin(HRVMetric):
     def _psd_carspan_strict(
         self, method: PsdMethod, *, with_ci: bool = True
     ) -> PSDResult:
-        convert, unit = self._carspan_display(method.carspan, method.mean_convention)
-        raw = CarspanPSD.compute_carspan_psd_strict(
-            self._event_times_clean(),
-            alpha_ci=method.alpha_ci,
-            smooth=bool(method.carspan.smooth_for_display),
+        """Force the strict-preset options bundle, then dispatch to the
+        unified :meth:`_psd_carspan` path.
+
+        The strict variant is — by design — just :func:`carspan_strict_options`
+        applied through the same compute pipeline as configurable CARSPAN.
+        Only ``smooth_for_display``, ``f_max``, and ``plot_units`` are
+        carried over from the caller's ``method.carspan``; every other
+        field is overridden by the strict preset to match Pascal's
+        ``IsRPDataCol=False`` branch (IBI-amplitude DFT, Eq. 3.21). The
+        ``method`` field on the returned PSDResult is rebranded to
+        ``"carspan_strict"`` so downstream code can tell the two apart.
+        """
+        strict_opts = CarspanPSD.carspan_strict_options(
+            smooth_for_display=bool(method.carspan.smooth_for_display),
             f_max=float(method.carspan.f_max),
+            plot_units=str(method.carspan.plot_units),
         )
-        return self._finalise(
-            raw,
-            convert=convert,
-            with_ci=with_ci,
-            mask=self._band_mask(raw.freqs, method.bands),
-            unit=unit,
-        )
+        strict_method = replace(method, carspan=strict_opts)
+        result = self._psd_carspan(strict_method, with_ci=with_ci)
+        return replace(result, method="carspan_strict")
 
     def _psd_carspan_native(self, method: PsdMethod) -> PSDResult:
         """CARSPAN PSD on the resampled-but-un-MA-smoothed grid.
@@ -784,50 +837,23 @@ class CardioMetricsMixin(HRVMetric):
         rather than the smoothed display grid: the smoothing changes
         peak heights but not band power, so omitting it keeps the
         reported values clean.
-        """
-        convert, unit = self._carspan_display(method.carspan, method.mean_convention)
 
+        Implementation: force ``smooth_for_display=False`` on a copy of
+        the active ``CarspanOptions`` and dispatch through the unified
+        :meth:`_psd_carspan` path. Bin-averaging to the display grid
+        still happens inside ``compute_carspan_psd`` (Pascal's
+        ``Resample`` is unconditional), but the 3-MA step is skipped.
+        """
+        # For the strict algorithm, swap in the strict preset first so
+        # the right signal/taper/etc. drive the compute layer.
         if method.algorithm == "carspan_strict":
-            raw = CarspanPSD.compute_carspan_psd_strict(
-                self._event_times_clean(),
-                alpha_ci=method.alpha_ci,
-                smooth=False,
+            carspan_opts = CarspanPSD.carspan_strict_options(
+                smooth_for_display=False,
                 f_max=float(method.carspan.f_max),
+                plot_units=str(method.carspan.plot_units),
             )
         else:
-            unsmoothed = replace(method.carspan, smooth_for_display=False)
-            raw = CarspanPSD.compute_carspan_psd(
-                self._event_times_clean(),
-                alpha_ci=method.alpha_ci,
-                options=unsmoothed,
-            )
+            carspan_opts = replace(method.carspan, smooth_for_display=False)
 
-        # Apply the resample step (CARSPAN's ``Resample``) but NOT the
-        # 3-point MA — exactly the state of ``PDSin_BCK`` at the
-        # moment ``Calculate_Power`` reads it.
-        display_resolution = float(method.carspan.freq_resolution)
-        freqs = raw.freqs
-        power = raw.power
-        if freqs.size > 1:
-            native_df = float(freqs[1] - freqs[0])
-            if native_df < display_resolution * 0.99:
-                freqs, power, _ = CarspanPSD._bin_average(
-                    freqs, power, display_resolution
-                )
-
-        ci_dummy = np.zeros_like(power)
-        rebuilt = PSDResult(
-            freqs=freqs,
-            power=power,
-            unit=raw.unit,
-            method=raw.method,
-            ci_lower=ci_dummy,
-            ci_upper=ci_dummy,
-        )
-        return self._finalise(
-            rebuilt,
-            convert=convert,
-            with_ci=False,
-            mask=self._band_mask(freqs, method.bands),
-            unit=unit,
-        )
+        method_unsmoothed = replace(method, carspan=carspan_opts)
+        return self._psd_carspan(method_unsmoothed, with_ci=False)

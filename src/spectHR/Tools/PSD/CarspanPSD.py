@@ -1,25 +1,54 @@
 """
-CarspanPSD.py – CARSPAN event-series spectral analysis.
+CarspanPSD.py – CARSPAN spectral analysis for HRV.
 
-Implements the DFT of an R-peak event series (unit impulses) as described
-in Chapter 3 of the CARSPAN manual (Mulder et al.) and as found in the
-original CARSPAN Pascal source ``T_AnaFunctions.pas`` (function ``SOC``).
+The module exposes a single :func:`compute_carspan_psd` function whose
+behaviour is fully driven by :class:`CarspanOptions`. The ``signal``
+field of that dataclass picks between the two algorithm variants from
+Mulder's "CARSPAN Manual" (Ch. 3) / the Pascal source
+``T_AnaFunctions.pas`` (``SOC``):
 
-The single entry point is :func:`compute_carspan_psd`. Every CARSPAN
-quirk that ``carspan_strict`` needs (Pascal-faithful taper, amplitude
-2/T, skip-first-event, asymmetric DC reference grid, …) is an
-*individual* parameter on this function, so users can mix and match
-them. :func:`compute_carspan_psd_strict` is a thin wrapper that picks
-the manual-faithful preset.
+* ``signal="events"`` (default) — **unit-impulse SOC**, manual Eq. 3.19,
+  Pascal ``IsRPDataCol=True``. Treats the R-peak series as a train of
+  unit impulses ``Σ δ(t − tᵢ)`` and computes
+  ``(2/T)·|Σ wᵢ exp(−i 2π f tᵢ)|²``. Window, amplitude correction,
+  reference-grid DC removal, skip-first-event are all individually
+  configurable. Returns ``events²/Hz``; the mixin layer multiplies by
+  ``mean_ms²`` to reach mMI²/Hz.
 
-Output units: **Hz** (events²/Hz). Conversion to mMI²/Hz is done by
-the caller (CardioFrequencyMetricsMixin).
+* ``signal="ibi_amplitude"`` — **manual-faithful IBI-amplitude DFT**,
+  manual Eq. 3.21, Pascal ``IsRPDataCol=False``. Computes
+  ``(2/T)·|Σ tᵢ · xᵢ · exp(−i 2π f Tᵢ)|²`` where ``xᵢ`` is the
+  arithmetic-mean-subtracted IBI in ms and ``tᵢ`` the local IBI
+  duration in seconds. DC removal is done at the signal level by the
+  mean subtraction — there is no reference-grid subtraction. Returns
+  ``ms²/Hz``; the mixin layer multiplies by ``10⁶ / mean_ms²`` to
+  reach mMI²/Hz (Eq. 3.20 + milli²). Reproduces the CARSPAN manual to
+  within ~2 % on every band (epoch #2 of ``example1.EVT``,
+  manual p. 121).
+
+The convenience helper :func:`carspan_strict_options` builds the
+:class:`CarspanOptions` bundle for the manual-faithful preset
+(``signal="ibi_amplitude"`` + Pascal 5 % index taper +
+``smooth_for_display=True``), and the thin wrapper
+:func:`compute_carspan_psd_strict` is the same as
+``compute_carspan_psd(options=carspan_strict_options(...))`` plus a
+rename of the ``method`` field on the returned :class:`PSDResult` to
+``"carspan_strict"`` so downstream code can tell the two apart.
+
+The display-grid resample :func:`_bin_average` is a faithful port of
+Pascal's ``Resample_R`` (fractional-coverage weighted mean with
+exclusive upper boundary) and is shared by both signal variants.
+It runs unconditionally inside :func:`_compute` whenever the native
+grid is finer than ``freq_resolution`` (mirroring Pascal's ``Resample``
+before ``Calculate_Power``); the ``smooth_for_display`` flag controls
+only the additional 3-point MA used for plotting.
 
 References
 ----------
-L. J. M. Mulder, "CARSPAN Manual", Ch. 3.
-CARSPAN Pascal source ``T_AnaFunctions.pas`` (function ``SOC`` —
-"spectrum of counts").
+L. J. M. Mulder, "CARSPAN Manual", Ch. 3, Eq. 3.19, 3.20, 3.21.
+CARSPAN Pascal source ``T_AnaFunctions.pas`` — function ``SOC``
+(both branches), ``Taper``, ``AutoSpectrum``, ``Resample_R``,
+``Calculate_Power``.
 """
 
 from __future__ import annotations
@@ -43,7 +72,8 @@ from spectHR.Tools.PSD._psd_utils import (
 # ---------------------------------------------------------------------------
 
 
-# Type aliases for the two presets each Literal kwarg admits.
+# Type aliases for the Literal kwargs.
+Signal = Literal["events", "ibi_amplitude"]
 Taper = Literal["scipy", "carspan_index"]
 DcGrid = Literal["span_matched", "carspan_strict"]
 
@@ -52,17 +82,40 @@ DcGrid = Literal["span_matched", "carspan_strict"]
 class CarspanOptions:
     """Configuration for :func:`compute_carspan_psd`.
 
-    The defaults correspond to the variance-corrected *configurable*
-    variant. Use :func:`compute_carspan_psd_strict` (or
-    :func:`carspan_strict_options`) to obtain the manual-faithful preset.
+    The same :class:`CarspanOptions` drives both CARSPAN variants — the
+    ``signal`` field picks between them:
+
+    * ``signal="events"`` (default) — manual Eq. 3.19, Pascal
+      ``IsRPDataCol=True``. The DFT runs on a windowed unit-impulse
+      train. The remaining knobs (``window``, ``taper``, ``alpha_taper``,
+      ``amplitude_correction``, ``skip_first_event``, ``dc_removal``,
+      ``dc_grid``) all apply.
+    * ``signal="ibi_amplitude"`` — manual Eq. 3.21, Pascal
+      ``IsRPDataCol=False``. The DFT runs on mean-subtracted IBI
+      amplitudes weighted by their local interval (Pascal's
+      ``Amp := NData[i] * IData[i]/1000``). DC is removed by the mean
+      subtraction; the ``dc_removal``, ``dc_grid``,
+      ``amplitude_correction``, and ``skip_first_event`` knobs are
+      **ignored** in this branch (the manual specifies fixed choices
+      for them). The window/taper choice still applies.
+
+    :func:`carspan_strict_options` is the convenience preset that picks
+    ``signal="ibi_amplitude"`` with Pascal's 5 % index taper —
+    reproducing the CARSPAN manual to within ~2 % on every band.
     """
+
+    # ----- Algorithm variant ------------------------------------------------
+    signal: Signal = "events"
+    """Which signal goes into the DFT — see class docstring."""
 
     # ----- Grid & smoothing -------------------------------------------------
     freq_resolution: float = 0.01
     """Hz — spacing of the display grid produced by bin-averaging."""
 
     smooth_for_display: bool = True
-    """Bin-average + 3-point MA when True (CARSPAN's plot convention)."""
+    """Apply the CARSPAN 3-point MA on the display grid when True.
+    Bin-averaging to the display grid is always on (mirrors Pascal's
+    ``Resample`` always running before ``Calculate_Power``)."""
 
     f_max: float = 0.5
     """Upper frequency limit of the computed spectrum, in Hz."""
@@ -78,21 +131,26 @@ class CarspanOptions:
     alpha_taper: float = 0.10
     """Cosine-bell width per side, used when ``taper == "carspan_index"``."""
 
-    # ----- Amplitude / DFT --------------------------------------------------
+    # ----- Amplitude / DFT (events branch only) -----------------------------
     amplitude_correction: bool = True
-    """True → variance-correct amplitude ``2N/(T·S₂)``; False → manual's ``2/T``."""
+    """True → variance-correct amplitude ``2N/(T·S₂)``; False → manual's
+    ``2/T``. Ignored when ``signal == "ibi_amplitude"``."""
 
     skip_first_event: bool = False
-    """Skip the first R-peak (CARSPAN's SOC loops over IBI indices ``0..N_IBI-1``)."""
+    """Skip the first R-peak (CARSPAN's SOC loops over IBI indices
+    ``0..N_IBI-1``). Ignored when ``signal == "ibi_amplitude"``."""
 
-    # ----- DC removal -------------------------------------------------------
+    # ----- DC removal (events branch only) ----------------------------------
     dc_removal: bool = False
-    """Subtract the DFT of a regular-grid impulse train at the mean rate."""
+    """Subtract the DFT of a regular-grid impulse train at the mean rate.
+    Ignored when ``signal == "ibi_amplitude"`` (mean subtraction does
+    the DC removal at the signal level there)."""
 
     dc_grid: DcGrid = "span_matched"
     """Layout of the regular-grid reference times. ``"span_matched"`` =
     linspace(t₀, t_end, N). ``"carspan_strict"`` = ``t₀ + (i+1)·ΔT`` with
-    ``ΔT = T/(N-1)``, exactly as the Pascal ``SOC`` lays out ``ExpT``."""
+    ``ΔT = T/(N-1)``, exactly as the Pascal ``SOC`` lays out ``ExpT``.
+    Ignored when ``signal == "ibi_amplitude"``."""
 
     # ----- Plot-unit hint ---------------------------------------------------
     plot_units: str = "mMI²/Hz"
@@ -108,20 +166,34 @@ def carspan_strict_options(
     f_max: float = 0.5,
     plot_units: str = "mMI²/Hz",
 ) -> CarspanOptions:
-    """Return the CARSPAN-faithful bundle as a :class:`CarspanOptions`.
+    """Manual-faithful CARSPAN preset — a :class:`CarspanOptions` bundle
+    that drives :func:`compute_carspan_psd` along the IBI-amplitude DFT
+    path (manual Eq. 3.21, Pascal ``SOC`` branch ``IsRPDataCol=False``).
 
-    All values match the reference Pascal implementation. Only the few
-    knobs the manual leaves to the caller (``smooth_for_display``,
-    ``f_max``, ``plot_units``) are user-controllable; everything else is
-    locked.
+    Passing this bundle to :func:`compute_carspan_psd` reproduces the
+    CARSPAN manual's reference values (epoch #2 of ``example1.EVT``
+    matches the manual to within ~2 % on every band). The thin
+    convenience wrapper :func:`compute_carspan_psd_strict` just calls
+    ``compute_carspan_psd(options=carspan_strict_options(...))``.
+
+    The bundle locks every choice the manual leaves implicit. Only the
+    knobs the manual exposes are kept user-controllable:
+
+    * ``smooth_for_display`` — 3-point MA on the display grid (plot only).
+    * ``f_max`` — upper frequency limit of the native grid.
+    * ``plot_units`` — display unit hint passed downstream.
     """
     return CarspanOptions(
+        signal="ibi_amplitude",
         freq_resolution=0.01,
         smooth_for_display=smooth_for_display,
         f_max=f_max,
         window="hann",                # ignored under taper="carspan_index"
         taper="carspan_index",
         alpha_taper=0.10,
+        # The fields below are ignored by the ibi_amplitude branch but
+        # kept consistent with the Pascal IsRPDataCol=True bundle in
+        # case a caller flips signal back to "events" for comparison.
         amplitude_correction=False,
         skip_first_event=True,
         dc_removal=True,
@@ -141,7 +213,16 @@ def compute_carspan_psd(
     alpha_ci: float = 0.05,
     options: Optional[CarspanOptions] = None,
 ) -> PSDResult:
-    """CARSPAN PSD with chi-squared CI.
+    """Configurable CARSPAN PSD (unit-impulse SOC, manual Eq. 3.19).
+
+    Models the R-peak sequence as a unit-impulse train and computes
+    ``(2/T)·|Σ wᵢ exp(−i 2π f tᵢ)|²``, optionally with a reference-grid
+    DC subtraction (CARSPAN's spectral-leakage cleanup at low f).
+    All algorithmic knobs are exposed on :class:`CarspanOptions`.
+
+    For the IBI-amplitude DFT (manual Eq. 3.21) that reproduces the
+    CARSPAN manual's reference numbers, see
+    :func:`compute_carspan_psd_strict`.
 
     Parameters
     ----------
@@ -156,16 +237,19 @@ def compute_carspan_psd(
     Returns
     -------
     PSDResult
-        ``power`` in raw events²/Hz (``unit="Hz"``). The caller applies
-        the mMI² (or ms²) conversion.
+        ``power`` in raw events²/Hz (``unit="Hz"``). The mixin layer
+        applies the mMI² (or ms²) conversion via ``_carspan_display``.
     """
     opts = options if options is not None else _DEFAULT_CARSPAN_OPTIONS
     freqs, power, bin_counts = _compute(event_times_s, opts)
     ci_lower, ci_upper = _chi2_ci(power, 2 * bin_counts, alpha_ci)
+    # Unit follows the algorithm variant: the unit-impulse SOC is
+    # natively in events²/Hz, the IBI-amplitude DFT in ms²/Hz.
+    raw_unit = "ms²/Hz" if opts.signal == "ibi_amplitude" else "Hz"
     return PSDResult(
         freqs=freqs,
         power=power,
-        unit="Hz",
+        unit=raw_unit,
         method="carspan",
         ci_lower=ci_lower,
         ci_upper=ci_upper,
@@ -180,32 +264,54 @@ def compute_carspan_psd_strict(
     f_max: float = 0.5,
 ) -> PSDResult:
     """Manual-faithful CARSPAN PSD — thin wrapper around
-    :func:`compute_carspan_psd` with the CARSPAN preset.
+    :func:`compute_carspan_psd` with the :func:`carspan_strict_options`
+    preset.
 
-    Reproduces the reference Pascal ``SOC`` bit-for-bit:
+    This is equivalent to::
 
-    * Tukey 5 % cosine bell applied by event index (the Pascal ``Taper``
-      formula — sample 0 carries a small non-zero weight, unlike
-      scipy's tukey).
-    * Amplitude ``2/T`` with no ``N/S₂`` correction (manual Eq. 3.19).
-    * Skip-first-event convention from the Pascal SOC loop.
-    * Regular-grid DC removal with the asymmetric reference grid
-      ``ExpTᵢ = t₀ + (i+1)·ΔT``.
+        compute_carspan_psd(
+            event_times_s,
+            alpha_ci=alpha_ci,
+            options=carspan_strict_options(
+                smooth_for_display=smooth, f_max=f_max,
+            ),
+        )
 
-    The only knobs the manual leaves user-controllable are exposed
-    here: ``alpha_ci``, ``smooth``, and ``f_max``.
+    plus a rename of the ``method`` field on the returned :class:`PSDResult`
+    from ``"carspan"`` to ``"carspan_strict"`` so downstream code can tell
+    the two apart. The actual algorithm — IBI-amplitude DFT (manual
+    Eq. 3.21, Pascal ``SOC`` branch ``IsRPDataCol=False``) — runs inside
+    :func:`compute_carspan_psd` via the ``signal="ibi_amplitude"`` field
+    of :class:`CarspanOptions`. See :func:`carspan_strict_options` for
+    the full preset.
+
+    Parameters
+    ----------
+    event_times_s : np.ndarray
+        R-peak times in seconds, monotonically increasing.
+    alpha_ci : float
+        Confidence-interval significance level (default 0.05 → 95 % CI).
+    smooth : bool
+        If True, apply the CARSPAN 3-point MA smoother to the resampled
+        display grid (plot-only; integration runs on the unsmoothed
+        spectrum independently).
+    f_max : float
+        Upper frequency limit of the native grid (default 0.5 Hz).
+
+    Returns
+    -------
+    PSDResult
+        ``power`` in raw ms²/Hz on the resampled display grid. The
+        mixin's ``_carspan_display`` applies the mMI²/Hz conversion.
     """
     from dataclasses import replace as _replace
     raw = compute_carspan_psd(
         event_times_s,
         alpha_ci=alpha_ci,
         options=carspan_strict_options(
-            smooth_for_display=smooth,
-            f_max=f_max,
+            smooth_for_display=smooth, f_max=f_max,
         ),
     )
-    # Mark the algorithm distinctly so downstream consumers can tell
-    # them apart in the ``method`` field of PSDResult.
     return _replace(raw, method="carspan_strict")
 
 
@@ -222,23 +328,59 @@ def _compute(
     event_times_s: np.ndarray,
     opts: CarspanOptions,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Shared CARSPAN PSD computation driven entirely by *opts*."""
+    """Shared CARSPAN PSD computation driven entirely by *opts*.
+
+    Dispatches on ``opts.signal``:
+
+    * ``"events"`` — unit-impulse SOC (Eq. 3.19).
+    * ``"ibi_amplitude"`` — IBI-amplitude DFT (Eq. 3.21).
+
+    Both branches return ``(freqs, power, bin_counts)`` after the
+    Pascal-faithful Resample to the display grid and the optional
+    3-point MA. Bin-averaging always runs when the native grid is
+    finer than ``freq_resolution``; the ``smooth_for_display`` flag
+    controls only the 3-MA.
+    """
     # 1. Sanity-check the input and pull the observation span.
-    N = event_times_s.size
-    T = _validate_input(event_times_s, N)
+    T = _validate_input(event_times_s, event_times_s.size)
 
     # 2. Build the native-grid frequencies (Δf = 1/T) up to ``f_max``.
     freqs, delta_f = _native_grid(T=T, f_max=opts.f_max)
 
-    # 3. Pick the actual event times that go into the DFT (this fixes
-    #    the impulse-train length, which the window must match).
+    # 3. Dispatch on the signal variant.
+    if opts.signal == "ibi_amplitude":
+        power = _ibi_amplitude_periodogram(event_times_s, freqs, T, opts)
+    else:
+        power = _events_periodogram(event_times_s, freqs, T, opts)
+
+    # 4. Bin-average to the display grid (always) and optionally apply
+    #    the 3-MA. Pascal applies ``Resample`` before ``Calculate_Power``
+    #    unconditionally; the plot-only smoothing is opt-in.
+    return _apply_display_smoothing(
+        freqs=freqs,
+        power=power,
+        delta_f=delta_f,
+        display_resolution=float(opts.freq_resolution),
+        do_smooth=opts.smooth_for_display,
+    )
+
+
+def _events_periodogram(
+    event_times_s: np.ndarray,
+    freqs: np.ndarray,
+    T: float,
+    opts: CarspanOptions,
+) -> np.ndarray:
+    """Unit-impulse SOC periodogram (manual Eq. 3.19, Pascal
+    ``IsRPDataCol=True``).
+
+    ``X(f) = Σ wᵢ · exp(−i 2π f tᵢ)``, optionally minus the DFT of a
+    regular-grid reference train at the mean rate. Returns
+    ``amplitude · |X|²`` on the native grid.
+    """
     actual_times = _actual_times(event_times_s, skip_first=opts.skip_first_event)
     n_signal = actual_times.size
 
-    # 4. Build the per-event window weights and the amplitude pre-factor.
-    #    The window length must equal ``n_signal`` — otherwise the
-    #    np.dot in ``_dft`` raises a shape mismatch when skip_first
-    #    is combined with the scipy taper.
     w, amplitude = _make_window(
         n_signal=n_signal,
         T=T,
@@ -248,11 +390,8 @@ def _compute(
         amplitude_correction=opts.amplitude_correction,
     )
 
-    # 5. Single windowed DFT of the actual event train.
     X_real, X_imag = _dft(freqs, actual_times, w)
 
-    # 6. Optional DC-removal post-step: subtract the DFT of a regular-grid
-    #    reference impulse train at the mean rate.
     if opts.dc_removal:
         exp_times = _dc_reference_times(
             event_times_s=event_times_s,
@@ -261,18 +400,63 @@ def _compute(
         )
         X_real, X_imag = _remove_dc(X_real, X_imag, freqs, exp_times, w)
 
-    # 7. |X(f)|² × amplitude → raw periodogram on the native grid.
-    power = amplitude * (X_real**2 + X_imag**2)
+    return amplitude * (X_real ** 2 + X_imag ** 2)
 
-    # 8. Optionally bin-average to the display grid and apply the 3-MA
-    #    smoother that CARSPAN uses on the plotted curve.
-    return _apply_display_smoothing(
-        freqs=freqs,
-        power=power,
-        delta_f=delta_f,
-        display_resolution=float(opts.freq_resolution),
-        do_smooth=opts.smooth_for_display,
+
+def _ibi_amplitude_periodogram(
+    event_times_s: np.ndarray,
+    freqs: np.ndarray,
+    T: float,
+    opts: CarspanOptions,
+) -> np.ndarray:
+    """IBI-amplitude periodogram (manual Eq. 3.21, Pascal
+    ``IsRPDataCol=False``).
+
+    Reproduces the Pascal ``SOC`` branch for IBI input bit-for-bit:
+
+    * ``NData[i] = IBIᵢ_ms`` (mean-subtracted with arithmetic mean).
+    * Tapered with the chosen window (``opts.taper``, ``opts.window``,
+      ``opts.alpha_taper``). The Pascal default ``TaperPercent := 5``
+      corresponds to ``taper="carspan_index"`` + ``alpha_taper=0.10``.
+    * ``Amp[i] = NData_tapered[i] · IBIᵢ_s`` (Pascal's
+      ``Amp := NData[i] * IData[i]/1000``).
+    * DFT at ``Tᵢ = Σⱼ≤ᵢ IBIⱼ`` (Pascal's ``T`` accumulates ``IData``
+      from 0).
+    * Spectrum = ``(2/T) · |X|²`` — native ms²/Hz.
+
+    The ``amplitude_correction``, ``skip_first_event``, ``dc_removal``,
+    and ``dc_grid`` options are ignored on this branch (the manual
+    specifies fixed choices; the mean subtraction does the DC removal
+    at the signal level).
+    """
+    ibi_s = np.diff(event_times_s)
+    ibi_ms = ibi_s * 1000.0
+    n_signal = ibi_ms.size
+    if n_signal < 4:
+        raise ValueError("CARSPAN ibi_amplitude PSD needs ≥4 IBIs.")
+
+    mean_ms = float(np.mean(ibi_ms))
+    nd = ibi_ms - mean_ms     # arithmetic mean-subtraction → DC removed
+
+    w, _ = _make_window(
+        n_signal=n_signal,
+        T=T,
+        taper=opts.taper,
+        window=opts.window,
+        alpha_taper=opts.alpha_taper,
+        amplitude_correction=False,    # not applicable; manual Eq. 3.21 uses 2/T flat
     )
+    nd_tapered = nd * w
+
+    # Pascal: Amp := NData[i] * IData[i]/1000 → (ms · ms/1000) = (ms · s).
+    amp = nd_tapered * ibi_s
+    # Pascal: T accumulates IData from 0 inside SOC's main loop.
+    event_times_relative = np.cumsum(ibi_s)
+
+    X_real, X_imag = _dft(freqs, event_times_relative, amp)
+
+    # Eq. 3.21: (2/T) · |X|². Native ms²/Hz.
+    return 2.0 * (X_real ** 2 + X_imag ** 2) / T
 
 
 # ---------------------------------------------------------------------------
@@ -451,14 +635,18 @@ def _apply_display_smoothing(
     display_resolution: float,
     do_smooth: bool,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Bin-average to the display grid and run the CARSPAN 3-point MA.
+    """Bin-average to the display grid and optionally run the 3-point MA.
 
-    1. **Bin-averaging.** When the native grid is finer than the display
-       grid (``Δf < display_resolution`` ≈ 0.99×), neighbouring native
-       bins are averaged into display bins. This raises the chi-squared
-       dof per bin from 2 (single DFT) to ``2 × bin_counts``.
+    1. **Bin-averaging — always on.** When the native grid is finer than
+       the display grid (``Δf < display_resolution`` × 0.99), neighbouring
+       native bins are averaged into display bins by Pascal's
+       fractional-coverage rule (see :func:`_bin_average`). This
+       reproduces Pascal's ``Resample`` step, which runs
+       unconditionally before ``Calculate_Power`` reads ``PDSin_BCK``.
+       The chi-squared dof per display bin scales as ``2 × bin_counts``.
 
-    2. **3-point moving average.** CARSPAN manual sec. 3.2, p. 33::
+    2. **3-point moving average — opt-in via ``do_smooth``.** From the
+       CARSPAN manual (§3.2, p. 33):
 
            "a moving average window over three frequency points
             (0.03 Hz bandwidth) is applied before plotting the
@@ -468,7 +656,7 @@ def _apply_display_smoothing(
        under the curve is preserved and peaks visually drop ≈ 3× to
        match CARSPAN's display.
     """
-    if do_smooth and freqs.size > 0 and delta_f < display_resolution * 0.99:
+    if freqs.size > 0 and delta_f < display_resolution * 0.99:
         freqs, power, bin_counts = _bin_average(freqs, power, display_resolution)
     else:
         bin_counts = np.ones(freqs.size, dtype=int)
@@ -511,33 +699,113 @@ def _carspan_taper(length: int, n_taper: int) -> np.ndarray:
 
 
 def _bin_average(native_freqs, native_power, display_resolution):
-    """Bin-average the native grid onto a display grid starting at 2 × resolution.
+    """Resample a native-grid spectrum onto the CARSPAN display grid.
 
-    Returns ``(display_freqs, display_power, bin_counts)``. Effective dof
-    per display bin is ``2 × bin_counts`` — averaging k native bins
-    raises the chi-squared dof from 2 (single DFT) to 2k.
+    Faithful port of Pascal's ``Resample_R`` (``T_AnaFunctions.pas:171-239``).
+    Each display bin is the fractional-coverage-weighted average of the
+    native bins that intersect its frequency window ``[FRQCEN − Δ/2,
+    FRQCEN + Δ/2)``:
 
-    The first display bin is centred at 2·Δ (e.g. 0.020 Hz for
-    Δ = 0.01 Hz), so native bins below 1.5·Δ (near-DC, high 1/f power)
-    are excluded.
+    * The native bin just below the lower edge contributes weight
+      ``(freq_next − FRQLOW) / native_df`` (otherwise 1).
+    * Interior native bins contribute weight 1 each.
+    * The native bin straddling the upper edge contributes weight
+      ``(FRQHIG − freq_prev) / native_df`` (otherwise 1).
+    * The native bin AT the upper edge (``FRQARR[ILAST]``) is **never**
+      summed — only ``FRQARR[ILAST-1]`` is, with weight FFACH. This is
+      what makes the algorithm energy-preserving across adjacent display
+      bins.
+
+    The display grid is ``IFRQ · Δ`` for ``IFRQ = 1..MAXPNT`` with
+    ``MAXPNT = floor(N_native · native_df / Δ)``, exactly as Pascal lays
+    it out — so the first display bin is centred at ``Δ`` (e.g. 0.01 Hz
+    for Δ = 0.01 Hz).
+
+    Returns ``(display_freqs, display_power, bin_counts)``. ``bin_counts``
+    is an effective count for chi-squared dof scaling (interior + 1 for
+    each non-zero fractional edge).
     """
-    f_max = native_freqs[-1]
-    first_edge = 1.5 * display_resolution
-    bin_edges = np.arange(first_edge, f_max + display_resolution, display_resolution)
+    native_freqs = np.asarray(native_freqs, dtype=np.float64)
+    native_power = np.asarray(native_power, dtype=np.float64)
 
-    out_freqs, out_power, counts = [], [], []
-    for lo, hi in zip(bin_edges[:-1], bin_edges[1:]):
-        mask = (native_freqs >= lo) & (native_freqs <= hi)
-        count = int(np.sum(mask))
-        if count > 0:
-            # Round to the resolution multiple to avoid float accumulation from arange.
-            center = round((lo + hi) / 2.0 / display_resolution) * display_resolution
-            out_freqs.append(center)
-            out_power.append(float(np.mean(native_power[mask])))
-            counts.append(count)
+    if native_freqs.size == 0:
+        return (np.array([]), np.array([]), np.array([], dtype=int))
+
+    # The native grid is freq[k] = (k+1)·native_df. Recover native_df
+    # from the first sample (Pascal builds an explicit FRQARR list; we
+    # don't need to).
+    native_df = float(native_freqs[0])
+    n_native = native_freqs.size
+
+    max_pnt = int(np.floor(n_native * native_df / display_resolution))
+    if max_pnt < 1:
+        return (np.array([]), np.array([]), np.array([], dtype=int))
+
+    isave = 0
+    out_freqs: list[float] = []
+    out_power: list[float] = []
+    counts: list[int] = []
+
+    first_freq = float(native_freqs[0])
+
+    for ifrq in range(1, max_pnt + 1):
+        frq_cen = ifrq * display_resolution
+        frq_low = frq_cen - display_resolution / 2.0
+        frq_high = frq_cen + display_resolution / 2.0
+        if frq_cen < first_freq:
+            continue
+
+        # Advance ISAVE to the first native bin whose freq >= FRQLOW.
+        while isave < n_native and native_freqs[isave] < frq_low:
+            isave += 1
+        i_first = max(1, isave - 1)
+        # Advance ISAVE to the first native bin whose freq >= FRQHIG
+        # (and stay within the valid-index range).
+        while (
+            isave < n_native - 1
+            and native_freqs[isave] < frq_high
+        ):
+            isave += 1
+        i_last = min(isave, n_native - 1)
+
+        if native_freqs[i_first] < frq_low:
+            ffac_l = (native_freqs[i_first + 1] - frq_low) / native_df
+        else:
+            ffac_l = 1.0
+
+        if native_freqs[i_last] > frq_high:
+            ffac_h = (frq_high - native_freqs[i_last - 1]) / native_df
+        else:
+            ffac_h = 1.0
+
+        sumy = ffac_l * native_power[i_first]
+        sumx = ffac_l
+
+        # Pascal: for index := IFIRST+1 to ILAST-2 do (inclusive both ends).
+        for idx in range(i_first + 1, i_last - 1):
+            sumy += native_power[idx]
+            sumx += 1.0
+
+        sumy += ffac_h * native_power[i_last - 1]
+        sumx += ffac_h
+
+        # Effective bin count: interior count + 1 for each non-zero
+        # fractional edge. Used as a chi-squared dof scale by the CI
+        # path; the actual statistical weight is the FFACL / FFACH
+        # fraction, but counting the edge bins as "one each" is a
+        # conservative-but-defensible approximation.
+        interior = max(0, (i_last - 1) - (i_first + 1) + 1)
+        eff_count = interior + int(ffac_l > 0) + int(ffac_h > 0)
+        eff_count = max(1, eff_count)
+
+        # Round to the resolution multiple to avoid float accumulation.
+        center = round(frq_cen / display_resolution) * display_resolution
+        out_freqs.append(center)
+        out_power.append(sumy / sumx if sumx != 0 else 0.0)
+        counts.append(int(eff_count))
 
     return (
-        np.array(out_freqs),
-        np.array(out_power),
+        np.array(out_freqs, dtype=np.float64),
+        np.array(out_power, dtype=np.float64),
         np.array(counts, dtype=int),
     )
