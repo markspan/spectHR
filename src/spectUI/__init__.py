@@ -4,7 +4,6 @@ from spectUI.workSpace import (
     SaveWorkspace,
     PopulateTree,
     psd_method_from_workspace,
-    apply_psd_method_to_dataset,
 )
 from spectUI.prepPlotWidget import PrepPlotWidget
 from spectUI.epochPlotWidget import EpochPlotWidget
@@ -27,7 +26,6 @@ __all__ = [
     "SaveWorkspace",
     "PopulateTree",
     "psd_method_from_workspace",
-    "apply_psd_method_to_dataset",
     "PreProcessFile",
     "LineHandler",
     "DirectorySelectorDialog",

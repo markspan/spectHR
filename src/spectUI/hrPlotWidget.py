@@ -209,7 +209,8 @@ class HRPlotWidget(QWidget):
     # Convenience properties
     # ==============================================================
 
-    def hr_from_hrvseries(self, hrv) -> TimeSeries:
+    @staticmethod
+    def hr_from_hrvseries(hrv) -> TimeSeries:
         """
         Compute a heart-rate TimeSeries (bpm) from a CardioSeries or CardioSeriesView.
 
@@ -841,16 +842,3 @@ class HRPlotWidget(QWidget):
         self.data.view.drag_mode = None
         self.redraw()
 
-    # ==============================================================
-    # Styling helpers
-    # ==============================================================
-
-    @staticmethod
-    def _style_axis_no_y(ax: Axes) -> None:
-        """
-        Hide y-axis and unnecessary spines.
-        """
-        ax.get_yaxis().set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.spines["left"].set_visible(False)
-        ax.spines["top"].set_visible(False)

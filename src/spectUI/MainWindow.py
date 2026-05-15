@@ -9,7 +9,6 @@ os.environ.setdefault("MPLBACKEND", "QtAgg")
 import matplotlib
 
 matplotlib.use("QtAgg", force=True)
-import matplotlib.pyplot as plt
 import webbrowser
 
 from PySide6.QtCore import QFile, Qt
@@ -23,7 +22,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QVBoxLayout,
-    QMessageBox,
     QTreeWidgetItem,
 )
 
@@ -33,18 +31,6 @@ from spectHR.DataSet.Epoch import Epoch
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series import CardioSeries
 import spectUI as spQt
-
-# NOTE: cannot use "import ... as _mixin" here — the Series __init__.py re-exports
-# the class CardioMetricsMixin under that name, so Python resolves the alias to the
-# class instead of the module.  We import the module explicitly by full name and then
-# retrieve it from sys.modules at call time to get the real module object.
-import spectHR.DataSet.Series.CardioMetricsMixin  # ensure the module is loaded
-import spectHR.DataSet.Series.CardioFrequencyMetricsMixin  # ensure the module is loaded
-
-def _cm():
-    """Return the CardioMetricsMixin *module* (never the class)."""
-    return sys.modules["spectHR.DataSet.Series.CardioMetricsMixin"]
-
 
 from spectHR.Tools.Logger import logger
 
@@ -221,7 +207,7 @@ class MainWindow(QMainWindow):
             if self.dataset is not None:
                 try:
                     psd_method = spQt.psd_method_from_workspace(self.workspace)
-                    spQt.apply_psd_method_to_dataset(self.dataset, psd_method)
+                    self.dataset.set_psd_method(psd_method)
                 except Exception as e:
                     logger.warning(f"Could not rebuild PsdMethod: {e}")
 
@@ -484,7 +470,7 @@ class MainWindow(QMainWindow):
             # read from. Library code never touches workspace JSON.
             try:
                 psd_method = spQt.psd_method_from_workspace(self.workspace)
-                spQt.apply_psd_method_to_dataset(self.dataset, psd_method)
+                self.dataset.set_psd_method(psd_method)
             except Exception as e:
                 logger.warning(f"Could not attach PsdMethod to dataset: {e}")
             if hasattr(dataset, "has_ecg") and dataset.has_ecg:
@@ -520,7 +506,7 @@ class MainWindow(QMainWindow):
             self.dataset = dataset
             try:
                 psd_method = spQt.psd_method_from_workspace(self.workspace)
-                spQt.apply_psd_method_to_dataset(self.dataset, psd_method)
+                self.dataset.set_psd_method(psd_method)
             except Exception as e:
                 logger.warning(f"Could not attach PsdMethod to dataset: {e}")
             self.show_preprocessing_plot(self.dataset)

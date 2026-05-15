@@ -10,6 +10,7 @@ CarspanPSD      CARSPAN event-series spectral analysis (Hz).
 """
 
 from spectHR.Tools.Logger import logger
+from spectHR.Tools.PSD._psd_utils import PSDResult
 from spectHR.Tools.PSD.LombScarglePSD import (
     compute_lombscargle_psd,
     LombscargleOptions,
@@ -27,6 +28,7 @@ from spectHR.Tools.PSD.CarspanPSD import (
 
 __all__ = [
     "logger",
+    "PSDResult",
     "compute_welch_psd",
     "WelchOptions",
     "compute_lombscargle_psd",

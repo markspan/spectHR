@@ -1,142 +1,49 @@
 """
-tests/test_hrv_metrics.py
-=========================
-Unit tests for every ``@hrv_metric``-decorated parameter on CardioSeries.
+tests/test_hrv_metrics.py — mixin-level HRV metrics.
 
-Coverage
+Covers the merged :class:`CardioMetricsMixin` (time- and
+frequency-domain) on a real :class:`CardioSeries`. Pure compute-layer
+tests live in :mod:`tests.test_psd_compute`; configuration plumbing
+lives in :mod:`tests.test_psd_config`.
+
+Sections
 --------
-Time-domain
-    count, mean, min, max, median
-    rmssd, sdnn, sdsd
-    sd1, sd2, sd_ratio, ellipse_area
-    Algebraic consistency (Brennan identity: SD1² + SD2² = 2·SDNN²)
-
-Frequency-domain
-    fullrange_power, vlf_power, lf_power, hf_power, lf_hf_ratio
-    All three PSD back-ends (welch, lombscargle, carspan)
-
-Cross-cutting
-    Artefact exclusion: TL and T labels, gap-safety of successive diffs
-    Edge cases: empty series, 1 beat, 2 beats, all-artefact series
-    Boundary: fewer than 4 valid IBIs → frequency metrics return NaN
+- Magnitude statistics (count, mean, min, max, median)
+- Variability (sdnn, rmssd, sdsd) — gap-safe
+- Poincaré (sd1, sd2, sd_ratio, ellipse_area) + Brennan identity
+- Artefact handling (TL, T, mixed labels, non-bad labels)
+- Edge cases (empty / single / two-beat / all-artefact series)
+- Frequency-domain via PsdMethod (welch, lombscargle, carspan,
+  carspan_strict): basic shape, band-power direction, override vs.
+  instance attribute, ``band_powers()`` consistency.
 """
-
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
-import spectHR.DataSet.Series.CardioFrequencyMetricsMixin as cfm
+from spectHR.DataSet.Series.CardioMetricsMixin import (
+    BandSpec,
+    PsdMethod,
+    PSDResult,
+)
 
-
-# ---------------------------------------------------------------------------
-# Workspace-standard frequency bands (mirrors _DEFAULT_WORKSPACE in workSpace.py)
-# ---------------------------------------------------------------------------
-_WORKSPACE_BANDS = {
-    "FullRange": {"low": 0.02, "high": 0.50, "color": "gray"},
-    "VLF":       {"low": 0.02, "high": 0.06, "color": "blue"},
-    "LF":        {"low": 0.07, "high": 0.14, "color": "darkgreen"},
-    "HF":        {"low": 0.15, "high": 0.40, "color": "red"},
-}
-
-
-@pytest.fixture(autouse=True)
-def restore_frequency_bands():
-    """
-    Load workspace-standard bands before every test and restore the previous
-    state afterward, so module-level globals don't leak between tests.
-    """
-    previous = dict(cfm.HRV_FREQUENCY_BANDS)
-    cfm.load_frequency_bands(_WORKSPACE_BANDS)
-    yield
-    cfm.load_frequency_bands(previous)
-
-
-# ---------------------------------------------------------------------------
-# Construction helpers
-# ---------------------------------------------------------------------------
-
-def make_cs(ibi_ms, labels=None) -> CardioSeries:
-    """
-    Build a CardioSeries from a sequence of IBI values (milliseconds).
-
-    Parameters
-    ----------
-    ibi_ms : array-like
-        Inter-beat intervals in ms.  N intervals → N+1 beat times.
-    labels : array-like of str, optional
-        Per-beat label array, length N+1.  Defaults to all 'N'.
-
-    Returns
-    -------
-    CardioSeries
-    """
-    ibi_ms = np.asarray(ibi_ms, dtype=float)
-    times = np.concatenate([[0.0], np.cumsum(ibi_ms / 1000.0)])
-    cs = CardioSeries(times)
-    if labels is not None:
-        cs.labels[:] = np.asarray(labels, dtype=object)
-    return cs
-
-
-def make_spectral_cs(
-    dominant_freq_hz: float,
-    *,
-    duration_s: float = 250.0,
-    mean_ibi_s: float = 0.8,
-    mod_depth: float = 0.20,
-    seed: int = 42,
-) -> CardioSeries:
-    """
-    Build a CardioSeries whose IBI series contains a sinusoidal modulation
-    at ``dominant_freq_hz`` Hz with amplitude ``mod_depth × mean_ibi_s``.
-
-    The recording contains approximately ``duration_s / mean_ibi_s`` beats,
-    long enough for reliable spectral estimation in the HRV bands.
-
-    Parameters
-    ----------
-    dominant_freq_hz : float
-        Target frequency (Hz) of the sinusoidal IBI modulation.
-    duration_s : float
-        Approximate total recording length.
-    mean_ibi_s : float
-        Mean IBI in seconds (≈ 800 ms → 75 bpm).
-    mod_depth : float
-        Fractional modulation amplitude relative to mean_ibi_s.
-    seed : int
-        Random-number seed for reproducibility.
-
-    Returns
-    -------
-    CardioSeries
-    """
-    rng = np.random.default_rng(seed)
-    n_beats = int(duration_s / mean_ibi_s) + 1
-
-    # Uniform grid used only to evaluate the modulation phase.
-    approx_times = np.arange(n_beats) * mean_ibi_s
-
-    # IBI series: mean + sinusoidal component + tiny white noise floor
-    noise = rng.normal(0.0, 0.005 * mean_ibi_s, n_beats - 1)
-    ibi_s = (
-        mean_ibi_s
-        + mod_depth * mean_ibi_s * np.sin(2.0 * np.pi * dominant_freq_hz * approx_times[:-1])
-        + noise
-    )
-    ibi_s = np.clip(ibi_s, 0.3, 2.0)  # physiological bounds
-
-    beat_times = np.concatenate([[0.0], np.cumsum(ibi_s)])
-    return CardioSeries(beat_times)
+from conftest import (   # imported via pytest rootdir/conftest.py
+    WORKSPACE_BANDS,
+    make_cs,
+    make_spectral_cs,
+    make_two_sinusoid_cs,
+)
 
 
 # ===========================================================================
-# Time-domain: magnitude-based statistics
+# Magnitude statistics
 # ===========================================================================
+
 
 class TestCount:
-    """count() = number of valid inter-beat intervals."""
+    """``count()`` returns the number of valid (non-NaN, non-artefact) IBIs."""
 
     def test_basic(self):
         cs = make_cs([800.0, 900.0, 800.0, 900.0])
@@ -154,10 +61,26 @@ class TestCount:
         cs = CardioSeries(np.array([0.0]))
         assert cs.count() == 0
 
+    def test_tl_excluded(self):
+        cs = make_cs([800.0, 900.0, 800.0, 900.0],
+                     labels=["N", "TL", "N", "N", "N"])
+        assert cs.count() == 3
 
-class TestMeanMinMaxMedian:
-    """mean(), min(), max(), median() on clean series."""
+    def test_t_excluded(self):
+        cs = make_cs([800.0, 900.0, 800.0, 900.0],
+                     labels=["N", "N", "T", "N", "N"])
+        assert cs.count() == 3
 
+    def test_non_bad_labels_kept(self):
+        """Labels other than TL/T (e.g. ``"L"``, ``"S"``) are not treated
+        as artefacts by ``_BAD_LABELS``."""
+        cs = make_cs([800.0, 900.0, 800.0, 900.0],
+                     labels=["N", "L", "S", "N", "N"])
+        # All four IBIs valid (L and S are not in _BAD_LABELS).
+        assert cs.count() == 4
+
+
+class TestMagnitudeStats:
     IBI = [800.0, 900.0, 1000.0, 850.0]
 
     def test_mean(self):
@@ -176,25 +99,30 @@ class TestMeanMinMaxMedian:
         cs = make_cs(self.IBI)
         assert cs.median() == pytest.approx(np.median(self.IBI))
 
-    def test_uniform_ibi(self):
+    def test_uniform_series(self):
         cs = make_cs([800.0, 800.0, 800.0])
-        assert cs.mean()   == pytest.approx(800.0)
-        assert cs.min()    == pytest.approx(800.0)
-        assert cs.max()    == pytest.approx(800.0)
-        assert cs.median() == pytest.approx(800.0)
+        for fn in (cs.mean, cs.min, cs.max, cs.median):
+            assert fn() == pytest.approx(800.0)
 
-    def test_empty_returns_nan(self):
+    def test_empty_series_nan(self):
         cs = CardioSeries(np.array([], dtype=float))
-        assert np.isnan(cs.mean())
-        assert np.isnan(cs.min())
-        assert np.isnan(cs.max())
-        assert np.isnan(cs.median())
+        for fn in (cs.mean, cs.min, cs.max, cs.median):
+            assert np.isnan(fn())
+
+    def test_mean_excludes_artefacts(self):
+        # IBIs [800, 900, 800, 900]; idx 1 labelled TL → kept [800, 800, 900]
+        cs = make_cs([800.0, 900.0, 800.0, 900.0],
+                     labels=["N", "TL", "N", "N", "N"])
+        assert cs.mean() == pytest.approx(np.mean([800.0, 800.0, 900.0]))
+
+
+# ===========================================================================
+# Variability
+# ===========================================================================
 
 
 class TestSdnn:
-    """sdnn() = std(all valid IBIs, ddof=0)."""
-
-    def test_uniform_ibi_is_zero(self):
+    def test_uniform_zero(self):
         cs = make_cs([800.0] * 5)
         assert cs.sdnn() == pytest.approx(0.0)
 
@@ -203,8 +131,8 @@ class TestSdnn:
         cs = make_cs(ibi)
         assert cs.sdnn() == pytest.approx(float(np.std(ibi)))
 
-    def test_single_ibi_is_zero(self):
-        """std of a single value is 0."""
+    def test_single_ibi(self):
+        """std of one value is 0."""
         cs = make_cs([850.0])
         assert cs.sdnn() == pytest.approx(0.0)
 
@@ -214,114 +142,83 @@ class TestSdnn:
 
 
 class TestRmssd:
-    """rmssd() = sqrt(mean(successive_diffs²)), gap-safe."""
-
-    def test_uniform_ibi_is_zero(self):
+    def test_uniform_zero(self):
         cs = make_cs([800.0] * 5)
         assert cs.rmssd() == pytest.approx(0.0)
 
-    def test_alternating_ibi(self):
-        # IBIs: [800, 900, 800, 900] → diffs: [100, -100, 100]
-        # rmssd = sqrt(mean([10000, 10000, 10000])) = 100
+    def test_alternating_known(self):
+        # IBIs [800,900,800,900] → diffs [100,-100,100] → rmssd = 100
         cs = make_cs([800.0, 900.0, 800.0, 900.0])
         assert cs.rmssd() == pytest.approx(100.0)
 
-    def test_known_value(self):
-        ibi = [800.0, 900.0, 1000.0, 850.0]
-        cs = make_cs(ibi)
-        # Gap-safe diffs for all-N series: [100, 100, -150]
-        diffs = np.array([100.0, 100.0, -150.0])
-        expected = float(np.sqrt(np.mean(diffs ** 2)))
-        assert cs.rmssd() == pytest.approx(expected)
-
-    def test_one_successive_diff(self):
-        """Two IBIs → one diff → rmssd = |diff|."""
+    def test_single_diff(self):
+        """Two IBIs → one diff."""
         cs = make_cs([800.0, 1000.0])
         assert cs.rmssd() == pytest.approx(200.0)
 
-    def test_single_ibi_returns_nan(self):
-        """One IBI → no pairs → no diffs → NaN."""
+    def test_one_ibi_nan(self):
         cs = make_cs([800.0])
         assert np.isnan(cs.rmssd())
 
-    def test_empty_returns_nan(self):
+    def test_empty_nan(self):
         cs = CardioSeries(np.array([], dtype=float))
         assert np.isnan(cs.rmssd())
 
+    def test_gap_safety_tl_breaks_chain(self):
+        """An excluded IBI severs successive-diff chains on both sides.
+
+        IBIs [800, 900, 800, 900] with idx-1 labelled TL:
+        valid mask [T,F,T,T,F] → pair-ok [F,F,T,F]
+        → only one diff: ibi[3] − ibi[2] = 900 − 800 = 100
+        → rmssd = 100.
+        """
+        cs = make_cs([800.0, 900.0, 800.0, 900.0],
+                     labels=["N", "TL", "N", "N", "N"])
+        assert cs.rmssd() == pytest.approx(100.0)
+
+    def test_tl_and_t_equivalent(self):
+        ibi = [800.0, 900.0, 800.0, 900.0]
+        cs_tl = make_cs(ibi, labels=["N", "TL", "N", "N", "N"])
+        cs_t  = make_cs(ibi, labels=["N",  "T", "N", "N", "N"])
+        assert cs_tl.rmssd() == pytest.approx(cs_t.rmssd())
+
 
 class TestSdsd:
-    """sdsd() = std(successive_diffs, ddof=0), gap-safe."""
+    def test_uniform_zero(self):
+        assert make_cs([800.0] * 5).sdsd() == pytest.approx(0.0)
 
-    def test_uniform_ibi_is_zero(self):
-        cs = make_cs([800.0] * 5)
-        assert cs.sdsd() == pytest.approx(0.0)
-
-    def test_known_value(self):
-        # diffs: [100, -100, 100]
+    def test_known(self):
+        diffs = [100.0, -100.0, 100.0]
         cs = make_cs([800.0, 900.0, 800.0, 900.0])
-        expected = float(np.std([100.0, -100.0, 100.0]))
-        assert cs.sdsd() == pytest.approx(expected)
+        assert cs.sdsd() == pytest.approx(float(np.std(diffs)))
 
-    def test_single_ibi_returns_nan(self):
-        cs = make_cs([800.0])
-        assert np.isnan(cs.sdsd())
-
-    def test_two_ibis_one_diff_std_zero(self):
-        """std of a single diff is 0."""
+    def test_single_diff_std_zero(self):
         cs = make_cs([800.0, 900.0])
         assert cs.sdsd() == pytest.approx(0.0)
 
+    def test_one_ibi_nan(self):
+        assert np.isnan(make_cs([800.0]).sdsd())
+
 
 # ===========================================================================
-# Time-domain: Poincaré analysis
+# Poincaré
 # ===========================================================================
 
-class TestSd1Sd2:
-    """SD1 and SD2 via Brennan (2002) / Poincaré plot."""
 
-    def test_sd1_uniform_is_zero(self):
-        cs = make_cs([800.0] * 6)
-        assert cs.sd1() == pytest.approx(0.0)
+class TestPoincare:
+    """SD1, SD2, sd_ratio, ellipse_area."""
+
+    def test_sd1_uniform_zero(self):
+        assert make_cs([800.0] * 6).sd1() == pytest.approx(0.0)
 
     def test_sd1_formula(self):
-        # SD1 = std(dIBI) / sqrt(2)
-        diffs = np.array([100.0, -100.0, 100.0])
-        expected = float(np.std(diffs)) / np.sqrt(2.0)
-        cs = make_cs([800.0, 900.0, 800.0, 900.0])
-        assert cs.sd1() == pytest.approx(expected)
-
-    def test_sd2_formula(self):
-        # SD2² = 2·Var(IBI) − 0.5·Var(dIBI)
-        ibi = [800.0, 900.0, 800.0, 900.0]
         diffs = [100.0, -100.0, 100.0]
-        val = 2.0 * float(np.var(ibi)) - 0.5 * float(np.var(diffs))
-        cs = make_cs(ibi)
-        if val > 0:
-            assert cs.sd2() == pytest.approx(np.sqrt(val))
-        else:
-            assert np.isnan(cs.sd2())
+        cs = make_cs([800.0, 900.0, 800.0, 900.0])
+        assert cs.sd1() == pytest.approx(float(np.std(diffs)) / np.sqrt(2.0))
 
-    def test_sd2_degenerate_returns_nan_not_error(self):
-        """When SD2² ≤ 0 the code should return NaN, not raise."""
-        # Perfectly alternating long series pushes SD2 → 0
-        cs = make_cs([800.0, 900.0] * 50)
-        result = cs.sd2()
-        assert isinstance(result, float)   # no exception
-        # SD2 is either 0 or NaN — both are acceptable
-        assert result >= 0.0 or np.isnan(result)
-
-    def test_sd_ratio_equals_sd1_over_sd2(self):
-        cs = make_cs([800.0, 850.0, 900.0, 820.0, 780.0, 860.0])
-        s1, s2 = cs.sd1(), cs.sd2()
-        if np.isnan(s1) or np.isnan(s2) or s2 == 0:
-            assert np.isnan(cs.sd_ratio())
-        else:
-            assert cs.sd_ratio() == pytest.approx(s1 / s2)
-
-    def test_sd_ratio_nan_when_sd2_zero(self):
-        """Uniform series → SD2 = 0 → ratio = NaN."""
-        cs = make_cs([800.0] * 6)
-        assert np.isnan(cs.sd_ratio())
+    def test_sd_ratio_uniform_nan(self):
+        """SD2 = 0 → ratio is NaN."""
+        assert np.isnan(make_cs([800.0] * 6).sd_ratio())
 
     def test_ellipse_area_formula(self):
         cs = make_cs([800.0, 850.0, 900.0, 820.0, 780.0, 860.0])
@@ -338,16 +235,13 @@ class TestSd1Sd2:
         assert np.isnan(cs.sd_ratio())
         assert np.isnan(cs.ellipse_area())
 
+    def test_sd_ratio_two_beats_nan(self):
+        """One IBI, no diffs → sd1 is NaN → ratio NaN."""
+        assert np.isnan(make_cs([800.0]).sd_ratio())
+
 
 class TestBrennanIdentity:
-    """
-    Algebraic consistency check:  SD1² + SD2² = 2 · SDNN²
-
-    Derivation:
-        SD1² = Var(dIBI) / 2
-        SD2² = 2·Var(IBI) − Var(dIBI)/2
-        ⟹ SD1² + SD2² = 2·Var(IBI) = 2·SDNN²
-    """
+    """SD1² + SD2² = 2·SDNN² (algebraic identity)."""
 
     @pytest.mark.parametrize("ibi", [
         [800.0, 850.0, 900.0, 820.0, 780.0, 860.0],
@@ -356,105 +250,51 @@ class TestBrennanIdentity:
     ])
     def test_identity_holds(self, ibi):
         cs = make_cs(ibi)
-        s1 = cs.sd1()
-        s2 = cs.sd2()
-        sdnn = cs.sdnn()
-
+        s1, s2 = cs.sd1(), cs.sd2()
         if np.isnan(s1) or np.isnan(s2):
-            pytest.skip("SD2 is NaN for this series (degenerate case).")
-
-        assert s1 ** 2 + s2 ** 2 == pytest.approx(2.0 * sdnn ** 2, rel=1e-6)
+            pytest.skip("Degenerate case — SD2 not defined.")
+        assert s1 ** 2 + s2 ** 2 == pytest.approx(2.0 * cs.sdnn() ** 2, rel=1e-6)
 
 
 # ===========================================================================
-# Artefact exclusion
+# Artefact + edge cases
 # ===========================================================================
 
-class TestArtefactExclusion:
-    """
-    TL and T labels must be treated identically and excluded from every
-    magnitude-based and successive-difference metric.
-    """
 
-    # -- count ----------------------------------------------------------------
+class TestArtefacts:
+    """Both TL and T must be excluded everywhere."""
 
-    def test_count_excludes_tl(self):
-        # 4 IBIs; IBI[1] (= 900 ms) is TL → 3 valid
-        labels = ["N", "TL", "N", "N", "N"]
-        cs = make_cs([800.0, 900.0, 800.0, 900.0], labels=labels)
-        assert cs.count() == 3
-
-    def test_count_excludes_t(self):
-        labels = ["N", "N", "T", "N", "N"]
-        cs = make_cs([800.0, 900.0, 800.0, 900.0], labels=labels)
-        assert cs.count() == 3
-
-    def test_count_tl_equals_t(self):
-        """TL and T produce the same count reduction."""
-        ibi = [800.0, 900.0, 800.0, 900.0]
-        cs_tl = make_cs(ibi, labels=["N", "TL", "N", "N", "N"])
-        cs_t  = make_cs(ibi, labels=["N", "T",  "N", "N", "N"])
-        assert cs_tl.count() == cs_t.count()
-
-    # -- mean -----------------------------------------------------------------
-
-    def test_mean_excludes_tl(self):
-        # IBIs: [800, 900, 800, 900]; IBI[1] TL → clean: [800, 800, 900]
-        labels = ["N", "TL", "N", "N", "N"]
-        cs = make_cs([800.0, 900.0, 800.0, 900.0], labels=labels)
-        assert cs.mean() == pytest.approx(np.mean([800.0, 800.0, 900.0]))
-
-    # -- rmssd gap-safety -----------------------------------------------------
-
-    def test_rmssd_excluded_beat_breaks_chain(self):
-        """
-        An excluded IBI severs successive-diff chains on both sides.
-
-        IBIs: [800, 900, 800, 900]  label[1] = TL
-        valid = [T, F, T, T, F]
-        pair_ok = [F, F, T, F]  → only diff at positions (2,3): 900−800 = 100
-        rmssd = sqrt(mean([100²])) = 100
-        """
-        labels = ["N", "TL", "N", "N", "N"]
-        cs = make_cs([800.0, 900.0, 800.0, 900.0], labels=labels)
-        assert cs.rmssd() == pytest.approx(100.0)
-
-    def test_rmssd_t_same_as_tl(self):
-        ibi = [800.0, 900.0, 800.0, 900.0]
-        cs_tl = make_cs(ibi, labels=["N", "TL", "N", "N", "N"])
-        cs_t  = make_cs(ibi, labels=["N", "T",  "N", "N", "N"])
-        assert cs_tl.rmssd() == pytest.approx(cs_t.rmssd())
-
-    # -- all artefact ---------------------------------------------------------
-
-    def test_all_tl_count_is_zero(self):
+    def test_all_tl_count_zero(self):
         cs = make_cs([800.0, 900.0, 800.0, 900.0],
-                     labels=["TL", "TL", "TL", "TL", "TL"])
+                     labels=["TL"] * 5)
         assert cs.count() == 0
 
-    def test_all_tl_scalar_metrics_return_nan(self):
+    def test_all_tl_scalar_metrics_nan(self):
         cs = make_cs([800.0, 900.0, 800.0, 900.0],
-                     labels=["TL", "TL", "TL", "TL", "TL"])
-        for metric in [cs.mean, cs.min, cs.max, cs.median,
-                       cs.rmssd, cs.sdnn, cs.sdsd,
-                       cs.sd1, cs.sd2, cs.sd_ratio, cs.ellipse_area]:
-            assert np.isnan(metric()), f"{metric.__name__} should be NaN"
+                     labels=["TL"] * 5)
+        for fn in (cs.mean, cs.min, cs.max, cs.median,
+                   cs.rmssd, cs.sdnn, cs.sdsd,
+                   cs.sd1, cs.sd2, cs.sd_ratio, cs.ellipse_area):
+            assert np.isnan(fn()), f"{fn.__name__} should be NaN"
 
+    def test_mixed_labels_partial_exclusion(self):
+        """Mix of TL, T, N — both bad labels excluded, others kept."""
+        cs = make_cs([800.0, 900.0, 800.0, 900.0, 850.0],
+                     labels=["N", "TL", "N", "T", "N", "N"])
+        # Bad labels at idx 1 (TL) and idx 3 (T); rest are N.
+        # IBIs 0,2,4 valid → count = 3.
+        assert cs.count() == 3
 
-# ===========================================================================
-# Edge cases
-# ===========================================================================
 
 class TestEdgeCases:
-    """No method should raise on degenerate inputs."""
+    """No metric should raise on degenerate inputs."""
 
-    def test_empty_series_all_nan(self):
+    def test_empty_returns_nan_everywhere(self):
         cs = CardioSeries(np.array([], dtype=float))
-        for metric in [cs.mean, cs.min, cs.max, cs.median,
-                       cs.rmssd, cs.sdnn, cs.sdsd,
-                       cs.sd1, cs.sd2, cs.sd_ratio, cs.ellipse_area]:
-            result = metric()
-            assert np.isnan(result), f"{metric.__name__} should return NaN, got {result}"
+        for fn in (cs.mean, cs.min, cs.max, cs.median,
+                   cs.rmssd, cs.sdnn, cs.sdsd,
+                   cs.sd1, cs.sd2, cs.sd_ratio, cs.ellipse_area):
+            assert np.isnan(fn())
 
     def test_one_beat_no_ibi(self):
         cs = CardioSeries(np.array([0.0]))
@@ -465,229 +305,370 @@ class TestEdgeCases:
     def test_two_beats_one_ibi(self):
         cs = make_cs([800.0])
         assert cs.count() == 1
-        assert cs.mean()   == pytest.approx(800.0)
-        assert cs.min()    == pytest.approx(800.0)
-        assert cs.max()    == pytest.approx(800.0)
-        # No pairs for successive diffs
+        assert cs.mean() == pytest.approx(800.0)
         assert np.isnan(cs.rmssd())
         assert np.isnan(cs.sdsd())
         assert np.isnan(cs.sd1())
 
     def test_three_beats_two_ibis(self):
-        """Three beats → one successive diff."""
         cs = make_cs([800.0, 900.0])
         assert cs.count() == 2
         assert cs.rmssd() == pytest.approx(100.0)
-        # std of a single diff is 0
-        assert cs.sdsd() == pytest.approx(0.0)
-
-    def test_sd_ratio_nan_when_sd2_zero(self):
-        cs = make_cs([800.0] * 6)
-        assert np.isnan(cs.sd_ratio())
-
-    def test_ellipse_area_zero_when_sd1_zero(self):
-        """SD1 = 0 and SD2 > 0 → area = 0."""
-        # Two beats, one IBI → sd1 = NaN (no diffs), sd2 depends on implementation
-        # Use a series where sd1 = 0 explicitly: uniform IBIs
-        cs = make_cs([800.0] * 6)
-        # SD1 = 0, SD2 = 0, area = NaN or 0
-        result = cs.ellipse_area()
-        # Either NaN (if SD2=0 triggers NaN path) or 0.0 are acceptable
-        assert np.isnan(result) or result == pytest.approx(0.0)
+        assert cs.sdsd() == pytest.approx(0.0)   # std of single diff
 
 
 # ===========================================================================
-# Frequency-domain: sanity
+# Frequency-domain via the new PsdMethod API
 # ===========================================================================
 
-class TestFrequencyDomainSanity:
-    """Basic sanity: finiteness, non-negativity, internal consistency."""
 
-    @pytest.fixture
-    def typical_cs(self):
-        """A realistic ~200 s series with mild broadband HRV."""
-        rng = np.random.default_rng(7)
+def _attach(cs: CardioSeries, *, algorithm="carspan", bands=None) -> CardioSeries:
+    """Helper: assign a workspace-style PsdMethod to *cs* and return it."""
+    cs.psd_method = PsdMethod(
+        algorithm=algorithm,
+        bands=dict(bands or WORKSPACE_BANDS),
+    )
+    return cs
+
+
+class TestPsdReturnType:
+    """``series.psd()`` returns a fully-populated PSDResult."""
+
+    def test_psdresult_type_and_fields(self, typical_cs):
+        r = typical_cs.psd(with_ci=True)
+        assert isinstance(r, PSDResult)
+        assert r.method == "carspan"
+        assert "Hz" in r.unit         # mMI²/Hz or ms²/Hz
+        assert r.freqs.shape == r.power.shape
+        assert r.ci_lower is not None
+        assert r.ci_upper is not None
+
+    def test_with_ci_false_drops_bounds(self, typical_cs):
+        r = typical_cs.psd(with_ci=False)
+        assert r.ci_lower is None
+        assert r.ci_upper is None
+
+
+class TestPsdMethodResolution:
+    """The mixin picks an active method in the right order:
+    override > instance attribute > module default."""
+
+    def test_explicit_override_wins(self, typical_cs):
+        # Instance attribute says carspan; override to welch.
+        r = typical_cs.psd(psd_method=PsdMethod(
+            algorithm="welch", bands=dict(WORKSPACE_BANDS)
+        ))
+        assert r.method == "welch"
+
+    def test_instance_attribute_used_when_no_override(self, typical_cs):
+        # Instance attribute = carspan (set by the fixture).
+        assert typical_cs.psd_method is not None
+        r = typical_cs.psd()
+        assert r.method == "carspan"
+
+    def test_module_default_used_when_attribute_unset(self):
+        """A bare CardioSeries (no psd_method assigned) still works —
+        falls through to the module-level default ``PsdMethod()``."""
+        rng = np.random.default_rng(11)
         ibi_ms = 800.0 + rng.normal(0.0, 30.0, 250)
-        ibi_ms = np.clip(ibi_ms, 400.0, 1500.0)
-        return make_cs(ibi_ms)
-
-    def test_all_powers_finite_and_nonneg(self, typical_cs):
-        for fn in [typical_cs.fullrange_power, typical_cs.vlf_power,
-                   typical_cs.lf_power, typical_cs.hf_power]:
-            val = fn()
-            assert np.isfinite(val), f"{fn.__name__} returned non-finite: {val}"
-            assert val >= 0.0,       f"{fn.__name__} returned negative:   {val}"
-
-    def test_lf_hf_ratio_equals_lf_over_hf(self, typical_cs):
-        lf    = typical_cs.lf_power()
-        hf    = typical_cs.hf_power()
-        ratio = typical_cs.lf_hf_ratio()
-        if np.isfinite(lf) and np.isfinite(hf) and hf > 0.0:
-            assert ratio == pytest.approx(lf / hf, rel=1e-6)
-
-    def test_fullrange_at_least_as_large_as_biggest_subband(self, typical_cs):
-        """FullRange spans VLF + LF + HF, so its integral must dominate."""
-        full = typical_cs.fullrange_power()
-        biggest = max(typical_cs.vlf_power(),
-                      typical_cs.lf_power(),
-                      typical_cs.hf_power())
-        # Allow a 5 % tolerance for boundary-bin rounding.
-        assert full >= biggest * 0.95
-
-    def test_fewer_than_4_ibis_returns_nan(self):
-        """PSD requires ≥ 4 valid IBIs; shorter series → NaN for all bands."""
-        cs = make_cs([800.0, 900.0])   # 2 IBIs
-        assert np.isnan(cs.vlf_power())
-        assert np.isnan(cs.lf_power())
-        assert np.isnan(cs.hf_power())
-        assert np.isnan(cs.fullrange_power())
-        assert np.isnan(cs.lf_hf_ratio())
-
-    def test_all_tl_frequency_metrics_return_nan(self):
-        """No valid IBIs after artefact exclusion → NaN."""
-        cs = make_cs([800.0] * 20)
-        cs.labels[:] = "TL"
-        assert np.isnan(cs.lf_power())
-        assert np.isnan(cs.hf_power())
-        assert np.isnan(cs.lf_hf_ratio())
+        cs = make_cs(ibi_ms)
+        assert cs.psd_method is None
+        r = typical_cs_with_default_method = cs.psd()
+        # Default algorithm is "carspan".
+        assert r.method == "carspan"
 
 
-# ===========================================================================
-# Frequency-domain: spectral content
-# ===========================================================================
+class TestBandPower:
+    """``band_power`` returns one float per named band."""
 
-class TestFrequencyDomainSpectral:
-    """
-    Directional tests: a sinusoidal IBI modulation at a known frequency
-    should produce the highest band power in the band that contains it.
+    def test_named_bands(self, typical_cs):
+        for name in ("FullRange", "VLF", "LF", "HF"):
+            val = typical_cs.band_power(name)
+            assert np.isfinite(val)
+            assert val >= 0.0
 
-    Default workspace bands:
-        VLF  0.02–0.06 Hz
-        LF   0.07–0.14 Hz
-        HF   0.15–0.40 Hz
-    """
+    def test_unknown_band_raises_key_error(self, typical_cs):
+        with pytest.raises(KeyError):
+            typical_cs.band_power("not_a_band")
+
+    def test_band_powers_dict_keys_match_method_bands(self, typical_cs):
+        bp = typical_cs.band_powers()
+        assert set(bp) == set(typical_cs.psd_method.bands)
+
+    def test_fullrange_dominates(self, typical_cs):
+        """FullRange spans VLF + LF + HF, so its integral must be at
+        least as large as any single sub-band's (allow 5 % slack for
+        edge-bin rounding)."""
+        bp = typical_cs.band_powers()
+        biggest_sub = max(bp["VLF"], bp["LF"], bp["HF"])
+        assert bp["FullRange"] >= biggest_sub * 0.95
+
+
+class TestSpectralDirection:
+    """A sinusoidal IBI modulation must put its peak in the right band."""
 
     @pytest.mark.parametrize("freq_hz, dominant_band, others", [
-        (0.04, "vlf", ["lf", "hf"]),
-        (0.10, "lf",  ["vlf", "hf"]),
-        (0.25, "hf",  ["vlf", "lf"]),
+        (0.04, "VLF", ["LF", "HF"]),
+        (0.10, "LF",  ["VLF", "HF"]),
+        (0.25, "HF",  ["VLF", "LF"]),
     ])
     def test_dominant_band(self, freq_hz, dominant_band, others):
         cs = make_spectral_cs(freq_hz)
-        powers = {
-            "vlf": cs.vlf_power(),
-            "lf":  cs.lf_power(),
-            "hf":  cs.hf_power(),
-        }
-        if not all(np.isfinite(v) for v in powers.values()):
-            pytest.skip("Non-finite PSD values — series may be too short.")
-
-        dominant_val = powers[dominant_band]
-        for other in others:
-            assert dominant_val > powers[other], (
-                f"Expected {dominant_band} ({dominant_val:.4f}) > "
-                f"{other} ({powers[other]:.4f}) at {freq_hz} Hz"
+        _attach(cs)
+        bp = cs.band_powers()
+        if not all(np.isfinite(bp[b]) for b in (dominant_band, *others)):
+            pytest.skip("Non-finite band powers.")
+        dom = bp[dominant_band]
+        for o in others:
+            assert dom > bp[o], (
+                f"{dominant_band} ({dom:.4f}) should exceed {o} ({bp[o]:.4f}) "
+                f"at {freq_hz} Hz"
             )
 
-    def test_lf_dominant_gives_ratio_above_one(self):
-        """LF-dominant signal → LF/HF ratio > 1."""
+    def test_lf_dominant_ratio_above_one(self):
         cs = make_spectral_cs(0.10)
+        _attach(cs)
         ratio = cs.lf_hf_ratio()
         if np.isfinite(ratio):
             assert ratio > 1.0
 
-    def test_hf_dominant_gives_ratio_below_one(self):
-        """HF-dominant signal → LF/HF ratio < 1."""
+    def test_hf_dominant_ratio_below_one(self):
         cs = make_spectral_cs(0.25)
+        _attach(cs)
         ratio = cs.lf_hf_ratio()
         if np.isfinite(ratio):
             assert ratio < 1.0
 
-    def test_fullrange_power_includes_dominant_band(self):
-        """FullRange power must exceed any single sub-band power."""
-        for freq_hz in (0.04, 0.10, 0.25):
-            cs = make_spectral_cs(freq_hz)
-            full = cs.fullrange_power()
-            sub  = max(cs.vlf_power(), cs.lf_power(), cs.hf_power())
-            if np.isfinite(full) and np.isfinite(sub):
-                assert full >= sub * 0.9
 
-
-# ===========================================================================
-# Frequency-domain: all three PSD back-ends
-# ===========================================================================
-
-class TestFrequencyDomainMethods:
-    """
-    Band power and lf_hf_ratio must give directionally consistent results
-    across welch, lombscargle, and carspan.
-    """
+class TestAllAlgorithms:
+    """Every algorithm should produce non-negative, directionally
+    consistent band powers on the same input."""
 
     @pytest.fixture
-    def lf_cs(self):
-        """LF-dominant series."""
-        return make_spectral_cs(0.10)
+    def lf_series(self):
+        cs = make_spectral_cs(0.10)
+        return cs
 
     @pytest.fixture
-    def hf_cs(self):
-        """HF-dominant series."""
-        return make_spectral_cs(0.25)
+    def hf_series(self):
+        cs = make_spectral_cs(0.25)
+        return cs
 
-    @pytest.mark.parametrize("method", ["welch", "lombscargle", "carspan"])
-    def test_lf_gt_hf_for_lf_signal(self, lf_cs, method):
-        lf = lf_cs.band_power("LF", method=method)
-        hf = lf_cs.band_power("HF", method=method)
+    @pytest.mark.parametrize(
+        "algorithm", ["welch", "lombscargle", "carspan", "carspan_strict"]
+    )
+    def test_returns_psdresult(self, lf_series, algorithm):
+        method = PsdMethod(
+            algorithm=algorithm,
+            bands=dict(WORKSPACE_BANDS),
+            mean_convention=("arithmetic" if algorithm == "carspan_strict" else "harmonic"),
+        )
+        lf_series.psd_method = method
+        r = lf_series.psd(with_ci=True)
+        assert isinstance(r, PSDResult)
+        assert r.method == algorithm
+
+    @pytest.mark.parametrize(
+        "algorithm", ["welch", "lombscargle", "carspan", "carspan_strict"]
+    )
+    def test_lf_dominant(self, lf_series, algorithm):
+        method = PsdMethod(
+            algorithm=algorithm,
+            bands=dict(WORKSPACE_BANDS),
+            mean_convention=("arithmetic" if algorithm == "carspan_strict" else "harmonic"),
+        )
+        lf_series.psd_method = method
+        lf = lf_series.band_power("LF")
+        hf = lf_series.band_power("HF")
         if not (np.isfinite(lf) and np.isfinite(hf)):
-            pytest.skip(f"Method '{method}' returned non-finite values.")
-        assert lf > hf, (
-            f"Method '{method}': expected LF ({lf:.4f}) > HF ({hf:.4f})"
+            pytest.skip(f"{algorithm}: non-finite output.")
+        assert lf > hf, f"{algorithm}: LF ({lf:.4f}) should exceed HF ({hf:.4f})"
+
+    @pytest.mark.parametrize(
+        "algorithm", ["welch", "lombscargle", "carspan", "carspan_strict"]
+    )
+    def test_hf_dominant(self, hf_series, algorithm):
+        method = PsdMethod(
+            algorithm=algorithm,
+            bands=dict(WORKSPACE_BANDS),
+            mean_convention=("arithmetic" if algorithm == "carspan_strict" else "harmonic"),
+        )
+        hf_series.psd_method = method
+        lf = hf_series.band_power("LF")
+        hf = hf_series.band_power("HF")
+        if not (np.isfinite(lf) and np.isfinite(hf)):
+            pytest.skip(f"{algorithm}: non-finite output.")
+        assert hf > lf, f"{algorithm}: HF ({hf:.4f}) should exceed LF ({lf:.4f})"
+
+
+class TestSumOfTwoSinusoids:
+    """Feed sin(2π·f_a·t) + sin(2π·f_b·t) into every PSD method and check
+    that *both* injected tones produce peaks in the right bands.
+
+    The reference signal uses ``f_a = 0.10 Hz`` (LF) and ``f_b = 0.25 Hz``
+    (HF). VLF receives no injected tone — it should stay quiet.
+    """
+
+    LF_HZ = 0.10
+    HF_HZ = 0.25
+    ALGORITHMS = ("welch", "lombscargle", "carspan", "carspan_strict")
+
+    @pytest.fixture
+    def lf_hf_series(self):
+        return make_two_sinusoid_cs(self.LF_HZ, self.HF_HZ)
+
+    @pytest.fixture
+    def baseline_series(self):
+        """Zero-modulation reference with the same RNG seed/length —
+        used to verify the injected peaks rise *above* a no-signal floor."""
+        return make_two_sinusoid_cs(self.LF_HZ, self.HF_HZ, mod_depth_each=0.0)
+
+    @staticmethod
+    def _method_for(algorithm):
+        return PsdMethod(
+            algorithm=algorithm,
+            bands=dict(WORKSPACE_BANDS),
+            mean_convention=("arithmetic" if algorithm == "carspan_strict" else "harmonic"),
         )
 
-    @pytest.mark.parametrize("method", ["welch", "lombscargle", "carspan"])
-    def test_hf_gt_lf_for_hf_signal(self, hf_cs, method):
-        lf = hf_cs.band_power("LF", method=method)
-        hf = hf_cs.band_power("HF", method=method)
-        if not (np.isfinite(lf) and np.isfinite(hf)):
-            pytest.skip(f"Method '{method}' returned non-finite values.")
-        assert hf > lf, (
-            f"Method '{method}': expected HF ({hf:.4f}) > LF ({lf:.4f})"
+    @pytest.mark.parametrize("algorithm", ALGORITHMS)
+    def test_both_target_bands_exceed_vlf(self, lf_hf_series, algorithm):
+        """Both LF and HF must carry more power than VLF (which has no
+        injected tone)."""
+        lf_hf_series.psd_method = self._method_for(algorithm)
+        bp = lf_hf_series.band_powers()
+        for name in ("VLF", "LF", "HF"):
+            if not np.isfinite(bp[name]):
+                pytest.skip(f"{algorithm}: non-finite band power for {name}.")
+        assert bp["LF"] > bp["VLF"], (
+            f"{algorithm}: LF ({bp['LF']:.4g}) should exceed VLF ({bp['VLF']:.4g})"
+        )
+        assert bp["HF"] > bp["VLF"], (
+            f"{algorithm}: HF ({bp['HF']:.4g}) should exceed VLF ({bp['VLF']:.4g})"
         )
 
-    @pytest.mark.parametrize("method", ["welch", "lombscargle", "carspan"])
-    def test_band_power_nonneg(self, lf_cs, method):
-        for band in ("VLF", "LF", "HF", "FullRange"):
-            val = lf_cs.band_power(band, method=method)
-            if np.isfinite(val):
-                assert val >= 0.0, (
-                    f"Method '{method}', band '{band}': negative power {val}"
-                )
+    @pytest.mark.parametrize("algorithm", ALGORITHMS)
+    def test_injected_peaks_above_baseline(
+        self, lf_hf_series, baseline_series, algorithm
+    ):
+        """LF and HF band power must rise above the no-modulation
+        baseline by at least a 3× factor."""
+        method = self._method_for(algorithm)
+        lf_hf_series.psd_method = method
+        baseline_series.psd_method = method
+
+        signal = lf_hf_series.band_powers()
+        base = baseline_series.band_powers()
+        for name in ("LF", "HF"):
+            if not (np.isfinite(signal[name]) and np.isfinite(base[name])):
+                pytest.skip(f"{algorithm}: non-finite band power for {name}.")
+            if base[name] <= 0.0:
+                pytest.skip(f"{algorithm}: baseline {name} non-positive.")
+            ratio = signal[name] / base[name]
+            assert ratio > 3.0, (
+                f"{algorithm}: {name} should be ≥3× baseline "
+                f"(got {ratio:.2f}: signal={signal[name]:.4g}, "
+                f"baseline={base[name]:.4g})"
+            )
+
+    @pytest.mark.parametrize("algorithm", ALGORITHMS)
+    def test_peak_frequencies_recovered(self, lf_hf_series, algorithm):
+        """The argmax inside each band must land within ±0.02 Hz of the
+        injected tone."""
+        lf_hf_series.psd_method = self._method_for(algorithm)
+        r = lf_hf_series.psd(with_ci=False)
+        if not np.all(np.isfinite(r.power)):
+            pytest.skip(f"{algorithm}: non-finite spectrum.")
+
+        bands = lf_hf_series.psd_method.bands
+        for target_hz, name in ((self.LF_HZ, "LF"), (self.HF_HZ, "HF")):
+            lo, hi = bands[name].low, bands[name].high
+            in_band = (r.freqs >= lo) & (r.freqs <= hi)
+            if not in_band.any():
+                pytest.skip(f"{algorithm}: no bins inside {name} band.")
+            band_freqs = r.freqs[in_band]
+            band_power = r.power[in_band]
+            peak_hz = band_freqs[int(np.argmax(band_power))]
+            assert abs(peak_hz - target_hz) <= 0.02, (
+                f"{algorithm}: {name} peak at {peak_hz:.3f} Hz, "
+                f"expected near {target_hz:.3f} Hz"
+            )
+
+    @pytest.mark.parametrize("algorithm", ALGORITHMS)
+    def test_both_lf_and_hf_metrics_finite_and_positive(
+        self, lf_hf_series, algorithm
+    ):
+        """The legacy convenience metrics ``lf_power()`` and ``hf_power()``
+        should both return finite positive values."""
+        lf_hf_series.psd_method = self._method_for(algorithm)
+        lf = lf_hf_series.lf_power()
+        hf = lf_hf_series.hf_power()
+        if not (np.isfinite(lf) and np.isfinite(hf)):
+            pytest.skip(f"{algorithm}: non-finite output.")
+        assert lf > 0.0 and hf > 0.0
 
 
-# ===========================================================================
-# Frequency-domain: artefact robustness
-# ===========================================================================
+class TestUnknownAlgorithmRaises:
+    """An invalid algorithm string must surface as a ValueError."""
 
-class TestFrequencyDomainArtefacts:
-    """Artefact labels must not crash PSD computation."""
+    def test_unknown_algorithm(self):
+        rng = np.random.default_rng(13)
+        cs = make_cs(800.0 + rng.normal(0.0, 30.0, 250))
+        cs.psd_method = PsdMethod(algorithm="not_a_method")   # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="Unknown PSD algorithm"):
+            cs.psd()
 
-    def test_sparse_tl_still_computes(self):
-        """A series with occasional TL beats should still return finite power."""
+
+class TestFrequencyArtefactRobustness:
+    """Frequency metrics return NaN (not raise) when the cleaned series
+    is too short to compute a PSD."""
+
+    def test_too_few_ibis_for_psd(self):
+        cs = make_cs([800.0, 900.0])   # 2 IBIs, below the 4-sample floor
+        _attach(cs)
+        for fn in (cs.vlf_power, cs.lf_power, cs.hf_power,
+                   cs.fullrange_power, cs.lf_hf_ratio):
+            assert np.isnan(fn())
+
+    def test_all_tl_frequency_metrics_nan(self):
+        cs = make_cs([800.0] * 20)
+        cs.labels[:] = "TL"
+        _attach(cs)
+        assert np.isnan(cs.lf_power())
+        assert np.isnan(cs.hf_power())
+        assert np.isnan(cs.lf_hf_ratio())
+
+    def test_sparse_tl_does_not_break_psd(self):
         rng = np.random.default_rng(3)
         ibi_ms = 800.0 + rng.normal(0.0, 25.0, 200)
         ibi_ms = np.clip(ibi_ms, 400.0, 1500.0)
         cs = make_cs(ibi_ms)
-        # Mark every 15th beat as TL (~13 out of 200 IBIs)
         for i in range(0, len(cs.labels), 15):
             cs.labels[i] = "TL"
+        _attach(cs)
         lf = cs.lf_power()
         assert np.isfinite(lf) and lf >= 0.0
 
-    def test_dense_tl_below_threshold_returns_nan(self):
-        """Fewer than 4 valid IBIs after exclusion → NaN."""
-        cs = make_cs([800.0] * 5)
-        # Leave only 3 valid IBIs (indices 0,1,2 valid; rest TL)
-        cs.labels[3:] = "TL"
-        # 5 beats, 4 IBIs; last 2 are TL → 2 valid IBIs → NaN
-        cs2 = make_cs([800.0] * 3)
-        cs2.labels[2:] = "TL"   # 3 beats, 2 IBIs, 1 TL → 1 valid
-        assert np.isnan(cs2.lf_power())
+
+class TestUnitConsistency:
+    """The legend-side ``unit`` string survives the conversion pipeline."""
+
+    def test_carspan_default_unit_mMI2(self, lf_cs):
+        # Default plot_units = "mMI²/Hz"
+        r = lf_cs.psd()
+        assert "mMI" in r.unit
+
+    def test_welch_default_unit_mMI2(self, lf_cs):
+        lf_cs.psd_method = PsdMethod(algorithm="welch", bands=dict(WORKSPACE_BANDS))
+        r = lf_cs.psd()
+        assert "mMI" in r.unit
+
+    def test_welch_ms2_units_when_requested(self, lf_cs):
+        from spectHR.Tools.PSD.WelchPSD import WelchOptions
+        lf_cs.psd_method = PsdMethod(
+            algorithm="welch",
+            bands=dict(WORKSPACE_BANDS),
+            welch=WelchOptions(units="ms²"),
+        )
+        r = lf_cs.psd()
+        assert "ms" in r.unit

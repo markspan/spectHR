@@ -5,8 +5,7 @@ Structural protocol shared by CardioSeries and CardioSeriesView.
 The two real classes (``CardioSeries`` in ``CardioSeries.py`` and
 ``CardioSeriesView`` in ``CardioSeriesView.py``) implement the same data /
 method surface, but they don't share an inheritance branch -- views are
-composition-based and pull metric methods in via ``CardioMetricsMixin`` /
-``CardioFrequencyMetricsMixin``.
+composition-based and pull metric methods in via ``CardioMetricsMixin``.
 
 ``CardioSeriesLike`` lets us annotate functions that accept either, with
 ``isinstance()`` support thanks to ``@runtime_checkable``.
@@ -19,7 +18,7 @@ from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 import numpy as np
 
 if TYPE_CHECKING:
-    from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import PSDResult
+    from spectHR.DataSet.Series.CardioMetricsMixin import PSDResult
 
 
 @runtime_checkable
@@ -51,7 +50,7 @@ class CardioSeriesLike(Protocol):
 
     def _ibi_clean_ms(self) -> np.ndarray: ...
 
-    # --- public spectral API (CardioFrequencyMetricsMixin) ---------------
+    # --- public spectral API (CardioMetricsMixin) ------------------------
     #
     # The real implementation accepts the active method (``"welch"``,
     # ``"lombscargle"``, ``"carspan"``, ``"carspan_strict"``); ``None``

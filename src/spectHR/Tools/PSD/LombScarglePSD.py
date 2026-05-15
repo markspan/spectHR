@@ -18,12 +18,16 @@ Astrophys. J. 263, 1982.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 from scipy import signal as sp_signal
 
-from spectHR.Tools.PSD._psd_utils import _chi2_ci, _require_min_samples
+from spectHR.Tools.PSD._psd_utils import (
+    PSDResult,
+    _chi2_ci,
+    _require_min_samples,
+)
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,7 @@ def compute_lombscargle_psd(
     alpha_ci: float = 0.05,
     f_max: float = 0.5,
     options: Optional[LombscargleOptions] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> PSDResult:
     """
     Lomb-Scargle PSD with chi-squared confidence intervals.
 
@@ -68,8 +72,10 @@ def compute_lombscargle_psd(
 
     Returns
     -------
-    freqs, power, ci_lower, ci_upper : np.ndarray
-        Power and bounds in ms²/Hz.  Each bin has 2 dof (single-segment).
+    PSDResult
+        ``power`` in **ms²/Hz** (raw unit). Each bin has 2 dof
+        (single-segment). The caller applies any further unit
+        conversion.
     """
     opts = options if options is not None else _DEFAULT_LS_OPTIONS
 
@@ -111,4 +117,11 @@ def compute_lombscargle_psd(
     dof_per_bin = max(2.0, 2.0 * M / len(freqs))
 
     ci_lower, ci_upper = _chi2_ci(power, dof=dof_per_bin, alpha=alpha_ci)
-    return freqs, power, ci_lower, ci_upper
+    return PSDResult(
+        freqs=freqs,
+        power=power,
+        unit="ms²/Hz",
+        method="lombscargle",
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+    )

@@ -25,7 +25,7 @@ import numpy as np
 from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
-from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import PsdMethod
+from spectHR.DataSet.Series.CardioMetricsMixin import PsdMethod
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure

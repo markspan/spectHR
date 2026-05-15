@@ -6,16 +6,13 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 
 from spectHR.DataSet.Series.CardioMetricsMixin import CardioMetricsMixin
-from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
-    CardioFrequencyMetricsMixin,
-)
 
 if TYPE_CHECKING:
     from spectHR.DataSet.PhysioData import PhysioData
     from spectHR.DataSet.Series.CardioSeries import CardioSeries
 
 
-class CardioSeriesView(CardioMetricsMixin, CardioFrequencyMetricsMixin):
+class CardioSeriesView(CardioMetricsMixin):
     """
     Zero-copy view into a parent CardioSeries.
 

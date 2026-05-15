@@ -7,9 +7,6 @@ import numpy as np
 import scipy.signal as signal
 
 from spectHR.DataSet.Series.CardioMetricsMixin import CardioMetricsMixin
-from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
-    CardioFrequencyMetricsMixin,
-)
 from spectHR.DataSet.Series.IBIClassificationParams import DEFAULT_IBI_PARAMS
 from spectHR.Tools.Logger import logger
 
@@ -18,7 +15,7 @@ if TYPE_CHECKING:
     from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 
 
-class CardioSeries(CardioMetricsMixin, CardioFrequencyMetricsMixin):
+class CardioSeries(CardioMetricsMixin):
     """
     Container for R-peak times and per-interval labels, with HRV metric methods.
 

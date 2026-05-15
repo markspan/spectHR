@@ -1,4 +1,3 @@
-import sys
 from typing import Any
 
 from PySide6.QtWidgets import (
@@ -7,7 +6,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
-    QFormLayout,
     QGridLayout,
     QLabel,
     QLineEdit,

@@ -1,11 +1,10 @@
 import copy
 import json
 import os
-from pathlib import Path
 from typing import Any, Dict
 
 from spectHR.Tools.Logger import logger
-from spectHR.DataSet.Series.CardioFrequencyMetricsMixin import (
+from spectHR.DataSet.Series.CardioMetricsMixin import (
     BandSpec,
     PsdMethod,
 )
@@ -204,30 +203,6 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
         lombscargle=ls_opts,
         carspan=carspan_opts,
     )
-
-
-def apply_psd_method_to_dataset(dataset, psd_method: PsdMethod) -> None:
-    """Assign *psd_method* to every master CardioSeries in *dataset*.
-
-    ``dataset.hrv_map`` is the canonical layout: ``{band_id ->
-    CardioSeries}``. Setting ``psd_method`` on each master series is
-    enough because ``CardioSeriesView`` delegates the attribute to its
-    parent — so all per-epoch views created via
-    ``CardioSeries[epoch_label]`` automatically pick up the same value.
-
-    ``dataset.hrv`` is a *property* that returns the master series for
-    the active band, so we don't iterate over it. Silently skips
-    anything that doesn't look like a series object.
-    """
-    master_map = getattr(dataset, "hrv_map", None)
-    if isinstance(master_map, dict):
-        for series in master_map.values():
-            try:
-                series.psd_method = psd_method
-            except Exception:
-                # Defensive only — the in-tree CardioSeries does not use
-                # __slots__, so this assignment normally succeeds.
-                pass
 
 
 def PopulateTree(treewidget, workspace: dict) -> None:

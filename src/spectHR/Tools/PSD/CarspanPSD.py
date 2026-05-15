@@ -31,6 +31,7 @@ import numpy as np
 from scipy.signal import get_window
 
 from spectHR.Tools.PSD._psd_utils import (
+    PSDResult,
     _chi2_ci,
     _require_min_samples,
     _resolve_window,
@@ -139,7 +140,7 @@ def compute_carspan_psd(
     *,
     alpha_ci: float = 0.05,
     options: Optional[CarspanOptions] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> PSDResult:
     """CARSPAN PSD with chi-squared CI.
 
     Parameters
@@ -154,13 +155,21 @@ def compute_carspan_psd(
 
     Returns
     -------
-    freqs, power, ci_lower, ci_upper : np.ndarray
-        Power and bounds in Hz (events²/Hz).
+    PSDResult
+        ``power`` in raw events²/Hz (``unit="Hz"``). The caller applies
+        the mMI² (or ms²) conversion.
     """
     opts = options if options is not None else _DEFAULT_CARSPAN_OPTIONS
     freqs, power, bin_counts = _compute(event_times_s, opts)
     ci_lower, ci_upper = _chi2_ci(power, 2 * bin_counts, alpha_ci)
-    return freqs, power, ci_lower, ci_upper
+    return PSDResult(
+        freqs=freqs,
+        power=power,
+        unit="Hz",
+        method="carspan",
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+    )
 
 
 def compute_carspan_psd_strict(
@@ -169,7 +178,7 @@ def compute_carspan_psd_strict(
     alpha_ci: float = 0.05,
     smooth: bool = True,
     f_max: float = 0.5,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> PSDResult:
     """Manual-faithful CARSPAN PSD — thin wrapper around
     :func:`compute_carspan_psd` with the CARSPAN preset.
 
@@ -186,7 +195,8 @@ def compute_carspan_psd_strict(
     The only knobs the manual leaves user-controllable are exposed
     here: ``alpha_ci``, ``smooth``, and ``f_max``.
     """
-    return compute_carspan_psd(
+    from dataclasses import replace as _replace
+    raw = compute_carspan_psd(
         event_times_s,
         alpha_ci=alpha_ci,
         options=carspan_strict_options(
@@ -194,6 +204,9 @@ def compute_carspan_psd_strict(
             f_max=f_max,
         ),
     )
+    # Mark the algorithm distinctly so downstream consumers can tell
+    # them apart in the ``method`` field of PSDResult.
+    return _replace(raw, method="carspan_strict")
 
 
 # ---------------------------------------------------------------------------
@@ -217,18 +230,23 @@ def _compute(
     # 2. Build the native-grid frequencies (Δf = 1/T) up to ``f_max``.
     freqs, delta_f = _native_grid(T=T, f_max=opts.f_max)
 
-    # 3. Build the per-event window weights and the amplitude pre-factor.
+    # 3. Pick the actual event times that go into the DFT (this fixes
+    #    the impulse-train length, which the window must match).
+    actual_times = _actual_times(event_times_s, skip_first=opts.skip_first_event)
+    n_signal = actual_times.size
+
+    # 4. Build the per-event window weights and the amplitude pre-factor.
+    #    The window length must equal ``n_signal`` — otherwise the
+    #    np.dot in ``_dft`` raises a shape mismatch when skip_first
+    #    is combined with the scipy taper.
     w, amplitude = _make_window(
-        N=N,
+        n_signal=n_signal,
         T=T,
         taper=opts.taper,
         window=opts.window,
         alpha_taper=opts.alpha_taper,
         amplitude_correction=opts.amplitude_correction,
     )
-
-    # 4. Pick the actual event times that go into the DFT.
-    actual_times = _actual_times(event_times_s, skip_first=opts.skip_first_event)
 
     # 5. Single windowed DFT of the actual event train.
     X_real, X_imag = _dft(freqs, actual_times, w)
@@ -290,7 +308,7 @@ def _native_grid(*, T: float, f_max: float) -> Tuple[np.ndarray, float]:
 
 def _make_window(
     *,
-    N: int,
+    n_signal: int,
     T: float,
     taper: Taper,
     window: str,
@@ -299,6 +317,13 @@ def _make_window(
 ) -> Tuple[np.ndarray, float]:
     """Build per-event window weights and the DFT amplitude pre-factor.
 
+    ``n_signal`` is the **length of the impulse train going into the
+    DFT** — that is, ``actual_times.size`` from :func:`_actual_times`.
+    It may be ``N`` (full event count) or ``N − 1`` (skip-first
+    convention). Sizing the window to ``n_signal`` keeps the
+    ``np.dot`` in :func:`_dft` shape-correct regardless of which
+    skip-first / taper combination the user picks.
+
     Two taper presets:
 
     * ``"carspan_index"`` — bit-for-bit equivalent of CARSPAN's Pascal
@@ -306,8 +331,8 @@ def _make_window(
       ``sin²(π·(i+1)/(2·N_taper))`` cosine bell applied by *event index*,
       with the (i+1) offset that gives the first sample a small but
       *non-zero* weight (unlike scipy's tukey, which zeros it). The
-      taper acts on ``N − 1`` events because CARSPAN's ``SOC`` loops
-      over IBI indices ``0..N_IBI-1``.
+      Pascal source pairs this with ``skip_first=True`` so the window
+      acts on the ``N − 1`` IBI-indexed events.
 
     * ``"scipy"`` — any ``scipy.signal.get_window`` name. ``"tukey"``
       without parameters defaults to α = 0.10 to stay close to CARSPAN.
@@ -315,24 +340,24 @@ def _make_window(
     Amplitude:
 
     * ``amplitude_correction = False`` → ``2 / T`` (manual Eq. 3.19).
-    * ``amplitude_correction = True``  → ``2N / (T · S₂)`` with
-      ``S₂ = Σ wᵢ²``; level stays approximately consistent across
+    * ``amplitude_correction = True``  → ``2 · n_signal / (T · S₂)``
+      with ``S₂ = Σ wᵢ²``; level stays approximately consistent across
       window choices.
     """
     if taper == "carspan_index":
-        n_taper_pct = max(1, int(round((alpha_taper * 50.0) * (N - 1) / 100.0)))
-        w = _carspan_taper(N - 1, n_taper_pct)
+        n_taper_pct = max(1, int(round((alpha_taper * 50.0) * n_signal / 100.0)))
+        w = _carspan_taper(n_signal, n_taper_pct)
     else:
         ws = _resolve_window(window)
         if isinstance(ws, str) and ws.lower() == "tukey":
             ws = ("tukey", alpha_taper)
-        w = get_window(ws, N, fftbins=False).astype(np.float64)
+        w = get_window(ws, n_signal, fftbins=False).astype(np.float64)
 
     if amplitude_correction:
         S2 = float(np.sum(w**2))
         if S2 == 0:
             raise ValueError("Window sum-of-squares S₂ is zero — degenerate window.")
-        amplitude = 2.0 * w.size / (T * S2)
+        amplitude = 2.0 * n_signal / (T * S2)
     else:
         amplitude = 2.0 / T
 

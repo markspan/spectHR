@@ -15,14 +15,15 @@ power spectra", IEEE Trans. Audio Electroacoust., 1967.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 from scipy import signal
 from scipy.interpolate import interp1d
 
 from spectHR.Tools.PSD._psd_utils import (
+    PSDResult,
     _chi2_ci,
     _require_min_samples,
     _resolve_window,
@@ -65,7 +66,7 @@ def compute_welch_psd(
     *,
     alpha_ci: float = 0.05,
     options: Optional[WelchOptions] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> PSDResult:
     """
     Welch PSD of an IBI series with chi-squared confidence intervals.
 
@@ -80,8 +81,9 @@ def compute_welch_psd(
 
     Returns
     -------
-    freqs, power, ci_lower, ci_upper : np.ndarray
-        Power and bounds in ms²/Hz.  Each Welch segment adds ~2 dof.
+    PSDResult
+        ``power`` in **ms²/Hz** (raw unit). The caller (typically the
+        ``CardioMetricsMixin``) applies any further unit conversion.
     """
     opts = options if options is not None else _DEFAULT_WELCH_OPTIONS
 
@@ -141,4 +143,11 @@ def compute_welch_psd(
         dof = float(2 * n_segments)
 
     ci_lower, ci_upper = _chi2_ci(power, dof, alpha_ci)
-    return freqs, power, ci_lower, ci_upper
+    return PSDResult(
+        freqs=freqs,
+        power=power,
+        unit="ms²/Hz",
+        method="welch",
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+    )

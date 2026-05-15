@@ -11,7 +11,6 @@ This file is independent and can be imported anywhere.
 
 from __future__ import annotations
 from typing import Callable, Dict
-import numpy as np
 
 
 # ---------------------------------------------------------

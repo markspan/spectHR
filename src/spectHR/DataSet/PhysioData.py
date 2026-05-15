@@ -169,6 +169,25 @@ class PhysioData:
         return self.hrv_map.get(self.active_band)
 
     # ------------------------------------------------------------ #
+    # PSD configuration                                             #
+    # ------------------------------------------------------------ #
+
+    def set_psd_method(self, psd_method) -> None:
+        """Assign *psd_method* to every master CardioSeries in this dataset.
+
+        ``hrv_map`` is the canonical ``{band_id → CardioSeries}`` mapping
+        for the dataset. Setting ``psd_method`` on each master series is
+        enough because ``CardioSeriesView`` delegates the attribute to
+        its parent — so per-epoch views built later via
+        ``CardioSeries[epoch_label]`` automatically see the same value.
+
+        The library owns this walk so the UI can stay shape-agnostic:
+        callers just do ``dataset.set_psd_method(method)``.
+        """
+        for series in self.hrv_map.values():
+            series.psd_method = psd_method
+
+    # ------------------------------------------------------------ #
     # ECG preprocessing                                             #
     # ------------------------------------------------------------ #
 

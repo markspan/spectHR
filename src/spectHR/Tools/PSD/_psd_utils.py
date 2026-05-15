@@ -3,12 +3,44 @@ _psd_utils.py – Shared helpers for all PSD back-ends.
 
 Centralises logic that was previously copy-pasted across
 WelchPSD.py, LombScarglePSD.py, and CarspanPSD.py.
+
+Also defines :class:`PSDResult`, the small dataclass every compute
+function returns. Keeping the result type next to the helpers (rather
+than next to the consumer in CardioMetricsMixin) lets the compute
+modules stay self-contained — they own the raw output shape.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Optional
+
 import numpy as np
 from scipy.stats import chi2
+
+
+# ---------------------------------------------------------------------------
+# PSDResult — common output type for every PSD back-end
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PSDResult:
+    """Immutable container for a PSD computation result.
+
+    Returned by every ``compute_*_psd`` function and by every
+    ``CardioMetricsMixin.psd*`` method. Compute functions fill it with
+    the **raw** unit (e.g. ``"ms²/Hz"`` for Welch, ``"Hz"`` for CARSPAN)
+    and the algorithm name; the mixin then applies any unit conversion
+    and band-range masking before handing the result to the caller.
+    """
+
+    freqs: np.ndarray
+    power: np.ndarray
+    unit: str = ""
+    method: str = ""
+    ci_lower: Optional[np.ndarray] = None
+    ci_upper: Optional[np.ndarray] = None
 
 
 # ---------------------------------------------------------------------------
