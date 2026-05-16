@@ -448,12 +448,28 @@ For non-overlapping segments $\rho = 0$ and $\nu = 2K$. For a Hann window at 50 
 
 CARSPAN takes a different approach. Instead of resampling the IBI series onto a uniform time grid, it operates directly on the R-peak times and computes the Fourier transform of those events — the algorithm Mulder [(1988)](#ref-mulder1988) developed for the original CARSPAN software. No resampling, no interpolation in time. The spectrum is computed on a native frequency grid $f_k = k/T$ (resolution $\Delta f = 1/T$), bin-averaged onto a fixed display grid for plotting, and band power is computed by direct summation following the manual's formula 3.28. Output units: **mMI²**.
 
-spectHR ships two CARSPAN variants. They are **structurally different algorithms**, not different settings of the same algorithm:
+spectHR has **one CARSPAN compute function** (`compute_carspan_psd`) with **two presets** of its `CarspanOptions` dataclass — exposed in the workspace as `method: "carspan"` (configurable) and `method: "carspan_strict"` (manual-faithful):
 
-- **`carspan_strict`** — the **IBI-amplitude DFT** of manual Eq. 3.21 (Pascal `SOC` branch `IsRPDataCol=False`). This is the variant the manual uses to produce its reference numbers. The band powers `cs.band_powers()` reproduces match the CARSPAN manual's epoch #2 reference (p. 121) to within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
-- **`carspan`** — the **unit-impulse SOC** of manual Eq. 3.19 (Pascal `SOC` branch `IsRPDataCol=True`). Treats every R-peak as a unit impulse. Useful when you want fine-grained control over the window, amplitude correction, or reference-grid DC subtraction (knobs that don't apply to the IBI-amplitude path).
+- **`carspan_strict`** is the preset bundle returned by `carspan_strict_options()`. Locks every knob the CARSPAN manual leaves implicit, including `signal: "ibi_amplitude"` which switches the DFT to the IBI-amplitude formula of manual Eq. 3.21 (Pascal `SOC` branch `IsRPDataCol=False`). Reproduces the manual's epoch #2 reference (`example1.EVT`, p. 121) within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
+- **`carspan`** is the configurable variant. By default it's the unit-impulse SOC of Eq. 3.19 (Pascal `IsRPDataCol=True`), with the window, amplitude correction, reference-grid DC subtraction, and skip-first-event all exposed as separate workspace fields. Use this when you want to explore the effect of any of those knobs.
 
-The two produce similar shapes at LF and HF for a regular sinus rhythm but differ noticeably at VLF (because of how each handles DC) and in absolute magnitude (because they weight events differently).
+Because both come from the same function, *every* setting `carspan_strict` uses is reachable from the configurable side too — the strict preset is exactly:
+
+| `CarspanOptions` field | Strict value | Notes |
+|---|---|---|
+| `signal` | `"ibi_amplitude"` | flips the DFT from Eq. 3.19 → Eq. 3.21 |
+| `taper` | `"carspan_index"` | Pascal's index taper (sample 0 has a small non-zero weight; scipy's tukey zeros it) |
+| `alpha_taper` | `0.10` | 5 % cosine bell per side (Pascal `TaperPercent := 5`) |
+| `freq_resolution` | `0.01` | display grid spacing (Pascal `NewRes`) |
+| `amplitude_correction` | `false` | use the manual's flat `2/T` (no `N/S₂` variance-correction) — *ignored on the `ibi_amplitude` branch* |
+| `skip_first_event` | `true` | Pascal SOC loops over IBI indices `0..N_IBI-1` — *ignored on the `ibi_amplitude` branch* |
+| `dc_removal` | `true` | reference-grid DC subtraction — *ignored on the `ibi_amplitude` branch* (mean subtraction handles DC) |
+| `dc_grid` | `"carspan_strict"` | asymmetric reference grid — *ignored on the `ibi_amplitude` branch* |
+| `smooth_for_display`, `f_max`, `plot_units` | caller's choice | not locked by the preset; defaults are `true`, `0.5`, `"mMI²/Hz"` |
+
+The four "*ignored on the `ibi_amplitude` branch*" rows are kept on the preset only so a curious caller flipping `signal` back to `"events"` gets the Pascal-faithful unit-impulse SOC settings for comparison. In practice on the strict path only the top three rows do any work.
+
+One last knob lives outside `CarspanOptions`: **`PsdMethod.mean_convention`**. `psd_method_from_workspace` sets it to `"arithmetic"` for `method: "carspan_strict"` (= harmonic mean of IBI, what Pascal's `SOC` uses) and to `"harmonic"` for `method: "carspan"` (= `T/N`, what the manual writes). That's the one setting you cannot reach from the workspace `carspan` section alone — to get full strict equivalence with `method: "carspan"` you'd have to construct a `PsdMethod` with `mean_convention="arithmetic"` from Python, or just use `method: "carspan_strict"`.
 
 <details>
 <summary>CARSPAN, algorithm detail</summary>
