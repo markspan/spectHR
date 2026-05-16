@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from pathlib import Path
 
+from spectHR._version import __version__
 from spectHR.DataSet.Epoch import Epoch
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series import CardioSeries
@@ -67,7 +68,7 @@ class MainWindow(QMainWindow):
         self.ui.actionAdd_Epoch.setStatusTip("Add a new epoch spanning the full recording")
         self.ui.actionAdd_Epoch.setToolTip("Add a new epoch spanning the full recording")   
         self.ui.actionAdd_Epoch.setShortcut("Ctrl+N")
-        self.setWindowTitle("spectHR (v1.2.1) - ECG / HRV Analysis")
+        self.setWindowTitle(f"spectHR (v{__version__}) - ECG / HRV Analysis")
         self.resize(1920, 1080)
         self.ui.Splitter.setSizes([200, 1700])
 

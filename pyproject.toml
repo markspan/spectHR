@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
  
 [project]
 name = "specthr"
-version = "1.2.2"
+dynamic = ["version"]
 description = "HRV / physiological data tooling"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -29,8 +29,14 @@ dev = [
     "pytest",
 ]
  
+[tool.setuptools]
+package-dir = { "" = "src" }
+
 [tool.setuptools.packages]
 find = { where = ["src"] , include = ["spectUI*", "spectHR*"]}
+
+[tool.setuptools.dynamic]
+version = { attr = "spectHR._version.__version__" }
  
 [project.urls]
 Homepage = "https://github.com/MarkSpan/spectHR"

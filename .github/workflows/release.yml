@@ -42,19 +42,14 @@ jobs:
           from pathlib import Path
 
           tag = os.environ["GITHUB_REF_NAME"]
-          pyproj = Path("pyproject.toml")
-          if not pyproj.exists():
-            raise SystemExit("pyproject.toml not found at repo root")
+          version_file = Path("src/spectHR/_version.py")
+          if not version_file.exists():
+            raise SystemExit(f"{version_file} not found")
 
-          txt = pyproj.read_text(encoding="utf-8")
-          mproj = re.search(r"(?ms)^\[project\]\s*(.*?)(?=^\[|\Z)", txt)
-          if not mproj:
-            raise SystemExit("No [project] table found in pyproject.toml")
-
-          block = mproj.group(0)
-          mver = re.search(r'(?m)^version\s*=\s*"([^"]+)"\s*$', block)
+          txt = version_file.read_text(encoding="utf-8")
+          mver = re.search(r'(?m)^__version__\s*=\s*"([^"]+)"\s*$', txt)
           if not mver:
-            raise SystemExit('No [project].version = "..." found in pyproject.toml')
+            raise SystemExit(f'No __version__ = "..." found in {version_file}')
 
           current_raw = mver.group(1).strip()
 
@@ -94,7 +89,7 @@ jobs:
           out_path.write_text(out_path.read_text() + f"version={version}\nrelease_tag={release_tag}\n", encoding="utf-8")
           PY
 
-      - name: Bump pyproject.toml [project].version to target version
+      - name: Bump src/spectHR/_version.py __version__ to target version
         env:
           VERSION: ${{ steps.final.outputs.version }}
         shell: bash
@@ -104,24 +99,19 @@ jobs:
           from pathlib import Path
 
           version = os.environ["VERSION"]
-          path = Path("pyproject.toml")
+          path = Path("src/spectHR/_version.py")
           txt = path.read_text(encoding="utf-8")
 
-          mproj = re.search(r"(?ms)^\[project\]\s*(.*?)(?=^\[|\Z)", txt)
-          if not mproj:
-            raise SystemExit("No [project] table found in pyproject.toml")
-
-          block = mproj.group(0)
-          new_block, n = re.subn(
-            r'(?m)^version\s*=\s*".*?"\s*$',
-            f'version = "{version}"',
-            block,
+          new_txt, n = re.subn(
+            r'(?m)^__version__\s*=\s*".*?"\s*$',
+            f'__version__ = "{version}"',
+            txt,
             count=1
           )
           if n != 1:
-            raise SystemExit("Could not replace [project].version exactly once")
+            raise SystemExit("Could not replace __version__ exactly once")
 
-          path.write_text(txt[:mproj.start()] + new_block + txt[mproj.end():], encoding="utf-8")
+          path.write_text(new_txt, encoding="utf-8")
           PY
 
       - name: Commit bump and push to default branch; create vX.Y.Z tag
@@ -130,7 +120,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add pyproject.toml
+          git add src/spectHR/_version.py
           git commit -m "chore(release): bump version to ${{ steps.final.outputs.version }}" || echo "No changes to commit"
 
           DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
