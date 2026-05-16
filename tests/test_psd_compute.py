@@ -519,17 +519,32 @@ class TestCarspanIndividualKnobs:
             assert np.all(r.power >= 0.0)
 
     def test_dc_removal_drains_dc_for_both_grids(self):
-        """Sanity: the lowest-frequency bin should be much smaller with
-        DC removal on, regardless of grid choice."""
+        """Sanity: the low-frequency end of the spectrum should be much
+        smaller with DC removal on, regardless of grid choice.
+
+        Compared on the unresampled native grid (``freq_resolution``
+        chosen smaller than ``1/T`` keeps :func:`_bin_average` from
+        collapsing neighbouring bins, exposing the per-bin difference
+        DC removal introduces near f = 0).
+        """
         times = _event_times(n_beats=300, jitter_s=0.02)
+        # native_df = 1/T ≈ 0.004 Hz for n_beats=300, mean_ibi 0.8 s.
+        # Picking display_resolution well below that disables Resample.
+        native_native_df = 0.001
         for grid in ("span_matched", "carspan_strict"):
             with_dc = compute_carspan_psd(
                 times,
-                options=CarspanOptions(dc_removal=True, dc_grid=grid),
+                options=CarspanOptions(
+                    dc_removal=True, dc_grid=grid,
+                    freq_resolution=native_native_df,
+                ),
             )
             without_dc = compute_carspan_psd(
-                times, options=CarspanOptions(dc_removal=False)
+                times,
+                options=CarspanOptions(
+                    dc_removal=False, freq_resolution=native_native_df,
+                ),
             )
             low = with_dc.freqs < 0.02
-            if low.any():
-                assert with_dc.power[low].sum() < without_dc.power[low].sum()
+            assert low.any()
+            assert with_dc.power[low].sum() < without_dc.power[low].sum()

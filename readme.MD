@@ -509,28 +509,48 @@ Two practical consequences:
 
 #### How do I make `carspan` perform like `carspan_strict`?
 
-`carspan_strict` is — by design — the same code as `carspan` with the `carspan_strict_options()` preset applied. If you want to keep `method: "carspan"` in your workspace but flip the algorithm under the hood, the single knob that matters is **`signal`**:
+`carspan_strict` is — by design — the same code as `carspan` with the `carspan_strict_options()` preset applied. If you want to keep `method: "carspan"` in your workspace but flip the algorithm under the hood, **two settings in the Edit Parameters dialog do the job**:
+
+| Setting | From-strict-equivalent value |
+|---|---|
+| `FrequencyAnalysis.carspan.signal` | **`ibi_amplitude`** |
+| `FrequencyAnalysis.carspan.window` | **`5% cosine bell`** |
+
+Or as JSON:
 
 ```json
 "FrequencyAnalysis": {
   "method": "carspan",
   "carspan": {
-    "signal": "ibi_amplitude"
+    "signal": "ibi_amplitude",
+    "window": "5% cosine bell",
+    "freq_resolution": 0.01,
+    "smooth_for_display": true,
+    "plot_units": "mMI²/Hz",
+    "dc_removal": false
   }
 }
 ```
 
-Setting `signal: "ibi_amplitude"` switches the compute path from the unit-impulse SOC (Eq. 3.19) to the manual-faithful IBI-amplitude DFT (Eq. 3.21). The other strict-bundle knobs (`taper`, `alpha_taper`, `amplitude_correction`, `skip_first_event`, `dc_removal`, `dc_grid`) are all **ignored** on the `ibi_amplitude` branch — the manual fixes their behaviour, so you don't have to set them. The only field still worth setting deliberately is the window (`taper: "carspan_index"` + `alpha_taper: 0.10` gives Pascal's 5 % index taper, which is what `carspan_strict_options()` picks; any other scipy window also works).
+Two things to know:
 
-One subtlety: the **mean convention** is auto-derived from the workspace `method` field — `psd_method_from_workspace` sets `mean_convention = "arithmetic"` only when `method == "carspan_strict"`. With `method: "carspan"` + `signal: "ibi_amplitude"` you'll get the IBI-amplitude DFT computed correctly but normalised by `T/N` (harmonic mean of IBI) instead of the arithmetic-mean-of-rate convention Pascal uses. For typical 5–8 % RR variability that's a ~0.3–0.8 % difference in the reported mMI² values (epoch #2 of `example1.EVT`: ~0.5 % on LF, comfortably within the ~2 % the manual itself rounds to). If that residual difference matters, set `method: "carspan_strict"` instead — that's the single switch that picks *both* the IBI-amplitude algorithm and the arithmetic-mean-of-rate convention.
+1. **`signal: "ibi_amplitude"`** is the switch that selects the manual-faithful algorithm (manual Eq. 3.21, Pascal `SOC` branch `IsRPDataCol=False`). On this branch the other strict-bundle fields (`amplitude_correction`, `skip_first_event`, `dc_removal`, `dc_grid`) are **ignored** by the compute layer — the manual fixes their values — so they don't need to appear in the Edit Parameters dialog.
+2. **`window: "5% cosine bell"`** matches Pascal's `TaperPercent := 5` (5 % cosine taper per side). The default of `"10% cosine bell"` is 10 % per side, which leaves ~3–5 % more energy on the table and is the single largest source of disagreement with strict if you only flip `signal`.
+
+Verified on epoch #2 of `example1.EVT`: setting `signal: "ibi_amplitude"` + `window: "5% cosine bell"` on the configurable `carspan` path reproduces `carspan_strict` to within ~1 % on every band (and the CARSPAN manual reference to within ~1 % — actually closer than strict on some bands because the residuals from the two sub-percent effects partially cancel).
+
+Two small residuals remain between `carspan + signal=ibi_amplitude` and pure `carspan_strict`:
+
+* **Window taper variant.** With `window: "5% cosine bell"` the configurable path uses scipy's Tukey window, which zeros the first/last sample exactly; Pascal's index taper gives them a small non-zero weight. The strict preset (`carspan_strict_options()`) hard-codes `taper: "carspan_index"` to get the Pascal-faithful version. Difference: ≪ 1 % on band power. Not exposed in the Edit Parameters dialog because it would be a new "carspan_index" choice for the window dropdown that most users wouldn't recognise; if you need it, set it via the Python API.
+* **Mean convention.** `psd_method_from_workspace` sets `mean_convention = "arithmetic"` (arithmetic mean of per-beat rate = harmonic mean of IBI) only when `method == "carspan_strict"`. With `method: "carspan"` you get the manual's `T/N` (harmonic mean of rate). For typical 5–8 % RR variability that's a ~0.3–0.8 % difference in the resulting mMI² values. Not exposed in the Edit Parameters dialog for the same reason — if you need full bit-equivalence to strict, just use `method: "carspan_strict"`.
 
 The same answer in summary form:
 
-| Goal | What to set |
+| Goal | What to set in Edit Parameters |
 |---|---|
-| Match the manual exactly (recommended) | `method: "carspan_strict"` |
-| Use `carspan` but get strict-style numbers | `method: "carspan"`, `carspan.signal: "ibi_amplitude"` (≈ 0.5 % off from strict due to mean convention) |
-| Configurable unit-impulse SOC | `method: "carspan"`, `carspan.signal: "events"` (default) |
+| Match the manual exactly | `method: "carspan_strict"` (the dropdown choice does it all) |
+| Use `method: "carspan"` but get strict-style numbers (within ~1 %) | `method: "carspan"`, `carspan.signal: "ibi_amplitude"`, `carspan.window: "5% cosine bell"` |
+| Configurable unit-impulse SOC (default) | `method: "carspan"`, `carspan.signal: "events"` |
 
 <details>
 <summary>Note for developers using the Python API directly</summary>
@@ -583,15 +603,19 @@ The grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max} \cdot 
 
 #### Display grid and smoothing
 
-The *plot* path and the *integration* path operate on separate arrays, so the 3-point moving average can smooth the on-screen curve without affecting the reported band-power values.
+The compute layer always returns the **un-smoothed** resampled spectrum (Pascal's `PDSin_BCK`); the 3-point moving-average smoother lives in the plot widget (`spectUI.PSDPlotWidget._fetch`), applied only when the active CARSPAN method has `smooth_for_display = True`. This split lets the *same* `series.psd()` call drive both the on-screen curve and the band-power integration, without `smooth=True/False` bookkeeping at the compute level.
 
-**Plot path (`psd()`).** Native spectrum → bin-averaged onto the `freq_resolution` display grid (default 0.01 Hz) → optional 3-point moving average when `smooth_for_display = True` (the default). Following the manual (§3.3):
+**Compute layer (`series.psd()`, `compute_carspan_psd`).** Native spectrum → bin-averaged onto the `freq_resolution` display grid (Pascal's `Resample`, default 0.01 Hz). That's it — no MA. This mirrors Pascal's `PDSin_BCK`, the array the manual reads when computing band powers (§3.2):
+
+> *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
+
+**Plot widget (`PSDPlotWidget._fetch`).** Pulls the un-smoothed spectrum from `series.psd()`, then applies a 3-point moving average to `power`, `ci_lower`, and `ci_upper` when the active CARSPAN method requests it. From the manual (§3.3):
 
 > *"a moving average window over three frequency points (0.03 Hz bandwidth) is applied before plotting the spectral functions"*
 
-**Integration path (`band_power`, `band_powers`).** spectHR calls the back-end a second time with `smooth=False` and applies only the resample step — same display grid, but no moving average. The manual is equally explicit on this point:
+The MA kernel is mean-preserving (each output bin is the arithmetic mean of three neighbours), so the area under the curve is unchanged — the smoothing only affects visual peak height. Welch and Lomb-Scargle results are never smoothed by the plot widget; the `smooth_for_display` knob lives on `CarspanOptions` and the plot widget consults it only for CARSPAN methods.
 
-> *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
+**Integration path (`band_power`, `band_powers`).** Runs on the *same* un-smoothed spectrum that `psd()` returns. No second back-end call, no smoothing toggle to remember.
 
 #### Band power (formula 3.28)
 

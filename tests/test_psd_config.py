@@ -42,17 +42,20 @@ from spectUI.workSpace import psd_method_from_workspace
 class TestBandSpec:
     def test_minimum_construction(self):
         b = BandSpec(low=0.02, high=0.06)
-        assert b.color == "gray"
-        assert b.alpha is None
-
-    def test_full_construction(self):
-        b = BandSpec(low=0.02, high=0.5, color="gray", alpha=0.05)
-        assert b.alpha == 0.05
+        assert b.low == 0.02
+        assert b.high == 0.06
 
     def test_frozen(self):
         b = BandSpec(low=0.02, high=0.06)
         with pytest.raises(FrozenInstanceError):
-            b.color = "red"   # type: ignore[misc]
+            b.low = 0.03   # type: ignore[misc]
+
+    def test_no_display_attributes(self):
+        """:class:`BandSpec` carries only the frequency edges; display
+        attributes (colour, alpha) belong to the UI workspace dict."""
+        b = BandSpec(low=0.02, high=0.5)
+        assert not hasattr(b, "color")
+        assert not hasattr(b, "alpha")
 
 
 # ===========================================================================
@@ -168,15 +171,19 @@ class TestPsdMethodFromWorkspace:
         m = psd_method_from_workspace(ws)
         assert m.alpha_ci == 0.05
 
-    def test_band_alpha_round_trips(self):
-        """BandSpec.alpha is optional and must survive the dict → dataclass
-        conversion when present, and remain ``None`` otherwise."""
+    def test_band_display_attrs_ignored_by_builder(self):
+        """``color`` / ``alpha`` from the workspace JSON are display
+        attributes; the workspace builder strips them. They survive on
+        the raw workspace dict for ``PSDPlotWidget`` to consume."""
         ws = self._ws()
         ws["FrequencyAnalysis"]["bands"]["FullRange"]["alpha"] = 0.05
-        # VLF does not specify alpha at all.
+        ws["FrequencyAnalysis"]["bands"]["VLF"]["color"] = "navy"
         m = psd_method_from_workspace(ws)
-        assert m.bands["FullRange"].alpha == 0.05
-        assert m.bands["VLF"].alpha is None
+        # The library-side BandSpec only carries the edges.
+        assert m.bands["FullRange"].low == 0.02
+        assert m.bands["FullRange"].high == 0.5
+        assert not hasattr(m.bands["FullRange"], "alpha")
+        assert not hasattr(m.bands["VLF"], "color")
 
     def test_empty_frequency_analysis_section_falls_back(self):
         """An entirely empty FrequencyAnalysis still produces a workable

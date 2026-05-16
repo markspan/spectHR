@@ -109,6 +109,40 @@ class _PlotData:
     error: Optional[str] = None  # set if PSD could not be computed
 
 
+def _ma3(arr: np.ndarray) -> np.ndarray:
+    """CARSPAN's 3-point moving-average smoother (plot-only).
+
+    Manual §3.2, p. 33 — "a moving average window over three frequency
+    points (0.03 Hz bandwidth) is applied before plotting the spectral
+    functions". Mean-preserving, so the area under the curve is
+    preserved; peaks visually drop ≈ 3× compared to the raw periodogram.
+
+    Returns a fresh array; the input is not mutated.
+    """
+    if arr is None or arr.size < 3:
+        return arr
+    kernel = np.ones(3, dtype=np.float64) / 3.0
+    return np.convolve(arr, kernel, mode="same")
+
+
+def _wants_smoothing(series, psd_method: Optional[PsdMethod], method_name: str) -> bool:
+    """Decide whether to apply the 3-MA to a CARSPAN spectrum.
+
+    Only the CARSPAN methods carry a ``smooth_for_display`` setting
+    (it's a knob on :class:`CarspanOptions`). For Welch / Lomb-Scargle
+    this returns False unconditionally — the plot widget never smooths
+    those.
+    """
+    if method_name not in ("carspan", "carspan_strict"):
+        return False
+    active = psd_method if psd_method is not None else getattr(
+        series, "psd_method", None
+    )
+    if active is None:
+        return False
+    return bool(getattr(active.carspan, "smooth_for_display", False))
+
+
 def _fetch(
     series, label: str, psd_method: Optional[PsdMethod] = None
 ) -> _PlotData:
@@ -117,6 +151,12 @@ def _fetch(
     ``psd_method`` (when given) is passed through as an explicit
     override on the series call; otherwise the series' own
     ``psd_method`` attribute (set by the UI on dataset load) is used.
+
+    If the active method is CARSPAN and ``smooth_for_display`` is True,
+    the plot widget applies the CARSPAN 3-point moving-average smoother
+    here, locally — the compute layer is left un-smoothed so band-power
+    integration runs on the raw periodogram (which is what Pascal does
+    via ``PDSin_BCK``).
     """
     psd_kwargs = {"with_ci": True}
     bp_kwargs: Dict[str, Any] = {}
@@ -147,16 +187,26 @@ def _fetch(
         print(f"Warning: band powers failed for {label}: {e}")
         band_powers = {}
 
+    power = np.asarray(result.power).ravel()
+    ci_lower = (
+        np.asarray(result.ci_lower).ravel() if result.ci_lower is not None else None
+    )
+    ci_upper = (
+        np.asarray(result.ci_upper).ravel() if result.ci_upper is not None else None
+    )
+
+    # Plot-only display smoothing for the CARSPAN methods.
+    if _wants_smoothing(series, psd_method, result.method):
+        power = _ma3(power)
+        ci_lower = _ma3(ci_lower) if ci_lower is not None else None
+        ci_upper = _ma3(ci_upper) if ci_upper is not None else None
+
     return _PlotData(
         label=label,
         freqs=np.asarray(result.freqs).ravel(),
-        power=np.asarray(result.power).ravel(),
-        ci_lower=(
-            np.asarray(result.ci_lower).ravel() if result.ci_lower is not None else None
-        ),
-        ci_upper=(
-            np.asarray(result.ci_upper).ravel() if result.ci_upper is not None else None
-        ),
+        power=power,
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
         unit=result.unit,
         method=result.method,
         band_powers=band_powers,

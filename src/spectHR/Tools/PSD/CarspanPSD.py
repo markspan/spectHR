@@ -113,9 +113,13 @@ class CarspanOptions:
     """Hz — spacing of the display grid produced by bin-averaging."""
 
     smooth_for_display: bool = True
-    """Apply the CARSPAN 3-point MA on the display grid when True.
-    Bin-averaging to the display grid is always on (mirrors Pascal's
-    ``Resample`` always running before ``Calculate_Power``)."""
+    """**Plot-only hint.** When True, the PSD plot widget applies the
+    CARSPAN 3-point moving-average smoother (manual §3.2, p. 33) to
+    the displayed curve. The compute layer is unaffected — the
+    spectrum returned by :func:`compute_carspan_psd` is always the
+    Resample-binned but un-smoothed grid that band-power integration
+    runs on. Bin-averaging to the display grid is always on (mirrors
+    Pascal's ``Resample`` before ``Calculate_Power``)."""
 
     f_max: float = 0.5
     """Upper frequency limit of the computed spectrum, in Hz."""
@@ -353,15 +357,16 @@ def _compute(
     else:
         power = _events_periodogram(event_times_s, freqs, T, opts)
 
-    # 4. Bin-average to the display grid (always) and optionally apply
-    #    the 3-MA. Pascal applies ``Resample`` before ``Calculate_Power``
-    #    unconditionally; the plot-only smoothing is opt-in.
+    # 4. Bin-average to the display grid (Pascal's Resample step,
+    #    always on). The 3-point MA used for plotting lives in the
+    #    plot widget — keeping it out of the compute layer means the
+    #    same spectrum can be plotted *and* integrated without
+    #    smoothing-vs-not bookkeeping at this level.
     return _apply_display_smoothing(
         freqs=freqs,
         power=power,
         delta_f=delta_f,
         display_resolution=float(opts.freq_resolution),
-        do_smooth=opts.smooth_for_display,
     )
 
 
@@ -633,38 +638,30 @@ def _apply_display_smoothing(
     power: np.ndarray,
     delta_f: float,
     display_resolution: float,
-    do_smooth: bool,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Bin-average to the display grid and optionally run the 3-point MA.
+    """Resample the native-grid spectrum onto the CARSPAN display grid.
 
-    1. **Bin-averaging — always on.** When the native grid is finer than
-       the display grid (``Δf < display_resolution`` × 0.99), neighbouring
-       native bins are averaged into display bins by Pascal's
-       fractional-coverage rule (see :func:`_bin_average`). This
-       reproduces Pascal's ``Resample`` step, which runs
-       unconditionally before ``Calculate_Power`` reads ``PDSin_BCK``.
-       The chi-squared dof per display bin scales as ``2 × bin_counts``.
+    When the native grid is finer than the display grid
+    (``Δf < display_resolution`` × 0.99), neighbouring native bins are
+    combined by Pascal's fractional-coverage rule (see :func:`_bin_average`).
+    This mirrors Pascal's ``Resample``, which runs unconditionally before
+    ``Calculate_Power`` reads ``PDSin_BCK``. The chi-squared dof per
+    display bin scales as ``2 × bin_counts``.
 
-    2. **3-point moving average — opt-in via ``do_smooth``.** From the
-       CARSPAN manual (§3.2, p. 33):
+    Plot-only display smoothing (the manual's 3-point moving average
+    of §3.2, p. 33) is **not** done here — it lives in the plot widget
+    (:mod:`spectUI.PSDPlotWidget`), so the spectrum that
+    :func:`compute_carspan_psd` returns can be integrated for band
+    power without first having to un-smooth it. Pascal's manual is
+    explicit on this point::
 
-           "a moving average window over three frequency points
-            (0.03 Hz bandwidth) is applied before plotting the
-            spectral functions"
-
-       Plot-only smoothing; the kernel is mean-preserving, so the area
-       under the curve is preserved and peaks visually drop ≈ 3× to
-       match CARSPAN's display.
+        "No smoothing of the spectra is carried out on the spectra
+         before computing the spectral band values"
     """
     if freqs.size > 0 and delta_f < display_resolution * 0.99:
         freqs, power, bin_counts = _bin_average(freqs, power, display_resolution)
     else:
         bin_counts = np.ones(freqs.size, dtype=int)
-
-    if do_smooth and power.size >= 3:
-        kernel = np.ones(3, dtype=np.float64) / 3.0
-        power = np.convolve(power, kernel, mode="same")
-
     return freqs, power, bin_counts
 
 

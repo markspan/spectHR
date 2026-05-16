@@ -32,6 +32,7 @@ _DEFAULT_WORKSPACE = {
         },
         "carspan": {
             "freq_resolution": 0.01,
+            "signal": "events",
             "window": "10% cosine bell",
             "smooth_for_display": True,
             "plot_units": "mMI²/Hz",
@@ -139,16 +140,16 @@ def _ensure_dirs(workspace: dict) -> None:
 
 
 def _bands_from_workspace(bands_dict: Dict[str, dict]) -> Dict[str, BandSpec]:
-    """Convert the workspace bands subdict to ``Dict[str, BandSpec]``."""
-    out: Dict[str, BandSpec] = {}
-    for name, spec in bands_dict.items():
-        out[name] = BandSpec(
-            low=float(spec["low"]),
-            high=float(spec["high"]),
-            color=str(spec.get("color", "gray")),
-            alpha=(float(spec["alpha"]) if "alpha" in spec else None),
-        )
-    return out
+    """Convert the workspace bands subdict to ``Dict[str, BandSpec]``.
+
+    Only the frequency edges go into :class:`BandSpec`. Display
+    attributes (``color``, ``alpha``) stay on the raw workspace dict
+    and are consumed directly by ``PSDPlotWidget``.
+    """
+    return {
+        name: BandSpec(low=float(spec["low"]), high=float(spec["high"]))
+        for name, spec in bands_dict.items()
+    }
 
 
 def _filter_kwargs(cls, raw: Dict[str, Any]) -> Dict[str, Any]:

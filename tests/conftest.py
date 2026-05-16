@@ -24,10 +24,10 @@ from spectHR.DataSet.Series.CardioMetricsMixin import (
 # ---------------------------------------------------------------------------
 
 WORKSPACE_BANDS = {
-    "FullRange": BandSpec(low=0.02, high=0.50, color="gray", alpha=0.05),
-    "VLF":       BandSpec(low=0.02, high=0.06, color="blue"),
-    "LF":        BandSpec(low=0.07, high=0.14, color="darkgreen"),
-    "HF":        BandSpec(low=0.15, high=0.40, color="red"),
+    "FullRange": BandSpec(low=0.02, high=0.50),
+    "VLF":       BandSpec(low=0.02, high=0.06),
+    "LF":        BandSpec(low=0.07, high=0.14),
+    "HF":        BandSpec(low=0.15, high=0.40),
 }
 
 

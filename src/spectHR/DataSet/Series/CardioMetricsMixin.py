@@ -55,8 +55,8 @@ from the manual. The split is controlled by ``PsdMethod.mean_convention``
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from typing import Dict, Literal, Optional, Tuple
+from dataclasses import replace
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
@@ -71,6 +71,20 @@ from spectHR.Tools.PSD.LombScarglePSD import LombscargleOptions
 from spectHR.Tools.PSD.CarspanPSD import CarspanOptions
 from spectHR.Tools.PSD._psd_utils import PSDResult
 
+# PSD configuration types and the band-power integration helper live
+# alongside the algorithm-specific options dataclasses, in
+# ``spectHR.Tools.PSD``. They are re-exported here so existing imports
+# (``from spectHR.DataSet.Series.CardioMetricsMixin import BandSpec, PsdMethod``)
+# keep working without code changes elsewhere.
+from spectHR.Tools.PSD._psd_config import (
+    Algorithm,
+    MeanConvention,
+    BandSpec,
+    PsdMethod,
+    _DEFAULT_PSD_METHOD,
+)
+from spectHR.Tools.PSD._band_power import band_power_rectangular
+
 
 __all__ = [
     "BandSpec",
@@ -78,109 +92,6 @@ __all__ = [
     "PSDResult",
     "CardioMetricsMixin",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Type aliases
-# ---------------------------------------------------------------------------
-
-Algorithm = Literal["welch", "lombscargle", "carspan", "carspan_strict"]
-MeanConvention = Literal["harmonic", "arithmetic"]
-
-
-# ---------------------------------------------------------------------------
-# BandSpec + PsdMethod
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class BandSpec:
-    """One HRV band: edges (Hz) plus display attributes."""
-
-    low: float
-    high: float
-    color: str = "gray"
-    alpha: Optional[float] = None
-    """Optional display alpha for the band fill (None → widget default)."""
-
-
-def _default_bands() -> Dict[str, BandSpec]:
-    """Fallback band table used when no PsdMethod is supplied.
-
-    Matches the spectUI workspace defaults.
-    """
-    return {
-        "FullRange": BandSpec(low=0.02, high=0.5, color="gray", alpha=0.05),
-        "VLF": BandSpec(low=0.02, high=0.06, color="blue"),
-        "LF": BandSpec(low=0.07, high=0.14, color="darkgreen"),
-        "HF": BandSpec(low=0.15, high=0.40, color="red"),
-    }
-
-
-@dataclass(frozen=True)
-class PsdMethod:
-    """Full PSD configuration: which algorithm, with which options.
-
-    Built by the spectUI layer from a workspace dict and assigned to
-    each series via ``series.psd_method = …``.
-    """
-
-    algorithm: Algorithm = "carspan"
-    bands: Dict[str, BandSpec] = field(default_factory=_default_bands)
-    alpha_ci: float = 0.05
-    mean_convention: MeanConvention = "harmonic"
-    """Mean rate convention for the events²/Hz → mMI²/Hz conversion.
-    ``"harmonic"`` (= ``T/N``) is the manual definition; ``"arithmetic"``
-    (= ``Σ 1/IBI / N``) matches the reference CARSPAN Pascal SOC and is
-    picked automatically by the UI for ``algorithm == "carspan_strict"``."""
-
-    welch: WelchOptions = field(default_factory=WelchOptions)
-    lombscargle: LombscargleOptions = field(default_factory=LombscargleOptions)
-    carspan: CarspanOptions = field(default_factory=CarspanOptions)
-
-
-_DEFAULT_PSD_METHOD = PsdMethod()
-
-
-# ---------------------------------------------------------------------------
-# Band-power integration (CARSPAN Eq. 3.28)
-# ---------------------------------------------------------------------------
-
-
-def _band_power_rectangular(
-    freqs: np.ndarray,
-    power: np.ndarray,
-    f_low: float,
-    f_high: float,
-) -> float:
-    """Rectangular-rule band power integration (CARSPAN Eq. 3.28).
-
-    ``B = Σ S_xx(fₖ) · Δf`` for ``f_low ≤ fₖ ≤ f_high``, both endpoints
-    inclusive. Per-bin Δf is the centred neighbour spacing, so the
-    integration adapts to both uniform (Welch, L-S) and native-CARSPAN
-    grids.
-    """
-    mask = (freqs >= f_low) & (freqs <= f_high)
-    band_freqs = freqs[mask]
-    band_power = power[mask]
-
-    if band_freqs.size == 0:
-        return 0.0
-
-    if band_freqs.size == 1:
-        if freqs.size > 1:
-            delta_f = float(freqs[1] - freqs[0])
-        else:
-            delta_f = float(band_freqs[0])
-        return float(band_power[0] * delta_f)
-
-    spacings = np.diff(band_freqs)
-    delta_f_per_bin = np.empty_like(band_freqs)
-    delta_f_per_bin[0] = spacings[0]
-    delta_f_per_bin[-1] = spacings[-1]
-    delta_f_per_bin[1:-1] = (spacings[:-1] + spacings[1:]) / 2.0
-
-    return float(np.sum(band_power * delta_f_per_bin))
 
 
 # ---------------------------------------------------------------------------
@@ -573,7 +484,7 @@ class CardioMetricsMixin(HRVMetric):
             )
         band = method.bands[band_name]
         result = self._psd_for_band_power(method)
-        return _band_power_rectangular(
+        return band_power_rectangular(
             result.freqs, result.power, band.low, band.high
         )
 
@@ -586,7 +497,7 @@ class CardioMetricsMixin(HRVMetric):
         method = self._resolve_method(psd_method)
         result = self._psd_for_band_power(method)
         return {
-            name: _band_power_rectangular(
+            name: band_power_rectangular(
                 result.freqs, result.power, band.low, band.high
             )
             for name, band in method.bands.items()
@@ -608,12 +519,12 @@ class CardioMetricsMixin(HRVMetric):
     def _psd_for_band_power(self, method: PsdMethod) -> PSDResult:
         """Return the grid that band-power integration should run on.
 
-        CARSPAN integrates on the **unsmoothed** native grid (manual
-        §3.2). Welch / Lomb-Scargle have no separate display grid, so
-        the plot path and the integration path coincide for them.
+        Same as :meth:`psd` for every algorithm: the compute layer no
+        longer applies the CARSPAN display-only 3-point MA (that lives
+        in :mod:`spectUI.PSDPlotWidget` now), so the spectrum returned
+        by :meth:`psd` is also the right one to integrate. Asking for
+        ``with_ci=False`` skips the CI computation we don't need.
         """
-        if method.algorithm in ("carspan", "carspan_strict"):
-            return self._psd_carspan_native(method)
         return self.psd(psd_method=method, with_ci=False)
 
     # ------------------------------------------------------------------
@@ -828,32 +739,3 @@ class CardioMetricsMixin(HRVMetric):
         result = self._psd_carspan(strict_method, with_ci=with_ci)
         return replace(result, method="carspan_strict")
 
-    def _psd_carspan_native(self, method: PsdMethod) -> PSDResult:
-        """CARSPAN PSD on the resampled-but-un-MA-smoothed grid.
-
-        Mirrors CARSPAN's ``PDSin_BCK`` array — the spectrum immediately
-        after resample and **before** the 3-point MA smoother runs. The
-        integration path (``band_power`` / ``band_powers``) uses this
-        rather than the smoothed display grid: the smoothing changes
-        peak heights but not band power, so omitting it keeps the
-        reported values clean.
-
-        Implementation: force ``smooth_for_display=False`` on a copy of
-        the active ``CarspanOptions`` and dispatch through the unified
-        :meth:`_psd_carspan` path. Bin-averaging to the display grid
-        still happens inside ``compute_carspan_psd`` (Pascal's
-        ``Resample`` is unconditional), but the 3-MA step is skipped.
-        """
-        # For the strict algorithm, swap in the strict preset first so
-        # the right signal/taper/etc. drive the compute layer.
-        if method.algorithm == "carspan_strict":
-            carspan_opts = CarspanPSD.carspan_strict_options(
-                smooth_for_display=False,
-                f_max=float(method.carspan.f_max),
-                plot_units=str(method.carspan.plot_units),
-            )
-        else:
-            carspan_opts = replace(method.carspan, smooth_for_display=False)
-
-        method_unsmoothed = replace(method, carspan=carspan_opts)
-        return self._psd_carspan(method_unsmoothed, with_ci=False)
