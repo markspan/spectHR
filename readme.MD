@@ -522,7 +522,7 @@ $$\tilde S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} t_i\, x_i\, e^{-2\pi j f_
 
 where $x_i$ is the arithmetic-mean-subtracted IBI in ms, $t_i$ the local IBI duration in seconds, and $T_i = \sum_{j \le i} t_j$ the cumulative time of the $i$-th beat. The output is in ms²/Hz directly (variance per Hz), and the mixin layer normalises to mMI²/Hz by multiplying by $10^6 / \overline{\text{IBI}}_\text{ms}^2$ — the milli-squared form of manual Eq. 3.20.
 
-The two views describe the *same physical signal* and would integrate to the same total energy under continuous-signal idealisations. In the discrete sampled implementation they produce different magnitudes (per-bin scaling differs by ~$\overline{\text{IBI}}^2$). The strict path is the one whose discrete output matches the manual's tabulated reference values.
+The two views describe the *same physical signal* and would integrate to the same total energy under continuous-signal idealisations. In the discrete sampled implementation they produce different magnitudes (per-bin scaling differs by ~ $\overline{\text{IBI}}^2$ ). The strict path is the one whose discrete output matches the manual's tabulated reference values.
 
 **Which one matches the manual?** The strict path: verified against epoch #2 of `example1.EVT` (CARSPAN manual p. 121) to within ~2 % on every band, ~0.03 % on LF.
 
