@@ -9,4 +9,4 @@ the build metadata and the on-screen version label come from the same
 constant, kept in sync automatically.
 """
 
-__version__ = "1.2.3"
+__version__ = "1.2.4"
