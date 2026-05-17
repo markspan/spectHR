@@ -34,7 +34,8 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
-- [Step 6, Export your results (Parameters tab)](#step-6-export-your-results-parameters-tab)
+- [Step 6, Track band power over time (Profiles tab)](#step-6-track-band-power-over-time-profiles-tab)
+- [Step 7, Export your results (Parameters tab)](#step-7-export-your-results-parameters-tab)
 
 </details>
 
@@ -72,6 +73,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 - [Welch's method](#welchs-method)
 - [CARSPAN method](#carspan-method)
+- [Spectral profiles](#spectral-profiles)
 - [Confidence intervals](#confidence-intervals)
 - [Frequency bands](#frequency-bands-1)
 - [Units and normalisation](#units-and-normalisation)
@@ -249,7 +251,30 @@ Ranges are configurable. The shaded grey band is the **confidence interval**. Th
 
 ---
 
-### Step 6, Export your results (Parameters tab)
+### Step 6, Track band power over time (Profiles tab)
+
+![spectHR](images/ProfilesWindow.PNG)
+
+The **Profiles tab** shows how each chosen frequency band's power *changes over the course of each epoch*. Where the PSD tab gives you one spectrum per epoch (collapsing time), the Profiles tab gives you one curve per band per epoch (collapsing frequency *within* the band, but resolving time).
+
+Each subplot is one epoch; each filled, semi-transparent trace is one band. The x-axis is time within the epoch (seconds, with `t = 0` at the epoch's first R-peak); the y-axis is band power in mMI² (or ms², if you switched the Welch units). The y-axis is shared across epoch subplots so band-power magnitudes are directly comparable between epochs — Up / Down arrows zoom the shared axis; Shift+Ctrl+P exports every subplot to the configured output folder.
+
+How the curve is computed: a fixed window of length `window_s` slides along the epoch in steps of `step_s`, and the active PSD method (CARSPAN-strict by default) is recomputed on the R-peaks inside each window. The band-power integration that produces one dot of the trace is the **same `band_powers()` call** used in the PSD tab, just applied per-window — so flipping the PSD method in *Edit Parameters* affects the Profiles tab the same way it affects the PSD tab.
+
+Configure it under **WorkSpace → Edit Parameters → Profile Settings**:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `bands` | `["LF", "HF"]` | Tick-box list of band names to plot. Must match band names defined under PSD Settings; stale names from a band rename are dropped automatically. |
+| `window_s` | 30 s | Length of the sliding window, in seconds. CARSPAN manual recommends `window_s ≥ 3 · 1/f_l_min` for reliable estimates of the lowest band (i.e. ≥ 50 s for an LF lower edge of 0.06 Hz). |
+| `step_s` | 5 s | Step between successive windows. Must be strictly smaller than `window_s` (otherwise the windows don't overlap). |
+| `smooth_for_display` | `false` | Apply the same Pascal 3-point moving-average smoother used by the PSD plot, along each band's time series. **Off by default** to match the Delphi reference (which never smooths the profile time series). |
+
+Each profile dot is plotted at the **centre of the window that produced it**, not at the window's left edge — same convention as Delphi's `PlotProfiles` (`T_AnaFunctions.pas:1521`), and the same convention `scipy.signal.spectrogram` uses with `mode='psd'`. So the first dot for a 30 s window lands at `t = 15 s` within the epoch; the apparent "gap" at the left of each plot is the half-window that the first window's centre is offset from `t = 0`.
+
+---
+
+### Step 7, Export your results (Parameters tab)
 
 The **Parameters tab** shows a table with one row per epoch:
 
@@ -267,10 +292,11 @@ All parameters are stored in a JSON workspace file, editable through the applica
 
 **WorkSpace → Edit Workspace** changes the three folder paths (data, cache, export).
 
-**WorkSpace → Edit Parameters** covers:
-- *Frequency Analysis*, PSD method, band edges and colours, method-specific parameters, CI level.
-- *IBI Classification*, window length, threshold multiplier, TL ceiling.
-- *ECG Preprocessing*, high-pass filter settings.
+**WorkSpace → Edit Parameters** is a tabbed dialog:
+
+- **General Settings** — *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag).
+- **PSD Settings** — PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
+- **Profile Settings** — which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window_s`, `step_s`), and the optional `smooth_for_display` time-axis smoother.
 
 Changes take effect immediately and are saved to disk.
 
@@ -677,6 +703,39 @@ In both cases the factor $10^6$ (explicit above for strict, implicit in the even
 | Regular-grid DC removal (configurable mode) | `false` | `dc_removal` | Subtract the DFT of a mean-rate impulse train before squaring; cleans up VLF. Strict mode applies this unconditionally. |
 
 </details>
+
+---
+
+### Spectral profiles
+
+A **profile** is the time-resolved evolution of band power *within* one epoch (CARSPAN manual §3.3.5, Eq. 3.34 / 3.35). The PSD tab collapses time and gives you one spectrum per epoch; the Profiles tab does the opposite — collapses frequency *inside* each band and gives you one curve per band per epoch, drawn against time.
+
+#### Algorithm
+
+For each epoch view, the same compute that powers `series.psd()` runs inside a sliding window:
+
+1. Number of windows: $N = \lfloor (T - W) / S \rfloor + 1$, with epoch duration $T$, window length $W$, and step size $S$. Matches the Delphi `GetNrOfProfiles` exactly (`T_AnaFunctions.pas:1164`).
+2. For window $i = 0, 1, \dots, N-1$:
+   - Window span: $[t_0 + i S,\ t_0 + i S + W]$ where $t_0$ is the epoch's first R-peak.
+   - Take the sub-view of R-peaks in that span.
+   - Call `band_powers(psd_method=method)` on the sub-view — yielding one band-power value per configured band.
+3. The result is an $(\text{n\_bands} \times N)$ matrix plus a 1-D timestamps array of window centres.
+
+Because step 2 dispatches through the same `band_powers()` call the PSD tab uses, the profile inherits the active PSD method automatically: switching between Welch, Lomb-Scargle, CARSPAN or CARSPAN-strict in PSD Settings changes the profile too without any additional configuration.
+
+#### Window-centre time convention
+
+Each profile dot is plotted at the **centre** of the window that produced it, $t = i S + W/2$ from the epoch start. The reference Delphi implementation does the same (`T_AnaFunctions.pas:1521`, `index*StepSize + RPDataCol[0] + WindowLength/2`). Plotting at the window centre is the standard signal-processing convention for sliding-window estimates — it's where a piecewise constant approximation of the underlying time-varying band power would put the midpoint of each step.
+
+A consequence is that the first dot is offset by $W/2$ from the epoch's left edge, not by 0; the data from $t \in [0, W/2]$ has been used (it's part of the first window) but its band-power estimate is attributed to the centre of that window, not its left edge.
+
+#### Smoothing
+
+`smooth_for_display` applies the same Pascal-faithful 3-point moving-average smoother the PSD plot uses (see [Display grid and smoothing](#display-grid-and-smoothing)), but along the *time axis* of each band's profile rather than the frequency axis. Defaults to `false` because Delphi's profile plot doesn't smooth either; flip it on for a softer curve when the per-window estimates are noisy.
+
+#### Algorithm-agnostic dispatch
+
+Worth flagging: in the reference Delphi implementation, profiles are only available for the CARSPAN SOC path. In spectHR the per-window compute goes through `view.band_powers(...)` which works equally for Welch and Lomb-Scargle, so the Profiles tab works with whichever PSD method PSD Settings has selected. This is a spectHR addition.
 
 ---
 

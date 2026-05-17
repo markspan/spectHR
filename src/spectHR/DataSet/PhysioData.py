@@ -4,6 +4,8 @@ from pathlib import Path
 import pickle
 from typing import Any
 
+import numpy as np
+
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
@@ -207,6 +209,8 @@ class PhysioData:
         n_std:         float = DEFAULT_IBI_PARAMS.n_std,
         max_ibi_sec:   float = DEFAULT_IBI_PARAMS.max_ibi_sec,
         classify:      bool  = True,
+        # Respiration segmentation
+        respiration_per_epoch: bool = False,
     ) -> None:
         """
         Preprocess ECG for the active band.
@@ -229,6 +233,21 @@ class PhysioData:
         max_ibi_sec : float
             Absolute ceiling; intervals longer than this are labeled "TL"
             and excluded from all statistics (default 2.0 s).
+
+        Respiration segmentation
+        ------------------------
+        respiration_per_epoch : bool
+            When True, run :meth:`RespirationSeries.from_timeseries` once
+            per active epoch and concatenate the results, rather than
+            once over the whole recording. The peak-detection prominence
+            in ``from_timeseries`` is data-driven from the signal's MAD,
+            so running it per epoch lets the threshold adapt to each
+            epoch's typical breath amplitude — useful when rest and task
+            periods have substantially different breathing depth or
+            baseline noise. The default ``experiment`` epoch is skipped
+            when it still covers the full recording (a no-op fall-back
+            so the flag stays safe before task epochs are defined).
+            Loaded from ``workspace["RespirationAnalysis"]["per_epoch"]``.
 
         All parameters default to the same values as classify_ibi() so
         that calling preprocess_ecg() without arguments is safe.
@@ -316,7 +335,10 @@ class PhysioData:
 
             if rsp_ts is not None:
                 logger.info(f"Preprocessing RESP band '{band}'")
-                resp = RespirationSeries.from_timeseries(rsp_ts)
+                if respiration_per_epoch:
+                    resp = self._respiration_per_epoch(rsp_ts)
+                else:
+                    resp = RespirationSeries.from_timeseries(rsp_ts)
                 resp._pd     = self
                 resp._stream = band
                 self.rsp_map[band] = resp
@@ -340,6 +362,77 @@ class PhysioData:
                     )
 
         self.active_band = original_band or bands[0]
+
+    def _respiration_per_epoch(self, rsp_ts) -> "RespirationSeries":
+        """Run respiration segmentation once per epoch and concatenate.
+
+        See :meth:`preprocess_ecg` (``respiration_per_epoch=True``) for
+        why we'd want this: the prominence threshold in
+        :meth:`RespirationSeries.from_timeseries` is data-driven from
+        the signal's own MAD/sigma, so processing per epoch lets it
+        adapt to each epoch's breathing amplitude rather than averaging
+        rest and task into one global threshold.
+
+        The default ``experiment`` epoch is skipped when its bounds still
+        match the full rsp time series (the placeholder that loaders
+        seed before the user defines task epochs); otherwise every
+        ``active`` and ``is_valid`` epoch contributes its detected
+        INH/EXH phases. If no usable epochs remain, falls back to the
+        whole-signal segmentation so the call is never a no-op when the
+        user explicitly asked for per-epoch mode.
+        """
+        # Local import to avoid a circular reference at module-load time.
+        from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
+
+        if rsp_ts.times.size < 5 or not getattr(self, "epochs", None):
+            return RespirationSeries.from_timeseries(rsp_ts)
+
+        total_start = float(rsp_ts.times[0])
+        total_end = float(rsp_ts.times[-1])
+        starts_all, ends_all, labels_all = [], [], []
+
+        for name, epoch in self.epochs.items():
+            if not getattr(epoch, "active", True):
+                continue
+            if hasattr(epoch, "is_valid") and not epoch.is_valid:
+                continue
+
+            ep_start = float(epoch.start)
+            ep_end = float(epoch.end)
+
+            # Skip the default 'experiment' epoch when it still spans
+            # the whole recording — running per-epoch on a single epoch
+            # equal to the full signal would just reproduce the
+            # whole-recording case.
+            covers_full = (
+                abs(ep_start - total_start) < 1.0
+                and abs(ep_end - total_end) < 1.0
+            )
+            if str(name).lower() == "experiment" and covers_full:
+                continue
+
+            sliced = rsp_ts.view(ep_start, ep_end)
+            if sliced.times.size < 5:
+                continue
+
+            resp_ep = RespirationSeries.from_timeseries(sliced)
+            if len(resp_ep) == 0:
+                continue
+            starts_all.append(resp_ep.starts)
+            ends_all.append(resp_ep.ends)
+            labels_all.append(resp_ep.labels)
+
+        if not starts_all:
+            # No task epoch contributed any phases — fall through to the
+            # whole-recording analysis so the user still gets something
+            # rather than an empty RespirationSeries.
+            return RespirationSeries.from_timeseries(rsp_ts)
+
+        return RespirationSeries(
+            np.concatenate(starts_all),
+            np.concatenate(ends_all),
+            np.concatenate(labels_all),
+        )
 
     # ------------------------------------------------------------ #
     # Persistence                                                   #

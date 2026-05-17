@@ -69,7 +69,7 @@ from spectHR.Tools.PSD import CarspanPSD
 from spectHR.Tools.PSD.WelchPSD import WelchOptions
 from spectHR.Tools.PSD.LombScarglePSD import LombscargleOptions
 from spectHR.Tools.PSD.CarspanPSD import CarspanOptions
-from spectHR.Tools.PSD._psd_utils import PSDResult
+from spectHR.Tools.PSD._psd_utils import PSDResult, ProfileResult
 
 # PSD configuration types and the band-power integration helper live
 # alongside the algorithm-specific options dataclasses, in
@@ -90,6 +90,7 @@ __all__ = [
     "BandSpec",
     "PsdMethod",
     "PSDResult",
+    "ProfileResult",
     "CardioMetricsMixin",
 ]
 
@@ -502,6 +503,117 @@ class CardioMetricsMixin(HRVMetric):
             )
             for name, band in method.bands.items()
         }
+
+    def band_power_profile(
+        self,
+        *,
+        window_s: float,
+        step_s: float,
+        psd_method: Optional[PsdMethod] = None,
+    ) -> ProfileResult:
+        """Sliding-window band-power profile inside this view (CARSPAN
+        manual §3.3.5, Eq. 3.34 / 3.35).
+
+        Slides a window of ``window_s`` seconds along this view in
+        steps of ``step_s`` seconds; for each window position, builds
+        a sub-view via :meth:`view` and calls :meth:`band_powers` on
+        it. The result is one band-power time series per configured
+        band, all packed into a single :class:`ProfileResult`.
+
+        Algorithm-agnostic: the active :class:`PsdMethod`
+        (Welch / Lomb-Scargle / CARSPAN / CARSPAN-strict) drives each
+        window's PSD, just like the corresponding whole-epoch
+        :meth:`band_powers` call.
+
+        Parameters
+        ----------
+        window_s : float
+            Window length in seconds. Must satisfy
+            ``window_s ≥ 3 · 1/f_l_min`` for reliable estimates of the
+            lowest configured band (CARSPAN manual recommendation).
+        step_s : float
+            Step between successive windows in seconds. Must be
+            strictly smaller than ``window_s`` so windows overlap.
+        psd_method : PsdMethod, optional
+            Explicit override; otherwise the view's ``psd_method``
+            attribute (or the module default) is used.
+
+        Returns
+        -------
+        ProfileResult
+            ``timestamps`` (window centres in s), ``band_names``,
+            ``band_power`` of shape ``(n_bands, n_windows)``, ``unit``,
+            ``method``. Windows with too few R-peaks (< 4) for a PSD
+            store NaN in ``band_power``.
+        """
+        if window_s <= 0 or step_s <= 0:
+            raise ValueError("window_s and step_s must both be > 0.")
+        if step_s >= window_s:
+            raise ValueError(
+                f"step_s ({step_s}) must be strictly smaller than "
+                f"window_s ({window_s}) so the windows overlap."
+            )
+
+        method = self._resolve_method(psd_method)
+        if self.times.size < 2:
+            raise ValueError("Need at least 2 R-peaks for a profile.")
+
+        t0 = float(self.times[0])
+        t_end = float(self.times[-1])
+        duration = t_end - t0
+        if duration < window_s:
+            raise ValueError(
+                f"View too short ({duration:.1f}s) for window={window_s}s."
+            )
+
+        # Manual Eq. 3.35 — number of windows that fit inside the epoch.
+        n_windows = int((duration - window_s) / step_s) + 1
+
+        band_names = list(method.bands.keys())
+        n_bands = len(band_names)
+        grid = np.full((n_bands, n_windows), np.nan, dtype=np.float64)
+        timestamps = np.empty(n_windows, dtype=np.float64)
+
+        unit = ""
+        for i in range(n_windows):
+            win_start = t0 + i * step_s
+            win_end = win_start + window_s
+            timestamps[i] = win_start + window_s / 2.0   # window centre
+            win_view = self.view(win_start, win_end)
+            # CARSPAN min-N gate — same threshold the compute layer uses.
+            if win_view.times.size < 4:
+                continue
+            try:
+                bp = win_view.band_powers(psd_method=method)
+            except Exception:
+                continue
+            for b, name in enumerate(band_names):
+                grid[b, i] = bp.get(name, np.nan)
+            # Read the band-power unit once, from the first successful
+            # window. Strip ``/Hz`` because band power is the PSD
+            # integrated over Hz — same logic as PSDPlotWidget's
+            # ``_strip_per_hz``.
+            if not unit:
+                try:
+                    r = win_view.psd(psd_method=method, with_ci=False)
+                    raw = str(r.unit).strip()
+                    for suffix in ("/Hz", "/hz", " /Hz", " /hz"):
+                        if raw.endswith(suffix):
+                            raw = raw[: -len(suffix)].rstrip()
+                            break
+                    unit = raw
+                except Exception:
+                    pass
+
+        return ProfileResult(
+            timestamps=timestamps,
+            band_names=band_names,
+            band_power=grid,
+            unit=unit,
+            method=method.algorithm,
+            window_s=float(window_s),
+            step_s=float(step_s),
+        )
 
     # ------------------------------------------------------------------
     # Resolve psd_method with sensible fall-backs

@@ -9,15 +9,19 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QFileDialog,
     QStyle,
     QGroupBox,
     QScrollArea,
+    QTabWidget,
     QWidget,
     QDialogButtonBox,
     QSizePolicy,
     QComboBox,
+    QAbstractItemView,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -109,6 +113,17 @@ class DirectorySelectorDialog(QDialog):
 
 # Keys whose sections are handled by other dialogs or are not editable here
 _EXCLUDED_SECTIONS = {"Directories"}
+
+# Top-level workspace sections grouped into tabs, in display order. Each
+# entry is ``(tab_label, (section_key_1, section_key_2, ...))``. Sections
+# that aren't listed here fall into the first ("General") tab so that
+# future workspace additions stay editable even before they're explicitly
+# routed.
+_TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("General Settings",   ("CardioParameters", "RespirationAnalysis")),
+    ("PSD Settings",       ("FrequencyAnalysis",)),
+    ("Profile Settings",   ("Profiles",)),
+)
 
 # Known enumeration choices for specific leaf keys
 _ENUM_CHOICES: dict[str, list[str]] = {
@@ -234,6 +249,60 @@ def _make_bool_combo(value: bool) -> QComboBox:
 
 
 # ----------------------------------------------------------------------
+# Multi-selector — used by Profile Settings to pick which bands to plot
+# ----------------------------------------------------------------------
+
+
+class _BandMultiSelectWidget(QListWidget):
+    """Tick-box list of band names; ticked items round-trip as a list.
+
+    Each row carries a Qt check-box (``ItemIsUserCheckable``) so users
+    pick bands by ticking them rather than by row-selecting them — the
+    selection mode is explicitly disabled so the highlight bar doesn't
+    fight with the check-state.
+
+    Populated from the live set of band names (the keys of
+    ``FrequencyAnalysis.bands``) so the user can only pick bands that
+    actually exist. The initial list is whatever the workspace had
+    saved, intersected with the universe — silently dropping any stale
+    names left over after a band rename.
+
+    ``ParametersEditorDialog`` recognises this widget type in its
+    ``get_parameters`` value-extraction loop and reads the ticked rows
+    as a Python ``list[str]``.
+    """
+
+    def __init__(
+        self,
+        selected: list[str],
+        universe: list[str],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        # Tick-boxes carry the state; row selection would just confuse
+        # the visual signal of which bands are picked.
+        self.setSelectionMode(QAbstractItemView.NoSelection)
+        self.setMinimumHeight(110)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        selected_set = set(selected or [])
+        for name in universe:
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(
+                Qt.Checked if name in selected_set else Qt.Unchecked
+            )
+            self.addItem(item)
+
+    def selected_names(self) -> list[str]:
+        """Return the currently-ticked band names in display order."""
+        return [
+            self.item(i).text()
+            for i in range(self.count())
+            if self.item(i).checkState() == Qt.Checked
+        ]
+
+
+# ----------------------------------------------------------------------
 # Generic parameters editor
 # ----------------------------------------------------------------------
 
@@ -259,36 +328,59 @@ class ParametersEditorDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Edit Parameters")
         self.setModal(True)
-        self.resize(560, 700)
+        self.resize(620, 720)
         self.setWindowIcon(
             QApplication.style().standardIcon(
                 getattr(QStyle, "SP_FileDialogDetailedView")
             )
         )
 
-        # _widgets maps dotted key path → (widget, original_python_value)
-        # e.g. "FrequencyAnalysis.welch.fs" → (QLineEdit, 4.0)
+        # _widgets maps dotted key path → (widget, original_python_value).
+        # The widget type tells get_parameters how to harvest the value:
+        # QLineEdit / QPushButton (.text()), QComboBox (.currentText()),
+        # _BandMultiSelectWidget (.selected_names()).
         self._widgets: dict[str, tuple[QWidget, Any]] = {}
 
-        # ---- scroll area wrapping all group boxes ----
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Universe of band names — looked up here so the editor's
+        # widget-builder helpers can offer it to the band multiselect.
+        self._all_band_names: list[str] = list(
+            (workspace.get("FrequencyAnalysis", {}) or {})
+            .get("bands", {}).keys()
+        )
 
-        inner = QWidget()
-        inner_layout = QVBoxLayout(inner)
-        inner_layout.setSpacing(10)
-
-        for section_key, section_value in workspace.items():
+        # Resolve which top-level section goes into which tab. Sections
+        # not mentioned in ``_TAB_LAYOUT`` fall into the first tab
+        # ("General Settings"), keeping the editor usable when a new
+        # workspace section appears without an explicit tab assignment.
+        explicit_routes: dict[str, str] = {
+            sec: tab_label
+            for tab_label, sec_keys in _TAB_LAYOUT
+            for sec in sec_keys
+        }
+        first_tab_label = _TAB_LAYOUT[0][0] if _TAB_LAYOUT else "General Settings"
+        sections_per_tab: dict[str, list[str]] = {
+            tab_label: [] for tab_label, _ in _TAB_LAYOUT
+        }
+        for section_key in workspace:
             if section_key in _EXCLUDED_SECTIONS:
                 continue
-            if not isinstance(section_value, dict):
+            if not isinstance(workspace[section_key], dict):
                 continue
-            group = self._make_group(section_key, section_value, prefix=section_key)
-            inner_layout.addWidget(group)
+            tab_label = explicit_routes.get(section_key, first_tab_label)
+            sections_per_tab.setdefault(tab_label, []).append(section_key)
 
-        inner_layout.addStretch()
-        scroll.setWidget(inner)
+        # ---- one tab per group ------------------------------------------------
+        tabs = QTabWidget()
+        for tab_label, _ in _TAB_LAYOUT:
+            section_keys = sections_per_tab.get(tab_label, [])
+            if not section_keys:
+                # Always show every declared tab — an empty tab is
+                # better than silently dropping a settings category.
+                section_keys = []
+            tabs.addTab(
+                self._build_tab(workspace, section_keys),
+                tab_label,
+            )
 
         # ---- OK / Cancel ----
         buttons = QDialogButtonBox(
@@ -299,8 +391,29 @@ class ParametersEditorDialog(QDialog):
         buttons.rejected.connect(self.reject)
 
         outer = QVBoxLayout(self)
-        outer.addWidget(scroll)
+        outer.addWidget(tabs)
         outer.addWidget(buttons)
+
+    def _build_tab(self, workspace: dict, section_keys: list[str]) -> QWidget:
+        """Build one tab pane — a vertical scroll of section group boxes."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        inner = QWidget()
+        inner_layout = QVBoxLayout(inner)
+        inner_layout.setSpacing(10)
+
+        for section_key in section_keys:
+            section_value = workspace.get(section_key)
+            if not isinstance(section_value, dict):
+                continue
+            group = self._make_group(section_key, section_value, prefix=section_key)
+            inner_layout.addWidget(group)
+
+        inner_layout.addStretch()
+        scroll.setWidget(inner)
+        return scroll
 
     # ------------------------------------------------------------------
     # Recursive group-box builder
@@ -330,6 +443,24 @@ class ParametersEditorDialog(QDialog):
             if isinstance(value, dict):
                 sub_group = self._make_group(key, value, prefix=path)
                 layout.addWidget(sub_group)
+            elif self._is_band_list_path(path):
+                # ``Profiles.bands`` is a list of band names the profile
+                # plot should draw. Render it as a multi-select bound to
+                # the live band universe so users can't pick names that
+                # don't exist (and stale names from a band rename get
+                # cleaned up next time the dialog is saved).
+                widget = _BandMultiSelectWidget(
+                    selected=list(value) if value else [],
+                    universe=self._all_band_names,
+                )
+                self._widgets[path] = (widget, value)
+                row = QHBoxLayout()
+                label = QLabel(_label(key) + ":")
+                label.setMinimumWidth(160)
+                label.setAlignment(Qt.AlignRight | Qt.AlignTop)
+                row.addWidget(label)
+                row.addWidget(widget, 1)
+                layout.addLayout(row)
             else:
                 widget = self._make_widget(key, value, path=path)
                 self._widgets[path] = (widget, value)
@@ -343,6 +474,11 @@ class ParametersEditorDialog(QDialog):
                 layout.addLayout(row)
 
         return group
+
+    @staticmethod
+    def _is_band_list_path(path: str) -> bool:
+        """True for workspace paths whose value is a list of band names."""
+        return path == "Profiles.bands"
 
     # ------------------------------------------------------------------
     # Matrix renderer for dict-of-dicts sections (bands)
@@ -526,13 +662,15 @@ class ParametersEditorDialog(QDialog):
         result = copy.deepcopy(workspace)
 
         for path, (widget, original) in self._widgets.items():
-            # Read the raw string value from the widget
-            if isinstance(widget, QComboBox):
-                raw = widget.currentText()
+            # Multi-select returns a list directly — no string coercion.
+            if isinstance(widget, _BandMultiSelectWidget):
+                coerced: Any = widget.selected_names()
             else:
-                raw = widget.text()
-
-            coerced = self._coerce(raw, original)
+                if isinstance(widget, QComboBox):
+                    raw = widget.currentText()
+                else:
+                    raw = widget.text()
+                coerced = self._coerce(raw, original)
 
             # Walk the dotted path and set the leaf
             keys = path.split(".")

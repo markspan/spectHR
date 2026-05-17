@@ -136,6 +136,14 @@ class MainWindow(QMainWindow):
         self.welch_psd_layout = QVBoxLayout()
         self.ui.scrollAreaWidgetContents.setLayout(self.welch_psd_layout)
 
+        # Profile tab uses the same scroll-area-with-content-widget
+        # nesting as the PSD tab (defined in form.ui). The layout itself
+        # is created here and attached to the content widget so
+        # show_profile_plot can swap children in / out the same way
+        # show_psd_plot does.
+        self.profile_layout = QVBoxLayout()
+        self.ui.scrollAreaWidgetContentsProfile.setLayout(self.profile_layout)
+
         self.parameters_plot_widget = spQt.ParametersPlotWidget()
         layout5 = QVBoxLayout()
         layout5.addWidget(self.parameters_plot_widget)
@@ -212,8 +220,12 @@ class MainWindow(QMainWindow):
                 except Exception as e:
                     logger.warning(f"Could not rebuild PsdMethod: {e}")
 
-                # 3. Refresh the PSD plot immediately if a dataset is loaded
+                # 3. Refresh the PSD and Profile plots immediately if a
+                #    dataset is loaded — Profile Settings live in the
+                #    same workspace dialog so any band-list / window /
+                #    step change has to take effect right away too.
                 self.show_psd_plot(self.dataset)
+                self.show_profile_plot(self.dataset)
 
     # ------------------------------------------------------------------
     # Context menu
@@ -309,15 +321,34 @@ class MainWindow(QMainWindow):
         if self.dataset is None:
             return
         self.dataset["ecg"].timeseries.flip()
-        self.dataset.preprocess_ecg()
+        self.dataset.preprocess_ecg(
+            respiration_per_epoch=self._respiration_per_epoch(),
+        )
         self.dataset.save(self.savename)
         self.show_preprocessing_plot(self.dataset)
+
+    def _respiration_per_epoch(self) -> bool:
+        """Read the ``RespirationAnalysis.per_epoch`` flag from the workspace.
+
+        Centralised here so the three ``preprocess_ecg`` call sites stay
+        in sync as more respiration-analysis knobs get added.
+        """
+        ra = (self.workspace or {}).get("RespirationAnalysis", {}) or {}
+        return bool(ra.get("per_epoch", False))
 
     # ------------------------------------------------------------------
     # Tab / file selection handlers
     # ------------------------------------------------------------------
 
     def on_tab_changed(self, index):
+        # Tab order in form.ui (`Views` QTabWidget):
+        #   0 — Preprocessing
+        #   1 — HR
+        #   2 — Poincaré
+        #   3 — Epochs
+        #   4 — PSD
+        #   5 — Profiles
+        #   6 — Parameters
         QApplication.setOverrideCursor(Qt.WaitCursor)
         if self.dataset is not None:
             self.dataset.save(self.savename)
@@ -330,6 +361,8 @@ class MainWindow(QMainWindow):
         if index == 4 and self.dataset is not None:
             self.show_psd_plot(self.dataset)
         if index == 5 and self.dataset is not None:
+            self.show_profile_plot(self.dataset)
+        if index == 6 and self.dataset is not None:
             self.show_parameters_plot(self.dataset)
         QApplication.restoreOverrideCursor()
 
@@ -357,7 +390,9 @@ class MainWindow(QMainWindow):
                     dataset = pickle.load(f)
                 if not dataset.hrv_map or dataset.active_band is None:
                     if getattr(dataset, "has_ecg", False):
-                        dataset.preprocess_ecg()
+                        dataset.preprocess_ecg(
+                            respiration_per_epoch=self._respiration_per_epoch(),
+                        )
                     if dataset.active_band is None and dataset.band_map:
                         dataset.active_band = next(iter(dataset.band_map))
                     dataset.save(self.savename)
@@ -433,7 +468,9 @@ class MainWindow(QMainWindow):
             else:
                 dataset = PhysioData(Path(dirs["DataDirectory"]) / Path(filename))
                 if dataset.has_ecg:
-                    dataset.preprocess_ecg()
+                    dataset.preprocess_ecg(
+                        respiration_per_epoch=self._respiration_per_epoch(),
+                    )
                 if dataset.active_band is None:
                     dataset.active_band = next(iter(dataset.band_map))
                 dataset.save(self.savename)
@@ -484,6 +521,7 @@ class MainWindow(QMainWindow):
             self.show_poincare_plot(self.dataset)
             self.show_epoch_plot(self.dataset)
             self.show_psd_plot(self.dataset)
+            self.show_profile_plot(self.dataset)
             self.show_parameters_plot(self.dataset)
             QApplication.restoreOverrideCursor()
             return
@@ -515,6 +553,7 @@ class MainWindow(QMainWindow):
             self.show_poincare_plot(self.dataset)
             self.show_epoch_plot(self.dataset)
             self.show_psd_plot(self.dataset)
+            self.show_profile_plot(self.dataset)
             self.show_parameters_plot(self.dataset)
             QApplication.restoreOverrideCursor()
 
@@ -571,6 +610,37 @@ class MainWindow(QMainWindow):
         # ``workspace`` is forwarded so PrintScreen knows where to save.
         psd_widget = spQt.PSDPlotWidget(views, labels, workspace=self.workspace)
         self.welch_psd_layout.addWidget(psd_widget)
+
+    def show_profile_plot(self, dataset):
+        """Same epoch-collection contract as :meth:`show_psd_plot`, but
+        builds a :class:`ProfilePlotWidget` instead — one sliding-window
+        band-power profile per epoch, drawn into the Profiles tab.
+        """
+        # Clear existing widgets — same swap-out pattern as the PSD tab.
+        while self.profile_layout.count():
+            item = self.profile_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+
+        pairs = []
+        for label, epoch in dataset.epochs.items():
+            if not epoch.active:
+                continue
+            try:
+                pairs.append((label, dataset.hrv[label]))
+            except Exception:
+                continue
+
+        if not pairs:
+            return
+
+        labels, views = zip(*pairs)
+        profile_widget = spQt.ProfilePlotWidget(
+            views, labels, workspace=self.workspace,
+        )
+        self.profile_layout.addWidget(profile_widget)
 
     def show_parameters_plot(self, data):
         if data is not None:

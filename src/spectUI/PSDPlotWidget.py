@@ -26,6 +26,7 @@ from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
 from spectHR.DataSet.Series.CardioMetricsMixin import PsdMethod
+from spectUI._plot_smoothing import ma3
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -109,20 +110,6 @@ class _PlotData:
     error: Optional[str] = None  # set if PSD could not be computed
 
 
-def _ma3(arr: np.ndarray) -> np.ndarray:
-    """CARSPAN's 3-point moving-average smoother (plot-only).
-
-    Manual §3.2, p. 33 — "a moving average window over three frequency
-    points (0.03 Hz bandwidth) is applied before plotting the spectral
-    functions". Mean-preserving, so the area under the curve is
-    preserved; peaks visually drop ≈ 3× compared to the raw periodogram.
-
-    Returns a fresh array; the input is not mutated.
-    """
-    if arr is None or arr.size < 3:
-        return arr
-    kernel = np.ones(3, dtype=np.float64) / 3.0
-    return np.convolve(arr, kernel, mode="same")
 
 
 def _wants_smoothing(series, psd_method: Optional[PsdMethod], method_name: str) -> bool:
@@ -197,9 +184,9 @@ def _fetch(
 
     # Plot-only display smoothing for the CARSPAN methods.
     if _wants_smoothing(series, psd_method, result.method):
-        power = _ma3(power)
-        ci_lower = _ma3(ci_lower) if ci_lower is not None else None
-        ci_upper = _ma3(ci_upper) if ci_upper is not None else None
+        power = ma3(power)
+        ci_lower = ma3(ci_lower) if ci_lower is not None else None
+        ci_upper = ma3(ci_upper) if ci_upper is not None else None
 
     return _PlotData(
         label=label,

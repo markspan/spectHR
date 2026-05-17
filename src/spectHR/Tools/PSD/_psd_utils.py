@@ -43,6 +43,48 @@ class PSDResult:
     ci_upper: Optional[np.ndarray] = None
 
 
+@dataclass(frozen=True)
+class ProfileResult:
+    """Immutable container for a spectral-profile computation result.
+
+    A profile is the time-resolved band-power of a recording: the same
+    band-power integration that :class:`PSDResult` would yield for a
+    whole epoch, but recomputed inside each of a series of overlapping
+    sliding windows (CARSPAN manual §3.3.5, Eq. 3.34 / 3.35). The result
+    is therefore a 2-D array — one band-power time series per band.
+
+    Fields
+    ------
+    timestamps : (n_windows,) float array
+        Window-centre times in seconds (``t = window_start + window_s/2``).
+    band_names : list[str]
+        Band names in the row order of ``band_power``.
+    band_power : (n_bands, n_windows) float array
+        ``band_power[i, j]`` is the integrated power of ``band_names[i]``
+        in the window centred at ``timestamps[j]``. ``np.nan`` when a
+        window had too few samples to compute a PSD.
+    unit : str
+        Display unit of the band-power values (e.g. ``"mMI²"``, ``"ms²"``).
+        Already the band-power unit — no ``/Hz`` suffix.
+    method : str
+        PSD algorithm used inside each window
+        (``"carspan"`` / ``"carspan_strict"`` / ``"welch"`` /
+        ``"lombscargle"``).
+    window_s : float
+        Window length used to build the profile (seconds).
+    step_s : float
+        Step between successive windows (seconds).
+    """
+
+    timestamps: np.ndarray
+    band_names: list
+    band_power: np.ndarray
+    unit: str = ""
+    method: str = ""
+    window_s: float = 0.0
+    step_s: float = 0.0
+
+
 # ---------------------------------------------------------------------------
 # Chi-squared confidence interval (identical formula across all PSD methods)
 # ---------------------------------------------------------------------------

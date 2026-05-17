@@ -12,6 +12,7 @@ from spectUI.LineHandler import LineHandler
 from spectUI.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.poincarePlotWidget import PoincarePlotWidget
 from spectUI.PSDPlotWidget import PSDPlotWidget
+from spectUI.ProfilePlotWidget import ProfilePlotWidget
 from spectUI.parametersPlotWidget import ParametersPlotWidget
 from spectUI.preProcessFile import PreProcessFile
 
@@ -21,6 +22,7 @@ __all__ = [
     "EpochPlotWidget",
     "PoincarePlotWidget",
     "PSDPlotWidget",
+    "ProfilePlotWidget",
     "ParametersPlotWidget",
     "LoadWorkspace",
     "SaveWorkspace",

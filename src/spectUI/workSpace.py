@@ -65,6 +65,67 @@ _DEFAULT_WORKSPACE = {
             "filter_cutoff": 1.0,
         },
     },
+    # ------------------------------------------------------------------
+    # Spectral profiles
+    # ------------------------------------------------------------------
+    # A spectral profile is the time course of a band-power measure
+    # inside one epoch — implemented as the standard PSD pipeline
+    # applied to a window that slides along the recording with a fixed
+    # step (see CARSPAN manual §3.3.5, Eq. 3.34 / 3.35). The compute
+    # algorithm and band definitions are inherited from
+    # ``FrequencyAnalysis`` so a profile of `band X` is computed with
+    # the same PSD method (Welch / Lomb-Scargle / CARSPAN / strict) and
+    # the same edges as the corresponding PSD band — they're two views
+    # of the same underlying analysis.
+    #
+    # ``bands`` lists the band names (matching keys in
+    # ``FrequencyAnalysis.bands``) the profile plot should draw. The
+    # profile compute may compute all configured bands; this list is a
+    # display filter only.
+    #
+    # ``window_s`` and ``step_s`` are the sliding-window parameters in
+    # seconds; ``step_s`` must be strictly smaller than ``window_s``
+    # (otherwise there's no overlap → no profile), and the manual
+    # recommends ``window_s ≥ 3 · 1/f_l_min`` for reliable estimates.
+    "Profiles": {
+        "window_s": 30.0,
+        "step_s":   5.0,
+        "bands":    ["LF", "HF"],
+        # Apply Pascal's 3-point MA along each band's time series before
+        # plotting. Same kernel + edge policy as the PSD smoother — plot
+        # only; band-power integration is unaffected. Defaults to
+        # False because the reference Delphi profile view doesn't apply
+        # any time-axis smoother — the plotted line is the raw
+        # band-power per profile window. Flip to True for an
+        # easier-on-the-eye curve when the data is noisy.
+        "smooth_for_display": False,
+    },
+    # ------------------------------------------------------------------
+    # Respiration analysis
+    # ------------------------------------------------------------------
+    # ``RespirationSeries.from_timeseries`` derives its peak-detection
+    # prominence from the signal's own MAD/sigma (see the docstring at
+    # ``spectHR.DataSet.Series.RespirationSeries.from_timeseries``):
+    #
+    #   sigma     = 1.4826 · MAD(y)        # robust noise estimate
+    #   prominence = prominence_rel · sigma
+    #
+    # When the full recording mixes resting and task periods, breathing
+    # depth and noise level can differ substantially between them. A
+    # single global prominence threshold then either misses shallow
+    # breaths in one epoch or admits noise as breaths in another. Running
+    # the segmentation **per epoch** lets the threshold adapt to each
+    # epoch's typical breath amplitude.
+    #
+    # Set ``per_epoch: true`` to iterate over the recording's epochs and
+    # build the RespirationSeries from per-epoch segmentations
+    # concatenated together. The default ``experiment`` epoch — which
+    # the loaders create as a placeholder spanning the entire recording —
+    # is skipped when it still covers the whole signal, so turning the
+    # flag on without defining task epochs yet is a no-op.
+    "RespirationAnalysis": {
+        "per_epoch": False,
+    },
 }
 
 
