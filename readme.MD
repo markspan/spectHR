@@ -167,7 +167,7 @@ In short: use ms²/Hz when you care about the absolute size of the millisecond f
 
 ## The interface at a glance
 
-The window is divided into two areas. On the left is a narrow **file tree** listing all datasets in your configured data folder. On the right is the main **analysis area**, organised into six tabs:
+The window is divided into two areas. On the left is a narrow **file tree** listing all datasets in your configured data folder. On the right is the main **analysis area**, organised into seven tabs:
 
 | Tab | What you do there |
 |-----|------------------|
@@ -176,6 +176,7 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | **Poincaré** | Explore beat-to-beat dynamics visually |
 | **Epochs** | Draw and adjust your analysis segments |
 | **PSD** | Read the frequency-domain power spectrum per epoch |
+| **Profiles** | Track each band's power as it evolves over time within an epoch |
 | **Parameters** | See all HRV metrics in a table and export to CSV |
 
 ---
