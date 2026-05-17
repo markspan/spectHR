@@ -719,7 +719,7 @@ For each epoch view, the same compute that powers `series.psd()` runs inside a s
    - Window span: $[t_0 + i S,\ t_0 + i S + W]$ where $t_0$ is the epoch's first R-peak.
    - Take the sub-view of R-peaks in that span.
    - Call `band_powers(psd_method=method)` on the sub-view — yielding one band-power value per configured band.
-3. The result is an $(\text{n\_bands} \times N)$ matrix plus a 1-D timestamps array of window centres.
+3. The result is an `(n_bands × N)` matrix plus a 1-D timestamps array of window centres.
 
 Because step 2 dispatches through the same `band_powers()` call the PSD tab uses, the profile inherits the active PSD method automatically: switching between Welch, Lomb-Scargle, CARSPAN or CARSPAN-strict in PSD Settings changes the profile too without any additional configuration.
 
