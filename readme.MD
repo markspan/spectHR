@@ -177,7 +177,7 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | **Epochs** | Draw and adjust your analysis segments |
 | **PSD** | Read the frequency-domain power spectrum per epoch |
 | **Profiles** | Track each band's power as it evolves over time within an epoch |
-| **Parameters** | See all HRV metrics in a table and export to CSV |
+| **Parameters** | See all HRV metrics in a table and export three CSVs (time-domain, PSD, profile summaries) |
 
 ---
 
@@ -283,7 +283,37 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio, in **mMI²** by default; Welch can be switched to **ms²** via *Edit Parameters*
 
-Click **Save** to export to CSV.
+Click **Save** to export. Three CSV files are written to the configured **Output** folder (see [Configuring the analysis](#configuring-the-analysis)), all in the same wide / one-row-per-epoch layout so they import straight into R, JASP, or SPSS with no list-column parsing. `epoch` is the natural join key across the three:
+
+| File | Per-row contents |
+| --- | --- |
+| `{basename}.csv` | The table shown on screen, time-domain + Poincaré + integrated band powers. |
+| `{basename}_psd.csv` | PSD-method name, unit, and one `<band>_power` column for every configured band. |
+| `{basename}_profiles.csv` | Profile window / step, `n_windows`, and per-band summary statistics (`<band>_mean / _std / _min / _max / _t_max`) computed from the sliding-window profile. |
+
+The profile file collapses each band's time-resolved curve to five scalars per epoch on purpose. Keeping the row count fixed at one-per-epoch is what makes the file directly mergeable with the others. `t_max` is the **epoch-relative** time of the band-power peak (seconds from the epoch's first R-peak), matching the x-axis of the Profiles plot.
+
+The bands you see in `_psd.csv` and `_profiles.csv` are exactly the bands defined under *Edit Parameters → PSD Settings → Bands*, in display order; the profile compute reuses the same band definitions as the PSD compute, so the two files describe the same partition of the spectrum.
+
+A typical `{basename}_psd.csv`:
+
+```csv
+Subject,epoch,method,unit,FullRange_power,VLF_power,LF_power,HF_power
+P01_session1,sitting,carspan,mMI²,1107.57,657.29,247.78,113.75
+P01_session1,standing,carspan,mMI²,1497.87,637.62,520.38,80.99
+P01_session1,supine,carspan,mMI²,434.45,106.08,113.20,140.31
+```
+
+And a typical `{basename}_profiles.csv` (truncated to LF / HF for readability; VLF and FullRange have the same five columns):
+
+```csv
+Subject,epoch,method,unit,window_sec,step_sec,n_windows,LF_mean,LF_std,LF_min,LF_max,LF_t_max,HF_mean,HF_std,HF_min,HF_max,HF_t_max
+P01_session1,sitting,carspan,mMI²,30.0,5.0,29,183.64,151.41,15.83,1158.49,186.00,160.21,89.42,12.10,610.34,148.50
+P01_session1,standing,carspan,mMI²,30.0,5.0,29,268.43,554.07,9.27,3975.02,11.00,142.18,210.66,4.55,1382.61, 82.50
+P01_session1,supine,carspan,mMI²,30.0,5.0,29,453.53,2904.13,17.94,30981.91, 14.50,486.74,2103.30,12.41,28145.27, 14.00
+```
+
+Per-epoch failures (epoch too short for a profile window, no PSD method set, etc.) are logged and leave that epoch's per-band cells empty, so a single bad epoch never blocks the export of the rest.
 
 ---
 
@@ -297,7 +327,7 @@ All parameters are stored in a JSON workspace file, editable through the applica
 
 - **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag).
 - **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
-- **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window_s`, `step_s`), and the optional `smooth_for_display` time-axis smoother.
+- **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window (sec)`, `step (sec)`), and the optional `smooth_for_display` time-axis smoother.
 
 Changes take effect immediately and are saved to disk.
 

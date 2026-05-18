@@ -96,6 +96,13 @@ def _profile_settings_from_workspace(
     Delphi-faithful behaviour — the reference profile view plots the
     raw band-power-per-window line). Flip to ``True`` in Profile
     Settings for a softened curve.
+
+    Workspace JSON exposes the time fields as the user-facing
+    ``"window (sec)"`` / ``"step (sec)"`` keys (so the Edit-Parameters
+    dialog labels them in a way researchers recognise from the CARSPAN
+    manual). The old snake_case ``"window_s"`` / ``"step_s"`` spellings
+    are still accepted as a fallback so older workspace JSON files
+    don't blow up after upgrade.
     """
     if workspace is None:
         return {
@@ -103,9 +110,11 @@ def _profile_settings_from_workspace(
             "smooth_for_display": False,
         }
     profs = workspace.get("Profiles", {}) or {}
+    window_s = profs.get("window (sec)", profs.get("window_s", 30.0))
+    step_s   = profs.get("step (sec)",   profs.get("step_s",   5.0))
     return {
-        "window_s": float(profs.get("window_s", 30.0)),
-        "step_s":   float(profs.get("step_s",   5.0)),
+        "window_s": float(window_s),
+        "step_s":   float(step_s),
         "bands":    list(profs.get("bands", []) or []),
         "smooth_for_display": bool(profs.get("smooth_for_display", False)),
     }

@@ -152,8 +152,20 @@ _ENUM_CHOICES: dict[str, list[str]] = {
 
 
 def _label(key: str) -> str:
-    """Turn a snake_case or camelCase key into a human-readable label."""
+    """Turn a snake_case or camelCase key into a human-readable label.
+
+    Keys that already contain a space or a parenthesis are treated as
+    *pre-formatted* — the workspace author chose that spelling for the
+    dialog and we round-trip it untouched. Without that early return,
+    ``.title()`` would mangle ``"window (sec)"`` into ``"Window (Sec)"``
+    and re-title other unit-bearing keys in surprising ways.
+    """
     import re
+
+    # Pre-formatted key — already laid out the way the author wants it
+    # shown. Bypass camelCase/snake_case splitting and title-casing.
+    if " " in key or "(" in key or ")" in key:
+        return key
 
     # camelCase → words
     s = re.sub(r"([a-z])([A-Z])", r"\1 \2", key)
