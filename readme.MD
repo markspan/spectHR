@@ -283,34 +283,37 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio, in **mMI²** by default; Welch can be switched to **ms²** via *Edit Parameters*
 
-Click **Save** to export. Three CSV files are written to the configured **Output** folder (see [Configuring the analysis](#configuring-the-analysis)), all in the same wide / one-row-per-epoch layout so they import straight into R, JASP, or SPSS with no list-column parsing. `epoch` is the natural join key across the three:
+Click **Save** to export. Three CSV files are written to the configured **Output** folder (see [Configuring the analysis](#configuring-the-analysis)). All three are one-row-per-epoch and use `epoch` as the natural join key, so they merge as standard data frames in R, JASP, or SPSS. The two spectral files also carry **raw-array columns** alongside the scalar summaries; those columns hold comma-separated numbers inside a single cell. Each such cell is quoted on write (RFC 4180), so any compliant CSV reader treats it as a single field, and downstream code unpacks the list with one `strsplit` (R) or `split` (Python) call.
 
 | File | Per-row contents |
 | --- | --- |
-| `{basename}.csv` | The table shown on screen, time-domain + Poincaré + integrated band powers. |
-| `{basename}_psd.csv` | PSD-method name, unit, and one `<band>_power` column for every configured band. |
-| `{basename}_profiles.csv` | Profile window / step, `n_windows`, and per-band summary statistics (`<band>_mean / _std / _min / _max / _t_max`) computed from the sliding-window profile. |
+| `{basename}.csv` | The table shown on screen, time-domain + Poincaré + integrated band powers. Scalars only. |
+| `{basename}_psd.csv` | Per band: scalar `<band>_power` plus the raw spectrum slice as two equal-length lists, `<band>_freqs` (Hz) and `<band>_psd_raw` (PSD values in mMI²/Hz by default). |
+| `{basename}_profiles.csv` | A shared `profile_timestamps` list (epoch-relative window-centre seconds) and, per band: the five summary statistics (`<band>_mean / _std / _min / _max / _t_max`) plus the raw band-power-per-window list `<band>_profile_raw`. |
 
-The profile file collapses each band's time-resolved curve to five scalars per epoch on purpose. Keeping the row count fixed at one-per-epoch is what makes the file directly mergeable with the others. `t_max` is the **epoch-relative** time of the band-power peak (seconds from the epoch's first R-peak), matching the x-axis of the Profiles plot.
+The bands you see in `_psd.csv` and `_profiles.csv` are exactly the bands defined under *Edit Parameters → PSD Settings → Bands*, in display order. The profile compute reuses the same band definitions as the PSD compute, so the two files describe the same partition of the spectrum.
 
-The bands you see in `_psd.csv` and `_profiles.csv` are exactly the bands defined under *Edit Parameters → PSD Settings → Bands*, in display order; the profile compute reuses the same band definitions as the PSD compute, so the two files describe the same partition of the spectrum.
+Conventions inside the raw cells:
 
-A typical `{basename}_psd.csv`:
+- Separator: `,` (comma), the same character the CSV uses between fields. Python's `csv.writer` quotes any field that contains commas, so the file stays a valid RFC 4180 CSV and every standard reader (Python `csv`, pandas `read_csv`, R `read.csv`, JASP, SPSS) parses the list cells as a single field.
+- Number format: six significant digits via `g`, so both very small VLF powers (`1.23e-05`) and large peaks (`3.10e+04`) stay readable without overpadding either.
+- Missing values: NaN windows / NaN PSD bins become empty positions inside the list (`...,1.23,,4.56,...`). R's `as.numeric(strsplit(cell, ",")[[1]])` and `pandas.to_numeric` both turn those into `NA` / `NaN` of their own accord.
+- Lengths: within one row, `<band>_freqs` and `<band>_psd_raw` are equal length (the band slice); `profile_timestamps` and every `<band>_profile_raw` are equal length (`n_windows`).
+- `t_max` is the **epoch-relative** time of the band-power peak (seconds from the epoch's first R-peak), so it matches the x-axis of the Profiles plot.
+
+A typical `{basename}_psd.csv` (one row per epoch; truncated cells shown as `…`, the actual cells are wrapped in double quotes so the inner commas are not treated as field delimiters):
 
 ```csv
-Subject,epoch,method,unit,FullRange_power,VLF_power,LF_power,HF_power
-P01_session1,sitting,carspan,mMI²,1107.57,657.29,247.78,113.75
-P01_session1,standing,carspan,mMI²,1497.87,637.62,520.38,80.99
-P01_session1,supine,carspan,mMI²,434.45,106.08,113.20,140.31
+Subject,epoch,method,unit,FullRange_power,FullRange_freqs,FullRange_psd_raw,VLF_power,VLF_freqs,VLF_psd_raw,LF_power,LF_freqs,LF_psd_raw,HF_power,HF_freqs,HF_psd_raw
+P01,sitting,carspan_strict,mMI²,1107.57,"0.02,0.03,…,0.49","3.98e4,2.17e4,…,1.53e3",657.29,"0.02,0.03,0.04,0.05,0.06","3.98e4,2.17e4,2.42e4,2.38e4,1.72e4",247.78,"0.07,…,0.14","1.52e4,…,1.76e3",113.75,"0.15,…,0.4","700,…,3.30e3"
 ```
 
-And a typical `{basename}_profiles.csv` (truncated to LF / HF for readability; VLF and FullRange have the same five columns):
+And a typical `{basename}_profiles.csv` (truncated to LF / HF for readability; VLF and FullRange have the same six columns):
 
 ```csv
-Subject,epoch,method,unit,window_sec,step_sec,n_windows,LF_mean,LF_std,LF_min,LF_max,LF_t_max,HF_mean,HF_std,HF_min,HF_max,HF_t_max
-P01_session1,sitting,carspan,mMI²,30.0,5.0,29,183.64,151.41,15.83,1158.49,186.00,160.21,89.42,12.10,610.34,148.50
-P01_session1,standing,carspan,mMI²,30.0,5.0,29,268.43,554.07,9.27,3975.02,11.00,142.18,210.66,4.55,1382.61, 82.50
-P01_session1,supine,carspan,mMI²,30.0,5.0,29,453.53,2904.13,17.94,30981.91, 14.50,486.74,2103.30,12.41,28145.27, 14.00
+Subject,epoch,method,unit,window_sec,step_sec,n_windows,profile_timestamps,LF_mean,LF_std,LF_min,LF_max,LF_t_max,LF_profile_raw,HF_mean,HF_std,HF_min,HF_max,HF_t_max,HF_profile_raw
+P01,sitting,carspan_strict,mMI²,30.0,5.0,29,"15,20,25,…,155",183.64,151.41,15.83,1158.49,75.0,"52.1,79.4,…,212.6",160.21,89.42,12.10,610.34,80.0,"55.4,110.2,…,380.8"
+P01,standing,carspan_strict,mMI²,30.0,5.0,29,"15,20,25,…,155",268.43,554.07,9.27,3975.02,30.0,…,142.18,210.66,4.55,1382.61,55.0,…
 ```
 
 Per-epoch failures (epoch too short for a profile window, no PSD method set, etc.) are logged and leave that epoch's per-band cells empty, so a single bad epoch never blocks the export of the rest.

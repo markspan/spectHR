@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from spectHR.Tools.Logger import logger
+from spectHR.Tools.PSD._band_power import band_power_rectangular
 
 
 class ParametersPlotWidget(QWidget):
@@ -22,23 +23,39 @@ class ParametersPlotWidget(QWidget):
     The output CSV path is read from workspace["Directories"]["OutputDirectory"].
 
     Saving emits three CSV files, all wide / one-row-per-epoch so they
-    drop straight into R / JASP / SPSS without any list-column parsing:
+    drop into R / JASP / SPSS as a regular data frame; the scalar
+    columns are immediately usable and the raw-array columns (described
+    below) parse with one ``strsplit`` / ``split`` call:
 
     - ``{basename}.csv`` — time-domain HRV metrics per epoch.
-    - ``{basename}_psd.csv`` — frequency-domain band powers per epoch
-      (one column per configured band).
-    - ``{basename}_profiles.csv`` — sliding-window band-power profile
-      collapsed to per-band summary statistics per epoch
-      (``<band>_mean / _std / _min / _max / _t_max``). The full
-      time-resolved curve is *not* exported by design — keeping every
-      file at one-row-per-epoch is what makes them importable to the
-      statistics packages above without bespoke pre-processing.
+    - ``{basename}_psd.csv`` — for every configured band, the
+      integrated ``<band>_power`` (scalar) plus the raw PSD slice
+      inside that band's frequency range. The raw slice is two cells
+      per band, each a comma-separated list of equal length:
+      ``<band>_freqs`` (Hz) and ``<band>_psd_raw`` (power values at
+      those frequencies).
+    - ``{basename}_profiles.csv`` — for every configured band, the
+      five summary statistics (``mean / std / min / max / t_max``)
+      plus the raw band-power-per-window time series in
+      ``<band>_profile_raw`` (comma-separated). The window-centre
+      times are shared across bands and emitted once per row as the
+      ``profile_timestamps`` column.
 
-    The two extra files only carry the columns that make sense for the
-    epoch's configuration; if an epoch's PSD or profile fails to compute
-    (too few R-peaks, no PSD method set, etc.) the failure is logged and
-    that row's per-band cells stay empty so the rest of the table still
-    saves.
+    The list entries inside a raw-data cell are comma-separated, the
+    same separator the CSV uses between fields. Python's ``csv.writer``
+    quotes any field that contains commas, so the file stays a valid
+    RFC 4180 CSV and a downstream reader treats each list as one
+    field. To pull the list back into numbers a receiver does
+    ``as.numeric(strsplit(cell, ',')[[1]])`` (R) or
+    ``[float(v) for v in cell.split(',') if v]`` (Python). NaN
+    windows / NaN PSD bins come through as empty positions
+    (``...,1.23,,4.56,...``), which both parsers turn into ``NA`` /
+    ``NaN`` of their own accord.
+
+    Per-epoch failures (too few R-peaks, no PSD method set, etc.) are
+    logged and leave that row's per-band cells empty; a wholesale
+    failure of the export is logged and skipped without affecting the
+    other two files.
     """
 
     def __init__(self, parent=None):
@@ -159,12 +176,16 @@ class ParametersPlotWidget(QWidget):
                 yield label, epoch
 
     def _resolve_psd_bands(self) -> list[str]:
-        """Bands to include as columns, in the workspace's display order.
+        """Band names in the workspace's display order (for column ordering)."""
+        return [name for name, _, _ in self._resolve_psd_band_edges()]
 
-        Reads ``FrequencyAnalysis.bands`` from the workspace. Falls back
-        to whatever ``series.band_powers()`` returns the first time it
-        succeeds — handy when the workspace lookup failed but the series
-        still has a default :class:`PsdMethod` attached.
+    def _resolve_psd_band_edges(self) -> list[tuple[str, float, float]]:
+        """Return ``[(name, low, high), ...]`` for every configured band.
+
+        Reads ``FrequencyAnalysis.bands`` from the workspace. Returns
+        ``[]`` when no workspace is attached or the section is empty —
+        the caller is expected to fall back to whatever the active PSD
+        method carries.
         """
         if self.workspace is None:
             return []
@@ -172,15 +193,32 @@ class ParametersPlotWidget(QWidget):
             (self.workspace.get("FrequencyAnalysis", {}) or {})
             .get("bands", {}) or {}
         )
-        return list(bands.keys())
+        edges: list[tuple[str, float, float]] = []
+        for name, spec in bands.items():
+            if not isinstance(spec, dict):
+                continue
+            try:
+                low = float(spec["low"])
+                high = float(spec["high"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            edges.append((name, low, high))
+        return edges
 
     def _save_psd_csv(self) -> None:
-        """Write ``{basename}_psd.csv`` — one row per epoch, one column per band.
+        """Write ``{basename}_psd.csv`` — one row per epoch, scalar + raw data.
 
-        Columns: ``Subject, epoch, method, <band1>_power, <band2>_power, ...``.
-        Units match the active PSD method's band-power unit (typically
-        ``mMI²``); the unit string is recorded once per row in the
-        ``unit`` column so downstream readers don't have to guess.
+        Per band, the row carries:
+
+        * ``<band>_power`` — integrated band power (mMI² by default).
+        * ``<band>_freqs`` — comma-separated list of the PSD's
+          frequency bins (Hz) inside ``[low, high]``.
+        * ``<band>_psd_raw`` — comma-separated list of the PSD values
+          at exactly those frequencies (mMI²/Hz by default).
+
+        ``<band>_freqs`` and ``<band>_psd_raw`` have equal length for a
+        given band, so they can be zipped back into ``(freq, power)``
+        pairs without any extra metadata.
         """
         if self.psd_csvfile is None:
             return
@@ -191,7 +229,7 @@ class ParametersPlotWidget(QWidget):
             )
             return
 
-        bands = self._resolve_psd_bands()
+        bands = self._resolve_psd_band_edges()
         subject = getattr(self.dataset, "basename", "")
 
         rows: list[dict] = []
@@ -202,44 +240,73 @@ class ParametersPlotWidget(QWidget):
                 "method": "",
                 "unit": "",
             }
-            for name in bands:
+            for name, _, _ in bands:
                 row[f"{name}_power"] = None
+                row[f"{name}_freqs"] = ""
+                row[f"{name}_psd_raw"] = ""
+
             try:
                 view = hrv[label]
-                powers = view.band_powers()
-                # ``view.psd()`` would re-compute the full PSD just to
-                # get the method name; pull it off the resolved method
-                # instead to avoid that cost.
-                method = getattr(view, "psd_method", None) or getattr(
-                    hrv, "psd_method", None
-                )
-                if method is not None:
-                    row["method"] = getattr(method, "algorithm", "")
-                    # Band-power unit comes from a single ``psd()`` call;
-                    # cheap compared to the band-powers loop above and
-                    # guarantees the recorded unit matches the values.
-                    try:
-                        psd_res = view.psd(with_ci=False)
-                        row["unit"] = (psd_res.unit or "").replace("/Hz", "")
-                    except Exception:
-                        pass
-                for name in bands:
-                    if name in powers:
-                        row[f"{name}_power"] = float(powers[name])
-                # If the workspace had no bands but the series produced
-                # some, fall back to the series' own band names so the
-                # row isn't empty.
+                # Single PSD call per epoch — band powers are then just
+                # rectangular integrations of slices of this one array,
+                # and the raw slices we expose to the CSV are pulled
+                # straight off the same arrays. Costs one PSD per epoch
+                # instead of two (one for the unit / spectrum + one
+                # implicitly inside ``band_powers``).
+                psd_res = view.psd(with_ci=False)
+                freqs = np.asarray(psd_res.freqs)
+                power = np.asarray(psd_res.power)
+                row["method"] = (psd_res.method or "")
+                # PSD result carries a per-Hz unit (e.g. ``mMI²/Hz``);
+                # the integrated band-power columns use the same unit
+                # without the ``/Hz`` suffix, so strip it once and
+                # record the band-power unit. The raw PSD column keeps
+                # the per-Hz interpretation — the same as what the PSD
+                # plot draws.
+                row["unit"] = (psd_res.unit or "").replace("/Hz", "")
+
+                # Fall back to the active method's bands when the
+                # workspace had none — keeps the file useful for ad-hoc
+                # scripts that bypass the workspace dialog.
                 if not bands:
-                    for name, value in powers.items():
-                        row[f"{name}_power"] = float(value)
+                    method = getattr(view, "psd_method", None) or getattr(
+                        hrv, "psd_method", None
+                    )
+                    if method is not None:
+                        bands_iter = [
+                            (name, b.low, b.high)
+                            for name, b in method.bands.items()
+                        ]
+                    else:
+                        bands_iter = []
+                else:
+                    bands_iter = bands
+
+                for name, low, high in bands_iter:
+                    mask = (freqs >= low) & (freqs <= high)
+                    if not np.any(mask):
+                        # Band entirely outside the PSD's frequency
+                        # range — integrate to 0 and emit empty list
+                        # cells so the column shapes stay rectangular.
+                        row[f"{name}_power"] = 0.0
+                        row[f"{name}_freqs"] = ""
+                        row[f"{name}_psd_raw"] = ""
+                        continue
+                    band_freqs = freqs[mask]
+                    band_power = power[mask]
+                    row[f"{name}_power"] = band_power_rectangular(
+                        freqs, power, low, high
+                    )
+                    row[f"{name}_freqs"] = self._format_list(band_freqs)
+                    row[f"{name}_psd_raw"] = self._format_list(band_power)
             except Exception as exc:
                 logger.warning(
                     f"PSD CSV: epoch {label!r} failed: {exc}"
                 )
             rows.append(row)
 
-        # Collect the full column set from every row so a late-arriving
-        # band (the fallback path above) doesn't get dropped.
+        # Collect the full column set from every row so a fallback path
+        # that introduced a new band name doesn't get dropped.
         header_set: list[str] = ["Subject", "epoch", "method", "unit"]
         for row in rows:
             for key in row:
@@ -255,20 +322,28 @@ class ParametersPlotWidget(QWidget):
                 )
 
     def _save_profile_csv(self) -> None:
-        """Write ``{basename}_profiles.csv`` — per-band summary stats per epoch.
+        """Write ``{basename}_profiles.csv`` — summary stats *and* raw data per epoch.
 
-        Each profile is a 2-D ``(n_bands × n_windows)`` array; to fit
+        Each profile is a 2-D ``(n_bands × n_windows)`` array. To fit
         one row per epoch the time axis is collapsed to five scalars
-        per band: ``mean`` / ``std`` / ``min`` / ``max`` / ``t_max``
-        (epoch-relative time of the maximum, in seconds). The
-        ``n_windows`` column records how many sliding windows fitted
-        inside the epoch so a downstream reader can spot epochs that
-        were too short for the configured window length.
+        per band (``mean / std / min / max / t_max``), and the raw
+        time series is emitted in two layers:
 
-        The window / step lengths used for the compute are recorded in
-        every row as ``window_sec`` / ``step_sec`` — they normally do
-        not vary across epochs in a single export but recording them
-        per-row keeps each row self-describing.
+        * ``profile_timestamps`` — one cell per row, comma-separated
+          list of epoch-relative window-centre times (seconds, ``t = 0``
+          at the epoch's first R-peak). Shared across bands, so it's
+          recorded once per epoch.
+        * ``<band>_profile_raw`` — one cell per row per band,
+          comma-separated list of the band's integrated power at each
+          window centre. NaN windows show up as empty positions inside
+          the list. Same length as ``profile_timestamps``.
+
+        ``n_windows`` records the list length so a downstream reader
+        can sanity-check it without splitting first. The window / step
+        lengths used for the compute are recorded in every row as
+        ``window_sec`` / ``step_sec`` so each row is self-describing
+        even when the export mixes datasets analysed with different
+        profile settings.
         """
         if self.profile_csvfile is None or self.workspace is None:
             return
@@ -304,10 +379,12 @@ class ParametersPlotWidget(QWidget):
                 "window_sec": window_s,
                 "step_sec": step_s,
                 "n_windows": 0,
+                "profile_timestamps": "",
             }
             for name in bands:
                 for stat in stat_keys:
                     row[f"{name}_{stat}"] = None
+                row[f"{name}_profile_raw"] = ""
 
             try:
                 view = hrv[label]
@@ -325,6 +402,7 @@ class ParametersPlotWidget(QWidget):
                     result.timestamps - (result.timestamps[0] - window_s / 2.0)
                     if result.timestamps.size else result.timestamps
                 )
+                row["profile_timestamps"] = self._format_list(t_rel)
 
                 names_in_result = list(result.band_names)
                 # Use the workspace order when available; otherwise emit
@@ -334,6 +412,12 @@ class ParametersPlotWidget(QWidget):
                     if name not in names_in_result:
                         continue
                     row_band = result.band_power[names_in_result.index(name)]
+                    # Raw time series always written, even when every
+                    # window is NaN — keeps the column rectangular and
+                    # makes ``n_windows`` the single source of truth for
+                    # the list length.
+                    row[f"{name}_profile_raw"] = self._format_list(row_band)
+
                     finite_mask = np.isfinite(row_band)
                     if not np.any(finite_mask):
                         continue
@@ -356,6 +440,7 @@ class ParametersPlotWidget(QWidget):
         header_set: list[str] = [
             "Subject", "epoch", "method", "unit",
             "window_sec", "step_sec", "n_windows",
+            "profile_timestamps",
         ]
         for row in rows:
             for key in row:
@@ -384,6 +469,41 @@ class ParametersPlotWidget(QWidget):
         if isinstance(v, (int, np.integer)):
             return str(int(v))
         return str(v)
+
+    @staticmethod
+    def _format_list(arr) -> str:
+        """Render a 1-D array of floats as a comma-separated list.
+
+        Used by both spectral companion CSVs to pack per-band raw data
+        (PSD slices, profile time series, axes) into a single cell while
+        keeping the file at one-row-per-epoch. The cell value is itself
+        comma-separated; Python's ``csv.writer`` wraps any field that
+        contains commas in double quotes, so the file stays a valid
+        RFC 4180 CSV and a downstream reader treats the list as one
+        field. Stats packages then parse the inner list with one
+        ``strsplit(cell, ",")`` (R) or ``cell.split(",")`` (Python /
+        pandas) call.
+
+        Numbers use six significant digits via ``g``, which keeps both
+        very small VLF powers (``1.23e-05``) and large peaks
+        (``3.10e+04``) readable without padding either to the precision
+        of the other. NaN entries become empty positions
+        (``...,1.23,,4.56,...``) so a receiver can rely on its own
+        numeric coercion turning empty slots into NA / NaN.
+        """
+        if arr is None:
+            return ""
+        a = np.asarray(arr).ravel()
+        if a.size == 0:
+            return ""
+        parts: list[str] = []
+        for v in a:
+            fv = float(v)
+            if not np.isfinite(fv):
+                parts.append("")
+            else:
+                parts.append(f"{fv:.6g}")
+        return ",".join(parts)
 
     def get_table_headers(self) -> list[str]:
         headers = []

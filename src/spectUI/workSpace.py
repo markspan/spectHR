@@ -88,8 +88,8 @@ _DEFAULT_WORKSPACE = {
     # (otherwise there's no overlap → no profile), and the manual
     # recommends ``window_s ≥ 3 · 1/f_l_min`` for reliable estimates.
     "Profiles": {
-        "window (sec)": 30.0,
-        "step (sec)":   5.0,
+        "window_s": 30.0,
+        "step_s":   5.0,
         "bands":    ["LF", "HF"],
         # Apply Pascal's 3-point MA along each band's time series before
         # plotting. Same kernel + edge policy as the PSD smoother — plot
