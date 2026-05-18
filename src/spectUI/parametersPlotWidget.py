@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.PSD._band_power import band_power_rectangular
+from spectUI._uitools import resolve_export_dir, show_export_summary
 
 
 class ParametersPlotWidget(QWidget):
@@ -158,7 +159,30 @@ class ParametersPlotWidget(QWidget):
             self._save_profile_csv()
         except Exception as exc:                  # pragma: no cover
             logger.warning(f"Profile CSV export failed: {exc}")
+            
+        # Compose the same summary message the user sees in the log and the
+        # message box, so the log file and the dialog stay in sync.  Writing
+        # three CSVs in one click, so list them explicitly — that way the
+        # user can paste the dialog text straight into a downstream script.
+        export_dir = self._resolve_export_dir()
+        files_written = []
+        for path in (self.csvfile, self.psd_csvfile, self.profile_csvfile):
+            if path is not None and path.exists():
+                files_written.append(path.name)
+        summary = (
+            f"Parameters export: wrote {len(files_written)} file(s) "
+            f"to {export_dir!s}"
+        )
+        if files_written:
+            summary += "\n  - " + "\n  - ".join(files_written)
+        logger.info(summary)
 
+        show_export_summary(self, context="Parameters", summary=summary)
+
+    def _resolve_export_dir(self) -> Path:
+        """Delegated to ``_uitools.resolve_export_dir`` for cross-widget parity."""
+        return resolve_export_dir(self.workspace, context="Parameters")
+    
     # ------------------------------------------------------------------
     # Spectral companion CSVs — one row per epoch, wide layout
     # ------------------------------------------------------------------

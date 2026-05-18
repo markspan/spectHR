@@ -34,12 +34,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QGridLayout,
-    QMessageBox,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
+
+from spectUI._uitools import resolve_export_dir, show_export_summary
 
 warnings.filterwarnings("ignore")
 
@@ -525,29 +526,20 @@ class PSDPlotWidget(QWidget):
         )
         logger.info(summary)
 
-        # Show the dialog.  If any individual savefig calls failed we
-        # downgrade the icon to a warning and append the error list so the
-        # user notices something went sideways without having to check the
-        # log file.
-        if failures:
-            body = summary + "\n\nProblems:\n  - " + "\n  - ".join(failures)
-            QMessageBox.warning(self, "PSD export (with warnings)", body)
-        else:
-            QMessageBox.information(self, "PSD export", summary)
+        # Show the dialog via the shared helper so all three
+        # export-capable widgets present the same look-and-feel.
+        show_export_summary(
+            self, context="PSD", summary=summary, failures=failures,
+        )
 
     def _resolve_export_dir(self) -> Path:
-        """Pick the output directory from the workspace, or fall back to default."""
-        if self._workspace is not None:
-            try:
-                return Path(self._workspace["Directories"]["OutputDirectory"])
-            except (KeyError, TypeError):
-                # Workspace exists but doesn't carry the expected nesting —
-                # log once and fall through to the platformdirs default.
-                logger.warning(
-                    "PSD export: workspace lacks Directories.OutputDirectory; "
-                    "falling back to default export folder."
-                )
-        return _DEFAULT_EXPORT_DIR
+        """Pick the output directory from the workspace, or fall back to default.
+
+        Delegates to ``_uitools.resolve_export_dir`` so the three
+        export-capable widgets (PSD, Profile, Parameters) share one
+        fallback rule and one warning message.
+        """
+        return resolve_export_dir(self._workspace, context="PSD")
 
     def _dataset_prefix(self) -> str:
         """Best-effort dataset name extracted from the first view's PhysioData."""

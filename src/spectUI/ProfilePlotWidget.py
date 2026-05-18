@@ -44,12 +44,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QGridLayout,
-    QMessageBox,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
+
+from spectUI._uitools import resolve_export_dir, show_export_summary
 
 warnings.filterwarnings("ignore")
 
@@ -443,7 +444,9 @@ class ProfilePlotWidget(QWidget):
         except OSError as exc:
             msg = f"Profile export: could not create {export_dir!s}: {exc}"
             logger.warning(msg)
-            QMessageBox.warning(self, "Profile export failed", msg)
+            show_export_summary(
+                self, context="Profile", summary=msg, failures=(msg,),
+            )
             return
 
         prefix = self._dataset_prefix()
@@ -469,22 +472,13 @@ class ProfilePlotWidget(QWidget):
             f"to {export_dir!s}"
         )
         logger.info(summary)
-        if failures:
-            body = summary + "\n\nProblems:\n  - " + "\n  - ".join(failures)
-            QMessageBox.warning(self, "Profile export (with warnings)", body)
-        else:
-            QMessageBox.information(self, "Profile export", summary)
+        show_export_summary(
+            self, context="Profile", summary=summary, failures=failures,
+        )
 
     def _resolve_export_dir(self) -> Path:
-        if self._workspace is not None:
-            try:
-                return Path(self._workspace["Directories"]["OutputDirectory"])
-            except (KeyError, TypeError):
-                logger.warning(
-                    "Profile export: workspace lacks Directories.OutputDirectory; "
-                    "falling back to default export folder."
-                )
-        return _DEFAULT_EXPORT_DIR
+        """Delegated to ``_uitools.resolve_export_dir`` for cross-widget parity."""
+        return resolve_export_dir(self._workspace, context="Profile")
 
     def _dataset_prefix(self) -> str:
         for series in self._series_list:

@@ -318,6 +318,133 @@ P01,standing,carspan_strict,mMI²,30.0,5.0,29,"15,20,25,…,155",268.43,554.07,9
 
 Per-epoch failures (epoch too short for a profile window, no PSD method set, etc.) are logged and leave that epoch's per-band cells empty, so a single bad epoch never blocks the export of the rest.
 
+#### Reading the exported CSVs into R
+
+A complete walk-through that reproduces the Profile plot in **ggplot2** (with **dplyr** for the list-column unpacking) sits below. Drop it into an R script and adjust the `subject_id` / `output_dir` constants. The same `unpack_listcol` helper works for the `_psd.csv` file, so the snippet at the bottom shows the PSD spectrum equivalent.
+
+```r
+# spectHR companion-CSV reader + plotter
+# --------------------------------------
+# Loads {basename}_profiles.csv (and optionally _psd.csv), turns the
+# comma-separated raw-array columns into long-format tibbles, and
+# draws a profile plot that resembles spectHR's Profiles tab.
+
+library(readr)     # read_csv
+library(dplyr)     # mutate / filter / select / bind_rows
+library(tidyr)     # unnest_longer
+library(stringr)   # str_split
+library(ggplot2)
+library(scales)    # comma()
+
+output_dir <- "~/Documents/spectHR/export"     # the workspace OutputDirectory
+subject_id <- "P01"                            # {basename} of the recording
+
+profiles_path <- file.path(output_dir, paste0(subject_id, "_profiles.csv"))
+psd_path      <- file.path(output_dir, paste0(subject_id, "_psd.csv"))
+
+# ---- helper: unpack one ',-separated list cell into a numeric vector ----
+# Empty positions ("...,1.23,,4.56,...") become NA, which matches the
+# convention spectHR uses for NaN windows / NaN PSD bins.
+parse_listcol <- function(cell) {
+  if (is.na(cell) || cell == "") return(numeric(0))
+  as.numeric(str_split(cell, ",", simplify = TRUE)[1, ])
+}
+
+# ---- read profiles & long-pivot --------------------------------------
+profiles_wide <- read_csv(profiles_path, show_col_types = FALSE)
+
+# Bands present in the file = every column suffixed _profile_raw.
+band_names <- profiles_wide |>
+  names() |>
+  (\(n) n[endsWith(n, "_profile_raw")])() |>
+  sub("_profile_raw$", "", x = _)
+
+# Stack one (epoch, band, t, power) row per window so ggplot can facet
+# and colour by band naturally.
+profiles_long <- bind_rows(lapply(band_names, function(band) {
+  profiles_wide |>
+    rowwise() |>
+    mutate(
+      time_s = list(parse_listcol(profile_timestamps)),
+      power  = list(parse_listcol(.data[[paste0(band, "_profile_raw")]])),
+      band   = band,
+    ) |>
+    ungroup() |>
+    select(Subject, epoch, band, unit, time_s, power) |>
+    tidyr::unnest_longer(c(time_s, power))
+}))
+
+# ---- ggplot: reproduce the Profiles tab ------------------------------
+# Same colour palette spectHR uses (workspace bands.<band>.color):
+band_colours <- c(
+  "FullRange" = "gray40",
+  "VLF"       = "blue",
+  "LF"        = "darkgreen",
+  "HF"        = "red"
+)
+
+ggplot(
+  profiles_long |> filter(!is.na(power)),
+  aes(x = time_s, y = power, colour = band)
+) +
+  geom_line(linewidth = 0.6, alpha = 0.85) +
+  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
+  scale_colour_manual(values = band_colours, drop = FALSE) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title    = paste(subject_id, "- band-power profiles"),
+    subtitle = paste("PSD method:", unique(profiles_wide$method)),
+    x        = "Time within epoch (s)",
+    y        = paste0("Band power [", unique(profiles_wide$unit), "]"),
+    colour   = "Band"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    strip.background = element_rect(fill = "grey95", colour = NA),
+    panel.grid.minor = element_blank()
+  )
+
+# ---- bonus: same idea for {basename}_psd.csv -------------------------
+# Each row carries paired <band>_freqs / <band>_psd_raw cells, so we
+# stack them per band and plot one PSD curve per epoch.
+psd_wide <- read_csv(psd_path, show_col_types = FALSE)
+psd_bands <- psd_wide |>
+  names() |>
+  (\(n) n[endsWith(n, "_freqs")])() |>
+  sub("_freqs$", "", x = _)
+
+psd_long <- bind_rows(lapply(psd_bands, function(band) {
+  psd_wide |>
+    rowwise() |>
+    mutate(
+      freq  = list(parse_listcol(.data[[paste0(band, "_freqs")]])),
+      power = list(parse_listcol(.data[[paste0(band, "_psd_raw")]])),
+      band  = band,
+    ) |>
+    ungroup() |>
+    select(Subject, epoch, band, unit, freq, power) |>
+    tidyr::unnest_longer(c(freq, power))
+}))
+
+ggplot(psd_long |> filter(!is.na(power)),
+       aes(x = freq, y = power, colour = band)) +
+  geom_area(aes(fill = band), alpha = 0.30, position = "identity",
+            colour = NA) +
+  geom_line(linewidth = 0.5) +
+  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
+  scale_colour_manual(values = band_colours) +
+  scale_fill_manual(values = band_colours) +
+  labs(
+    x = "Frequency [Hz]",
+    y = paste0("PSD [", unique(psd_wide$unit), "/Hz]"),
+    colour = "Band", fill = "Band"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+The pattern is the same for any of the raw-array columns: pull the cell, hand it to `parse_listcol`, and pair it with the matching `_freqs` / `profile_timestamps` column inside a `rowwise()` `mutate`. The `unnest_longer` step then flattens the per-row vectors into a tidy frame that ggplot understands directly.
+
 ---
 
 ## Configuring the analysis
