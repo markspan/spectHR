@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
 
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.PSD._band_power import band_power_rectangular
-from spectUI._uitools import resolve_export_dir, show_export_summary
+from spectUI._uitools import show_export_summary
+from spectUI.workSpace import get_export_dir
 
 
 class ParametersPlotWidget(QWidget):
@@ -180,8 +181,8 @@ class ParametersPlotWidget(QWidget):
         show_export_summary(self, context="Parameters", summary=summary)
 
     def _resolve_export_dir(self) -> Path:
-        """Delegated to ``_uitools.resolve_export_dir`` for cross-widget parity."""
-        return resolve_export_dir(self.workspace, context="Parameters")
+        """Delegated to ``workSpace.get_export_dir`` for cross-widget parity."""
+        return get_export_dir(self.workspace, context="Parameters")
     
     # ------------------------------------------------------------------
     # Spectral companion CSVs — one row per epoch, wide layout

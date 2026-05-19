@@ -82,6 +82,8 @@ from spectHR.Tools.PSD._psd_config import (
     BandSpec,
     PsdMethod,
     _DEFAULT_PSD_METHOD,
+    respiration_min,
+    respiration_max,
 )
 from spectHR.Tools.PSD._band_power import band_power_rectangular
 
@@ -511,28 +513,85 @@ class CardioMetricsMixin(HRVMetric):
         step_s: float,
         psd_method: Optional[PsdMethod] = None,
     ) -> ProfileResult:
-        """Sliding-window band-power profile inside this view (CARSPAN
-        manual §3.3.5, Eq. 3.34 / 3.35).
+        """Sliding-window band-power profile (CARSPAN ``RunProfileSommation``).
 
-        Slides a window of ``window_s`` seconds along this view in
-        steps of ``step_s`` seconds; for each window position, builds
-        a sub-view via :meth:`view` and calls :meth:`band_powers` on
-        it. The result is one band-power time series per configured
-        band, all packed into a single :class:`ProfileResult`.
+        Faithful port of CARSPAN's ``RunAnalysis(Tag=1)`` profile
+        pipeline from ``T_AnaFunctions.pas`` (``RunDFT`` 2032,
+        ``RunPDS`` 2152, ``RunResample`` 2320, ``RunMAW`` 2421,
+        ``RunProfileSommation`` 2888-3056). The steps below are
+        numbered to match the order Pascal runs them in.
 
-        Algorithm-agnostic: the active :class:`PsdMethod`
-        (Welch / Lomb-Scargle / CARSPAN / CARSPAN-strict) drives each
-        window's PSD, just like the corresponding whole-epoch
-        :meth:`band_powers` call.
+        Step 1 - Window enumeration. Number of windows
+        ``floor((T - window_s) / step_s) + 1`` and start times
+        ``t0 + p*step_s`` mirror ``GetNrOfProfiles`` (Pascal 1153)
+        and ``GetProfileData`` (Pascal 1115). Window centres are
+        recorded as the profile's x-axis.
+
+        Step 2 - Per-window PSD. Each window is sliced via
+        :meth:`view` and its PSD is computed via
+        :meth:`_psd_for_band_power`, which dispatches to
+        ``compute_carspan_psd_strict(smooth=False)`` for
+        ``algorithm="carspan_strict"`` - the same SOC + AutoSpectrum
+        + Resample pipeline that produced CARSPAN's ``PDSin_BCK``
+        (the resampled-but-un-MAW'd backup copy, Pascal 2433-2484).
+        Other algorithms (Welch / Lomb-Scargle / configurable
+        CARSPAN) go through their own native compute path; the
+        respiration-aware band-edge logic still applies.
+
+        Step 3 - Per-window respiration frequency. If a
+        :class:`RespirationSeries` is attached to the underlying
+        :class:`PhysioData` (``self._pd.rsp_map``), the mean breath
+        frequency inside the window is computed via
+        :meth:`RespirationSeriesView.mean_breath_frequency_hz`. This
+        is the direct spectHR equivalent of CARSPAN's
+        ``1 / LProfile.MeanIn`` when the input signal is
+        ``RespPeriod`` (Pascal 2944-2952). With no respiration
+        series, ``resp_freq`` stays ``None`` and step 4 falls back
+        to the static band edges - exactly as CARSPAN does when
+        ``FRespFreqList.Count = 0`` (Pascal 2994-2998).
+
+        Step 4 - Per-band edge clamp. For each band:
+
+        * if ``BandSpec.respiration_band=False`` (the static
+          default), the band edges are :attr:`BandSpec.low` /
+          :attr:`BandSpec.high`;
+        * if ``BandSpec.respiration_band=True`` *and* ``resp_freq``
+          is available, the edges become
+          ``[resp_freq - low, resp_freq + high]`` clamped to the
+          per-window Nyquist (``freq_max = freqs[-1]``) and a
+          ``0.01 Hz`` floor. This is the
+          :func:`respiration_min` / :func:`respiration_max` pair, a
+          port of Pascal's ``GetRespirationMinBandValue`` /
+          ``GetRespirationMaxBandValue`` (Pascal 2837-2884).
+
+        Step 5 - Band energy integration. Each band is integrated
+        via :func:`band_power_rectangular` on the per-window
+        spectrum (CARSPAN manual Eq. 3.28). Note that spectHR uses
+        the centred neighbour-spacing midpoint rule rather than
+        Pascal's ``round(F/FreqRes) - 1`` index quirk - the
+        integration is mathematically cleaner and runs on the
+        actual bin width of the resampled grid. The mMI^2
+        conversion was already applied upstream in
+        :meth:`_carspan_display` (so unlike Pascal's ``/d`` in
+        ``Calculate_Energy`` we don't need to re-apply it here).
+
+        Step 6 - NaN sentinel. A window with fewer than 4 R-peaks
+        cannot produce a PSD (CARSPAN min-N gate) and the entire
+        column of the output is left as NaN. spectHR uses NaN
+        instead of CARSPAN's "skip and don't store" so the result
+        array stays rectangular and aligned with ``timestamps``.
 
         Parameters
         ----------
         window_s : float
-            Window length in seconds. Must satisfy
-            ``window_s ≥ 3 · 1/f_l_min`` for reliable estimates of the
-            lowest configured band (CARSPAN manual recommendation).
+            Window length in seconds. Pascal's
+            ``LAnaProfiles.GetSegment.WindowLength`` equivalent.
+            Must satisfy ``window_s >= 3 * 1/f_l_min`` for reliable
+            estimates of the lowest configured band (CARSPAN manual
+            recommendation).
         step_s : float
-            Step between successive windows in seconds. Must be
+            Step between successive windows in seconds. Pascal's
+            ``LAnaProfiles.GetSegment.StepSize`` equivalent. Must be
             strictly smaller than ``window_s`` so windows overlap.
         psd_method : PsdMethod, optional
             Explicit override; otherwise the view's ``psd_method``
@@ -542,10 +601,11 @@ class CardioMetricsMixin(HRVMetric):
         -------
         ProfileResult
             ``timestamps`` (window centres in s), ``band_names``,
-            ``band_power`` of shape ``(n_bands, n_windows)``, ``unit``,
-            ``method``. Windows with too few R-peaks (< 4) for a PSD
-            store NaN in ``band_power``.
+            ``band_power`` of shape ``(n_bands, n_windows)``,
+            ``unit``, ``method``. Windows with too few R-peaks
+            (< 4) for a PSD store NaN in ``band_power``.
         """
+        # ----- validation ------------------------------------------------
         if window_s <= 0 or step_s <= 0:
             raise ValueError("window_s and step_s must both be > 0.")
         if step_s >= window_s:
@@ -558,6 +618,11 @@ class CardioMetricsMixin(HRVMetric):
         if self.times.size < 2:
             raise ValueError("Need at least 2 R-peaks for a profile.")
 
+        # ----- Step 1: window enumeration --------------------------------
+        # Mirrors Pascal:
+        #   StartTime := Double(RP.First^) + Pindex * StepSize;
+        #   StopTime  := StartTime + WindowLength;
+        #   NrOfProfiles := floor((SegmentTime - WindowLength)/StepSize) + 1
         t0 = float(self.times[0])
         t_end = float(self.times[-1])
         duration = t_end - t0
@@ -565,45 +630,91 @@ class CardioMetricsMixin(HRVMetric):
             raise ValueError(
                 f"View too short ({duration:.1f}s) for window={window_s}s."
             )
-
-        # Manual Eq. 3.35 — number of windows that fit inside the epoch.
         n_windows = int((duration - window_s) / step_s) + 1
 
         band_names = list(method.bands.keys())
+        bands_list = list(method.bands.items())
         n_bands = len(band_names)
         grid = np.full((n_bands, n_windows), np.nan, dtype=np.float64)
         timestamps = np.empty(n_windows, dtype=np.float64)
 
+        # ----- Once-per-call: locate the respiration series, if any ----
+        # CARSPAN consults FTSIn.Name = 'RespPeriod' (Pascal 2944) and
+        # builds FRespFreqList from each window. spectHR doesn't carry a
+        # RespPeriod TimeSeries; instead, it carries phase-segmented
+        # breath cycles in PhysioData.rsp_map (built from the
+        # accelerometer-derived respiration signal). We pick the first
+        # registered band - typical recordings only have one - and
+        # restrict it to each window inside the loop below.
+        rsp_series = None
+        pd = getattr(self, "_pd", None)
+        if pd is not None:
+            rsp_map = getattr(pd, "rsp_map", None)
+            if rsp_map:
+                rsp_series = next(iter(rsp_map.values()))
+
+        # ----- Per-window loop -------------------------------------------
         unit = ""
         for i in range(n_windows):
             win_start = t0 + i * step_s
             win_end = win_start + window_s
             timestamps[i] = win_start + window_s / 2.0   # window centre
             win_view = self.view(win_start, win_end)
-            # CARSPAN min-N gate — same threshold the compute layer uses.
+
+            # CARSPAN min-N gate - same threshold the compute layer uses.
             if win_view.times.size < 4:
                 continue
+
+            # Step 2 - per-window PSD on the resampled (no-MAW) grid for
+            # carspan_strict; the algorithm's native grid for the others.
             try:
-                bp = win_view.band_powers(psd_method=method)
+                psd_result = win_view._psd_for_band_power(method)
             except Exception:
                 continue
-            for b, name in enumerate(band_names):
-                grid[b, i] = bp.get(name, np.nan)
+
+            # Step 3 - per-window respiration frequency.
+            # Pascal: TmpRespFreqObject1.FRespFreq    := 1 / LProfile.MeanIn;
+            #         TmpRespFreqObject1.FRespFreqMax := (PDSin_BCK.Count-1)*FreqRes;
+            resp_freq = None
+            resp_freq_max = (
+                float(psd_result.freqs[-1])
+                if psd_result.freqs.size
+                else float("inf")
+            )
+            if rsp_series is not None:
+                rsp_view = rsp_series.view(win_start, win_end)
+                resp_freq = rsp_view.mean_breath_frequency_hz()
+
+            # Steps 4 + 5 - per-band edge clamp + rectangular integration.
+            for b, (name, band) in enumerate(bands_list):
+                if resp_freq is not None:
+                    lo = respiration_min(band, resp_freq, resp_freq_max)
+                    hi = respiration_max(band, resp_freq, resp_freq_max)
+                else:
+                    lo, hi = band.low, band.high
+                # Defensive: a respiration clamp can in principle
+                # invert the edges (resp_freq + high < resp_freq - low)
+                # on pathological data. band_power_rectangular would
+                # just return 0; make that visible as NaN instead so
+                # downstream consumers can tell "no power here" apart
+                # from "the band collapsed".
+                if hi <= lo:
+                    continue
+                grid[b, i] = band_power_rectangular(
+                    psd_result.freqs, psd_result.power, lo, hi
+                )
+
             # Read the band-power unit once, from the first successful
             # window. Strip ``/Hz`` because band power is the PSD
-            # integrated over Hz — same logic as PSDPlotWidget's
+            # integrated over Hz - same logic as PSDPlotWidget's
             # ``_strip_per_hz``.
             if not unit:
-                try:
-                    r = win_view.psd(psd_method=method, with_ci=False)
-                    raw = str(r.unit).strip()
-                    for suffix in ("/Hz", "/hz", " /Hz", " /hz"):
-                        if raw.endswith(suffix):
-                            raw = raw[: -len(suffix)].rstrip()
-                            break
-                    unit = raw
-                except Exception:
-                    pass
+                raw = str(psd_result.unit).strip()
+                for suffix in ("/Hz", "/hz", " /Hz", " /hz"):
+                    if raw.endswith(suffix):
+                        raw = raw[: -len(suffix)].rstrip()
+                        break
+                unit = raw
 
         return ProfileResult(
             timestamps=timestamps,

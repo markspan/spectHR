@@ -28,6 +28,8 @@ __all__ = [
     "MeanConvention",
     "BandSpec",
     "PsdMethod",
+    "respiration_min",
+    "respiration_max",
 ]
 
 
@@ -54,10 +56,108 @@ class BandSpec:
     fields on this dataclass were never consumed. Display attributes
     are now a UI-layer concern only; the library cares about the
     frequency edges.
+
+    Respiration-tracked bands
+    -------------------------
+    When ``respiration_band`` is True, the profile builder
+    (:meth:`CardioMetricsMixin.band_power_profile`) reinterprets
+    :attr:`low` and :attr:`high` as **half-widths around the
+    per-window respiration frequency** rather than as absolute Hz
+    edges. This mirrors CARSPAN's ``TAnaBand.RespirationBand`` flag
+    and the :func:`respiration_min` / :func:`respiration_max` helpers
+    below — a direct port of Pascal's ``GetRespirationMinBandValue`` /
+    ``GetRespirationMaxBandValue`` (``T_AnaFunctions.pas`` 2837-2884).
+
+    For example, a band of ``BandSpec(low=0.04, high=0.04,
+    respiration_band=True)`` evaluated inside a window whose mean
+    breathing frequency is 0.27 Hz becomes the absolute band
+    ``[0.23, 0.31] Hz`` for that window.
+
+    Static bands (``respiration_band=False``, the default) keep the
+    absolute-Hz interpretation. The flag is consulted only by the
+    profile builder; the whole-epoch :meth:`band_power` and
+    :meth:`band_powers` use the static edges unconditionally.
     """
 
     low: float
     high: float
+    respiration_band: bool = False
+
+
+def respiration_min(
+    band: BandSpec,
+    resp_freq_hz: float,
+    freq_max_hz: float,
+) -> float:
+    """CARSPAN ``GetRespirationMinBandValue`` — port of
+    ``T_AnaFunctions.pas`` 2837-2862.
+
+    For a respiration-tracked band, the band's :attr:`BandSpec.low`
+    is reinterpreted as the **lower half-width** around
+    ``resp_freq_hz``. A ``0.01 Hz`` floor and a ``freq_max_hz`` cap
+    are applied identically to the Pascal helper.
+
+    Parameters
+    ----------
+    band : BandSpec
+        The configured band.
+    resp_freq_hz : float
+        Estimated mean breathing frequency inside the window (Hz).
+    freq_max_hz : float
+        Upper frequency of the per-window PSD grid — the Nyquist
+        equivalent ``(PDSin_BCK.Count-1)·FreqRes`` in Pascal terms.
+
+    Returns
+    -------
+    float
+        The absolute lower edge of the band, ready for
+        :func:`band_power_rectangular`.
+    """
+    if not band.respiration_band:
+        return band.low
+    # Bail-out: respiration too slow for the band even to start.
+    if band.low > freq_max_hz:
+        return freq_max_hz
+    # Avoid a near-DC lower edge — CARSPAN's hard floor.
+    if (resp_freq_hz - band.low) < 0.01:
+        return 0.01
+    return resp_freq_hz - band.low
+
+
+def respiration_max(
+    band: BandSpec,
+    resp_freq_hz: float,
+    freq_max_hz: float,
+) -> float:
+    """CARSPAN ``GetRespirationMaxBandValue`` — port of
+    ``T_AnaFunctions.pas`` 2865-2884.
+
+    For a respiration-tracked band, the band's :attr:`BandSpec.high`
+    is reinterpreted as the **upper half-width** around
+    ``resp_freq_hz``. Cap at ``freq_max_hz`` identically to the
+    Pascal helper.
+
+    Parameters
+    ----------
+    band : BandSpec
+        The configured band.
+    resp_freq_hz : float
+        Estimated mean breathing frequency inside the window (Hz).
+    freq_max_hz : float
+        Upper frequency of the per-window PSD grid — the Nyquist
+        equivalent ``(PDSin_BCK.Count-1)·FreqRes`` in Pascal terms.
+
+    Returns
+    -------
+    float
+        The absolute upper edge of the band, ready for
+        :func:`band_power_rectangular`.
+    """
+    if not band.respiration_band:
+        return band.high
+    if (resp_freq_hz + band.high) > freq_max_hz:
+        return freq_max_hz
+    return resp_freq_hz + band.high
 
 
 def _default_bands() -> Dict[str, BandSpec]:

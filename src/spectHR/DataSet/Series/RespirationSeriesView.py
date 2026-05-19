@@ -91,6 +91,47 @@ class RespirationSeriesView:
         return v
 
     # ------------------------------------------------------------------
+    # Aggregate measures
+    # ------------------------------------------------------------------
+
+    def mean_breath_frequency_hz(self) -> Optional[float]:
+        """Mean breathing frequency inside this view, in Hz.
+
+        Pairs each phase with its successor (INH->EXH or EXH->INH)
+        into a full breath cycle and averages ``1 / cycle_period``.
+        With ``N`` phases in the view this produces ``N-1`` cycle
+        estimates, which is the most data-efficient unbiased
+        estimator on the alternating phase sequence built by
+        :meth:`RespirationSeries.from_timeseries`.
+
+        Equivalent to CARSPAN's ``1 / LProfile.MeanIn`` used in
+        ``RunProfileSommation`` (``T_AnaFunctions.pas`` 2944-2952)
+        when the input signal is ``RespPeriod``. spectHR does not
+        carry a ``RespPeriod`` series, so we derive the same number
+        directly from the phase-segmented respiration signal.
+
+        Returns
+        -------
+        float or None
+            The mean breath frequency in Hz, or ``None`` when fewer
+            than two phases fall inside the view (no full cycle
+            could be reconstructed). Also returns ``None`` if every
+            paired cycle came out non-positive (degenerate data).
+        """
+        n = int(self._idx.size)
+        if n < 2:
+            return None
+        starts = self.starts
+        ends = self.ends
+        # One cycle per adjacent (INH+EXH) or (EXH+INH) pair.
+        # Cycle duration = end of the second phase - start of the first.
+        cycle_periods = ends[1:] - starts[:-1]
+        cycle_periods = cycle_periods[cycle_periods > 0]
+        if cycle_periods.size == 0:
+            return None
+        return float(1.0 / np.mean(cycle_periods))
+
+    # ------------------------------------------------------------------
     # Representation
     # ------------------------------------------------------------------
 

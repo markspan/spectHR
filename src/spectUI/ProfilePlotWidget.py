@@ -50,7 +50,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from spectUI._uitools import resolve_export_dir, show_export_summary
+from spectUI._uitools import show_export_summary
+from spectUI.workSpace import get_export_dir
 
 warnings.filterwarnings("ignore")
 
@@ -477,8 +478,8 @@ class ProfilePlotWidget(QWidget):
         )
 
     def _resolve_export_dir(self) -> Path:
-        """Delegated to ``_uitools.resolve_export_dir`` for cross-widget parity."""
-        return resolve_export_dir(self._workspace, context="Profile")
+        """Delegated to ``workSpace.get_export_dir`` for cross-widget parity."""
+        return get_export_dir(self._workspace, context="Profile")
 
     def _dataset_prefix(self) -> str:
         for series in self._series_list:

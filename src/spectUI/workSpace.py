@@ -129,6 +129,61 @@ _DEFAULT_WORKSPACE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Workspace-level accessors (free functions, since the workspace is a dict)
+# ---------------------------------------------------------------------------
+
+# Fallback used by :func:`get_export_dir` when a workspace is missing or
+# lacks the ``Directories.OutputDirectory`` entry. Mirrors the value in
+# ``_DEFAULT_WORKSPACE`` so the two stay in lock-step automatically.
+DEFAULT_EXPORT_DIR = user_documents_path() / "spectHR" / "export"
+
+
+def get_export_dir(workspace, *, context: str = "Export"):
+    """Return ``workspace["Directories"]["OutputDirectory"]`` as a :class:`Path`.
+
+    The workspace is a plain ``dict`` (no class wrapper), so this is the
+    canonical accessor for the configured export folder. Centralising it
+    here means every widget that writes files (PSDPlotWidget,
+    ProfilePlotWidget, ParametersPlotWidget, ...) reaches the directory
+    through one code path and shares one fallback rule.
+
+    Parameters
+    ----------
+    workspace : dict or None
+        The workspace dictionary as loaded by :func:`LoadWorkspace`. May
+        be ``None`` when a widget was constructed without one.
+    context : str, optional
+        Short label inserted into the warning message (e.g. ``"PSD"``,
+        ``"Profile"``, ``"Parameters"``). Defaults to ``"Export"``.
+
+    Returns
+    -------
+    pathlib.Path
+        The directory the caller should write to. Existence is **not**
+        guaranteed — callers should call ``mkdir(parents=True,
+        exist_ok=True)`` and handle ``OSError`` themselves.
+
+    Notes
+    -----
+    When the workspace is ``None`` or the expected nesting is missing
+    the function emits a single ``logger.warning`` and falls back to
+    :data:`DEFAULT_EXPORT_DIR`, so an export attempt always has somewhere
+    to land instead of crashing on a ``KeyError``.
+    """
+    from pathlib import Path  # localised to keep the module top tidy
+    if workspace is not None:
+        try:
+            return Path(workspace["Directories"]["OutputDirectory"])
+        except (KeyError, TypeError):
+            logger.warning(
+                f"{context} export: workspace lacks "
+                "Directories.OutputDirectory; falling back to default "
+                "export folder."
+            )
+    return DEFAULT_EXPORT_DIR
+
+
 def _deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge override into base; override values win."""
     result = copy.deepcopy(base)

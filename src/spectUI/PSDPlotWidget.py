@@ -40,7 +40,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from spectUI._uitools import resolve_export_dir, show_export_summary
+from spectUI._uitools import show_export_summary
+from spectUI.workSpace import get_export_dir
 
 warnings.filterwarnings("ignore")
 
@@ -535,11 +536,11 @@ class PSDPlotWidget(QWidget):
     def _resolve_export_dir(self) -> Path:
         """Pick the output directory from the workspace, or fall back to default.
 
-        Delegates to ``_uitools.resolve_export_dir`` so the three
-        export-capable widgets (PSD, Profile, Parameters) share one
-        fallback rule and one warning message.
+        Delegates to :func:`spectUI.workSpace.get_export_dir` so the
+        export-capable widgets (PSD, Profile, Parameters) share the same
+        accessor and fallback rule.
         """
-        return resolve_export_dir(self._workspace, context="PSD")
+        return get_export_dir(self._workspace, context="PSD")
 
     def _dataset_prefix(self) -> str:
         """Best-effort dataset name extracted from the first view's PhysioData."""
