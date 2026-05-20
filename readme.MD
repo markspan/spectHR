@@ -921,7 +921,7 @@ where $f_\text{breath}^{(i)}$ is the per-window breathing frequency and $\Delta 
 
 **Breathing frequency smoothing** (`smooth_breath_frequency` setting):
 
-When enabled, the raw per-window breathing frequency sequence is smoothed with a 3-point moving average before the edges are applied. The kernel is Pascal-faithful: boundary points are weighted `⅜·x[0] + ⅝·x[1]` (first) and `⅝·x[-2] + ⅜·x[-1]` (last) so the total weight is preserved. Because smoothing requires knowing all per-window values before any band-edge can be set, the compute performs two passes: a first pass collects the breathing frequencies and caches the PSDs; after smoothing, a second pass reuses the cached PSDs to integrate band power with the smoothed edges.
+When enabled, the raw per-window breathing frequency sequence is smoothed with a 3-point moving average before the edges are applied. Because smoothing requires knowing all per-window values before any band-edge can be set, the compute performs two passes: a first pass collects the breathing frequencies and caches the PSDs; after smoothing, a second pass reuses the cached PSDs to integrate band power with the smoothed edges.
 
 </details>
 
