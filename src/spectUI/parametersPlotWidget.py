@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.PSD._band_power import band_power_rectangular
 from spectUI._uitools import show_export_summary
-from spectUI.workSpace import get_export_dir
+from spectUI.workSpace import get_export_dir, psd_method_from_workspace
 
 
 class ParametersPlotWidget(QWidget):
@@ -349,26 +349,24 @@ class ParametersPlotWidget(QWidget):
     def _save_profile_csv(self) -> None:
         """Write ``{basename}_profiles.csv`` — summary stats *and* raw data per epoch.
 
-        Each profile is a 2-D ``(n_bands × n_windows)`` array. To fit
-        one row per epoch the time axis is collapsed to five scalars
-        per band (``mean / std / min / max / t_max``), and the raw
-        time series is emitted in two layers:
+        Mirrors the profile plot widget's band selection logic exactly:
 
-        * ``profile_timestamps`` — one cell per row, comma-separated
-          list of epoch-relative window-centre times (seconds, ``t = 0``
-          at the epoch's first R-peak). Shared across bands, so it's
-          recorded once per epoch.
-        * ``<band>_profile_raw`` — one cell per row per band,
-          comma-separated list of the band's integrated power at each
-          window centre. NaN windows show up as empty positions inside
-          the list. Same length as ``profile_timestamps``.
+        * When ``Profiles.adaptive_bands`` names a band, only that band
+          is exported (same as the plot showing only the adaptive trace).
+          The ``adaptive_band`` column records its name; ``adaptive_source``
+          records ``"respiration_channel"`` or ``"psd_peak"``.
+        * Otherwise the bands listed in ``Profiles.bands`` are exported
+          (the user's static selection from the Profile Settings dialog).
+        * ``psd_method`` is built from the full workspace so adaptive
+          ``BandSpec`` flags and half-widths are forwarded to the compute.
+        * ``adaptive_source`` is forwarded to ``band_power_profile`` so
+          the breathing-frequency derivation matches what the plot shows.
 
-        ``n_windows`` records the list length so a downstream reader
-        can sanity-check it without splitting first. The window / step
-        lengths used for the compute are recorded in every row as
-        ``window_sec`` / ``step_sec`` so each row is self-describing
-        even when the export mixes datasets analysed with different
-        profile settings.
+        Per band the row carries five summary scalars
+        (``mean / std / min / max / t_max``) and the raw time series in
+        ``<band>_profile_raw``.  The shared time axis is in
+        ``profile_timestamps`` (epoch-relative seconds, same origin as
+        the profile plot's x-axis).
         """
         if self.profile_csvfile is None or self.workspace is None:
             return
@@ -379,34 +377,58 @@ class ParametersPlotWidget(QWidget):
             )
             return
 
+        # ---- workspace settings — mirror ProfilePlotWidget.__init__ ----
         profs = self.workspace.get("Profiles", {}) or {}
-        window_s = float(
-            profs.get("window (sec)", profs.get("window_s", 30.0))
+        window_s = float(profs.get("window (sec)", profs.get("window_s", 30.0)))
+        step_s   = float(profs.get("step (sec)",   profs.get("step_s",   5.0)))
+        adaptive_source: str = str(
+            profs.get("adaptive_source", "respiration_channel")
         )
-        step_s = float(
-            profs.get("step (sec)", profs.get("step_s", 5.0))
+        smooth_breath_freq: bool = bool(profs.get("smooth_breath_freq", False))
+
+        # Band universe (for filtering stale names)
+        all_bands_dict: dict = (
+            (self.workspace.get("FrequencyAnalysis", {}) or {})
+            .get("bands", {}) or {}
         )
 
-        bands = self._resolve_psd_bands()
-        subject = getattr(self.dataset, "basename", "")
+        # Determine which bands to export — same logic as the plot widget:
+        # adaptive band overrides the static selection when one is chosen.
+        adaptive_bands_cfg: dict = profs.get("adaptive_bands", {}) or {}
+        adaptive_band_name: str | None = next(iter(adaptive_bands_cfg), None)
+        if (
+            adaptive_band_name
+            and adaptive_band_name in all_bands_dict
+        ):
+            emit_bands: list[str] = [adaptive_band_name]
+        else:
+            adaptive_band_name = None
+            static_selection: list[str] = list(profs.get("bands", []) or [])
+            emit_bands = [n for n in static_selection if n in all_bands_dict]
+            if not emit_bands:
+                emit_bands = list(all_bands_dict.keys())
 
-        # Per-band sub-headers — kept tight on purpose so the CSV opens
-        # nicely in spreadsheets without horizontal scrolling explosion.
+        # PSD method carries adaptive BandSpec flags + half-widths.
+        prof_psd_method = psd_method_from_workspace(self.workspace)
+
+        subject  = getattr(self.dataset, "basename", "")
         stat_keys = ("mean", "std", "min", "max", "t_max")
 
         rows: list[dict] = []
         for label, _ep in self._iter_active_epochs():
             row: dict[str, object] = {
-                "Subject": subject,
-                "epoch": label,
-                "method": "",
-                "unit": "",
-                "window_sec": window_s,
-                "step_sec": step_s,
-                "n_windows": 0,
+                "Subject":         subject,
+                "epoch":           label,
+                "method":          "",
+                "unit":            "",
+                "window_sec":      window_s,
+                "step_sec":        step_s,
+                "adaptive_band":   adaptive_band_name or "",
+                "adaptive_source": adaptive_source if adaptive_band_name else "",
+                "n_windows":       0,
                 "profile_timestamps": "",
             }
-            for name in bands:
+            for name in emit_bands:
                 for stat in stat_keys:
                     row[f"{name}_{stat}"] = None
                 row[f"{name}_profile_raw"] = ""
@@ -414,33 +436,35 @@ class ParametersPlotWidget(QWidget):
             try:
                 view = hrv[label]
                 result = view.band_power_profile(
-                    window_s=window_s, step_s=step_s,
+                    window_s=window_s,
+                    step_s=step_s,
+                    psd_method=prof_psd_method,
+                    adaptive_source=adaptive_source,
+                    smooth_breath_freq=smooth_breath_freq,
                 )
                 row["method"] = result.method or ""
-                row["unit"] = result.unit or ""
+                row["unit"]   = result.unit   or ""
                 row["n_windows"] = int(result.timestamps.size)
 
-                # Epoch-relative time axis — the same convention the
-                # profile plot uses, so a ``t_max`` of 42.5 s in the CSV
-                # matches the plot's x-axis tick the user sees.
+                # Epoch-relative time axis — t=0 at the epoch's first
+                # R-peak, matching the profile plot's x-axis origin.
                 t_rel = (
-                    result.timestamps - (result.timestamps[0] - window_s / 2.0)
-                    if result.timestamps.size else result.timestamps
+                    result.timestamps
+                    - (result.timestamps[0] - window_s / 2.0)
+                    if result.timestamps.size
+                    else result.timestamps
                 )
                 row["profile_timestamps"] = self._format_list(t_rel)
 
                 names_in_result = list(result.band_names)
-                # Use the workspace order when available; otherwise emit
-                # whatever bands the compute returned.
-                emit_bands = bands or names_in_result
-                for name in emit_bands:
+                bands_to_write  = emit_bands or names_in_result
+                for name in bands_to_write:
                     if name not in names_in_result:
                         continue
                     row_band = result.band_power[names_in_result.index(name)]
-                    # Raw time series always written, even when every
-                    # window is NaN — keeps the column rectangular and
-                    # makes ``n_windows`` the single source of truth for
-                    # the list length.
+                    # Raw time series always written (even all-NaN) so
+                    # every row has the same column set and ``n_windows``
+                    # remains the single source of truth for list length.
                     row[f"{name}_profile_raw"] = self._format_list(row_band)
 
                     finite_mask = np.isfinite(row_band)
@@ -448,14 +472,17 @@ class ParametersPlotWidget(QWidget):
                         continue
                     finite = row_band[finite_mask]
                     row[f"{name}_mean"] = float(np.mean(finite))
-                    row[f"{name}_std"] = float(np.std(finite, ddof=0))
-                    row[f"{name}_min"] = float(np.min(finite))
-                    row[f"{name}_max"] = float(np.max(finite))
-                    # argmax indexes into the *finite-only* subarray, so
-                    # remap it back to the original time axis position.
-                    finite_indices = np.where(finite_mask)[0]
-                    arg_max_in_full = int(finite_indices[int(np.argmax(finite))])
+                    row[f"{name}_std"]  = float(np.std(finite, ddof=0))
+                    row[f"{name}_min"]  = float(np.min(finite))
+                    row[f"{name}_max"]  = float(np.max(finite))
+                    # argmax is in the finite-only subarray; remap to the
+                    # full time axis so t_max matches the plot's x-axis.
+                    finite_indices  = np.where(finite_mask)[0]
+                    arg_max_in_full = int(
+                        finite_indices[int(np.argmax(finite))]
+                    )
                     row[f"{name}_t_max"] = float(t_rel[arg_max_in_full])
+
             except Exception as exc:
                 logger.warning(
                     f"Profile CSV: epoch {label!r} failed: {exc}"
@@ -464,8 +491,9 @@ class ParametersPlotWidget(QWidget):
 
         header_set: list[str] = [
             "Subject", "epoch", "method", "unit",
-            "window_sec", "step_sec", "n_windows",
-            "profile_timestamps",
+            "window_sec", "step_sec",
+            "adaptive_band", "adaptive_source",
+            "n_windows", "profile_timestamps",
         ]
         for row in rows:
             for key in row:

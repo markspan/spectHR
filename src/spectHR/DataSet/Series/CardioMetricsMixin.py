@@ -86,6 +86,7 @@ from spectHR.Tools.PSD._psd_config import (
     respiration_max,
 )
 from spectHR.Tools.PSD._band_power import band_power_rectangular
+from spectHR.Tools.Logger import logger
 
 
 __all__ = [
@@ -512,6 +513,8 @@ class CardioMetricsMixin(HRVMetric):
         window_s: float,
         step_s: float,
         psd_method: Optional[PsdMethod] = None,
+        adaptive_source: str = "respiration_channel",
+        smooth_breath_freq: bool = False,
     ) -> ProfileResult:
         """Sliding-window band-power profile (CARSPAN ``RunProfileSommation``).
 
@@ -538,17 +541,21 @@ class CardioMetricsMixin(HRVMetric):
         CARSPAN) go through their own native compute path; the
         respiration-aware band-edge logic still applies.
 
-        Step 3 - Per-window respiration frequency. If a
-        :class:`RespirationSeries` is attached to the underlying
-        :class:`PhysioData` (``self._pd.rsp_map``), the mean breath
-        frequency inside the window is computed via
-        :meth:`RespirationSeriesView.mean_breath_frequency_hz`. This
-        is the direct spectHR equivalent of CARSPAN's
-        ``1 / LProfile.MeanIn`` when the input signal is
-        ``RespPeriod`` (Pascal 2944-2952). With no respiration
-        series, ``resp_freq`` stays ``None`` and step 4 falls back
-        to the static band edges - exactly as CARSPAN does when
-        ``FRespFreqList.Count = 0`` (Pascal 2994-2998).
+        Step 3 - Per-window respiration frequency. Two sources are
+        supported, selected by ``adaptive_source``:
+
+        ``"respiration_channel"`` (CARSPAN-faithful default) — the mean
+        breath frequency comes from :meth:`RespirationSeriesView.mean_breath_frequency_hz`
+        on the window slice of the first series in ``PhysioData.rsp_map``.
+        This mirrors CARSPAN's ``1 / LProfile.MeanIn`` (Pascal 2944-2952).
+        Falls back to static edges when no respiration channel is loaded,
+        exactly as CARSPAN does when ``FRespFreqList.Count = 0``
+        (Pascal 2994-2998).
+
+        ``"psd_peak"`` — no respiration channel required. For each adaptive
+        band the frequency of maximum PSD power within the band's static
+        ``[low, high]`` range is used as the centre. Computed per-band
+        inside the integration loop (step 4).
 
         Step 4 - Per-band edge clamp. For each band:
 
@@ -634,9 +641,17 @@ class CardioMetricsMixin(HRVMetric):
 
         band_names = list(method.bands.keys())
         bands_list = list(method.bands.items())
-        n_bands = len(band_names)
-        grid = np.full((n_bands, n_windows), np.nan, dtype=np.float64)
+        n_bands    = len(band_names)
+        grid       = np.full((n_bands, n_windows), np.nan, dtype=np.float64)
         timestamps = np.empty(n_windows, dtype=np.float64)
+
+        # Detect whether any band is adaptive — only allocate resp_freqs
+        # when needed so non-adaptive profiles keep resp_freqs=None.
+        has_adaptive_band = any(b.respiration_band for _, b in bands_list)
+        resp_freqs: "np.ndarray | None" = (
+            np.full(n_windows, np.nan, dtype=np.float64)
+            if has_adaptive_band else None
+        )
 
         # ----- Once-per-call: locate the respiration series, if any ----
         # CARSPAN consults FTSIn.Name = 'RespPeriod' (Pascal 2944) and
@@ -653,68 +668,147 @@ class CardioMetricsMixin(HRVMetric):
             if rsp_map:
                 rsp_series = next(iter(rsp_map.values()))
 
-        # ----- Per-window loop -------------------------------------------
-        unit = ""
-        for i in range(n_windows):
-            win_start = t0 + i * step_s
-            win_end = win_start + window_s
-            timestamps[i] = win_start + window_s / 2.0   # window centre
-            win_view = self.view(win_start, win_end)
-
-            # CARSPAN min-N gate - same threshold the compute layer uses.
-            if win_view.times.size < 4:
-                continue
-
-            # Step 2 - per-window PSD on the resampled (no-MAW) grid for
-            # carspan_strict; the algorithm's native grid for the others.
-            try:
-                psd_result = win_view._psd_for_band_power(method)
-            except Exception:
-                continue
-
-            # Step 3 - per-window respiration frequency.
-            # Pascal: TmpRespFreqObject1.FRespFreq    := 1 / LProfile.MeanIn;
-            #         TmpRespFreqObject1.FRespFreqMax := (PDSin_BCK.Count-1)*FreqRes;
-            resp_freq = None
-            resp_freq_max = (
-                float(psd_result.freqs[-1])
-                if psd_result.freqs.size
-                else float("inf")
+        if has_adaptive_band and adaptive_source == "respiration_channel" and rsp_series is None:
+            logger.warning(
+                "band_power_profile: adaptive_source='respiration_channel' but no "
+                "respiration channel is loaded in this dataset. "
+                "Band edges will fall back to static values for every window."
             )
-            if rsp_series is not None:
-                rsp_view = rsp_series.view(win_start, win_end)
-                resp_freq = rsp_view.mean_breath_frequency_hz()
 
-            # Steps 4 + 5 - per-band edge clamp + rectangular integration.
-            for b, (name, band) in enumerate(bands_list):
-                if resp_freq is not None:
-                    lo = respiration_min(band, resp_freq, resp_freq_max)
-                    hi = respiration_max(band, resp_freq, resp_freq_max)
-                else:
-                    lo, hi = band.low, band.high
-                # Defensive: a respiration clamp can in principle
-                # invert the edges (resp_freq + high < resp_freq - low)
-                # on pathological data. band_power_rectangular would
-                # just return 0; make that visible as NaN instead so
-                # downstream consumers can tell "no power here" apart
-                # from "the band collapsed".
-                if hi <= lo:
+        # ----- Per-window loop -------------------------------------------
+        # When an adaptive band is active AND breath-freq smoothing is
+        # requested we need a two-pass approach so the smoothed frequency
+        # sequence is used for the actual band-edge computation:
+        #
+        #   Phase A — collect per-window resp_freqs and cache PSDs.
+        #   Phase B — apply 3-point MA to resp_freqs (optional).
+        #   Phase C — compute band power using cached PSDs + smoothed freqs.
+        #
+        # Without smoothing (or without any adaptive band) a single pass
+        # suffices and PSD caching is skipped.
+
+        unit = ""
+
+        def _ma3(arr: "np.ndarray") -> "np.ndarray":
+            """Pascal-faithful 3-point MA (same kernel as display smoother)."""
+            if arr.size < 3:
+                return arr.copy()
+            out = np.empty_like(arr, dtype=np.float64)
+            out[1:-1] = (arr[:-2] + arr[1:-1] + arr[2:]) / 3.0
+            out[0]    = 3.0 / 8.0 * arr[0]  + 5.0 / 8.0 * arr[1]
+            out[-1]   = 5.0 / 8.0 * arr[-2] + 3.0 / 8.0 * arr[-1]
+            return out
+
+        def _strip_hz(unit_str: str) -> str:
+            raw = str(unit_str).strip()
+            for suffix in ("/Hz", "/hz", " /Hz", " /hz"):
+                if raw.endswith(suffix):
+                    return raw[: -len(suffix)].rstrip()
+            return raw
+
+        if has_adaptive_band:
+            # ---- Phase A: collect resp_freqs, cache PSDs ----------------
+            psd_cache: "list[Optional[object]]" = [None] * n_windows
+
+            for i in range(n_windows):
+                win_start = t0 + i * step_s
+                win_end   = win_start + window_s
+                timestamps[i] = win_start + window_s / 2.0
+                win_view = self.view(win_start, win_end)
+                if win_view.times.size < 4:
                     continue
-                grid[b, i] = band_power_rectangular(
-                    psd_result.freqs, psd_result.power, lo, hi
+                try:
+                    psd_result = win_view._psd_for_band_power(method)
+                except Exception:
+                    continue
+                psd_cache[i] = psd_result
+                if not unit:
+                    unit = _strip_hz(psd_result.unit)
+
+                resp_freq_max = (
+                    float(psd_result.freqs[-1])
+                    if psd_result.freqs.size else float("inf")
+                )
+                if adaptive_source == "respiration_channel" and rsp_series is not None:
+                    rsp_view = rsp_series.view(win_start, win_end)
+                    rf = rsp_view.mean_breath_frequency_hz()
+                    if rf is not None and resp_freqs is not None:
+                        resp_freqs[i] = rf
+                elif adaptive_source == "psd_peak":
+                    # Find peak inside the first adaptive band's search range.
+                    for _, band in bands_list:
+                        if band.respiration_band:
+                            mask = (
+                                (psd_result.freqs >= band.low) &
+                                (psd_result.freqs <= band.high)
+                            )
+                            if mask.any() and resp_freqs is not None:
+                                peak_idx = int(np.argmax(psd_result.power[mask]))
+                                resp_freqs[i] = float(
+                                    psd_result.freqs[mask][peak_idx]
+                                )
+                            break  # only one adaptive band at a time
+
+            # ---- Phase B: optionally smooth resp_freqs ------------------
+            if smooth_breath_freq and resp_freqs is not None:
+                finite_mask = np.isfinite(resp_freqs)
+                if finite_mask.any():
+                    rf_clean = np.where(finite_mask, resp_freqs, 0.0)
+                    smoothed = _ma3(rf_clean)
+                    smoothed[~finite_mask] = np.nan
+                    resp_freqs[:] = smoothed   # updated in-place; ProfileResult sees it
+
+            # ---- Phase C: band power using cached PSDs + (smoothed) freqs
+            for i in range(n_windows):
+                psd_result = psd_cache[i]
+                if psd_result is None:
+                    continue
+                resp_freq_max = (
+                    float(psd_result.freqs[-1])
+                    if psd_result.freqs.size else float("inf")
+                )
+                window_resp_freq: "float | None" = (
+                    float(resp_freqs[i])
+                    if (resp_freqs is not None and np.isfinite(resp_freqs[i]))
+                    else None
                 )
 
-            # Read the band-power unit once, from the first successful
-            # window. Strip ``/Hz`` because band power is the PSD
-            # integrated over Hz - same logic as PSDPlotWidget's
-            # ``_strip_per_hz``.
-            if not unit:
-                raw = str(psd_result.unit).strip()
-                for suffix in ("/Hz", "/hz", " /Hz", " /hz"):
-                    if raw.endswith(suffix):
-                        raw = raw[: -len(suffix)].rstrip()
-                        break
-                unit = raw
+                for b, (name, band) in enumerate(bands_list):
+                    if band.respiration_band and window_resp_freq is not None:
+                        lo = respiration_min(band, window_resp_freq, resp_freq_max)
+                        hi = respiration_max(band, window_resp_freq, resp_freq_max)
+                    else:
+                        lo, hi = band.low, band.high
+                    if hi <= lo:
+                        continue
+                    grid[b, i] = band_power_rectangular(
+                        psd_result.freqs, psd_result.power, lo, hi
+                    )
+
+        else:
+            # ---- Single-pass (no adaptive bands) ------------------------
+            for i in range(n_windows):
+                win_start = t0 + i * step_s
+                win_end   = win_start + window_s
+                timestamps[i] = win_start + window_s / 2.0
+                win_view = self.view(win_start, win_end)
+                if win_view.times.size < 4:
+                    continue
+                try:
+                    psd_result = win_view._psd_for_band_power(method)
+                except Exception:
+                    continue
+
+                for b, (name, band) in enumerate(bands_list):
+                    lo, hi = band.low, band.high
+                    if hi <= lo:
+                        continue
+                    grid[b, i] = band_power_rectangular(
+                        psd_result.freqs, psd_result.power, lo, hi
+                    )
+
+                if not unit:
+                    unit = _strip_hz(psd_result.unit)
 
         return ProfileResult(
             timestamps=timestamps,
@@ -724,6 +818,7 @@ class CardioMetricsMixin(HRVMetric):
             method=method.algorithm,
             window_s=float(window_s),
             step_s=float(step_s),
+            resp_freqs=resp_freqs,
         )
 
     # ------------------------------------------------------------------

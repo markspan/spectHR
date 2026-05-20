@@ -60,28 +60,36 @@ class BandSpec:
     Respiration-tracked bands
     -------------------------
     When ``respiration_band`` is True, the profile builder
-    (:meth:`CardioMetricsMixin.band_power_profile`) reinterprets
-    :attr:`low` and :attr:`high` as **half-widths around the
-    per-window respiration frequency** rather than as absolute Hz
-    edges. This mirrors CARSPAN's ``TAnaBand.RespirationBand`` flag
-    and the :func:`respiration_min` / :func:`respiration_max` helpers
-    below — a direct port of Pascal's ``GetRespirationMinBandValue`` /
+    (:meth:`CardioMetricsMixin.band_power_profile`) centers the band on
+    the per-window breathing frequency using dedicated half-width fields
+    :attr:`resp_low` and :attr:`resp_high`, which are completely
+    independent of the absolute-Hz edges :attr:`low` / :attr:`high`.
+    This mirrors CARSPAN's ``TAnaBand.RespirationBand`` flag and the
+    :func:`respiration_min` / :func:`respiration_max` helpers below — a
+    direct port of Pascal's ``GetRespirationMinBandValue`` /
     ``GetRespirationMaxBandValue`` (``T_AnaFunctions.pas`` 2837-2884).
 
-    For example, a band of ``BandSpec(low=0.04, high=0.04,
-    respiration_band=True)`` evaluated inside a window whose mean
+    For example, a band configured with ``resp_low=0.04, resp_high=0.04,
+    respiration_band=True`` evaluated inside a window whose mean
     breathing frequency is 0.27 Hz becomes the absolute band
-    ``[0.23, 0.31] Hz`` for that window.
+    ``[0.23, 0.31] Hz`` for that window. The static edges
+    ``low`` / ``high`` are left untouched and remain the edges used by
+    whole-epoch :meth:`band_power` and :meth:`band_powers`.
 
-    Static bands (``respiration_band=False``, the default) keep the
-    absolute-Hz interpretation. The flag is consulted only by the
-    profile builder; the whole-epoch :meth:`band_power` and
-    :meth:`band_powers` use the static edges unconditionally.
+    Static bands (``respiration_band=False``, the default) use
+    ``low`` / ``high`` unconditionally. The ``respiration_band`` flag
+    is consulted only by the profile builder.
     """
 
     low: float
     high: float
     respiration_band: bool = False
+    # Half-widths used when respiration_band=True. The band edge becomes
+    # [resp_freq - resp_low, resp_freq + resp_high] per profile window.
+    # Stored separately from low/high so the static PSD edges are never
+    # overwritten by the researcher setting up adaptive tracking.
+    resp_low: float = 0.04
+    resp_high: float = 0.04
 
 
 def respiration_min(
@@ -92,10 +100,10 @@ def respiration_min(
     """CARSPAN ``GetRespirationMinBandValue`` — port of
     ``T_AnaFunctions.pas`` 2837-2862.
 
-    For a respiration-tracked band, the band's :attr:`BandSpec.low`
-    is reinterpreted as the **lower half-width** around
-    ``resp_freq_hz``. A ``0.01 Hz`` floor and a ``freq_max_hz`` cap
-    are applied identically to the Pascal helper.
+    For a respiration-tracked band, :attr:`BandSpec.resp_low` is the
+    **lower half-width** below ``resp_freq_hz``. A ``0.01 Hz`` floor
+    and a ``freq_max_hz`` cap are applied identically to the Pascal
+    helper.
 
     Parameters
     ----------
@@ -116,12 +124,12 @@ def respiration_min(
     if not band.respiration_band:
         return band.low
     # Bail-out: respiration too slow for the band even to start.
-    if band.low > freq_max_hz:
+    if band.resp_low > freq_max_hz:
         return freq_max_hz
     # Avoid a near-DC lower edge — CARSPAN's hard floor.
-    if (resp_freq_hz - band.low) < 0.01:
+    if (resp_freq_hz - band.resp_low) < 0.01:
         return 0.01
-    return resp_freq_hz - band.low
+    return resp_freq_hz - band.resp_low
 
 
 def respiration_max(
@@ -132,10 +140,9 @@ def respiration_max(
     """CARSPAN ``GetRespirationMaxBandValue`` — port of
     ``T_AnaFunctions.pas`` 2865-2884.
 
-    For a respiration-tracked band, the band's :attr:`BandSpec.high`
-    is reinterpreted as the **upper half-width** around
-    ``resp_freq_hz``. Cap at ``freq_max_hz`` identically to the
-    Pascal helper.
+    For a respiration-tracked band, :attr:`BandSpec.resp_high` is the
+    **upper half-width** above ``resp_freq_hz``. Cap at
+    ``freq_max_hz`` identically to the Pascal helper.
 
     Parameters
     ----------
@@ -155,9 +162,9 @@ def respiration_max(
     """
     if not band.respiration_band:
         return band.high
-    if (resp_freq_hz + band.high) > freq_max_hz:
+    if (resp_freq_hz + band.resp_high) > freq_max_hz:
         return freq_max_hz
-    return resp_freq_hz + band.high
+    return resp_freq_hz + band.resp_high
 
 
 def _default_bands() -> Dict[str, BandSpec]:

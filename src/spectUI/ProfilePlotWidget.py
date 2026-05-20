@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (
 )
 
 from spectUI._uitools import show_export_summary
-from spectUI.workSpace import get_export_dir
+from spectUI.workSpace import get_export_dir, psd_method_from_workspace
 
 warnings.filterwarnings("ignore")
 
@@ -145,6 +145,7 @@ class _ProfilePlotData:
     window_s: float
     step_s: float
     error: Optional[str] = None
+    resp_freqs: Optional[np.ndarray] = None  # shape (n_windows,), NaN when unavailable
 
 
 def _fetch_profile(
@@ -154,6 +155,8 @@ def _fetch_profile(
     window_s: float,
     step_s: float,
     psd_method: Optional[PsdMethod] = None,
+    adaptive_source: str = "respiration_channel",
+    smooth_breath_freq: bool = False,
     smooth: bool = False,
 ) -> _ProfilePlotData:
     """Call ``series.band_power_profile()`` — never raises.
@@ -168,12 +171,20 @@ def _fetch_profile(
     only — the compute returns un-smoothed values so band-power
     statistics over the profile (mean, peak time, etc.) computed by
     downstream code keep their actual numerical values.
+
+    ``adaptive_source`` is forwarded directly to
+    :meth:`CardioMetricsMixin.band_power_profile` — ``"respiration_channel"``
+    uses the CARSPAN-faithful breathing signal; ``"psd_peak"`` derives
+    the breathing frequency from the per-window PSD peak within the
+    band's static ``[low, high]`` range (no respiration channel needed).
     """
     try:
         result = series.band_power_profile(
             window_s=window_s,
             step_s=step_s,
             psd_method=psd_method,
+            adaptive_source=adaptive_source,
+            smooth_breath_freq=smooth_breath_freq,
         )
     except Exception as e:
         return _ProfilePlotData(
@@ -189,6 +200,11 @@ def _fetch_profile(
         )
 
     band_power = np.asarray(result.band_power)
+    resp_freqs = (
+        np.asarray(result.resp_freqs, dtype=np.float64).ravel()
+        if result.resp_freqs is not None else None
+    )
+
     if smooth and band_power.size:
         # Apply ``ma3`` per band row (along the time axis). NaN windows
         # in the raw profile would otherwise propagate through the
@@ -202,6 +218,10 @@ def _fetch_profile(
             smoothed[i] = ma3(row_clean)
         band_power = smoothed
 
+        if resp_freqs is not None:
+            rf_clean = np.where(np.isfinite(resp_freqs), resp_freqs, 0.0)
+            resp_freqs = ma3(rf_clean)
+
     return _ProfilePlotData(
         label=label,
         timestamps=np.asarray(result.timestamps).ravel(),
@@ -211,6 +231,7 @@ def _fetch_profile(
         method=result.method,
         window_s=float(result.window_s),
         step_s=float(result.step_s),
+        resp_freqs=resp_freqs,
     )
 
 
@@ -275,6 +296,7 @@ class _SingleProfilePlot(QWidget):
         *,
         bands: Optional[Dict[str, dict]] = None,
         bands_to_plot: Optional[List[str]] = None,
+        adaptive_names: Optional[frozenset] = None,
     ) -> None:
         super().__init__(parent)
         # Same white-figure / white-widget combo as PSDPlotWidget so the
@@ -296,9 +318,18 @@ class _SingleProfilePlot(QWidget):
             data,
             bands=bands or {},
             bands_to_plot=bands_to_plot or [],
+            adaptive_names=adaptive_names or frozenset(),
+            resp_freqs=data.resp_freqs,
         )
         self.ax.set_title(f"Profile – {data.label}")
         self.ax.set_ylim(bottom=0.0, top=max(y_top, _Y_TOP_FLOOR))
+
+        # If plot_on_axis added a twinx for the breathing-freq axis it
+        # will be the second axes in the figure. Expose it so the
+        # container widget can link y-limits across all subplots.
+        fig_axes = self.canvas.figure.axes
+        self.ax_rf: Optional[Axes] = fig_axes[1] if len(fig_axes) > 1 else None
+
         self.canvas.draw()
 
 
@@ -339,17 +370,50 @@ class ProfilePlotWidget(QWidget):
         window_s: float = prof_cfg["window_s"]
         step_s:   float = prof_cfg["step_s"]
         smooth:   bool  = prof_cfg["smooth_for_display"]
+        profs_raw = (workspace or {}).get("Profiles", {}) or {}
+        adaptive_source: str = str(
+            profs_raw.get("adaptive_source", "respiration_channel")
+        )
+        smooth_breath_freq: bool = bool(
+            profs_raw.get("smooth_breath_freq", False)
+        )
         # Bands the user picked in Profile Settings, filtered against
         # the live universe so stale names from a band rename are dropped.
         bands_to_plot: List[str] = [
             name for name in prof_cfg["bands"] if name in bands_dict
         ]
+        # When an adaptive band is active it takes over the plot: only that
+        # band is shown (the static band list is greyed-out in the dialog for
+        # exactly this reason). Silently fall back to the static list if the
+        # adaptive band name is not in the live band universe (stale workspace).
+        adaptive_bands_cfg: dict = profs_raw.get("adaptive_bands", {}) or {}
+        if adaptive_bands_cfg:
+            adaptive_name = next(iter(adaptive_bands_cfg), None)
+            if adaptive_name and adaptive_name in bands_dict:
+                bands_to_plot = [adaptive_name]
+        # Names of adaptively-tracked bands — forwarded to plot_on_axis so
+        # legend entries for those bands get an "(adaptive)" suffix.
+        adaptive_names: frozenset = frozenset(adaptive_bands_cfg.keys())
+
+        # Build the PsdMethod directly from the workspace so adaptive
+        # band settings (Profiles.adaptive_bands) are always reflected
+        # in the computation — regardless of whether the caller has
+        # already pushed the method onto each series via set_psd_method.
+        # Passing it explicitly to _fetch_profile is the single source
+        # of truth for this widget; the series.psd_method fallback in
+        # _resolve_method is a safety net for other call sites.
+        prof_psd_method: Optional[PsdMethod] = (
+            psd_method_from_workspace(workspace) if workspace is not None else None
+        )
 
         # ---- compute one profile per series ---------------------------
         plots: List[_ProfilePlotData] = [
             _fetch_profile(
                 series, label,
                 window_s=window_s, step_s=step_s, smooth=smooth,
+                psd_method=prof_psd_method,
+                adaptive_source=adaptive_source,
+                smooth_breath_freq=smooth_breath_freq,
             )
             for series, label in zip(series_list, labels)
         ]
@@ -364,6 +428,22 @@ class ProfilePlotWidget(QWidget):
             (_y_max(p, bands_to_plot) for p in plots), default=0.0,
         )
         y_top = y_max * _AUTOSCALE_HEADROOM if y_max > 0 else 1.0
+
+        # Global resp-freq range — shared across all epoch subplots so
+        # the breathing-frequency right axis is directly comparable
+        # between epochs (same motivation as the shared left y-limit).
+        all_rf: List[float] = []
+        for p in plots:
+            if p.resp_freqs is not None:
+                finite = p.resp_freqs[np.isfinite(p.resp_freqs)]
+                all_rf.extend(finite.tolist())
+        if all_rf:
+            rf_min = float(np.min(all_rf))
+            rf_max = float(np.max(all_rf))
+            rf_pad = max((rf_max - rf_min) * 0.20, 0.01)
+            self._rf_ylim: Optional[tuple] = (rf_min - rf_pad, rf_max + rf_pad)
+        else:
+            self._rf_ylim = None
 
         # Remember inputs for keyboard handlers and save-all path.
         self._labels: List[str] = list(labels)
@@ -389,7 +469,13 @@ class ProfilePlotWidget(QWidget):
             subplot = _SingleProfilePlot(
                 data, y_top,
                 bands=bands_dict, bands_to_plot=bands_to_plot,
+                adaptive_names=adaptive_names,
             )
+            # Apply the shared breathing-freq y-range so the right axis
+            # is identical across all epoch panels.
+            if self._rf_ylim is not None and subplot.ax_rf is not None:
+                subplot.ax_rf.set_ylim(*self._rf_ylim)
+                subplot.canvas.draw_idle()
             self._subplots.append(subplot)
             row, col = divmod(idx, 2)
             container_layout.addWidget(subplot, row, col)
@@ -505,6 +591,8 @@ class ProfilePlotWidget(QWidget):
         *,
         bands: Optional[Dict[str, dict]] = None,
         bands_to_plot: Optional[List[str]] = None,
+        adaptive_names: Optional[frozenset] = None,
+        resp_freqs: Optional[np.ndarray] = None,
     ) -> Axes:
         """Draw one epoch's profile: filled traces for each chosen band.
 
@@ -523,6 +611,7 @@ class ProfilePlotWidget(QWidget):
             draw every band the profile carries.
         """
         bands = bands or {}
+        adaptive_names = adaptive_names or frozenset()
         if not bands_to_plot:
             bands_to_plot = list(data.band_names)
 
@@ -543,25 +632,74 @@ class ProfilePlotWidget(QWidget):
         t_rel = data.timestamps - t0
         ax.set_xlim(0.0, float(t_rel[-1] + data.window_s / 2.0))
 
-        # ---- per-band traces: line + fill_between to y=0 -------------
+        # ---- collect valid band rows ----------------------------------
+        # Build (name, row, spec, mean_power) for every band that exists
+        # in the computed data and is requested for display.
+        band_entries = []
         for name in bands_to_plot:
             if name not in data.band_names:
                 continue
             row = data.band_power[data.band_names.index(name)]
             spec = bands.get(name, {})
+            finite = row[np.isfinite(row)]
+            mean_power = float(np.mean(finite)) if finite.size else 0.0
+            band_entries.append((name, row, spec, mean_power))
+
+        # ---- pass 1: fills — highest power first (rendered lowest) ----
+        # Sorting highest-to-lowest means the dominant band's fill sits
+        # at the bottom; lower-power bands' fills are drawn on top so
+        # their area is never fully buried. All fills share zorder=2 so
+        # matplotlib composites them in draw order (first = bottom).
+        # Adaptive bands always fill with the band's own colour regardless
+        # of the line colour chosen in pass 2.
+        for name, row, spec, _ in sorted(band_entries, key=lambda x: -x[3]):
             color = spec.get("color", "gray")
-            # ``alpha`` is used for the fill only; the line itself stays
-            # opaque so peaks are still legible when bands overlap.
-            fill_alpha = float(spec.get("alpha", 0.35))
+            fill_alpha = float(spec.get("alpha", 0.20))
             ax.fill_between(
                 t_rel, 0.0, np.where(np.isfinite(row), row, 0.0),
                 color=color, alpha=fill_alpha, zorder=2,
             )
+
+        # ---- pass 2: lines — drawn after ALL fills --------------------
+        # zorder=3 puts every line on top of every fill unconditionally,
+        # so each band's curve is legible regardless of power ratio.
+        # Adaptive bands get a black line so the tracking variation stands
+        # out clearly against the coloured fill.
+        for name, row, spec, _ in band_entries:
+            is_adaptive = name in adaptive_names
+            line_color = "black" if is_adaptive else spec.get("color", "gray")
+            legend_label = f"{name} (adaptive)" if is_adaptive else name
             ax.plot(
                 t_rel, row,
-                color=color, lw=1.2, alpha=0.95,
-                label=name, zorder=3,
+                color=line_color, lw=1.5, alpha=0.9,
+                label=legend_label, zorder=3,
             )
+
+        # ---- right y-axis: breathing frequency (adaptive band only) ----
+        # Only drawn when resp_freqs contains at least one finite value.
+        # The axis is independent of the left (band-power) scale so the
+        # two y-ranges don't interfere; the green colour ties it visually
+        # to the line without needing a separate legend entry.
+        if resp_freqs is not None:
+            rf = np.asarray(resp_freqs).ravel()
+            finite_rf = rf[np.isfinite(rf)]
+            if finite_rf.size:
+                ax_rf = ax.twinx()
+                ax_rf.plot(
+                    t_rel, rf,
+                    color="green", lw=1.2, alpha=0.45,
+                    linestyle="--", zorder=1,
+                    label="breath freq.",
+                )
+                rf_min = float(np.nanmin(rf))
+                rf_max = float(np.nanmax(rf))
+                rf_pad = max((rf_max - rf_min) * 0.20, 0.01)
+                ax_rf.set_ylim(rf_min - rf_pad, rf_max + rf_pad)
+                ax_rf.set_ylabel("Breath. freq. [Hz]", color="green", fontsize=7)
+                ax_rf.tick_params(axis="y", labelcolor="green", labelsize=6)
+                ax_rf.spines["right"].set_edgecolor("green")
+                # Keep right-axis spines/ticks from visually dominating.
+                ax_rf.spines["top"].set_visible(False)
 
         # ---- axes decoration ----------------------------------------
         ax.set_xlabel("Time within epoch [s]")

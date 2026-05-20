@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QGridLayout,
     QLabel,
+    QCheckBox,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -135,6 +136,7 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     # one path; needed when the same key name takes different values in
     # different sections, e.g. CARSPAN supports cosine-bell presets that
     # Welch does not)
+    "Profiles.adaptive_source": ["respiration_channel", "psd_peak"],
     "FrequencyAnalysis.carspan.window": [
         "5% cosine bell",
         "10% cosine bell",
@@ -243,26 +245,119 @@ class _ColorButton(QPushButton):
 # ----------------------------------------------------------------------
 
 
-def _make_bool_combo(value: bool) -> QComboBox:
-    """
-    Build a ``True`` / ``False`` dropdown pre-selected to *value*.
+def _make_bool_checkbox(value: bool) -> QCheckBox:
+    """Build a checkbox for a boolean workspace value.
 
-    Item text is the literal Python repr (``"True"`` / ``"False"``) so
-    that ``ParametersEditorDialog._coerce`` round-trips it back to a
-    Python ``bool`` via its existing ``isinstance(original, bool)``
-    branch — no special-cased read path needed.
+    ``get_parameters`` reads ``.isChecked()`` directly, so no string
+    coercion is needed on the read path.
     """
-    combo = QComboBox()
-    combo.addItem("True")
-    combo.addItem("False")
-    combo.setCurrentIndex(0 if bool(value) else 1)
-    combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-    return combo
+    cb = QCheckBox()
+    cb.setChecked(bool(value))
+    return cb
 
 
 # ----------------------------------------------------------------------
 # Multi-selector — used by Profile Settings to pick which bands to plot
 # ----------------------------------------------------------------------
+
+
+class _AdaptiveBandWidget(QWidget):
+    """Single-band adaptive-tracking selector: dropdown + half-width fields.
+
+    Renders as one row:
+
+        [— none — ▾]   below rp (Hz): [0.04]   above rp (Hz): [0.04]
+
+    The dropdown lists every band in the universe plus a "— none —"
+    sentinel. Only one band can be adaptive at a time — physiologically,
+    adaptive tracking makes sense only for the respiratory band (HF),
+    not for multiple bands simultaneously.
+
+    The half-width fields are disabled when "— none —" is selected.
+
+    ``get_value()`` returns a dict with zero or one entry that round-trips
+    directly into ``workspace["Profiles"]["adaptive_bands"]``:
+
+        {}                                          # none selected
+        {"HF": {"lower half-width (Hz)": 0.04,
+                "upper half-width (Hz)": 0.04}}     # HF selected
+    """
+
+    _LOW_KEY   = "lower half-width (Hz)"
+    _HIGH_KEY  = "upper half-width (Hz)"
+    _DEFAULT   = 0.04
+    _NONE_TEXT = "— none —"
+
+    def __init__(
+        self,
+        current: dict,
+        universe: list[str],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        # Resolve current single selection (take first entry if dict has
+        # more than one — legacy multi-band workspaces are collapsed here).
+        current_name  = next(iter(current), None)
+        current_entry = current.get(current_name, {}) if current_name else {}
+        low_val  = float(current_entry.get(self._LOW_KEY,  self._DEFAULT))
+        high_val = float(current_entry.get(self._HIGH_KEY, self._DEFAULT))
+
+        # Dropdown: "— none —" first, then band names in universe order.
+        self._combo = QComboBox()
+        self._combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._combo.addItem(self._NONE_TEXT)
+        for name in universe:
+            self._combo.addItem(name)
+
+        if current_name and current_name in universe:
+            self._combo.setCurrentIndex(self._combo.findText(current_name))
+        else:
+            self._combo.setCurrentIndex(0)
+
+        # Half-width fields — enabled only when a band is selected.
+        active = current_name is not None and current_name in universe
+        self._lbl_low  = QLabel("below rp (Hz):")
+        self._low_edit = QLineEdit(str(low_val))
+        self._low_edit.setMaximumWidth(60)
+
+        self._lbl_high  = QLabel("above rp (Hz):")
+        self._high_edit = QLineEdit(str(high_val))
+        self._high_edit.setMaximumWidth(60)
+
+        for w in (self._lbl_low, self._low_edit, self._lbl_high, self._high_edit):
+            w.setEnabled(active)
+
+        self._combo.currentIndexChanged.connect(self._on_selection_changed)
+
+        for w in (self._combo, self._lbl_low, self._low_edit,
+                  self._lbl_high, self._high_edit):
+            layout.addWidget(w)
+        layout.addStretch()
+
+    def _on_selection_changed(self, index: int) -> None:
+        enabled = index > 0   # index 0 is "— none —"
+        for w in (self._lbl_low, self._low_edit, self._lbl_high, self._high_edit):
+            w.setEnabled(enabled)
+
+    def get_value(self) -> dict:
+        """Return the workspace-ready dict for ``Profiles.adaptive_bands``."""
+        if self._combo.currentIndex() == 0:
+            return {}
+        name = self._combo.currentText()
+        try:
+            low = float(self._low_edit.text())
+        except ValueError:
+            low = self._DEFAULT
+        try:
+            high = float(self._high_edit.text())
+        except ValueError:
+            high = self._DEFAULT
+        return {name: {self._LOW_KEY: low, self._HIGH_KEY: high}}
 
 
 class _BandMultiSelectWidget(QListWidget):
@@ -340,7 +435,7 @@ class ParametersEditorDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Edit Parameters")
         self.setModal(True)
-        self.resize(620, 720)
+        self.resize(800, 720)
         self.setWindowIcon(
             QApplication.style().standardIcon(
                 getattr(QStyle, "SP_FileDialogDetailedView")
@@ -452,7 +547,22 @@ class ParametersEditorDialog(QDialog):
         for key, value in data.items():
             path = "{}.{}".format(prefix, key)
 
-            if isinstance(value, dict):
+            if self._is_adaptive_bands_path(path):
+                # adaptive_bands is a dict, so it must be intercepted
+                # before the generic isinstance(value, dict) branch.
+                widget = _AdaptiveBandWidget(
+                    current=dict(value) if isinstance(value, dict) else {},
+                    universe=self._all_band_names,
+                )
+                self._widgets[path] = (widget, value)
+                row = QHBoxLayout()
+                label = QLabel(_label(key) + ":")
+                label.setMinimumWidth(160)
+                label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                row.addWidget(label)
+                row.addWidget(widget, 1)
+                layout.addLayout(row)
+            elif isinstance(value, dict):
                 sub_group = self._make_group(key, value, prefix=path)
                 layout.addWidget(sub_group)
             elif self._is_band_list_path(path):
@@ -485,12 +595,64 @@ class ParametersEditorDialog(QDialog):
                 row.addWidget(widget, 1)
                 layout.addLayout(row)
 
+        # ---- post-loop: wire adaptive_bands selection → grey-out sibling widgets
+        # When the user picks a band in the adaptive-band dropdown:
+        #   • the regular "bands" list is greyed — one adaptive band drives
+        #     the profile, the static list is no longer the primary selector.
+        #   • the adaptive_source combo is enabled (it becomes meaningful).
+        #   • the smooth_breath_freq checkbox is enabled (only relevant when
+        #     an adaptive band is active).
+        # When "— none —" is selected: reverse all three.
+        ab_path            = f"{prefix}.adaptive_bands"
+        bands_path         = f"{prefix}.bands"
+        source_path        = f"{prefix}.adaptive_source"
+        smooth_breath_path = f"{prefix}.smooth_breath_freq"
+        if ab_path in self._widgets:
+            ab_widget, _ = self._widgets[ab_path]
+            if isinstance(ab_widget, _AdaptiveBandWidget):
+                has_sel = ab_widget._combo.currentIndex() > 0
+
+                if bands_path in self._widgets:
+                    bw, _ = self._widgets[bands_path]
+                    bw.setEnabled(not has_sel)
+                    ab_widget._combo.currentIndexChanged.connect(
+                        lambda idx, w=bw: w.setEnabled(idx == 0)
+                    )
+
+                for dep_path in (source_path, smooth_breath_path):
+                    if dep_path in self._widgets:
+                        dw, _ = self._widgets[dep_path]
+                        dw.setEnabled(has_sel)
+                        ab_widget._combo.currentIndexChanged.connect(
+                            lambda idx, w=dw: w.setEnabled(idx > 0)
+                        )
+
         return group
 
-    @staticmethod
-    def _is_band_list_path(path: str) -> bool:
+    # Workspace paths whose value is a list of band names. Each gets
+    # rendered as a tick-box band picker (``_BandMultiSelectWidget``)
+    # bound to the live universe of band names from
+    # ``FrequencyAnalysis.bands`` — so the user can only check bands
+    # that actually exist, and stale names left over from a band rename
+    # get silently dropped on save.
+    _BAND_LIST_PATHS: frozenset[str] = frozenset({
+        "Profiles.bands",
+    })
+
+    # Path whose value is the adaptive-bands dict. Rendered by
+    # ``_AdaptiveBandWidget`` (checkbox + half-width fields per band),
+    # not by ``_BandMultiSelectWidget``.
+    _ADAPTIVE_BANDS_PATH: str = "Profiles.adaptive_bands"
+
+    @classmethod
+    def _is_band_list_path(cls, path: str) -> bool:
         """True for workspace paths whose value is a list of band names."""
-        return path == "Profiles.bands"
+        return path in cls._BAND_LIST_PATHS
+
+    @classmethod
+    def _is_adaptive_bands_path(cls, path: str) -> bool:
+        """True for the adaptive-bands dict path."""
+        return path == cls._ADAPTIVE_BANDS_PATH
 
     # ------------------------------------------------------------------
     # Matrix renderer for dict-of-dicts sections (bands)
@@ -501,6 +663,13 @@ class ParametersEditorDialog(QDialog):
     # ``alpha`` on the FullRange band) are silently preserved by the
     # deep-copy in ``get_parameters`` — they survive the round-trip
     # without showing up in the editor.
+    #
+    # The CARSPAN ``TAnaBand.RespirationBand`` flag intentionally lives
+    # on the Profile Settings tab (rendered as a tick-box band list
+    # bound to ``Profiles.adaptive_bands``), *not* in this matrix. The
+    # flag only affects profile-time band integration; it is not a
+    # property of the band itself, so the band matrix on the PSD tab
+    # stays focused on Start / End / Color.
     _TABLE_COLUMNS: tuple[tuple[str, str], ...] = (
         ("low", "Start"),
         ("high", "End"),
@@ -578,7 +747,7 @@ class ParametersEditorDialog(QDialog):
         if inner_key == "color":
             return _ColorButton("" if value is None else str(value))
         if isinstance(value, bool):
-            return _make_bool_combo(value)
+            return _make_bool_checkbox(value)
         edit = QLineEdit("" if value is None else str(value))
         edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return edit
@@ -600,18 +769,29 @@ class ParametersEditorDialog(QDialog):
         # Bool check must precede any int check (and ``isinstance(True, int)``
         # would match an int-typed ``_ENUM_CHOICES`` lookup), so do it first.
         if isinstance(value, bool):
-            return _make_bool_combo(value)
+            return _make_bool_checkbox(value)
 
         choices = _ENUM_CHOICES.get(path) or _ENUM_CHOICES.get(key)
         if choices is not None:
             combo = QComboBox()
             for choice in choices:
-                combo.addItem(choice)
-            idx = combo.findText(
-                str(value), Qt.MatchFixedString | Qt.MatchCaseSensitive
-            )
+                # Display label has underscores replaced by spaces for
+                # readability; the raw value (with underscores) is stored
+                # as UserRole so get_parameters can round-trip it exactly.
+                combo.addItem(choice.replace("_", " "), choice)
+            current_str = str(value)
+            idx = -1
+            for i in range(combo.count()):
+                if combo.itemData(i, Qt.UserRole) == current_str:
+                    idx = i
+                    break
             if idx < 0:
-                idx = combo.findText(str(value).lower())
+                # Fallback: match display text (handles values already
+                # stored with spaces from older workspace files).
+                display_val = current_str.replace("_", " ")
+                idx = combo.findText(
+                    display_val, Qt.MatchFixedString | Qt.MatchCaseSensitive
+                )
             combo.setCurrentIndex(max(idx, 0))
             return combo
 
@@ -674,12 +854,23 @@ class ParametersEditorDialog(QDialog):
         result = copy.deepcopy(workspace)
 
         for path, (widget, original) in self._widgets.items():
-            # Multi-select returns a list directly — no string coercion.
-            if isinstance(widget, _BandMultiSelectWidget):
-                coerced: Any = widget.selected_names()
+            # Specialised widgets return structured values directly.
+            if isinstance(widget, _AdaptiveBandWidget):
+                coerced: Any = widget.get_value()
+            elif isinstance(widget, _BandMultiSelectWidget):
+                coerced = widget.selected_names()
+            elif isinstance(widget, QCheckBox):
+                # Checkboxes always represent Python bools — read directly,
+                # no string coercion needed.
+                coerced = widget.isChecked()
             else:
                 if isinstance(widget, QComboBox):
-                    raw = widget.currentText()
+                    # Prefer UserRole (raw value stored when enum items were
+                    # added with prettified display text); fall back to the
+                    # display text for plain True/False combos that carry no
+                    # UserRole data.
+                    user_data = widget.currentData(Qt.UserRole)
+                    raw = user_data if user_data is not None else widget.currentText()
                 else:
                     raw = widget.text()
                 coerced = self._coerce(raw, original)

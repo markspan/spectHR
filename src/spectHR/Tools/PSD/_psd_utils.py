@@ -83,6 +83,14 @@ class ProfileResult:
     method: str = ""
     window_s: float = 0.0
     step_s: float = 0.0
+    resp_freqs: Optional[np.ndarray] = None
+    """Per-window breathing frequency (Hz) used as adaptive band centre.
+
+    Shape ``(n_windows,)``, same length as ``timestamps``. ``np.nan``
+    for windows where no adaptive band was active or the resp-freq
+    could not be determined. ``None`` when no adaptive band was
+    configured at all (the default, for non-adaptive profiles).
+    """
 
 
 # ---------------------------------------------------------------------------

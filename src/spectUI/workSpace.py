@@ -25,10 +25,10 @@ _DEFAULT_WORKSPACE = {
     "FrequencyAnalysis": {
         "method": "carspan",
         "bands": {
-            "FullRange": {"low": 0.02, "high": 0.5, "color": "gray", "alpha": 0.35},
-            "VLF": {"low": 0.02, "high": 0.06, "color": "blue"},
-            "LF": {"low": 0.07, "high": 0.14, "color": "darkgreen"},
-            "HF": {"low": 0.15, "high": 0.40, "color": "red"},
+            "FullRange": {"low": 0.02, "high": 0.5,  "color": "gray", "alpha": 0.35},
+            "VLF":       {"low": 0.02, "high": 0.06, "color": "blue"},
+            "LF":        {"low": 0.07, "high": 0.14, "color": "darkgreen"},
+            "HF":        {"low": 0.15, "high": 0.40, "color": "red"},
         },
         "carspan": {
             "freq_resolution": 0.01,
@@ -83,14 +83,72 @@ _DEFAULT_WORKSPACE = {
     # profile compute may compute all configured bands; this list is a
     # display filter only.
     #
-    # ``window_s`` and ``step_s`` are the sliding-window parameters in
-    # seconds; ``step_s`` must be strictly smaller than ``window_s``
-    # (otherwise there's no overlap → no profile), and the manual
-    # recommends ``window_s ≥ 3 · 1/f_l_min`` for reliable estimates.
+    # ``window (sec)`` and ``step (sec)`` are the sliding-window parameters
+    # in seconds; step must be strictly smaller than window (otherwise
+    # there's no overlap → no profile), and the manual recommends
+    # window ≥ 3 · 1/f_l_min for reliable estimates.
+    # The pre-formatted key names (spaces + parentheses) are intentional:
+    # they bypass the _label() camelCase/snake_case splitter and appear
+    # in the dialog exactly as written here.
     "Profiles": {
-        "window_s": 30.0,
-        "step_s":   5.0,
+        "window (sec)": 30.0,
+        "step (sec)":   5.0,
         "bands":    ["LF", "HF"],
+        # ``adaptive_bands`` maps band names to their adaptive half-width
+        # settings. Each entry opts that band into respiration-centered
+        # profile integration (same idea as CARSPAN's
+        # ``TAnaBand.RespirationBand`` flag, "Add variable band" button
+        # in ``F_SpecAnalysisProfiles.pas``).
+        #
+        # Stored here on Profiles — not on FrequencyAnalysis.bands —
+        # because the flag is consulted *only* by the sliding-window
+        # profile compute (``band_power_profile``). Whole-epoch PSDs and
+        # band_powers always use the absolute Hz edges from
+        # ``FrequencyAnalysis.bands`` and are unaffected.
+        #
+        # Format:
+        #   {"HF": {"lower half-width (Hz)": 0.04,
+        #           "upper half-width (Hz)": 0.04}}
+        #
+        # "lower half-width (Hz)": how far below the per-window mean
+        #   breathing frequency the band edge falls
+        #   (band_low  = resp_freq − lower_half_width).
+        # "upper half-width (Hz)": how far above it
+        #   (band_high = resp_freq + upper_half_width).
+        #
+        # The static ``FrequencyAnalysis.bands`` edges (``low``/``high``)
+        # are left untouched — they remain the edges for whole-epoch
+        # band powers and PSD display. Only the profile builder uses
+        # these half-widths.
+        #
+        # Default is empty: every band starts static. Researchers add
+        # bands here when their recording involves breathing-rate changes
+        # (paced breathing, stress protocols, biofeedback). Typically
+        # only HF is tracked. Has effect only when a RespirationSeries
+        # is present; without a breathing signal the bands silently fall
+        # back to their static edges — exactly what CARSPAN does when
+        # ``FRespFreqList`` is empty.
+        "adaptive_bands": {},
+        # How the per-window breathing frequency is derived for adaptive bands:
+        #   "respiration_channel" — CARSPAN-faithful: use the mean breath
+        #     frequency from the RespirationSeries in PhysioData.rsp_map.
+        #     Falls back to static edges if no respiration channel is loaded.
+        #   "psd_peak" — no respiration channel required: find the frequency
+        #     of maximum power within the band's static [low, high] range in
+        #     the per-window PSD, and centre the adaptive band there.
+        "adaptive_source": "respiration_channel",
+        # Smooth the per-window breathing frequency before using it to
+        # position the adaptive band edges. The same Pascal-faithful
+        # 3-point MA kernel used by the PSD smoother is applied to the
+        # full sequence of per-window breath frequencies; single-window
+        # spikes (e.g. a missed breath cycle or a noisy rsp signal) are
+        # replaced by their neighbours' average before the band edges are
+        # computed. Setting this to True requires a two-pass calculation
+        # (freq-collection pass → smooth → band-power pass); the
+        # smoothed frequencies are also what the right-axis overlay in
+        # the profile plot draws. Defaults to False (CARSPAN-faithful:
+        # raw per-window breathing frequency, no temporal smoothing).
+        "smooth_breath_freq": False,
         # Apply Pascal's 3-point MA along each band's time series before
         # plotting. Same kernel + edge policy as the PSD smoother — plot
         # only; band-power integration is unaffected. Defaults to
@@ -231,8 +289,107 @@ def LoadWorkspace(json_file=None) -> dict:
         with open(json_file, "w", encoding="utf-8") as f:
             json.dump(workspace, f, indent=4, ensure_ascii=False)
 
+    _migrate_respiration_band_to_profiles(workspace)
+    _migrate_window_keys(workspace)
     _ensure_dirs(workspace)
     return workspace
+
+
+def _migrate_respiration_band_to_profiles(workspace: dict) -> None:
+    """One-time migration of an earlier flag location.
+
+    An interim version of the editor stored the profile-adaptive flag
+    *per band* under ``FrequencyAnalysis.bands.<name>.respiration_band``.
+    That location was wrong: the flag is consulted only by the profile
+    compute, so it conceptually belongs on the Profiles section.
+
+    This function sweeps every band entry, accumulates any band where
+    the legacy flag is True into ``Profiles.adaptive_bands``, and
+    strips the legacy key from the band dict in place. Bands that
+    never had the legacy flag set are left untouched. No-op on
+    workspaces that never went through the interim version.
+
+    Logged at INFO level so a user who notices their old JSON has
+    been silently rewritten can tell what happened.
+    """
+    fa_bands = (workspace.get("FrequencyAnalysis", {}) or {}).get("bands", {})
+    if not isinstance(fa_bands, dict):
+        return
+    profiles = workspace.setdefault("Profiles", {})
+    adaptive = list(profiles.get("adaptive_bands", []) or [])
+    migrated: list[str] = []
+    for name, spec in fa_bands.items():
+        if not isinstance(spec, dict) or "respiration_band" not in spec:
+            continue
+        was_adaptive = bool(spec.pop("respiration_band"))
+        if was_adaptive and name not in adaptive:
+            adaptive.append(name)
+            migrated.append(name)
+    if migrated:
+        profiles["adaptive_bands"] = adaptive
+        logger.info(
+            "Migrated respiration_band flag from FrequencyAnalysis.bands "
+            f"to Profiles.adaptive_bands: {migrated}"
+        )
+
+    # Second pass: if adaptive_bands is still a list (old format from the
+    # first iteration of the feature), convert it to the new dict format
+    # with default half-widths, keeping only the first entry — adaptive
+    # tracking is now a single-band setting.
+    adaptive_val = profiles.get("adaptive_bands")
+    if isinstance(adaptive_val, list):
+        first = adaptive_val[:1]   # keep at most one band
+        profiles["adaptive_bands"] = {
+            name: {
+                "lower half-width (Hz)": 0.04,
+                "upper half-width (Hz)": 0.04,
+            }
+            for name in first
+        }
+        if adaptive_val:
+            logger.info(
+                "Migrated Profiles.adaptive_bands from list to dict format "
+                f"(single-band): {first}"
+            )
+    # Third pass: if the dict somehow has more than one entry (saved by an
+    # interim multi-select version), collapse to the first entry.
+    elif isinstance(adaptive_val, dict) and len(adaptive_val) > 1:
+        first_key = next(iter(adaptive_val))
+        profiles["adaptive_bands"] = {first_key: adaptive_val[first_key]}
+        logger.info(
+            "Collapsed multi-entry Profiles.adaptive_bands to single band: "
+            f"{first_key}"
+        )
+
+
+def _migrate_window_keys(workspace: dict) -> None:
+    """Rename legacy ``window_s`` / ``step_s`` profile keys.
+
+    An earlier version of ``_DEFAULT_WORKSPACE`` stored the sliding-window
+    parameters as ``window_s`` and ``step_s``. The canonical names are now
+    ``"window (sec)"`` and ``"step (sec)"`` — the pre-formatted spelling
+    that passes through ``_label()`` unchanged and appears cleanly in the
+    Edit-Parameters dialog.
+
+    This migration runs on every ``LoadWorkspace`` call. It is idempotent:
+    if the new keys already exist they are left untouched (the old values
+    are still dropped so the dialog doesn't show duplicates).
+    """
+    profiles = workspace.get("Profiles")
+    if not isinstance(profiles, dict):
+        return
+    renamed: list[str] = []
+    for old, new in (("window_s", "window (sec)"), ("step_s", "step (sec)")):
+        if old not in profiles:
+            continue
+        if new not in profiles:
+            profiles[new] = profiles[old]
+            renamed.append(f"{old} → {new!r}")
+        del profiles[old]
+    if renamed:
+        logger.info(
+            "Migrated Profiles window/step keys: %s", ", ".join(renamed)
+        )
 
 
 def SaveWorkspace(workspace: dict, json_file) -> None:
@@ -255,15 +412,50 @@ def _ensure_dirs(workspace: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _bands_from_workspace(bands_dict: Dict[str, dict]) -> Dict[str, BandSpec]:
+def _bands_from_workspace(
+    bands_dict: Dict[str, dict],
+    adaptive_bands: "Dict[str, dict] | None" = None,
+) -> Dict[str, BandSpec]:
     """Convert the workspace bands subdict to ``Dict[str, BandSpec]``.
 
-    Only the frequency edges go into :class:`BandSpec`. Display
-    attributes (``color``, ``alpha``) stay on the raw workspace dict
-    and are consumed directly by ``PSDPlotWidget``.
+    Frequency edges (``low`` / ``high``) come from each band's own
+    entry in ``FrequencyAnalysis.bands``. Display attributes
+    (``color``, ``alpha``) stay on the raw workspace dict and are
+    consumed directly by ``PSDPlotWidget``.
+
+    Adaptive (respiration-centered) half-widths come from
+    ``Profiles.adaptive_bands``, a dict that maps band name →
+    ``{"lower half-width (Hz)": float, "upper half-width (Hz)": float}``.
+    Only bands listed there get ``respiration_band=True``; the others
+    keep static edges. This separation matches the user-facing layout
+    (adaptive settings live on the Profile Settings tab, not mixed into
+    the PSD band definitions) and mirrors CARSPAN's behaviour where
+    ``RunProfileSommation`` is the only consumer of
+    ``TAnaBand.RespirationBand``.
+
+    Parameters
+    ----------
+    bands_dict
+        ``workspace["FrequencyAnalysis"]["bands"]``.
+    adaptive_bands
+        ``workspace["Profiles"]["adaptive_bands"]`` — a dict of
+        ``{band_name: {"lower half-width (Hz)": float,
+                       "upper half-width (Hz)": float}}``.
+        ``None`` or ``{}`` ⇒ every band is static.
     """
+    adaptive = adaptive_bands or {}
     return {
-        name: BandSpec(low=float(spec["low"]), high=float(spec["high"]))
+        name: BandSpec(
+            low=float(spec["low"]),
+            high=float(spec["high"]),
+            respiration_band=(name in adaptive),
+            resp_low=float(
+                adaptive[name].get("lower half-width (Hz)", 0.04)
+            ) if name in adaptive else 0.04,
+            resp_high=float(
+                adaptive[name].get("upper half-width (Hz)", 0.04)
+            ) if name in adaptive else 0.04,
+        )
         for name, spec in bands_dict.items()
     }
 
@@ -290,7 +482,16 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
     """
     fa = workspace.get("FrequencyAnalysis", {}) or {}
 
-    bands = _bands_from_workspace(fa.get("bands", {}))
+    # The adaptive-bands dict lives on the Profiles tab (see the
+    # ``adaptive_bands`` comment in ``_DEFAULT_WORKSPACE``). It is
+    # propagated down to :class:`BandSpec` here so the compute layer
+    # (``band_power_profile``) sees a unified band table — each adaptive
+    # band carries its own resp_low/resp_high half-widths — without
+    # having to reach into the workspace dict itself.
+    profiles_cfg = workspace.get("Profiles", {}) or {}
+    adaptive_bands = dict(profiles_cfg.get("adaptive_bands", {}) or {})
+
+    bands = _bands_from_workspace(fa.get("bands", {}), adaptive_bands)
     # ``f_max`` must extend at least to the highest configured band edge,
     # otherwise the band-power integration would silently truncate
     # FullRange. Override whatever the JSON has.
@@ -353,3 +554,4 @@ def PopulateTree(treewidget, workspace: dict) -> None:
             )
         treewidget.addTopLevelItem(parent)
     treewidget.expandAll()
+
