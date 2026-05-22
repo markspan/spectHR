@@ -873,55 +873,106 @@ In both cases the factor $10^6$ (explicit above for strict, implicit in the even
 
 ### Spectral profiles
 
-A **profile** is the time-resolved evolution of band power *within* one epoch (CARSPAN manual §3.3.5, Eq. 3.34 / 3.35). The PSD tab collapses time and gives you one spectrum per epoch; the Profiles tab does the opposite: collapses frequency *inside* each band and gives you one curve per band per epoch, drawn against time.
+A **profile** is the time-resolved evolution of band power *within* one epoch (CARSPAN manual §3.3.5, Eq. 3.34 / 3.35). Where the PSD tab collapses time and gives you one spectrum per epoch, the Profiles tab does the opposite: it collapses *frequency* inside each band and gives you one curve per band, drawn against time. It answers *"how did this band's power rise and fall over the recording?"* rather than *"how is power distributed across frequency?"*.
 
-#### Algorithm
+spectHR's profile path is a faithful port of CARSPAN's `RunProfileSommation` (the `RunAnalysis(Tag=1)` profile pipeline in `T_AnaFunctions.pas`). A window of length $W$ sweeps the recording, advancing in steps of $S$; inside each window the *same* PSD compute that drives the PSD tab is run, the configured bands are integrated, and the resulting band powers are plotted at the window centre. Because the per-window step dispatches through the ordinary `band_powers()` call, the profile inherits whichever PSD method PSD Settings has selected — Welch, Lomb-Scargle, CARSPAN or CARSPAN-strict — with no extra configuration. (In the reference Delphi implementation profiles existed only for the CARSPAN SOC path; running them for Welch and Lomb-Scargle too is a spectHR addition.)
 
-For each epoch view, the same compute that powers `series.psd()` runs inside a sliding window:
+Any one band can additionally be made **adaptive**: instead of fixed Hz edges it re-centres on the breathing frequency measured inside each window, so it tracks respiratory sinus arrhythmia (RSA) even when breathing rate drifts over the epoch — something fixed HF edges cannot do. This mirrors CARSPAN's `TAnaBand.RespirationBand` flag. When an adaptive band is active the plot draws that band filled in its configured colour, with a dashed line on a second right-hand y-axis showing the per-window breathing frequency that set the edges.
 
-1. Number of windows: $N = \lfloor (T - W) / S \rfloor + 1$, with epoch duration $T$, window length $W$, and step size $S$. Matches the Delphi `GetNrOfProfiles` exactly (`T_AnaFunctions.pas:1164`).
-2. For window $i = 0, 1, \dots, N-1$:
-   - Window span: $[t_0 + i S,\ t_0 + i S + W]$ where $t_0$ is the epoch's first R-peak.
-   - Take the sub-view of R-peaks in that span.
-   - Call `band_powers(psd_method=method)` on the sub-view, yielding one band-power value per configured band.
-3. The result is an `(n_bands × N)` matrix plus a 1-D timestamps array of window centres.
+**Default parameters** (workspace `Profiles` section, editable in *Edit Parameters*):
 
-Because step 2 dispatches through the same `band_powers()` call the PSD tab uses, the profile inherits the active PSD method automatically: switching between Welch, Lomb-Scargle, CARSPAN or CARSPAN-strict in PSD Settings changes the profile too without any additional configuration.
+| Parameter | Default | JSON key |
+|-----------|---------|----------|
+| Window length | 30 s | `window (sec)` |
+| Step size | 5 s | `step (sec)` |
+| Plotted bands | LF, HF | `bands` |
+| Adaptive bands | none | `adaptive_bands` |
+| Adaptive frequency source | `respiration_channel` | `adaptive_source` |
+| Smooth breathing frequency | `false` | `smooth_breath_freq` |
+| Plot-only time-axis smoothing | `false` | `smooth_for_display` |
 
-#### Window-centre time convention
-
-Each profile dot is plotted at the **centre** of the window that produced it, $t = i S + W/2$ from the epoch start. The reference Delphi implementation does the same (`T_AnaFunctions.pas:1521`, `index*StepSize + RPDataCol[0] + WindowLength/2`). Plotting at the window centre is the standard signal-processing convention for sliding-window estimates: it's where a piecewise constant approximation of the underlying time-varying band power would put the midpoint of each step.
-
-A consequence is that the first dot is offset by $W/2$ from the epoch's left edge, not by 0; the data from $t \in [0, W/2]$ has been used (it's part of the first window) but its band-power estimate is attributed to the centre of that window, not its left edge.
-
-#### Algorithm-agnostic dispatch
-
-Worth flagging: in the reference Delphi implementation, profiles are only available for the CARSPAN SOC path. In spectHR the per-window compute goes through `view.band_powers(...)` which works equally for Welch and Lomb-Scargle, so the Profiles tab works with whichever PSD method PSD Settings has selected. This is a spectHR addition.
-
-#### Adaptive bands
-
-Any one band can be designated as **adaptive**: instead of fixed low/high Hz edges, its edges re-centre on the breathing frequency measured inside each sliding window. This lets the band track respiratory sinus arrhythmia (RSA) even when breathing rate drifts over the course of an epoch — something fixed HF-band edges cannot do.
-
-When an adaptive band is active the Profiles plot shows only that band. The trace is drawn with a **black line** filled in the band's configured colour. A **dashed green line on a second right y-axis** shows the raw (or smoothed) per-window breathing frequency that was used to set the band edges, letting you see at a glance how much the band centre actually moved.
+Window and step are in seconds; step must be strictly smaller than window (otherwise consecutive windows don't overlap, so there is no profile), and the CARSPAN manual recommends $W \ge 3 / f_{l,\min}$ — three full cycles of the lowest configured band — for a reliable estimate. The `bands` list is a *display filter*: the compute may evaluate every configured band, but only those named here are drawn.
 
 <details>
-<summary>Adaptive band algorithm</summary>
+<summary>Profiles, algorithm detail</summary>
 
-For each sliding window $i$ the adaptive band's edges are computed as:
+### Profiles, algorithm detail
 
-$$f_\text{low}^{(i)} = f_\text{breath}^{(i)} - \Delta f_\text{low}, \quad f_\text{high}^{(i)} = f_\text{breath}^{(i)} + \Delta f_\text{high}$$
+The implementation lives in `CardioMetricsMixin.band_power_profile`. Its steps are numbered to match the order CARSPAN runs them in `RunProfileSommation` (`T_AnaFunctions.pas` 2888–3056).
 
-where $f_\text{breath}^{(i)}$ is the per-window breathing frequency and $\Delta f_\text{low}$, $\Delta f_\text{high}$ are the band's `resp_low` / `resp_high` half-widths (configurable per band in PSD Settings). The shifted edges are clamped to the PSD grid; if no breathing frequency can be resolved the window falls back to the band's static edges.
+#### Step 1 — Window enumeration
 
-**Breathing frequency sources** (`adaptive_source` setting):
+With $t_0$ the time of the view's first R-peak, $t_\text{end}$ the last, and span $T = t_\text{end} - t_0$, the number of windows is
 
-- **`respiration channel`** — slices the accelerometer-derived respiration signal to the window's time span and calls `mean_breath_frequency_hz()`, which computes the arithmetic mean of adjacent-phase cycle durations (each "cycle" is the span from the start of one breath phase to the start of the next) and returns its reciprocal. Requires a loaded respiration channel; a warning is logged and static edges are used if none is present.
+$$N = \left\lfloor \frac{T - W}{S} \right\rfloor + 1$$
 
-- **`psd peak`** — finds the largest spectral peak inside the band's `resp_low`–`resp_high` search range from the same PSD computed for band-power integration. No separate respiration signal is needed.
+matching Delphi `GetNrOfProfiles` (`T_AnaFunctions.pas:1153`). Window $i$ (for $i = 0, 1, \dots, N-1$) spans
 
-**Breathing frequency smoothing** (`smooth_breath_frequency` setting):
+$$\left[\, t_0 + iS,\ \ t_0 + iS + W \,\right]$$
 
-When enabled, the raw per-window breathing frequency sequence is smoothed with a 3-point moving average before the edges are applied. Because smoothing requires knowing all per-window values before any band-edge can be set, the compute performs two passes: a first pass collects the breathing frequencies and caches the PSDs; after smoothing, a second pass reuses the cached PSDs to integrate band power with the smoothed edges.
+and its band powers are recorded at the **window centre**
+
+$$t_i^{\text{c}} = t_0 + iS + \tfrac{W}{2}$$
+
+which becomes the profile's x-axis (Delphi `GetProfileData`, `T_AnaFunctions.pas:1115`). Plotting at the centre is the standard sliding-window convention; a consequence is that the first dot sits at $W/2$, not 0 — the samples in $[0, W/2]$ are used (they belong to the first window) but their estimate is attributed to that window's midpoint.
+
+#### Step 2 — Per-window PSD
+
+The R-peaks inside window $i$ are taken as a zero-copy sub-view and its PSD is computed through `_psd_for_band_power` — exactly the spectrum `series.psd()` would return for that slice. For `carspan_strict` this is the SOC → auto-spectrum → resample pipeline that produces CARSPAN's `PDSin_BCK`, the resampled but **un-smoothed** backup copy the manual integrates (§3.2: *"No smoothing … is carried out … before computing the spectral band values"*). The display-only 3-point moving average is never applied on this path.
+
+A window with fewer than four R-peaks cannot yield a usable PSD (CARSPAN's minimum-N gate); its entire column in the output is left as `np.nan`. spectHR uses NaN rather than CARSPAN's *skip-and-don't-store* so the result array stays rectangular and column-aligned with the timestamps.
+
+#### Step 3 — Band-energy integration (Eq. 3.28)
+
+Each band is integrated by rectangular summation over the in-band bins of the per-window spectrum,
+
+$$B(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S_{xx}(f_k)\, \Delta f_k$$
+
+with a **centred neighbour spacing** per bin,
+
+$$\Delta f_k = \frac{f_{k+1} - f_{k-1}}{2}$$
+
+(endpoints fall back to one-sided spacing; a lone in-band bin uses the grid's first-bin spacing). This is the helper `band_power_rectangular`, which returns 0 when no bin lies inside the band. spectHR uses this centred-midpoint rule rather than Pascal's `round(F/FreqRes) − 1` index quirk: it is mathematically cleaner and adapts to both the uniform grids (Welch, Lomb-Scargle) and the resampled CARSPAN display grid. The mMI² normalisation has already been applied upstream (in `_carspan_display`), so — unlike Pascal's `/d` division inside `Calculate_Energy` — no per-band rescaling happens here.
+
+#### Step 4 — Adaptive (respiration-tracked) bands
+
+A static band uses its configured edges $[f_l, f_h]$ unchanged. An **adaptive** band instead reinterprets two extra numbers — its `resp_low` / `resp_high` *half-widths* — as a window around the per-window breathing frequency $f_b^{(i)}$ (its absolute `low` / `high` edges are left untouched and still serve whole-epoch band power). With lower half-width $\Delta f_{\text{lo}}$ and upper half-width $\Delta f_{\text{hi}}$, the window's edges become
+
+$$f_{\text{low}}^{(i)} = \max\!\left(0.01,\ \ f_b^{(i)} - \Delta f_{\text{lo}}\right)$$
+
+$$f_{\text{high}}^{(i)} = \min\!\left(f_{\max}^{(i)},\ \ f_b^{(i)} + \Delta f_{\text{hi}}\right)$$
+
+where $f_{\max}^{(i)}$ is the top of that window's PSD grid. The $0.01\,\text{Hz}$ floor avoids a near-DC lower edge and the $f_{\max}$ cap keeps the band on-grid; both are direct ports of `GetRespirationMinBandValue` / `GetRespirationMaxBandValue` (`T_AnaFunctions.pas` 2837–2884). If the clamps invert the band ($f_{\text{high}} \le f_{\text{low}}$) that window is left NaN. When no breathing frequency can be resolved for a window, it falls back to the band's static edges — exactly as CARSPAN does when `FRespFreqList` is empty.
+
+**Breathing-frequency source** (`adaptive_source`):
+
+*`respiration_channel`* (CARSPAN-faithful default). The accelerometer-derived respiration signal is sliced to the window and `RespirationSeriesView.mean_breath_frequency_hz()` is called. With alternating breath phases of starts $s_j$ and ends $e_j$, each adjacent pair forms one full cycle of duration $c_j = e_{j+1} - s_j$; the breathing frequency is the reciprocal of the mean positive cycle period,
+
+$$f_b = \frac{1}{\overline{c}}, \qquad \overline{c} = \frac{1}{M}\sum_{j=1}^{M} c_j \quad (c_j > 0)$$
+
+This is the spectHR equivalent of CARSPAN's $1 / \texttt{LProfile.MeanIn}$ (`T_AnaFunctions.pas` 2944–2952); it yields nothing when fewer than two phases fall in the window. If no respiration channel is loaded, a warning is logged and every band falls back to static edges.
+
+*`psd_peak`* (no respiration channel required). The breathing frequency is taken as the location of the largest spectral peak inside the band's static search range,
+
+$$f_b^{(i)} = \operatorname*{arg\,max}_{f_l \le f_k \le f_h} S_{xx}^{(i)}(f_k)$$
+
+read straight from the same per-window PSD used for integration.
+
+#### Step 5 — Optional breathing-frequency smoothing
+
+When `smooth_breath_freq` is on, the per-window breathing-frequency sequence is smoothed before any edge is set, using the same mean-preserving 3-point kernel as the PSD display smoother:
+
+$$\tilde f_b[i] = \frac{f_b[i-1] + f_b[i] + f_b[i+1]}{3}$$
+
+with asymmetric end weights $\tilde f_b[0] = \tfrac{3}{8} f_b[0] + \tfrac{5}{8} f_b[1]$ and $\tilde f_b[N-1] = \tfrac{5}{8} f_b[N-2] + \tfrac{3}{8} f_b[N-1]$. Because the kernel needs the whole sequence before any single edge can be placed, an adaptive band with smoothing runs in **two passes**: pass A collects the per-window breathing frequencies and caches each window's PSD; the sequence is smoothed; pass B re-integrates band power from the cached PSDs using the smoothed edges. Without smoothing (or with no adaptive band) a single pass suffices and the caching is skipped. The smoothed sequence is also what the profile plot's right-axis breathing-frequency overlay draws.
+
+#### Result structure
+
+The call returns a `ProfileResult` with `timestamps` (the $N$ window centres, seconds), `band_names`, a `band_power` matrix of shape $(n_\text{bands} \times N)$ in `unit` (already a band-power unit — no `/Hz` suffix), the `method` name, `window_s`, `step_s`, and `resp_freqs` (the per-window breathing frequency used for adaptive edges — shape $(N,)$, NaN where unavailable, or `None` when no band was adaptive).
+
+#### Plot-only smoothing
+
+`smooth_for_display` applies the same 3-point moving average **along each band's time axis**, purely for display; it never touches the stored band powers or the integration. It defaults to off because the reference Delphi profile view plots the raw per-window band power.
 
 </details>
 
