@@ -25,7 +25,7 @@ the [readme.MD](readme.MD) first for what the project *is*; this file describes
   reserved for genuinely ordered steps.
 * **`<details>`** blocks are used for optional depth (algorithm internals,
   derivations) so the surface stays approachable.
-* **Em-dashes** (`—`) for asides; commas for step labelling
+* **Em-dashes** (`—`) never; commas for step labelling
   ("Step 1, Check and clean the ECG"); `---` rules between top-level
   sections in Markdown.
 * **Names**: the project is *spectHR* (lower-s, upper-HR). The reference
