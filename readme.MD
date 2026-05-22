@@ -322,6 +322,8 @@ P01,standing,carspan_strict,mMI²,30.0,5.0,29,"15,20,25,…,155",268.43,554.07,9
 
 Per-epoch failures (epoch too short for a profile window, no PSD method set, etc.) are logged and leave that epoch's per-band cells empty, so a single bad epoch never blocks the export of the rest.
 
+<details>
+
 #### Reading the exported CSVs into R
 
 A complete walk-through that reproduces the Profile plot in **ggplot2** (with **dplyr** for the list-column unpacking) sits below. Drop it into an R script and adjust the `subject_id` / `output_dir` constants. The same `unpack_listcol` helper works for the `_psd.csv` file, so the snippet at the bottom shows the PSD spectrum equivalent.
@@ -450,6 +452,7 @@ ggplot(psd_long |> filter(!is.na(power)),
 The pattern is the same for any of the raw-array columns: pull the cell, hand it to `parse_listcol`, and pair it with the matching `_freqs` / `profile_timestamps` column inside a `rowwise()` `mutate`. The `unnest_longer` step then flattens the per-row vectors into a tidy frame that ggplot understands directly.
 
 ---
+</details>
 
 ## Configuring the analysis
 
