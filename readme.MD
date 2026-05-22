@@ -942,7 +942,9 @@ $$f_{\text{low}}^{(i)} = \max\!\left(0.01,\ \ f_b^{(i)} - \Delta f_{\text{lo}}\r
 
 $$f_{\text{high}}^{(i)} = \min\!\left(f_{\max}^{(i)},\ \ f_b^{(i)} + \Delta f_{\text{hi}}\right)$$
 
-where $f_{\max}^{(i)}$ is the top of that window's PSD grid. The $0.01\,\text{Hz}$ floor avoids a near-DC lower edge and the $f_{\max}$ cap keeps the band on-grid; both are direct ports of `GetRespirationMinBandValue` / `GetRespirationMaxBandValue` (`T_AnaFunctions.pas` 2837–2884). If the clamps invert the band ($f_{\text{high}} \le f_{\text{low}}$) that window is left NaN. When no breathing frequency can be resolved for a window, it falls back to the band's static edges — exactly as CARSPAN does when `FRespFreqList` is empty.
+where $f_{\max}^{(i)}$ is the top of that window's PSD grid. The $0.01\,\text{Hz}$ floor avoids a near-DC lower edge and the $f_{\max}$ cap keeps the band on-grid; both are direct ports of `GetRespirationMinBandValue` / `GetRespirationMaxBandValue` (`T_AnaFunctions.pas` 2837–2884). If the clamps invert the band ($f_{\text{high}} \le f_{\text{low}}$) that window is left NaN.
+
+The breathing frequency $f_b^{(i)}$ is resolved per window through a **fallback chain**: the configured `adaptive_source` is tried first; if it yields nothing for that window the other source is tried; if that also fails the window reverts to the band's static edges (CARSPAN's behaviour when `FRespFreqList` is empty). In practice this means a `respiration_channel` profile silently uses the per-window PSD peak for any window too short to contain a full breath cycle, rather than dropping straight back to fixed edges.
 
 **Breathing-frequency source** (`adaptive_source`):
 
@@ -950,9 +952,9 @@ where $f_{\max}^{(i)}$ is the top of that window's PSD grid. The $0.01\,\text{Hz
 
 $$f_b = \frac{1}{\overline{c}}, \qquad \overline{c} = \frac{1}{M}\sum_{j=1}^{M} c_j \quad (c_j > 0)$$
 
-This is the spectHR equivalent of CARSPAN's $1 / \texttt{LProfile.MeanIn}$ (`T_AnaFunctions.pas` 2944–2952); it yields nothing when fewer than two phases fall in the window. If no respiration channel is loaded, a warning is logged and every band falls back to static edges.
+This is the spectHR equivalent of CARSPAN's $1 / \texttt{LProfile.MeanIn}$ (`T_AnaFunctions.pas` 2944–2952); it yields nothing when fewer than two phases fall in the window. If no respiration channel is loaded at all, a warning is logged once and every window uses the `psd_peak` fallback below.
 
-*`psd_peak`* (no respiration channel required). The breathing frequency is taken as the location of the largest spectral peak inside the band's static search range,
+*`psd_peak`* (no respiration channel required — also the per-window fallback for `respiration_channel`). The breathing frequency is taken as the location of the largest spectral peak inside the band's static search range,
 
 $$f_b^{(i)} = \operatorname*{arg\,max}_{f_l \le f_k \le f_h} S_{xx}^{(i)}(f_k)$$
 
