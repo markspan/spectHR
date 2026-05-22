@@ -672,7 +672,7 @@ class CardioMetricsMixin(HRVMetric):
             logger.warning(
                 "band_power_profile: adaptive_source='respiration_channel' but no "
                 "respiration channel is loaded in this dataset. "
-                "Band edges will fall back to static values for every window."
+                "Falling back to psd_peak for every window."
             )
 
         # ----- Per-window loop -------------------------------------------
@@ -734,8 +734,17 @@ class CardioMetricsMixin(HRVMetric):
                     rf = rsp_view.mean_breath_frequency_hz()
                     if rf is not None and resp_freqs is not None:
                         resp_freqs[i] = rf
-                elif adaptive_source == "psd_peak":
-                    # Find peak inside the first adaptive band's search range.
+
+                # Use psd_peak: either explicitly selected, or as a fallback
+                # when respiration_channel is configured but yielded no
+                # frequency for this window (channel absent, or window too
+                # short to contain a full breath cycle).
+                use_psd_peak = adaptive_source == "psd_peak" or (
+                    adaptive_source == "respiration_channel"
+                    and resp_freqs is not None
+                    and not np.isfinite(resp_freqs[i])
+                )
+                if use_psd_peak:
                     for _, band in bands_list:
                         if band.respiration_band:
                             mask = (
