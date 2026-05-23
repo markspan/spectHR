@@ -878,11 +878,17 @@ In both cases the factor $10^6$ (explicit above for strict, implicit in the even
 
 A **spectral profile** is the time-resolved evolution of band power within one epoch (CARSPAN manual §3.3.5). Where the PSD tab collapses time and gives one spectrum per epoch, the Profiles tab does the opposite: it collapses *frequency* inside each band and gives one curve per band drawn against time — answering *"how did this band's power rise and fall over the recording?"* rather than *"how is power distributed across frequency?"*
 
-The CARSPAN manual (§3.3.5) defines the profile time series as a sequence of band values $B_{x,i}(f_l, f_h)$, each attributed to the **centre** of its analysis window:
+<details>
+
+The CARSPAN manual (§3.3.5, Eq. 3.34) defines the profile time series as a weighted sum of per-window band values $B_{x,i}(f_l, f_h)$:
+
+$$x(t) = S \cdot \sum_{i=1}^{N} B_{x,i}(f_l, f_h)\, \delta(t - t_i)$$
+
+where each sample is placed at the **centre** of its analysis window:
 
 $$t_i = t_0 + \tfrac{W}{2} + (i - 1) \cdot S, \qquad i = 1, 2, \dots, N$$
 
-where $W$ is the **window** length, $S$ is the **step** size, and $t_0$ is the real start time of the epoch. The first profile sample therefore lands at $W/2$ inside the epoch — not at $t = 0$. The total number of windows is:
+$W$ is the **window** length, $S$ is the **step** size, and $t_0$ is the real start time of the epoch. The first profile sample therefore lands at $W/2$ inside the epoch — not at $t = 0$. The total number of windows is:
 
 $$N = \left\lfloor \frac{T - W}{S} \right\rfloor + 1$$
 
@@ -891,10 +897,6 @@ where $T$ is the epoch length and $\lfloor \cdot \rfloor$ truncates to the neare
 **Choosing window and step.** The manual gives two criteria. For the window: the lowest band frequency $f_l$ must satisfy $f_l > 1/W$, and for reliability $W$ should be at least *three times* that minimum. The number of frequency points in band $[f_l, f_h]$ at window length $W$ is:
 
 $$n = \lfloor f_h \cdot W \rfloor - \lfloor f_l \cdot W \rfloor$$
-
-For the step: changes of interest must produce at least two profile samples per cycle (the standard sampling criterion). Computation cost scales as:
-
-$$\text{computation time} \;\propto\; \frac{W^2}{S}$$
 
 **spectHR extension — multiple PSD back-ends.** In the CARSPAN Delphi implementation profiles exist only for the SOC spectral path. spectHR runs the same sliding-window scheme for all four spectral methods — Welch, Lomb-Scargle, CARSPAN, and CARSPAN-strict — dispatching through the same `band_powers()` call used by the PSD tab. Flipping the PSD method in *Edit Parameters → PSD Settings* takes effect on Profiles immediately.
 
@@ -910,7 +912,6 @@ Configure profiles under **WorkSpace → Edit Parameters → Profile Settings**:
 | `adaptive_source` | `respiration channel` | Where per-window breathing frequency comes from. `respiration channel` uses the accelerometer-derived signal (CARSPAN-faithful). `psd peak` finds the spectral peak inside the band's search range — works without a dedicated respiration channel. |
 | `smooth breath frequency` | `false` | Apply a 3-point moving average to the per-window breathing-frequency sequence before using it to set adaptive band edges. |
 
-<details>
 <summary>Spectral profiles — algorithm detail</summary>
 
 ### Spectral profiles — algorithm detail
