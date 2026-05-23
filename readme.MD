@@ -933,10 +933,6 @@ For each window and each band $[f_l, f_h]$, the band power is the rectangular su
 
 $$B_{x,i}(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S_{xx}(f_k)\, \Delta f$$
 
-or, for the normalised (mMI²) spectrum:
-
-$$B'_{x,i}(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S'_{xx}(f_k)\, \Delta f$$
-
 CARSPAN takes a fixed $\Delta f = 0.01\,\text{Hz}$ and identifies in-band bins by `round(F/FreqRes) − 1`. spectHR instead uses a **centred neighbour-spacing** bin width $\Delta f_k = (f_{k+1} - f_{k-1})/2$ (endpoints fall back to one-sided spacing). This adapts correctly to both CARSPAN's resampled grid and the non-uniform grids produced by Welch and Lomb-Scargle. The mMI² conversion is applied upstream in `_carspan_display`, so no per-band rescaling is needed here — unlike Pascal's `/d` in `Calculate_Energy`.
 
 #### Adaptive bands
