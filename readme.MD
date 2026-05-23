@@ -644,8 +644,8 @@ CARSPAN takes a different approach. Instead of resampling the IBI series onto a 
 
 spectHR has **one CARSPAN compute function** (`compute_carspan_psd`) with **two presets** of its `CarspanOptions` dataclass, exposed in the workspace as `method: "carspan"` (configurable) and `method: "carspan_strict"` (manual-faithful):
 
-- **`carspan_strict`** is the preset bundle returned by `carspan_strict_options()`. Locks every knob the CARSPAN manual leaves implicit, including `signal: "ibi_amplitude"` which switches the DFT to the IBI-amplitude formula of manual Eq. 3.21 (Pascal `SOC` branch `IsRPDataCol=False`). Reproduces the manual's epoch #2 reference (`example1.EVT`, p. 121) within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
-- **`carspan`** is the configurable variant. By default it's the unit-impulse SOC of Eq. 3.19 (Pascal `IsRPDataCol=True`), with the window, amplitude correction, reference-grid DC subtraction, and skip-first-event all exposed as separate workspace fields. Use this when you want to explore the effect of any of those knobs.
+- **`carspan_strict`** is the preset bundle returned by `carspan_strict_options()`. Locks every setting the CARSPAN manual leaves implicit, including `signal: "ibi_amplitude"` which switches the DFT to the IBI-amplitude formula of manual Eq. 3.21 (Pascal `SOC` branch `IsRPDataCol=False`). Reproduces the manual's epoch #2 reference (`example1.EVT`, p. 121) within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
+- **`carspan`** is the configurable variant. By default it's the unit-impulse SOC of Eq. 3.19 (Pascal `IsRPDataCol=True`), with the window, amplitude correction, reference-grid DC subtraction, and skip-first-event all exposed as separate workspace fields. Use this when you want to explore the effect of any of those settings.
 
 Because both come from the same function, *every* setting `carspan_strict` uses is reachable from the configurable side too. The strict preset is exactly:
 
@@ -663,7 +663,7 @@ Because both come from the same function, *every* setting `carspan_strict` uses 
 
 The four "*ignored on the `ibi_amplitude` branch*" rows are kept on the preset only so a curious caller flipping `signal` back to `"events"` gets the Pascal-faithful unit-impulse SOC settings for comparison. In practice on the strict path only the top three rows do any work.
 
-One last knob lives outside `CarspanOptions`: **`PsdMethod.mean_convention`**. `psd_method_from_workspace` sets it to `"arithmetic"` for `method: "carspan_strict"` (= harmonic mean of IBI, what Pascal's `SOC` uses) and to `"harmonic"` for `method: "carspan"` (= `T/N`, what the manual writes). That's the one setting you cannot reach from the workspace `carspan` section alone. To get full strict equivalence with `method: "carspan"` you'd have to construct a `PsdMethod` with `mean_convention="arithmetic"` from Python, or just use `method: "carspan_strict"`.
+One last setting lives outside `CarspanOptions`: **`PsdMethod.mean_convention`**. `psd_method_from_workspace` sets it to `"arithmetic"` for `method: "carspan_strict"` (= harmonic mean of IBI, what Pascal's `SOC` uses) and to `"harmonic"` for `method: "carspan"` (= `T/N`, what the manual writes). That's the one setting you cannot reach from the workspace `carspan` section alone. To get full strict equivalence with `method: "carspan"` you'd have to construct a `PsdMethod` with `mean_convention="arithmetic"` from Python, or just use `method: "carspan_strict"`.
 
 <details>
 <summary>CARSPAN, algorithm detail</summary>
@@ -795,7 +795,7 @@ result = compute_carspan_psd(
 )
 ```
 
-The convenience function `compute_carspan_psd_strict(...)` is a thin wrapper around the first form above (with a rename of the result's `method` field from `"carspan"` to `"carspan_strict"` so downstream code can tell the two apart). `carspan_strict_options()` is the single place that locks in the manual's choices for the IBI-amplitude path (5 % index taper, etc.); if you want a Pascal-faithful preset with one knob flipped (e.g. no 3-MA smoothing), call `replace(carspan_strict_options(), smooth_for_display=False)`.
+The convenience function `compute_carspan_psd_strict(...)` is a thin wrapper around the first form above (with a rename of the result's `method` field from `"carspan"` to `"carspan_strict"` so downstream code can tell the two apart). `carspan_strict_options()` is the single place that locks in the manual's choices for the IBI-amplitude path (5 % index taper, etc.); if you want a Pascal-faithful preset with one setting changed (e.g. no 3-MA smoothing), call `replace(carspan_strict_options(), smooth_for_display=False)`.
 
 The mixin's `PsdMethod.mean_convention` is `"arithmetic"` for `carspan_strict` and `"harmonic"` everywhere else, picked automatically by `psd_method_from_workspace` based on the algorithm name. Library callers can override it by constructing a `PsdMethod` themselves and setting `series.psd_method = …`.
 
@@ -823,7 +823,7 @@ The compute layer always returns the **un-smoothed** resampled spectrum (Pascal'
 
 > *"a moving average window over three frequency points (0.03 Hz bandwidth) is applied before plotting the spectral functions"*
 
-The MA kernel is mean-preserving (each output bin is the arithmetic mean of three neighbours), so the area under the curve is unchanged; the smoothing only affects visual peak height. Welch and Lomb-Scargle results are never smoothed by the plot widget; the `smooth_for_display` knob lives on `CarspanOptions` and the plot widget consults it only for CARSPAN methods.
+The MA kernel is mean-preserving (each output bin is the arithmetic mean of three neighbours), so the area under the curve is unchanged; the smoothing only affects visual peak height. Welch and Lomb-Scargle results are never smoothed by the plot widget; the `smooth_for_display` setting lives on `CarspanOptions` and the plot widget consults it only for CARSPAN methods.
 
 **Integration path (`band_power`, `band_powers`).** Runs on the *same* un-smoothed spectrum that `psd()` returns. No second back-end call, no smoothing toggle to remember.
 
