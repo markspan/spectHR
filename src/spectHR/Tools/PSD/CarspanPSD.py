@@ -112,14 +112,27 @@ class CarspanOptions:
     freq_resolution: float = 0.01
     """Hz — spacing of the display grid produced by bin-averaging."""
 
+    resample_to_display_grid: bool = True
+    """When True (default), bin-average the native spectrum onto the
+    ``freq_resolution`` display grid (Pascal's ``Resample_R`` step,
+    always on for single-epoch spectral functions). Set False to skip
+    this step and return the native-resolution spectrum directly.
+
+    The CARSPAN manual §3.3.5 explicitly states that "the interpolation
+    to a fixed frequency of 0.01 Hz is not applied" for the profile
+    compute path. ``band_power_profile`` therefore creates a copy of the
+    method with this flag False so per-window PSDs use the native grid
+    regardless of window length."""
+
     smooth_for_display: bool = True
     """**Plot-only hint.** When True, the PSD plot widget applies the
     CARSPAN 3-point moving-average smoother (manual §3.2, p. 33) to
     the displayed curve. The compute layer is unaffected — the
     spectrum returned by :func:`compute_carspan_psd` is always the
     Resample-binned but un-smoothed grid that band-power integration
-    runs on. Bin-averaging to the display grid is always on (mirrors
-    Pascal's ``Resample`` before ``Calculate_Power``)."""
+    runs on. Bin-averaging to the display grid runs only when
+    ``resample_to_display_grid=True`` (mirrors Pascal's ``Resample``
+    before ``Calculate_Power``)."""
 
     f_max: float = 0.5
     """Upper frequency limit of the computed spectrum, in Hz."""
@@ -357,16 +370,17 @@ def _compute(
     else:
         power = _events_periodogram(event_times_s, freqs, T, opts)
 
-    # 4. Bin-average to the display grid (Pascal's Resample step,
-    #    always on). The 3-point MA used for plotting lives in the
-    #    plot widget — keeping it out of the compute layer means the
-    #    same spectrum can be plotted *and* integrated without
-    #    smoothing-vs-not bookkeeping at this level.
-    return _apply_display_smoothing(
+    # 4. Bin-average to the display grid (Pascal's Resample_R step).
+    #    Skipped when opts.resample_to_display_grid=False — used by the
+    #    profile compute path, which per CARSPAN manual §3.3.5 must not
+    #    interpolate to 0.01 Hz. The 3-point MA used for plotting lives
+    #    in the plot widget; it is never applied here.
+    return _resample_to_display_grid(
         freqs=freqs,
         power=power,
         delta_f=delta_f,
         display_resolution=float(opts.freq_resolution),
+        skip=not opts.resample_to_display_grid,
     )
 
 
@@ -632,33 +646,33 @@ def _remove_dc(
     return X_real - X_ref_real, X_imag - X_ref_imag
 
 
-def _apply_display_smoothing(
+def _resample_to_display_grid(
     *,
     freqs: np.ndarray,
     power: np.ndarray,
     delta_f: float,
     display_resolution: float,
+    skip: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Resample the native-grid spectrum onto the CARSPAN display grid.
+    """Bin-average the native spectrum onto the CARSPAN display grid.
 
     When the native grid is finer than the display grid
-    (``Δf < display_resolution`` × 0.99), neighbouring native bins are
-    combined by Pascal's fractional-coverage rule (see :func:`_bin_average`).
-    This mirrors Pascal's ``Resample``, which runs unconditionally before
-    ``Calculate_Power`` reads ``PDSin_BCK``. The chi-squared dof per
-    display bin scales as ``2 × bin_counts``.
+    (``Δf < display_resolution`` × 0.99) *and* ``skip`` is False,
+    neighbouring native bins are combined by Pascal's fractional-coverage
+    rule (see :func:`_bin_average`). This mirrors Pascal's ``Resample_R``,
+    which runs unconditionally before ``Calculate_Power`` reads
+    ``PDSin_BCK``. The chi-squared dof per display bin scales as
+    ``2 × bin_counts``.
 
-    Plot-only display smoothing (the manual's 3-point moving average
-    of §3.2, p. 33) is **not** done here — it lives in the plot widget
-    (:mod:`spectUI.PSDPlotWidget`), so the spectrum that
-    :func:`compute_carspan_psd` returns can be integrated for band
-    power without first having to un-smooth it. Pascal's manual is
-    explicit on this point::
+    Set ``skip=True`` to return the native-resolution spectrum unchanged.
+    The CARSPAN manual §3.3.5 requires this for the profile compute path:
+    "the interpolation to a fixed frequency of 0.01 Hz is not applied."
 
-        "No smoothing of the spectra is carried out on the spectra
-         before computing the spectral band values"
+    Note: display smoothing (the manual's 3-point moving average, §3.2
+    p. 33) is a separate concern handled by the plot widget — it is never
+    applied here.
     """
-    if freqs.size > 0 and delta_f < display_resolution * 0.99:
+    if not skip and freqs.size > 0 and delta_f < display_resolution * 0.99:
         freqs, power, bin_counts = _bin_average(freqs, power, display_resolution)
     else:
         bin_counts = np.ones(freqs.size, dtype=int)

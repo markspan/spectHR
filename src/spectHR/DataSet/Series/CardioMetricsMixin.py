@@ -625,6 +625,17 @@ class CardioMetricsMixin(HRVMetric):
         if self.times.size < 2:
             raise ValueError("Need at least 2 R-peaks for a profile.")
 
+        # CARSPAN manual §3.3.5: "the interpolation to a fixed frequency
+        # of 0.01 Hz is not applied" for the profile compute path.  Strip
+        # the display-grid resample step from the CARSPAN options so each
+        # per-window PSD is returned on its native 1/W grid regardless of
+        # window length.  This has no effect on Welch / Lomb-Scargle (those
+        # back-ends ignore CarspanOptions entirely).
+        profile_method = replace(
+            method,
+            carspan=replace(method.carspan, resample_to_display_grid=False),
+        )
+
         # ----- Step 1: window enumeration --------------------------------
         # Mirrors Pascal:
         #   StartTime := Double(RP.First^) + Pindex * StepSize;
@@ -718,7 +729,7 @@ class CardioMetricsMixin(HRVMetric):
                 if win_view.times.size < 4:
                     continue
                 try:
-                    psd_result = win_view._psd_for_band_power(method)
+                    psd_result = win_view._psd_for_band_power(profile_method)
                 except Exception:
                     continue
                 psd_cache[i] = psd_result
@@ -804,7 +815,7 @@ class CardioMetricsMixin(HRVMetric):
                 if win_view.times.size < 4:
                     continue
                 try:
-                    psd_result = win_view._psd_for_band_power(method)
+                    psd_result = win_view._psd_for_band_power(profile_method)
                 except Exception:
                     continue
 
