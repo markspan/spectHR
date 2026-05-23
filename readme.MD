@@ -880,21 +880,21 @@ A **spectral profile** is the time-resolved evolution of band power within one e
 
 The CARSPAN manual (§3.3.5) defines the profile time series as a sequence of band values $B_{x,i}(f_l, f_h)$, each attributed to the **centre** of its analysis window:
 
-$$t_i = t_0 + \tfrac{W}{2} + (i - 1) \cdot S, \qquad i = 1, 2, \dots, N \tag{1}$$
+$$t_i = t_0 + \tfrac{W}{2} + (i - 1) \cdot S, \qquad i = 1, 2, \dots, N$$
 
 where $W$ is the **window** length, $S$ is the **step** size, and $t_0$ is the real start time of the epoch. The first profile sample therefore lands at $W/2$ inside the epoch — not at $t = 0$. The total number of windows is:
 
-$$N = \left\lfloor \frac{T - W}{S} \right\rfloor + 1 \tag{2}$$
+$$N = \left\lfloor \frac{T - W}{S} \right\rfloor + 1$$
 
 where $T$ is the epoch length and $\lfloor \cdot \rfloor$ truncates to the nearest integer. The step $S$ must be strictly smaller than $W$ so that consecutive windows overlap.
 
 **Choosing window and step.** The manual gives two criteria. For the window: the lowest band frequency $f_l$ must satisfy $f_l > 1/W$, and for reliability $W$ should be at least *three times* that minimum. The number of frequency points in band $[f_l, f_h]$ at window length $W$ is:
 
-$$n = \lfloor f_h \cdot W \rfloor - \lfloor f_l \cdot W \rfloor \tag{3}$$
+$$n = \lfloor f_h \cdot W \rfloor - \lfloor f_l \cdot W \rfloor$$
 
 For the step: changes of interest must produce at least two profile samples per cycle (the standard sampling criterion). Computation cost scales as:
 
-$$\text{computation time} \;\propto\; \frac{W^2}{S} \tag{4}$$
+$$\text{computation time} \;\propto\; \frac{W^2}{S}$$
 
 **spectHR extension — multiple PSD back-ends.** In the CARSPAN Delphi implementation profiles exist only for the SOC spectral path. spectHR runs the same sliding-window scheme for all four spectral methods — Welch, Lomb-Scargle, CARSPAN, and CARSPAN-strict — dispatching through the same `band_powers()` call used by the PSD tab. Flipping the PSD method in *Edit Parameters → PSD Settings* takes effect on Profiles immediately.
 
@@ -917,9 +917,9 @@ Configure profiles under **WorkSpace → Edit Parameters → Profile Settings**:
 
 The implementation is `CardioMetricsMixin.band_power_profile`. Steps follow CARSPAN's `RunProfileSommation` (`T_AnaFunctions.pas` 2888–3056).
 
-#### Step 1 — Window enumeration (Eq. 1 / 2)
+#### Step 1 — Window enumeration
 
-With $t_0$ the epoch's first R-peak time and span $T = t_\text{end} - t_0$, the number of windows $N$ is given by Eq. 2. Window $i$ (0-indexed) spans $[t_0 + iS,\; t_0 + iS + W]$; its result is attributed to the centre $t_i^c = t_0 + iS + W/2$ (Eq. 1; Delphi `GetNrOfProfiles` / `GetProfileData`, `T_AnaFunctions.pas:1153,1115`). The first profile sample therefore lands at $W/2$ inside the epoch — the samples in $[0, W/2]$ contribute to the first window but their band-power estimate is attributed to that window's midpoint.
+With $t_0$ the epoch's first R-peak time and span $T = t_\text{end} - t_0$, the number of windows $N$ follows the formula above. Window $i$ (0-indexed) spans $[t_0 + iS,\; t_0 + iS + W]$; its result is attributed to the centre $t_i^c = t_0 + iS + W/2$ (Delphi `GetNrOfProfiles` / `GetProfileData`, `T_AnaFunctions.pas:1153,1115`). The first profile sample therefore lands at $W/2$ inside the epoch — the samples in $[0, W/2]$ contribute to the first window but their band-power estimate is attributed to that window's midpoint.
 
 #### Step 2 — Per-window PSD (§3.3.4, no 0.01 Hz interpolation)
 
@@ -927,15 +927,15 @@ The manual (§3.3.5, first paragraph) explicitly states that the fixed 0.01 Hz f
 
 A window with fewer than four R-peaks cannot yield a PSD (CARSPAN's minimum-N gate); spectHR stores `NaN` for the entire column rather than CARSPAN's *skip-and-don't-store*, keeping the output matrix rectangular and time-aligned with `timestamps`.
 
-#### Step 3 — Band-energy integration (Eq. 5 / 6)
+#### Step 3 — Band-energy integration
 
 For each window and each band $[f_l, f_h]$, the band power is the rectangular sum over in-band bins:
 
-$$B_{x,i}(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S_{xx}(f_k)\, \Delta f \tag{5}$$
+$$B_{x,i}(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S_{xx}(f_k)\, \Delta f$$
 
 or, for the normalised (mMI²) spectrum:
 
-$$B'_{x,i}(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S'_{xx}(f_k)\, \Delta f \tag{6}$$
+$$B'_{x,i}(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S'_{xx}(f_k)\, \Delta f$$
 
 CARSPAN takes a fixed $\Delta f = 0.01\,\text{Hz}$ and identifies in-band bins by `round(F/FreqRes) − 1`. spectHR instead uses a **centred neighbour-spacing** bin width $\Delta f_k = (f_{k+1} - f_{k-1})/2$ (endpoints fall back to one-sided spacing). This adapts correctly to both CARSPAN's resampled grid and the non-uniform grids produced by Welch and Lomb-Scargle. The mMI² conversion is applied upstream in `_carspan_display`, so no per-band rescaling is needed here — unlike Pascal's `/d` in `Calculate_Energy`.
 
