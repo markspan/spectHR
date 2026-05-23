@@ -688,7 +688,7 @@ The $w_i$ are tapering-window weights. The output is in events²/Hz; conversion 
 
 $$\tilde S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} t_i\, x_i\, e^{-2\pi j f_k T_i}\right|^2$$
 
-where $x_i$ is the arithmetic-mean-subtracted IBI in ms, $t_i$ the local IBI duration in seconds, and $T_i = \sum_{j \le i} t_j$ the cumulative time of the $i$-th beat. The output is in ms²/Hz directly (variance per Hz), and the mixin layer normalises to mMI²/Hz by multiplying by $10^6 / \overline{\text{IBI}}_\text{ms}^2$, the milli-squared form of manual Eq. 3.20.
+where $x_i$ is the arithmetic-mean-subtracted IBI in ms, $t_i$ the local IBI duration in seconds, and $T_i = \sum_{j \le i} t_j$ the cumulative time of the $i$-th beat. The output is in ms²/Hz directly (variance per Hz), and the mixin layer normalises to mMI²/Hz by multiplying by $10^6 / \overline{\text{IBI}}_{\text{ms}}^2$, the milli-squared form of manual Eq. 3.20.
 
 The two views describe the *same physical signal* and would integrate to the same total energy under continuous-signal idealisations. In the discrete sampled implementation they produce different magnitudes (per-bin scaling differs by ~ $\overline{\text{IBI}}^2$ ). The strict path is the one whose discrete output matches the manual's tabulated reference values.
 
@@ -847,13 +847,13 @@ To make spectra independent of mean heart rate, both CARSPAN variants are report
 
 **Strict (IBI-amplitude DFT, Eq. 3.21).** The raw spectrum is already in ms²/Hz (variance of the IBI per Hz). Eq. 3.20 normalises by $\bar x^2$ and the milli² convention adds a factor of $10^6$, giving:
 
-$$B'(f_l, f_h) = \frac{10^6}{\overline{\text{IBI}}_\text{ms}^2}\, B(f_l, f_h) \quad [\text{mMI}^2]$$
+$$B'(f_l, f_h) = \frac{10^6}{\overline{\text{IBI}}_{\text{ms}}^2}\, B(f_l, f_h) \quad [\text{mMI}^2]$$
 
 The mean IBI here is the **harmonic mean** of IBI (= arithmetic mean of the per-beat instantaneous rate); that's what Pascal's `SOC` uses inside `IsRPDataCol=False`. It differs from $T/N$ by ~0.3–0.8 % at typical resting HRV.
 
-**Configurable (unit-impulse SOC, Eq. 3.19).** The raw spectrum is in events²/Hz. Eq. 3.20 divides by the squared mean rate $\bar x = 1/\overline{\text{IBI}}_\text{sec}$ to get a dimensionless modulation index, which the implementation re-expresses as a multiply-by-$\overline{\text{IBI}}_\text{ms}^2$ on the events²/Hz spectrum (legacy mapping kept for back-compat):
+**Configurable (unit-impulse SOC, Eq. 3.19).** The raw spectrum is in events²/Hz. Eq. 3.20 divides by the squared mean rate $\bar x = 1/\overline{\text{IBI}}_{\text{sec}}$ to get a dimensionless modulation index, which the implementation re-expresses as a multiply-by-$\overline{\text{IBI}}_{\text{ms}}^2$ on the events²/Hz spectrum (legacy mapping kept for back-compat):
 
-$$B'(f_l, f_h) = \overline{\text{IBI}}_\text{ms}^2 \cdot B(f_l, f_h) \quad [\text{mMI}^2]$$
+$$B'(f_l, f_h) = \overline{\text{IBI}}_{\text{ms}}^2 \cdot B(f_l, f_h) \quad [\text{mMI}^2]$$
 
 Here the mean IBI is the manual's $T/N$ (harmonic mean of rate), not the arithmetic-mean-of-rate flavour. Reason: the configurable path predates the careful Pascal audit and is kept for back-compat; if you need the manual-faithful answer, use `carspan_strict`.
 
@@ -961,7 +961,7 @@ This mirrors CARSPAN's $1/\texttt{LProfile.MeanIn}$ (`T_AnaFunctions.pas` 2944�
 
 *`psd_peak`* (no respiration channel required — also the per-window fallback). The breathing frequency is the location of the largest spectral peak inside the band's static search range:
 
-$$f_b^{(i)} = \operatorname*{arg\,max}_{f_l \le f_k \le f_h} S_{xx}^{(i)}(f_k)$$
+$$f_b^{(i)} = \arg\max_{f_l \le f_k \le f_h} S_{xx}^{(i)}(f_k)$$
 
 read from the same per-window PSD computed for integration.
 
@@ -1013,7 +1013,7 @@ Band edges are configurable in *Edit Parameters*. If your participants breathe s
 | Method | PSD unit (default) | Band power unit (default) | Configurable? | Normalised by mean HR? |
 |--------|-------------------|--------------------------|---------------|----------------------|
 | Welch | mMI²/Hz | mMI² | Yes (`units`: `"mMI²"` or `"ms²"`) | Yes (default) |
-| CARSPAN | mMI²/Hz | mMI² | No | Yes, $`\times \bar{\text{IBI}}_\text{sec}^{-2} \times 10^{-6}`$ |
+| CARSPAN | mMI²/Hz | mMI² | No | Yes, $`\times \bar{\text{IBI}}_{\text{sec}}^{-2} \times 10^{-6}`$ |
 
 Both methods output mMI² by default, which is dimensionless and largely heart-rate independent, enabling valid comparisons across groups or conditions that differ in resting heart rate. Output of the Welch method can be switched to raw ms² output via the `units` workspace key; CARSPAN always outputs mMI².
 
