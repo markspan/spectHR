@@ -605,13 +605,19 @@ Let $`x(t)`$ denote the IBI series (in ms), resampled at $`f_s`$ Hz. `scipy.sign
 
 Band power $B$ in $`[f_l, f_h]`$ is obtained by trapezoidal integration with endpoint interpolation:
 
-$$B = \int_{f_l}^{f_h} \hat{S}(f) df \approx \sum_k \hat{S}(f_k) \Delta f$$
+```math
+B = \int_{f_l}^{f_h} \hat{S}(f) df \approx \sum_k \hat{S}(f_k) \Delta f
+```
 
 Because consecutive segments overlap, they are not statistically independent. The effective degrees of freedom are reduced accordingly (Percival & Walden, 1993):
 
-$$\nu = \frac{2K}{1 + 2\!\left(1 - \tfrac{1}{K}\right)\rho^2}$$
+```math
+\nu = \frac{2K}{1 + 2\!\left(1 - \tfrac{1}{K}\right)\rho^2}
+```
 
-$$CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, \alpha/2}} \right]$$
+```math
+CI(f) = \left[ \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, 1-\alpha/2}}, \quad \frac{\nu \cdot \hat{S}(f)}{\chi^2_{\nu, \alpha/2}} \right]
+```
 
 where:
 - $K$: number of segments
@@ -676,17 +682,23 @@ Mulder's manual gives two algebraically equivalent ways to write the CARSPAN spe
 
 **Unit-impulse view (Eq. 3.19; used by `carspan`).** Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heartbeat is modelled as a sequence of unit impulses at the R-peak times $t_i$:
 
-$$x(t) = \sum_{i=1}^{N} \delta(t - t_i)$$
+```math
+x(t) = \sum_{i=1}^{N} \delta(t - t_i)
+```
 
 This is the *Integral Pulse Frequency Modulation* (IPFM) representation. Treating the signal outside the analysis window $[0, T]$ as a periodic continuation, the PSD at discrete frequencies $f_k = k/T$ is:
 
-$$S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i\, e^{-2\pi j f_k t_i}\right|^2$$
+```math
+S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} w_i\, e^{-2\pi j f_k t_i}\right|^2
+```
 
 The $w_i$ are tapering-window weights. The output is in events²/Hz; conversion to mMI²/Hz is done by the mixin layer.
 
 **IBI-amplitude view (Eq. 3.21; used by `carspan_strict`).** The same recording, expressed as a sum over IBI amplitudes weighted by their local interval $t_i$:
 
-$$\tilde S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} t_i\, x_i\, e^{-2\pi j f_k T_i}\right|^2$$
+```math
+\tilde S_{xx}(f_k) = \frac{2}{T}\left|\sum_{i=1}^{N} t_i\, x_i\, e^{-2\pi j f_k T_i}\right|^2
+```
 
 where $x_i$ is the arithmetic-mean-subtracted IBI in ms, $t_i$ the local IBI duration in seconds, and $T_i = \sum_{j \le i} t_j$ the cumulative time of the $i$-th beat. The output is in ms²/Hz directly (variance per Hz), and the mixin layer normalises to mMI²/Hz by multiplying by $10^6 / \overline{\text{IBI}}_{\text{ms}}^2$, the milli-squared form of manual Eq. 3.20.
 
@@ -831,7 +843,9 @@ The MA kernel is mean-preserving (each output bin is the arithmetic mean of thre
 
 Band power in $[f_l, f_h]$ is computed by rectangular summation on the resampled, unsmoothed display-grid spectrum:
 
-$$B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}(f_k)\, \Delta f_\text{disp}$$
+```math
+B(f_l, f_h) = \sum_{f_k = f_l}^{f_h} S_{xx}(f_k)\, \Delta f_\text{disp}
+```
 
 where $\Delta f_\text{disp}$ is the workspace `freq_resolution` setting (default 0.01 Hz).
 
@@ -847,13 +861,17 @@ To make spectra independent of mean heart rate, both CARSPAN variants are report
 
 **Strict (IBI-amplitude DFT, Eq. 3.21).** The raw spectrum is already in ms²/Hz (variance of the IBI per Hz). Eq. 3.20 normalises by $\bar x^2$ and the milli² convention adds a factor of $10^6$, giving:
 
-$$B'(f_l, f_h) = \frac{10^6}{\overline{\text{IBI}}_{\text{ms}}^2}\, B(f_l, f_h) \quad [\text{mMI}^2]$$
+```math
+B'(f_l, f_h) = \frac{10^6}{\overline{\text{IBI}}_{\text{ms}}^2}\, B(f_l, f_h) \quad [\text{mMI}^2]
+```
 
 The mean IBI here is the **harmonic mean** of IBI (= arithmetic mean of the per-beat instantaneous rate); that's what Pascal's `SOC` uses inside `IsRPDataCol=False`. It differs from $T/N$ by ~0.3–0.8 % at typical resting HRV.
 
 **Configurable (unit-impulse SOC, Eq. 3.19).** The raw spectrum is in events²/Hz. Eq. 3.20 divides by the squared mean rate $\bar x = 1/\overline{\text{IBI}}_{\text{sec}}$ to get a dimensionless modulation index, which the implementation re-expresses as a multiply-by-$\overline{\text{IBI}}_{\text{ms}}^2$ on the events²/Hz spectrum (legacy mapping kept for back-compat):
 
-$$B'(f_l, f_h) = \overline{\text{IBI}}_{\text{ms}}^2 \cdot B(f_l, f_h) \quad [\text{mMI}^2]$$
+```math
+B'(f_l, f_h) = \overline{\text{IBI}}_{\text{ms}}^2 \cdot B(f_l, f_h) \quad [\text{mMI}^2]
+```
 
 Here the mean IBI is the manual's $T/N$ (harmonic mean of rate), not the arithmetic-mean-of-rate flavour. Reason: the configurable path predates the careful Pascal audit and is kept for back-compat; if you need the manual-faithful answer, use `carspan_strict`.
 
@@ -901,21 +919,29 @@ The implementation is `CardioMetricsMixin.band_power_profile`, following CARSPAN
 
 The CARSPAN manual (§3.3.5, Eq. 3.34) defines the profile time series as a weighted sum of per-window band values $B_{x,i}(f_l, f_h)$:
 
-$$x(t) = S \cdot \sum_{i=1}^{N} B_{x,i}(f_l, f_h)\, \delta(t - t_i)$$
+```math
+x(t) = S \cdot \sum_{i=1}^{N} B_{x,i}(f_l, f_h)\, \delta(t - t_i)
+```
 
 Each sample is attributed to the **centre** of its analysis window:
 
-$$t_i = t_0 + \tfrac{W}{2} + (i - 1) \cdot S, \qquad i = 1, 2, \dots, N$$
+```math
+t_i = t_0 + \tfrac{W}{2} + (i - 1) \cdot S, \qquad i = 1, 2, \dots, N
+```
 
 where $W$ is the window length, $S$ is the step size, and $t_0$ is the epoch's first R-peak time. The first profile sample therefore lands at $W/2$ into the epoch. With $T = t_\text{end} - t_0$ the epoch span, the window count is:
 
-$$N = \left\lfloor \frac{T - W}{S} \right\rfloor + 1$$
+```math
+N = \left\lfloor \frac{T - W}{S} \right\rfloor + 1
+```
 
 (Delphi: `GetNrOfProfiles` / `GetProfileData`, `T_AnaFunctions.pas:1153,1115`.)
 
 **Sizing criteria.** For the window: the lowest band frequency $f_l$ must satisfy $f_l > 1/W$; for reliability $W$ should be at least three times that minimum ($W \ge 3/f_{l,\min}$). The number of frequency points in band $[f_l, f_h]$ at window length $W$ is:
 
-$$n = \lfloor f_h \cdot W \rfloor - \lfloor f_l \cdot W \rfloor$$
+```math
+n = \lfloor f_h \cdot W \rfloor - \lfloor f_l \cdot W \rfloor
+```
 
 For the step: the temporal resolution must be at least two samples per cycle of the slowest feature of interest. Computation cost scales as $W^2 / S$, so shorter windows and longer steps reduce cost at the expense of spectral and temporal resolution respectively.
 
@@ -929,7 +955,9 @@ The manual (§3.3.5) explicitly states that the fixed 0.01 Hz frequency-grid int
 
 For each window and each band $[f_l, f_h]$, the band power is the rectangular sum over in-band frequency bins:
 
-$$B_{x,i}(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S_{xx}(f_k)\, \Delta f$$
+```math
+B_{x,i}(f_l, f_h) = \sum_{f_l \le f_k \le f_h} S_{xx}(f_k)\, \Delta f
+```
 
 CARSPAN takes a fixed $\Delta f = 0.01\,\text{Hz}$ and identifies in-band bins by `round(F/FreqRes) − 1`. spectHR instead uses a **centred neighbour-spacing** bin width $\Delta f_k = (f_{k+1} - f_{k-1})/2$ (endpoints fall back to one-sided spacing). This adapts correctly to CARSPAN's resampled grid as well as the non-uniform grids produced by Welch and Lomb-Scargle. The mMI² conversion is applied upstream in `_carspan_display`, so no per-band rescaling is needed here, unlike Pascal's `/d` in `Calculate_Energy`.
 
@@ -939,9 +967,13 @@ CARSPAN's `TAnaBand.RespirationBand` flag enables one band to track the breathin
 
 A static band uses its configured $[f_l, f_h]$ unchanged for every window. An **adaptive** band re-centres on the per-window breathing frequency $f_b^{(i)}$; two per-band parameters, `resp_low` ($\Delta f_\text{lo}$) and `resp_high` ($\Delta f_\text{hi}$), define the half-widths around that centre:
 
-$$f_\text{low}^{(i)} = \max\!\bigl(0.01,\ f_b^{(i)} - \Delta f_\text{lo}\bigr)$$
+```math
+f_\text{low}^{(i)} = \max\!\bigl(0.01,\ f_b^{(i)} - \Delta f_\text{lo}\bigr)
+```
 
-$$f_\text{high}^{(i)} = \min\!\bigl(f_{\max}^{(i)},\ f_b^{(i)} + \Delta f_\text{hi}\bigr)$$
+```math
+f_\text{high}^{(i)} = \min\!\bigl(f_{\max}^{(i)},\ f_b^{(i)} + \Delta f_\text{hi}\bigr)
+```
 
 where $f_{\max}^{(i)}$ is the top of that window's PSD grid. The 0.01 Hz floor and $f_{\max}$ cap are direct ports of `GetRespirationMinBandValue` / `GetRespirationMaxBandValue` (`T_AnaFunctions.pas` 2837–2884). If the clamps invert the band ($f_\text{high} \le f_\text{low}$), that window is NaN.
 
@@ -949,19 +981,25 @@ where $f_{\max}^{(i)}$ is the top of that window's PSD grid. The 0.01 Hz floor a
 
 *`respiration_channel`* (CARSPAN-faithful default). The accelerometer-derived respiration signal is sliced to the window and `mean_breath_frequency_hz()` is called. With alternating breath phases of starts $s_j$ and ends $e_j$, the breathing frequency is the reciprocal of the mean adjacent-phase cycle duration:
 
-$$f_b = \frac{1}{\bar{c}}, \qquad \bar{c} = \frac{1}{M}\sum_{j=1}^{M}(e_{j+1} - s_j), \quad c_j > 0$$
+```math
+f_b = \frac{1}{\bar{c}}, \qquad \bar{c} = \frac{1}{M}\sum_{j=1}^{M}(e_{j+1} - s_j), \quad c_j > 0
+```
 
 This mirrors CARSPAN's $1/\texttt{LProfile.MeanIn}$ (`T_AnaFunctions.pas` 2944–2952). When fewer than two phases fall within the window, or when no respiration channel is loaded, the window falls back to `psd_peak` (a warning is logged once).
 
 *`psd_peak`* (no respiration channel required; also the automatic per-window fallback). The breathing frequency is taken as the largest spectral peak inside the band's static search range:
 
-$$f_b^{(i)} = \arg\max_{f_l \le f_k \le f_h} S_{xx}^{(i)}(f_k)$$
+```math
+f_b^{(i)} = \arg\max_{f_l \le f_k \le f_h} S_{xx}^{(i)}(f_k)
+```
 
 read from the same per-window PSD computed in Step 2.
 
 **Optional breathing-frequency smoothing.** When `smooth_breath_freq` is on, the full sequence $\{f_b^{(i)}\}$ is smoothed before any band edge is placed, using the same 3-point kernel as the display smoother:
 
-$$\tilde{f}_b[i] = \frac{f_b[i-1] + f_b[i] + f_b[i+1]}{3}$$
+```math
+\tilde{f}_b[i] = \frac{f_b[i-1] + f_b[i] + f_b[i+1]}{3}
+```
 
 with asymmetric boundary weights $\tilde{f}_b[0] = \tfrac{3}{8}f_b[0] + \tfrac{5}{8}f_b[1]$ and $\tilde{f}_b[N-1] = \tfrac{5}{8}f_b[N-2] + \tfrac{3}{8}f_b[N-1]$. Because the complete sequence must be available before edges are placed, smoothing requires **two passes**: pass A collects breathing frequencies and caches per-window PSDs; the sequence is then smoothed; pass B re-integrates band power from the cached PSDs using the smoothed edges. Without smoothing a single pass suffices.
 
