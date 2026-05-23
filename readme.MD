@@ -927,7 +927,7 @@ The manual (§3.3.5, first paragraph) explicitly states that the fixed 0.01 Hz f
 
 A window with fewer than four R-peaks cannot yield a PSD (CARSPAN's minimum-N gate); spectHR stores `NaN` for the entire column rather than CARSPAN's *skip-and-don't-store*, keeping the output matrix rectangular and time-aligned with `timestamps`.
 
-#### Step 3 — Band-energy integration
+#### Step 3 — Band-power integration
 
 For each window and each band $[f_l, f_h]$, the band power is the rectangular sum over in-band bins:
 
