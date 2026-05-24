@@ -1106,7 +1106,7 @@ Download `spectHR-macOS-vX.Y.Z.zip` from the [Releases](https://github.com/marks
 
 spectHR is written in pure Python. The analysis library (`src/spectHR/`) and the GUI (`src/spectUI/`) are kept separate so the library can be used independently in scripts.
 
-New HRV metrics can be added by decorating a method with `@hrv_metric` in `CardioSeries`, it will appear in the Parameters table and CSV automatically.
+New HRV metrics can be added by decorating a standalone function with `@hrv_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/` — it will appear in the Parameters table and CSV export automatically, with no changes to `CardioSeries` or any other class.
 
 New file formats can be added by registering a loader function with `@register_loader(".ext")` in `src/spectHR/DataSet/loaders/`.
 
