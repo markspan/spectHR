@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 

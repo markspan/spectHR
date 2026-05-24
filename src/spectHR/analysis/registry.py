@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/registry.py
 """
 HRV metric registry.
@@ -8,7 +10,7 @@ automatically by ``CardioSeries.metric_table()`` and
 
 Replaces the old ``dir(cls)`` class-introspection pattern.  The registry is
 a plain module-level dict; there is no base class requirement.  New metrics
-are added simply by decorating a standalone function — no class editing
+are added simply by decorating a standalone function - no class editing
 needed.
 """
 from __future__ import annotations
@@ -21,8 +23,8 @@ _REGISTRY: Dict[str, Callable] = {}
 def hrv_metric(func: Callable) -> Callable:
     """Register *func* as an HRV metric.
 
-    The decorated function must accept a single positional argument — a
-    ``CardioSeriesLike`` — and return a value coercible to ``float``.
+    The decorated function must accept a single positional argument - a
+    ``CardioSeriesLike`` - and return a value coercible to ``float``.
 
     Registration happens at import time; importing ``spectHR.analysis``
     before the first metric call is enough to populate the registry.

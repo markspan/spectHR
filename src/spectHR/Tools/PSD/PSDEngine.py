@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/Tools/PSD/PSDEngine.py
 """
 PSD dispatch, unit conversion, and band-mask logic.
@@ -18,7 +20,7 @@ PSDEngine(series)
     compute(method, *, with_ci) -> PSDResult
         Full PSD computation with unit conversion and CI.
     for_band_power(method) -> PSDResult
-        Same as compute(..., with_ci=False) — used by band-power
+        Same as compute(..., with_ci=False) - used by band-power
         integration, which does not need confidence intervals.
 
 Data-accessor protocol
@@ -206,10 +208,10 @@ class PSDEngine:
 
         Dispatch is driven by ``carspan_opts.signal``:
 
-        * ``"ibi_amplitude"`` (manual Eq. 3.21) — raw spectrum is in
+        * ``"ibi_amplitude"`` (manual Eq. 3.21) - raw spectrum is in
           ms²/Hz. Multiply by ``10⁶ / mean_ms²`` to get mMI²/Hz
           (Eq. 3.20 + milli²).
-        * ``"events"`` (manual Eq. 3.19) — raw spectrum is in
+        * ``"events"`` (manual Eq. 3.19) - raw spectrum is in
           events²/Hz (unit-impulse DFT). Legacy mapping uses
           ``mean_ms²`` (kept for back-compat).
         """
@@ -226,7 +228,7 @@ class PSDEngine:
             # mMI²/Hz = ms²/Hz × 10⁶ / mean_ms² (Eq. 3.20 + milli²).
             return 1.0e6 / (mean_ibi_ms ** 2), "mMI²/Hz"
 
-        # Unit-impulse SOC path — legacy conversion.
+        # Unit-impulse SOC path - legacy conversion.
         if units.lower().startswith("ms"):
             return (mean_ibi_ms ** 4) * 1e-6, "ms²/Hz"
         return mean_ibi_ms ** 2, "mMI²/Hz"

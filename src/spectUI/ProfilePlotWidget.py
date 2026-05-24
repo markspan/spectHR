@@ -1,5 +1,7 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
-Spectral-profile plotting widget — sibling of :class:`PSDPlotWidget`.
+Spectral-profile plotting widget - sibling of :class:`PSDPlotWidget`.
 
 A *profile* is the time course of a band-power measure inside one epoch
 (CARSPAN manual §3.3.5): the configured PSD is recomputed in a sliding
@@ -14,7 +16,7 @@ Design
   per epoch, shared y-limit, arrow-key zoom, Shift+Ctrl+P export.
 - Compute happens once per series via ``view.band_power_profile(...)``;
   this widget never touches a PSD function directly.
-- Display is filtered by ``workspace["Profiles"]["bands"]`` — the
+- Display is filtered by ``workspace["Profiles"]["bands"]`` - the
   compute may produce every band, but only the user-picked subset is
   drawn. Stale band names (e.g. left behind after a band rename) are
   silently skipped.
@@ -56,7 +58,7 @@ from spectUI.workSpace import get_export_dir, psd_method_from_workspace
 warnings.filterwarnings("ignore")
 
 
-# Y-axis zoom step and floor — identical contract to PSDPlotWidget so
+# Y-axis zoom step and floor - identical contract to PSDPlotWidget so
 # the keyboard interaction feels uniform across the two plot tabs.
 _Y_ZOOM_STEP_UP:   float = 0.80   # Up    → y-max × 0.80   (zoom in)
 _Y_ZOOM_STEP_DOWN: float = 1.25   # Down  → y-max × 1.25   (zoom out)
@@ -69,7 +71,7 @@ _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
 
 # ---------------------------------------------------------------------------
-# Workspace helpers — kept local so this widget has no spectUI cross-deps
+# Workspace helpers - kept local so this widget has no spectUI cross-deps
 # ---------------------------------------------------------------------------
 
 
@@ -95,7 +97,7 @@ def _profile_settings_from_workspace(
     ``bands`` defaults to the *non-FullRange* named bands; ``window_s``
     and ``step_s`` come from the CARSPAN manual's typical profile
     settings; ``smooth_for_display`` defaults to ``False`` (the
-    Delphi-faithful behaviour — the reference profile view plots the
+    Delphi-faithful behaviour - the reference profile view plots the
     raw band-power-per-window line). Flip to ``True`` in Profile
     Settings for a softened curve.
 
@@ -123,7 +125,7 @@ def _profile_settings_from_workspace(
 
 
 def _sanitize_filename(name: str) -> str:
-    """Same as ``PSDPlotWidget._sanitize_filename`` — kept local to avoid coupling."""
+    """Same as ``PSDPlotWidget._sanitize_filename`` - kept local to avoid coupling."""
     return _FILENAME_BAD_CHARS.sub("_", name).strip("._")
 
 
@@ -159,7 +161,7 @@ def _fetch_profile(
     smooth_breath_freq: bool = False,
     smooth: bool = False,
 ) -> _ProfilePlotData:
-    """Call ``series.band_power_profile()`` — never raises.
+    """Call ``series.band_power_profile()`` - never raises.
 
     Failures (epoch too short, no PSD method set, etc.) come back as a
     ``_ProfilePlotData`` with ``error`` populated so the renderer can
@@ -168,12 +170,12 @@ def _fetch_profile(
     When ``smooth`` is True, the same Pascal-faithful 3-point MA the
     PSD widget applies to spectra is applied here along the *time*
     axis of each band's profile. The smoother lives in the plot layer
-    only — the compute returns un-smoothed values so band-power
+    only - the compute returns un-smoothed values so band-power
     statistics over the profile (mean, peak time, etc.) computed by
     downstream code keep their actual numerical values.
 
     ``adaptive_source`` is forwarded directly to
-    :meth:`CardioMetricsMixin.band_power_profile` — ``"respiration_channel"``
+    :meth:`CardioMetricsMixin.band_power_profile` - ``"respiration_channel"``
     uses the CARSPAN-faithful breathing signal; ``"psd_peak"`` derives
     the breathing frequency from the per-window PSD peak within the
     band's static ``[low, high]`` range (no respiration channel needed).
@@ -235,7 +237,7 @@ def _fetch_profile(
     )
 
 
-# Band-power profiles are notoriously spiky — one outlier window inside
+# Band-power profiles are notoriously spiky - one outlier window inside
 # a CARSPAN-strict epoch can be 10×+ the typical peak. Scaling the
 # y-axis to the absolute max therefore squashes the bulk of the curve
 # into a flat band along the bottom of the plot. We use a high
@@ -250,7 +252,7 @@ def _y_max(data: _ProfilePlotData, bands_to_plot: List[str]) -> float:
     """Robust y-max estimate across the plotted bands (for shared y-limit).
 
     Returns the *97th-percentile* band-power value (across every
-    plotted-band window in the epoch) — a sensible default that shows
+    plotted-band window in the epoch) - a sensible default that shows
     the bulk of the curve without an outlier window dominating the
     axis. Excludes bands not in *bands_to_plot* so the y-scale tracks
     the user's actual selection.
@@ -391,13 +393,13 @@ class ProfilePlotWidget(QWidget):
             adaptive_name = next(iter(adaptive_bands_cfg), None)
             if adaptive_name and adaptive_name in bands_dict:
                 bands_to_plot = [adaptive_name]
-        # Names of adaptively-tracked bands — forwarded to plot_on_axis so
+        # Names of adaptively-tracked bands - forwarded to plot_on_axis so
         # legend entries for those bands get an "(adaptive)" suffix.
         adaptive_names: frozenset = frozenset(adaptive_bands_cfg.keys())
 
         # Build the PsdMethod directly from the workspace so adaptive
         # band settings (Profiles.adaptive_bands) are always reflected
-        # in the computation — regardless of whether the caller has
+        # in the computation - regardless of whether the caller has
         # already pushed the method onto each series via set_psd_method.
         # Passing it explicitly to _fetch_profile is the single source
         # of truth for this widget; the series.psd_method fallback in
@@ -417,7 +419,7 @@ class ProfilePlotWidget(QWidget):
             )
             for series, label in zip(series_list, labels)
         ]
-        # Shared y-limit across all epoch subplots — keeps band-power
+        # Shared y-limit across all epoch subplots - keeps band-power
         # magnitudes directly comparable across epochs, which is the
         # whole point of plotting them side-by-side. The scale itself
         # is autoscaled to the cross-epoch 97th percentile (see
@@ -429,7 +431,7 @@ class ProfilePlotWidget(QWidget):
         )
         y_top = y_max * _AUTOSCALE_HEADROOM if y_max > 0 else 1.0
 
-        # Global resp-freq range — shared across all epoch subplots so
+        # Global resp-freq range - shared across all epoch subplots so
         # the breathing-frequency right axis is directly comparable
         # between epochs (same motivation as the shared left y-limit).
         all_rf: List[float] = []
@@ -501,7 +503,7 @@ class ProfilePlotWidget(QWidget):
         save_all.activated.connect(self._save_all_plots)
 
     # ------------------------------------------------------------------
-    # Keyboard — shared y-axis zoom
+    # Keyboard - shared y-axis zoom
     # ------------------------------------------------------------------
 
     def _zoom_in(self) -> None:
@@ -521,7 +523,7 @@ class ProfilePlotWidget(QWidget):
             subplot.canvas.draw_idle()
 
     # ------------------------------------------------------------------
-    # Export — Shift+Ctrl+P writes every plot to the output directory
+    # Export - Shift+Ctrl+P writes every plot to the output directory
     # ------------------------------------------------------------------
 
     def _save_all_plots(self) -> None:
@@ -615,7 +617,7 @@ class ProfilePlotWidget(QWidget):
         if not bands_to_plot:
             bands_to_plot = list(data.band_names)
 
-        # Error / empty path — show a centred placeholder.
+        # Error / empty path - show a centred placeholder.
         if data.error is not None or data.timestamps.size == 0:
             msg = data.error or "No profile data"
             ax.text(
@@ -625,7 +627,7 @@ class ProfilePlotWidget(QWidget):
             )
             return ax
 
-        # X-axis — measure time from the start of the epoch (the
+        # X-axis - measure time from the start of the epoch (the
         # ``timestamps`` array carries absolute R-peak times, but the
         # plot is easier to read in epoch-relative seconds).
         t0 = float(data.timestamps[0]) - data.window_s / 2.0
@@ -645,7 +647,7 @@ class ProfilePlotWidget(QWidget):
             mean_power = float(np.mean(finite)) if finite.size else 0.0
             band_entries.append((name, row, spec, mean_power))
 
-        # ---- pass 1: fills — highest power first (rendered lowest) ----
+        # ---- pass 1: fills - highest power first (rendered lowest) ----
         # Sorting highest-to-lowest means the dominant band's fill sits
         # at the bottom; lower-power bands' fills are drawn on top so
         # their area is never fully buried. All fills share zorder=2 so
@@ -660,7 +662,7 @@ class ProfilePlotWidget(QWidget):
                 color=color, alpha=fill_alpha, zorder=2,
             )
 
-        # ---- pass 2: lines — drawn after ALL fills --------------------
+        # ---- pass 2: lines - drawn after ALL fills --------------------
         # zorder=3 puts every line on top of every fill unconditionally,
         # so each band's curve is legible regardless of power ratio.
         # Adaptive bands get a black line so the tracking variation stands
@@ -708,7 +710,7 @@ class ProfilePlotWidget(QWidget):
         )
 
         # Subtitle carries only the PSD method that drove the per-window
-        # band-power integration — the window / step parameters are
+        # band-power integration - the window / step parameters are
         # workspace settings the user already controls explicitly, no
         # need to repeat them in every subplot annotation.
         method_label = data.method.replace("_", " ").capitalize()

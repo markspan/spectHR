@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 IBIClassificationParams.py – Single source of truth for the IBI classifier
 default parameters.
@@ -46,7 +48,7 @@ class IBIClassificationParams:
         return asdict(self)
 
 
-# Module-level default — referenced by ``CardioSeries`` / ``PhysioData``
+# Module-level default - referenced by ``CardioSeries`` / ``PhysioData``
 # as the source of every parameter default.  Keep this immutable so
 # call-site defaults never accidentally drift.
 DEFAULT_IBI_PARAMS = IBIClassificationParams()

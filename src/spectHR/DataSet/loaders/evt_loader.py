@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 from collections import Counter
 from pathlib import Path
@@ -13,7 +15,7 @@ from spectHR.Tools.Logger import logger
 
 # NOTE: ``EventCodeWindow`` lives in ``spectUI`` (it's a PySide6 dialog).
 # We resolve it lazily inside ``loadEVT`` so that ``import spectHR`` works
-# in headless environments — only the GUI path through .evt files with
+# in headless environments - only the GUI path through .evt files with
 # multiple non-RTop codes needs Qt.
 
 @register_loader(".evt")
@@ -137,7 +139,7 @@ def loadEVT(physiodata, filename: Path) -> None:
         # ----------------------------------------------
         # GUI-based code selection
         # ----------------------------------------------
-        # Lazy import keeps ``spectHR`` headless-safe — the dialog lives
+        # Lazy import keeps ``spectHR`` headless-safe - the dialog lives
         # in ``spectUI`` and only this branch (a .evt file with multiple
         # non-RTop codes) reaches it.
         from spectUI.EventCodeWindow import EventCodeWindow
@@ -160,7 +162,7 @@ def loadEVT(physiodata, filename: Path) -> None:
                     "Selected start/stop codes produce mismatched epochs."
                 )
         else:
-            logger.info("No codes selected — using full recording as single epoch")
+            logger.info("No codes selected - using full recording as single epoch")
 
     elif unique_other_codes.size == 2:
         # Deterministic pairing
@@ -176,7 +178,7 @@ def loadEVT(physiodata, filename: Path) -> None:
     # CARSPAN epoch-start convention
     # --------------------------------------------------
     # The CARSPAN system counts the last heartbeat *before* the Beginperiod
-    # marker (code 21) as the first beat of the epoch — not the first beat
+    # marker (code 21) as the first beat of the epoch - not the first beat
     # after the marker.  To reproduce CARSPAN's beat counts and IBI statistics
     # we therefore replace each epoch start time with the timestamp of the last
     # R-peak that occurred strictly before the original start-marker time.

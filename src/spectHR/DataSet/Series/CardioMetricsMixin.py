@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/CardioMetricsMixin.py
 """
 Thin method-dispatch layer for ``CardioSeries`` and ``CardioSeriesView``.
@@ -64,9 +66,9 @@ class CardioMetricsMixin:
 
     Expects the host class to provide:
 
-    - ``self.times``   : np.ndarray — R-peak timestamps (s)
-    - ``self.ibi``     : np.ndarray — IBI series (s), trailing NaN
-    - ``self.labels``  : np.ndarray — per-beat labels (``"N"``, ``"TL"``, …)
+    - ``self.times``   : np.ndarray - R-peak timestamps (s)
+    - ``self.ibi``     : np.ndarray - IBI series (s), trailing NaN
+    - ``self.labels``  : np.ndarray - per-beat labels (``"N"``, ``"TL"``, …)
     - ``self.view(starttime, endtime)`` → CardioSeriesLike
 
     The UI assigns the active PSD configuration via ``series.psd_method``;
@@ -144,7 +146,7 @@ class CardioMetricsMixin:
         return mmi2_factor(self, mean_convention)
 
     # ------------------------------------------------------------------
-    # Metric table — uses the registry, not class introspection
+    # Metric table - uses the registry, not class introspection
     # ------------------------------------------------------------------
 
     @classmethod
@@ -178,7 +180,7 @@ class CardioMetricsMixin:
         return a zero-argument lambda that applies the metric to ``self``.
 
         This is what makes ``series.rmssd()`` work without a method body on
-        the class, while keeping the import of ``spectHR.analysis`` lazy —
+        the class, while keeping the import of ``spectHR.analysis`` lazy -
         analysis code is loaded only on first metric access.
         """
         # Guard against infinite recursion during pickling / copying.
@@ -193,7 +195,7 @@ class CardioMetricsMixin:
         )
 
     # ------------------------------------------------------------------
-    # Public PSD API — thin wrappers to PSDEngine / Profile
+    # Public PSD API - thin wrappers to PSDEngine / Profile
     # ------------------------------------------------------------------
 
     def psd(

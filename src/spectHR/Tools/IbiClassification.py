@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/Tools/IbiClassification.py
 """
 Standalone IBI classification algorithm.
@@ -40,13 +42,13 @@ def classify_ibi(
 
     Labels written
     --------------
-    ``"N"``   — normal
-    ``"L"``   — long (above rolling upper threshold)
-    ``"S"``   — short (below rolling lower threshold)
-    ``"TL"``  — too long (> *max_ibi_sec*); excluded from statistics
-    ``"SL"``  — short-then-long pattern (ectopic pair)
-    ``"SNS"`` — short-normal-short pattern (compensatory pause pair)
-    ``"T"``   — degenerate (NaN or <= 0)
+    ``"N"``   - normal
+    ``"L"``   - long (above rolling upper threshold)
+    ``"S"``   - short (below rolling lower threshold)
+    ``"TL"``  - too long (> *max_ibi_sec*); excluded from statistics
+    ``"SL"``  - short-then-long pattern (ectopic pair)
+    ``"SNS"`` - short-normal-short pattern (compensatory pause pair)
+    ``"T"``   - degenerate (NaN or <= 0)
 
     Parameters
     ----------

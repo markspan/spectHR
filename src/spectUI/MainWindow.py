@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 import json
 import pickle
 import sys
@@ -63,9 +65,9 @@ class MainWindow(QMainWindow):
     Main application window for the spectQt ECG pre-processing GUI.
 
     The workspace dict has two top-level chapters:
-        workspace["Directories"]      — DataDirectory, CacheDirectory, OutputDirectory
-        workspace["FrequencyAnalysis"] — HRV frequency band configuration
-        workspace["CardioParameters"] — IBI classification and ECG preprocessing
+        workspace["Directories"]      - DataDirectory, CacheDirectory, OutputDirectory
+        workspace["FrequencyAnalysis"] - HRV frequency band configuration
+        workspace["CardioParameters"] - IBI classification and ECG preprocessing
 
     All directory accesses use workspace["Directories"][key].
     """
@@ -107,7 +109,7 @@ class MainWindow(QMainWindow):
         self.workspace = spQt.LoadWorkspace(self.workspace_file)
         spQt.PopulateTree(self.ui.treeWidget, self.workspace)
 
-        # Menu wiring — Workspace / Directories
+        # Menu wiring - Workspace / Directories
         self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
         self.ui.actionOpen_Workspace.setShortcut("Ctrl+O")
         self.ui.actionOpen_Workspace.setStatusTip("Open a workspace file")
@@ -261,7 +263,7 @@ class MainWindow(QMainWindow):
                     logger.warning(f"Could not rebuild PsdMethod: {e}")
 
                 # 3. Refresh the PSD and Profile plots immediately if a
-                #    dataset is loaded — Profile Settings live in the
+                #    dataset is loaded - Profile Settings live in the
                 #    same workspace dialog so any band-list / window /
                 #    step change has to take effect right away too.
                 self.show_psd_plot(self.dataset)
@@ -390,14 +392,14 @@ class MainWindow(QMainWindow):
 
     def on_tab_changed(self, index):
         # Tab order in form.ui (`Views` QTabWidget):
-        #   0 — Preprocessing
-        #   1 — IBI Series
-        #   2 — Poincaré
-        #   3 — Epochs
-        #   4 — PSD
-        #   5 — Profiles
-        #   6 — Parameters
-        #   7 — Log  (hidden from tab strip; driven by the corner-widget button)
+        #   0 - Preprocessing
+        #   1 - IBI Series
+        #   2 - Poincaré
+        #   3 - Epochs
+        #   4 - PSD
+        #   5 - Profiles
+        #   6 - Parameters
+        #   7 - Log  (hidden from tab strip; driven by the corner-widget button)
         # Keep the Log button checked state in sync when a regular tab is clicked.
         self._log_btn.blockSignals(True)
         self._log_btn.setChecked(index == self._log_tab_index)
@@ -457,7 +459,7 @@ class MainWindow(QMainWindow):
                     # Migration 1: locked R-tops saved without IBI classification
                     # ----------------------------------------------------------
                     # Cached datasets saved before the locked-branch classify_ibi()
-                    # fix have all R-top labels at the default "N" — an impossible
+                    # fix have all R-top labels at the default "N" - an impossible
                     # result for real ECG data of any length.  Re-classify in place;
                     # no ECG re-filtering needed.
                     for _cs in dataset.hrv_map.values():
@@ -667,10 +669,10 @@ class MainWindow(QMainWindow):
 
     def show_profile_plot(self, dataset):
         """Same epoch-collection contract as :meth:`show_psd_plot`, but
-        builds a :class:`ProfilePlotWidget` instead — one sliding-window
+        builds a :class:`ProfilePlotWidget` instead - one sliding-window
         band-power profile per epoch, drawn into the Profiles tab.
         """
-        # Clear existing widgets — same swap-out pattern as the PSD tab.
+        # Clear existing widgets - same swap-out pattern as the PSD tab.
         while self.profile_layout.count():
             item = self.profile_layout.takeAt(0)
             widget = item.widget()

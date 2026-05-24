@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
 import numpy as np
@@ -132,7 +134,7 @@ class PoincarePlotWidget(QWidget):
 
         IBIs labelled as artefacts (``TL`` / ``T``) are dropped from
         the scatter. Pairs ``(ibi[n], ibi[n+1])`` are kept only when
-        **both** members are valid — bridging across a dropped beat
+        **both** members are valid - bridging across a dropped beat
         would join non-consecutive intervals and lie about beat-to-beat
         dynamics.
         """

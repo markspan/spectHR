@@ -1,7 +1,9 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Plot-only smoothing helpers shared by the PSD and Profile widgets.
 
 CARSPAN applies a 3-point moving-average smoother to both its
-**spectrum** plots (manual §3.2 p. 33 — "a moving average window over
+**spectrum** plots (manual §3.2 p. 33 - "a moving average window over
 three frequency points (0.03 Hz bandwidth) is applied before plotting
 the spectral functions") and its **profile** plots (same kernel,
 applied along the time axis to each band-power trace). Both spectHR
@@ -9,7 +11,7 @@ widgets reach for the same helper here so the boundary policy stays
 consistent between them.
 
 The smoother lives in ``spectUI`` rather than ``spectHR`` because it
-is **plot-only** — band-power integration in the library never sees
+is **plot-only** - band-power integration in the library never sees
 the smoothed array. Keeping it out of the compute layer is what makes
 ``series.psd()`` / ``series.band_powers()`` round-trip cleanly across
 plot toggles.

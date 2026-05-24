@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
 import csv
@@ -31,8 +33,8 @@ def load_harness_raw_csv(
 
     Expected columns
     ----------------
-    - ``ms``        — timestamp in milliseconds, ``-1`` for missing samples
-    - ``ECG Data``  — raw ECG amplitude, ``-1`` for missing samples; the
+    - ``ms``        - timestamp in milliseconds, ``-1`` for missing samples
+    - ``ECG Data``  - raw ECG amplitude, ``-1`` for missing samples; the
                        reported value is scaled by ``_ECG_SCALE`` to recover
                        the physical amplitude.
 
@@ -64,12 +66,12 @@ def load_harness_raw_csv(
     physiodata.has_ecg = True
 
     # ------------------------------------------------------------
-    # ECG VALUES — replace sentinel, then apply Harness scale factor
+    # ECG VALUES - replace sentinel, then apply Harness scale factor
     # ------------------------------------------------------------
     ecg = np.where(ecg_raw == _MISSING_SENTINEL, np.nan, ecg_raw) * _ECG_SCALE
 
     # ------------------------------------------------------------
-    # TIMESTAMPS — replace sentinel, interpolate, build uniform grid
+    # TIMESTAMPS - replace sentinel, interpolate, build uniform grid
     # ------------------------------------------------------------
     ms = np.where(ms_raw == _MISSING_SENTINEL, np.nan, ms_raw)
 
@@ -141,4 +143,4 @@ def load_harness_raw_csv(
             "ecg": ecg_name,
         }
     }
-    physiodata.active_band = band_id
+    physiodata.active_band = band_

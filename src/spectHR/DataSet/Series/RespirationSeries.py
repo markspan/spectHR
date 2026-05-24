@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/RespirationSeries.py
 from __future__ import annotations
 
@@ -30,7 +32,7 @@ class RespirationSeries:
     Relationship to views
     ---------------------
     RespirationSeries.view() returns a RespirationSeriesView (defined in
-    RespirationSeriesView.py).  Views do NOT inherit from RespirationSeries —
+    RespirationSeriesView.py).  Views do NOT inherit from RespirationSeries -
     they use composition.
     """
 

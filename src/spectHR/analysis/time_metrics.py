@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/time_metrics.py
 """
 Time-domain HRV metrics.
@@ -12,10 +14,10 @@ exposes ``.times``, ``.ibi``, and ``.labels`` arrays) and returns a ``float``
 No algorithms live on the ``CardioSeries`` class anymore.  These functions
 are accessed through:
 
-1. ``series.rmssd()`` — ``CardioMetricsMixin.__getattr__`` dispatches to
+1. ``series.rmssd()`` - ``CardioMetricsMixin.__getattr__`` dispatches to
    the registry and returns a bound zero-argument lambda.
-2. ``import spectHR.analysis as hrv; hrv.rmssd(series)`` — direct call.
-3. ``hrv.get_metrics()`` — returns the full ``{name: fn}`` dict for
+2. ``import spectHR.analysis as hrv; hrv.rmssd(series)`` - direct call.
+3. ``hrv.get_metrics()`` - returns the full ``{name: fn}`` dict for
    automatic table building.
 """
 from __future__ import annotations
@@ -69,7 +71,7 @@ def max(series) -> float:
 
 @hrv_metric
 def stationarity(series) -> float:
-    """Correlation of IBI vs. time — drift indicator."""
+    """Correlation of IBI vs. time - drift indicator."""
     ibi_ms = ibi_clean_ms(series)
     if ibi_ms.size <= 2:
         return np.nan
@@ -128,7 +130,7 @@ def sd2(series) -> float:
 
 @hrv_metric
 def sd_ratio(series) -> float:
-    """SD1 / SD2 — short-term vs long-term variability balance.
+    """SD1 / SD2 - short-term vs long-term variability balance.
 
     Guards against degenerate uniform-IBI series whose Brennan residual is
     float-precision noise rather than a meaningful SD2.

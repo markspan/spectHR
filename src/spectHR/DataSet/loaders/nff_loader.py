@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """CARSPAN ``.nff`` ECG-file loader.
 
 Reads the little-endian binary ``.nff`` format produced by CARSPAN
@@ -13,7 +15,7 @@ Originally lived inline inside :mod:`spectHR.DataSet.loaders.evt_loader`
 (``loadNFF`` plus a nested ``TNFF`` class). Split out so the EVT loader
 focuses on EVT parsing and the binary NFF reader can be reused / tested
 in isolation. There is no separate ``register_loader(".nff")`` because
-NFF files are always loaded alongside their companion ``.evt`` —
+NFF files are always loaded alongside their companion ``.evt`` -
 :func:`load_evt` calls :func:`loadNFF` directly when a matching ``.nff``
 exists next to the ``.evt``.
 """
@@ -35,15 +37,15 @@ class TNFF:
     Header layout (offsets in 16-bit words / 32-bit ints from the start
     of the 512-byte top header):
 
-    * word 13 — number of channels (int16)
-    * int  16 — recording start time, ms (int32)
+    * word 13 - number of channels (int16)
+    * int  16 - recording start time, ms (int32)
 
     Per-channel header (256 bytes per channel, starting at offset 512):
 
-    * int 14 — sample interval, μs (int32)
-    * int 15 — number of samples (int32)
-    * int 16 — block size in samples (int32)
-    * bytes 120..137 — ASCII label (18 chars, space-padded)
+    * int 14 - sample interval, μs (int32)
+    * int 15 - number of samples (int32)
+    * int 16 - block size in samples (int32)
+    * bytes 120..137 - ASCII label (18 chars, space-padded)
 
     Sample data starts at ``512 + 256·N_channels`` and is stored
     sweep-interleaved: each sweep holds ``BLOCKSIZE`` samples per

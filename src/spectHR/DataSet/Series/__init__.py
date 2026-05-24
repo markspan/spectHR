@@ -1,7 +1,9 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/__init__.py
 #
 # Public re-exports for the Series sub-package.
-# Import from here — never from individual files — so internal refactoring
+# Import from here - never from individual files - so internal refactoring
 # does not break callers.
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries, TimeSeriesView

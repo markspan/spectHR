@@ -1,6 +1,8 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/__init__.py
 """
-spectHR.analysis — standalone HRV analysis functions.
+spectHR.analysis - standalone HRV analysis functions.
 
 Importing this package populates the metric registry with all built-in
 time- and frequency-domain metrics.  Any function decorated with
@@ -22,7 +24,7 @@ Lazy access via the series object
 from spectHR.analysis.registry import hrv_metric, get_metrics
 
 # Importing the metric submodules populates _REGISTRY as a side effect.
-# They are imported here — not at the top of CardioMetricsMixin — so that
+# They are imported here - not at the top of CardioMetricsMixin - so that
 # CardioSeries / CardioSeriesView carry zero analysis weight at module load
 # time.  The registry is filled on first access to spectHR.analysis.
 from spectHR.analysis import time_metrics       # noqa: F401

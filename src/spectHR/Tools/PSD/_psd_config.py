@@ -1,4 +1,6 @@
-"""PSD configuration dataclasses — algorithm-agnostic.
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""PSD configuration dataclasses - algorithm-agnostic.
 
 ``BandSpec`` (a frequency-band edge pair) and ``PsdMethod`` (the active
 algorithm + its options bundles) used to live in
@@ -52,7 +54,7 @@ class BandSpec:
 
     Earlier versions also carried ``color`` / ``alpha`` for the plot
     widget, but the plot widget reads those straight from the workspace
-    JSON (which is the source of truth for any display attribute) — the
+    JSON (which is the source of truth for any display attribute) - the
     fields on this dataclass were never consumed. Display attributes
     are now a UI-layer concern only; the library cares about the
     frequency edges.
@@ -65,7 +67,7 @@ class BandSpec:
     :attr:`resp_low` and :attr:`resp_high`, which are completely
     independent of the absolute-Hz edges :attr:`low` / :attr:`high`.
     This mirrors CARSPAN's ``TAnaBand.RespirationBand`` flag and the
-    :func:`respiration_min` / :func:`respiration_max` helpers below — a
+    :func:`respiration_min` / :func:`respiration_max` helpers below - a
     direct port of Pascal's ``GetRespirationMinBandValue`` /
     ``GetRespirationMaxBandValue`` (``T_AnaFunctions.pas`` 2837-2884).
 
@@ -97,7 +99,7 @@ def respiration_min(
     resp_freq_hz: float,
     freq_max_hz: float,
 ) -> float:
-    """CARSPAN ``GetRespirationMinBandValue`` — port of
+    """CARSPAN ``GetRespirationMinBandValue`` - port of
     ``T_AnaFunctions.pas`` 2837-2862.
 
     For a respiration-tracked band, :attr:`BandSpec.resp_low` is the
@@ -112,7 +114,7 @@ def respiration_min(
     resp_freq_hz : float
         Estimated mean breathing frequency inside the window (Hz).
     freq_max_hz : float
-        Upper frequency of the per-window PSD grid — the Nyquist
+        Upper frequency of the per-window PSD grid - the Nyquist
         equivalent ``(PDSin_BCK.Count-1)·FreqRes`` in Pascal terms.
 
     Returns
@@ -126,7 +128,7 @@ def respiration_min(
     # Bail-out: respiration too slow for the band even to start.
     if band.resp_low > freq_max_hz:
         return freq_max_hz
-    # Avoid a near-DC lower edge — CARSPAN's hard floor.
+    # Avoid a near-DC lower edge - CARSPAN's hard floor.
     if (resp_freq_hz - band.resp_low) < 0.01:
         return 0.01
     return resp_freq_hz - band.resp_low
@@ -137,7 +139,7 @@ def respiration_max(
     resp_freq_hz: float,
     freq_max_hz: float,
 ) -> float:
-    """CARSPAN ``GetRespirationMaxBandValue`` — port of
+    """CARSPAN ``GetRespirationMaxBandValue`` - port of
     ``T_AnaFunctions.pas`` 2865-2884.
 
     For a respiration-tracked band, :attr:`BandSpec.resp_high` is the
@@ -151,7 +153,7 @@ def respiration_max(
     resp_freq_hz : float
         Estimated mean breathing frequency inside the window (Hz).
     freq_max_hz : float
-        Upper frequency of the per-window PSD grid — the Nyquist
+        Upper frequency of the per-window PSD grid - the Nyquist
         equivalent ``(PDSin_BCK.Count-1)·FreqRes`` in Pascal terms.
 
     Returns

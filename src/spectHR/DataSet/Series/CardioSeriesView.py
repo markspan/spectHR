@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/CardioSeriesView.py
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ class CardioSeriesView(CardioMetricsMixin):
     Zero-copy view into a parent CardioSeries.
 
     Uses composition: holds a reference to the parent and an index array.
-    Does NOT inherit from CardioSeries — it cannot own data, classify IBIs,
+    Does NOT inherit from CardioSeries - it cannot own data, classify IBIs,
     or replace peaks.  Methods that only make sense on the full series
     (classify_ibi, replace_from_timeseries, from_timeseries, hrv_epoch_table)
     are deliberately absent.
@@ -43,7 +45,7 @@ class CardioSeriesView(CardioMetricsMixin):
         self._epoch: Optional[str] = None
 
     # ------------------------------------------------------------------
-    # Data interface — composition, not ownership
+    # Data interface - composition, not ownership
     # ------------------------------------------------------------------
 
     @property
@@ -61,7 +63,7 @@ class CardioSeriesView(CardioMetricsMixin):
         """
         IBIs in seconds derived from this view's times, with a trailing NaN.
 
-        Pure computation — never mutates parent labels.
+        Pure computation - never mutates parent labels.
         """
         t = self.times
         if t.size < 2:
@@ -69,7 +71,7 @@ class CardioSeriesView(CardioMetricsMixin):
         return np.concatenate([np.diff(t), np.array([np.nan], dtype=float)])
 
     # ------------------------------------------------------------------
-    # PSD configuration — delegate to parent so the master CardioSeries
+    # PSD configuration - delegate to parent so the master CardioSeries
     # is the single source of truth. Per-epoch views (created on demand
     # via ``CardioSeries[label]``) are short-lived, so setting
     # psd_method on each one is fragile; setting it on the parent and

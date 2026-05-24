@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/Tools/RespirationSegmentation.py
 """
 Standalone respiration-phase segmentation algorithm.
@@ -117,7 +119,7 @@ def segment_respiration(
     fs  = 1.0 / float(np.median(dt))
     nyq = 0.5 * fs
 
-    # Step 0 — low-pass prefilter
+    # Step 0 - low-pass prefilter
     if prefilter_order is None:
         prefilter_order, _ = buttord(
             prefilter_cutoff_hz * 0.9,
@@ -136,7 +138,7 @@ def segment_respiration(
     min_filtfilt_len = max(3 * (2 * sos.shape[0] + 1), 15)
     y_lp = sosfiltfilt(sos, y0) if y0.size >= min_filtfilt_len else y0
 
-    # Step 1 — Savitzky-Golay smoothing
+    # Step 1 - Savitzky-Golay smoothing
     if smooth:
         w = int(smoothing_window)
         w = max(w, 5)
@@ -156,7 +158,7 @@ def segment_respiration(
     else:
         y = y_lp
 
-    # Step 2 — peak / trough detection
+    # Step 2 - peak / trough detection
     min_dist = int(max(1, round(min_phase_duration * fs)))
     if prominence is None:
         med   = np.median(y)
@@ -174,7 +176,7 @@ def segment_respiration(
         logger.warning("No reliable peaks/troughs detected for respiration segmentation.")
         return _empty
 
-    # Step 3 — merge and enforce strict peak/trough alternation
+    # Step 3 - merge and enforce strict peak/trough alternation
     extrema_idx = np.concatenate([peaks, troughs])
     extrema_typ = np.concatenate([
         np.ones(peaks.size,   dtype=int),
@@ -201,7 +203,7 @@ def segment_respiration(
     if extrema_idx.size < 2:
         return _empty
 
-    # Step 4 — build phases
+    # Step 4 - build phases
     starts_list: list = []
     ends_list:   list = []
     labels_list: list = []

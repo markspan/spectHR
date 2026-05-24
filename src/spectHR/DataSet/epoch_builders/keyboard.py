@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 keyboard.py – XDF-specific fallback epoch builder.
 
@@ -99,7 +101,7 @@ def build_keyboard_epoch_events(physiodata) -> EventSeries | None:
     -------
     EventSeries | None
         The synthesised marker stream, or ``None`` when nothing was done.
-        The return value is mainly useful for tests and diagnostics — the
+        The return value is mainly useful for tests and diagnostics - the
         caller normally ignores it because the side-effect on
         ``physiodata.events`` is what drives later epoch parsing.
     """
@@ -120,7 +122,7 @@ def build_keyboard_epoch_events(physiodata) -> EventSeries | None:
 
     if pressed_times.size == 0:
         logger.info(
-            "Keyboard stream found but contains no 'pressed' markers — "
+            "Keyboard stream found but contains no 'pressed' markers - "
             "no fallback epochs created."
         )
         return None
@@ -150,6 +152,6 @@ def build_keyboard_epoch_events(physiodata) -> EventSeries | None:
 
     logger.info(
         f"Keyboard fallback: created {pressed_times.size} epoch(s) "
-        f"from 'pressed' markers — {epoch_names}"
+        f"from 'pressed' markers - {epoch_names}"
     )
     return keyboard_epochs

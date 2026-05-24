@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/CardioSeries.py
 from __future__ import annotations
 
@@ -40,7 +42,7 @@ class CardioSeries(CardioMetricsMixin):
     ---------------------
     CardioSeries.view() and CardioSeries.__getitem__() return CardioSeriesView
     objects (defined in CardioSeriesView.py).  Views do NOT inherit from
-    CardioSeries — they use composition and share metric methods via
+    CardioSeries - they use composition and share metric methods via
     CardioMetricsMixin.  Use CardioSeriesLike (CardioSeriesProtocol.py) for
     type annotations where either is acceptable.
     """
@@ -51,7 +53,7 @@ class CardioSeries(CardioMetricsMixin):
         self._pd: Optional["PhysioData"] = None
         self._stream: Optional[str] = None
         # When True, preprocess_ecg() must NOT re-detect R-peaks from the ECG
-        # signal — the times are authoritative (e.g. loaded from a CARSPAN
+        # signal - the times are authoritative (e.g. loaded from a CARSPAN
         # .evt alongside an .nff). The ECG can still be filtered for display.
         self.rtops_locked: bool = False
 
@@ -107,7 +109,7 @@ class CardioSeries(CardioMetricsMixin):
         return series
 
     # ------------------------------------------------------------------
-    # IBI — pure computation, no side effects
+    # IBI - pure computation, no side effects
     # ------------------------------------------------------------------
 
     @property
@@ -119,7 +121,7 @@ class CardioSeries(CardioMetricsMixin):
         ibi[i] is the interval between times[i] and times[i+1].
         The final element is always NaN.
 
-        Pure computation — never mutates self.labels.
+        Pure computation - never mutates self.labels.
         Call classify_ibi() after any mutation to times.
         """
         if self.times.size < 2:
@@ -127,7 +129,7 @@ class CardioSeries(CardioMetricsMixin):
         return np.concatenate([np.diff(self.times), np.array([np.nan], dtype=float)])
 
     # ------------------------------------------------------------------
-    # Classification — sole owner of label state
+    # Classification - sole owner of label state
     # ------------------------------------------------------------------
 
     def classify_ibi(
@@ -145,13 +147,13 @@ class CardioSeries(CardioMetricsMixin):
 
         Labels produced
         ---------------
-        "N"   — normal
-        "L"   — long  (above rolling upper threshold)
-        "S"   — short (below rolling lower threshold)
-        "TL"  — too long (> max_ibi_sec); excluded from statistics
-        "SL"  — short-then-long pattern
-        "SNS" — short-normal-short pattern
-        "T"   — degenerate (NaN or <= 0)
+        "N"   - normal
+        "L"   - long  (above rolling upper threshold)
+        "S"   - short (below rolling lower threshold)
+        "TL"  - too long (> max_ibi_sec); excluded from statistics
+        "SL"  - short-then-long pattern
+        "SNS" - short-normal-short pattern
+        "T"   - degenerate (NaN or <= 0)
 
         Parameters
         ----------

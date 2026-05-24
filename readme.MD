@@ -267,7 +267,7 @@ Configure it under **WorkSpace → Edit Parameters → Profile Settings**:
 
 | Setting | Default | What it does |
 |---|---|---|
-| `bands` | `["LF", "HF"]` | Tick-box list of band names to plot. Must match band names defined under PSD Settings; stale names from a band rename are dropped automatically. Ignored when an adaptive band is active — the adaptive band is shown alone. |
+| `bands` | `["LF", "HF"]` | Tick-box list of band names to plot. Must match band names defined under PSD Settings; stale names from a band rename are dropped automatically. Ignored when an adaptive band is active - the adaptive band is shown alone. |
 | `window_s` | 30 s | Length of the sliding window, in seconds. CARSPAN manual recommends `window_s ≥ 3 · 1/f_l_min` for reliable estimates of the lowest band (i.e. ≥ 50 s for an LF lower edge of 0.06 Hz). |
 | `step_s` | 5 s | Step between successive windows. Must be strictly smaller than `window_s` (otherwise the windows don't overlap). |
 | `smooth_for_display` | `false` | Apply the same Pascal 3-point moving-average smoother used by the PSD plot, along each band's time series. **Off by default** to match the Delphi reference (which never smooths the profile time series). |
@@ -975,7 +975,7 @@ A window with fewer than four R-peaks cannot yield a reliable PSD (CARSPAN's min
 
 #### Step 2: Per-window PSD (§3.3.4, no 0.01 Hz interpolation)
 
-The manual (§3.3.5) explicitly states that the fixed 0.01 Hz frequency-grid interpolation applied for single-epoch spectral functions is *not* applied for profiles. spectHR follows this: the per-window PSD is computed by `_psd_for_band_power` on the R-peaks inside each window without resampling beyond what the chosen back-end itself performs. For `carspan_strict` this is the SOC → auto-spectrum pipeline producing CARSPAN's `PDSin_BCK` (the backup copy the manual integrates, §3.2): *"No smoothing is carried out before computing the spectral band values."* For Welch and Lomb-Scargle the standard IBI-based spectrum is used — a spectHR extension not present in Delphi.
+The manual (§3.3.5) explicitly states that the fixed 0.01 Hz frequency-grid interpolation applied for single-epoch spectral functions is *not* applied for profiles. spectHR follows this: the per-window PSD is computed by `_psd_for_band_power` on the R-peaks inside each window without resampling beyond what the chosen back-end itself performs. For `carspan_strict` this is the SOC → auto-spectrum pipeline producing CARSPAN's `PDSin_BCK` (the backup copy the manual integrates, §3.2): *"No smoothing is carried out before computing the spectral band values."* For Welch and Lomb-Scargle the standard IBI-based spectrum is used - a spectHR extension not present in Delphi.
 
 #### Step 3: Band-power integration
 
@@ -1106,7 +1106,7 @@ Download `spectHR-macOS-vX.Y.Z.zip` from the [Releases](https://github.com/marks
 
 spectHR is written in pure Python. The analysis library (`src/spectHR/`) and the GUI (`src/spectUI/`) are kept separate so the library can be used independently in scripts.
 
-New HRV metrics can be added by decorating a standalone function with `@hrv_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/` — it will appear in the Parameters table and CSV export automatically, with no changes to `CardioSeries` or any other class.
+New HRV metrics can be added by decorating a standalone function with `@hrv_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/`. It will appear in the Parameters table and CSV export automatically, with no changes to `CardioSeries` or any other class.
 
 New file formats can be added by registering a loader function with `@register_loader(".ext")` in `src/spectHR/DataSet/loaders/`.
 
@@ -1114,9 +1114,20 @@ Fork the repository and open a pull request with a clear description of the chan
 
 ---
 
+## Acknowledgements
+
+The core HRV and spectral analysis algorithms in spectHR are derived from
+[CARSPAN](https://www.rug.nl/staff/l.j.m.mulder/carspan), a cardiovascular
+analysis package developed at the University of Groningen. New algorithms
+developed in spectHR are contributed back to CARSPAN. We are grateful to the
+authors of CARSPAN -- Ben Mulder and Arie van Roon -- for building and sharing
+that foundation. The CARSPAN manual was written by Hedwig Hofstetter and Ben Mulder.
+
+---
+
 ## License
 
-spectHR is released under the GNU LGPL-2.1 license. See the [LICENSE](LICENSE) file for details.
+spectHR is released under the GNU GPL-3.0 license. See the [LICENSE](LICENSE) file for details.
 
 ---
 
@@ -1173,5 +1184,4 @@ Tegegne, B., Man, T., van Roon, A., Riese, H., & Snieder, H. (2019). To the Edit
 <a id="ref-vanroon2025"></a>
 van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. *Entropy*, 27(8), 861. https://doi.org/10.3390/e27080861
 
-<a id="ref-dewaard1996"></a>
-de Waard, D. (1996). *The measurement of drivers' mental workload*. Ph.D. Thesis, University of Groningen.
+<a id

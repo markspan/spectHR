@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
 from pathlib import Path
@@ -231,7 +233,7 @@ class PhysioData:
         ``hrv_map`` is the canonical ``{band_id → CardioSeries}`` mapping
         for the dataset. Setting ``psd_method`` on each master series is
         enough because ``CardioSeriesView`` delegates the attribute to
-        its parent — so per-epoch views built later via
+        its parent - so per-epoch views built later via
         ``CardioSeries[epoch_label]`` automatically see the same value.
 
         The library owns this walk so the UI can stay shape-agnostic:
@@ -253,7 +255,7 @@ class PhysioData:
         filter_order:  int | None = None,
         # Peak detection
         min_peak_distance_ms: float = 300.0,
-        # IBI classification — defaults track DEFAULT_IBI_PARAMS so the three
+        # IBI classification - defaults track DEFAULT_IBI_PARAMS so the three
         # entry points (preprocess_ecg, from_timeseries, replace_from_timeseries)
         # stay in lock-step automatically.
         window_length: int   = DEFAULT_IBI_PARAMS.window_length,
@@ -293,7 +295,7 @@ class PhysioData:
             once over the whole recording. The peak-detection prominence
             in ``from_timeseries`` is data-driven from the signal's MAD,
             so running it per epoch lets the threshold adapt to each
-            epoch's typical breath amplitude — useful when rest and task
+            epoch's typical breath amplitude - useful when rest and task
             periods have substantially different breathing depth or
             baseline noise. The default ``experiment`` epoch is skipped
             when it still covers the full recording (a no-op fall-back
@@ -304,7 +306,7 @@ class PhysioData:
         that calling preprocess_ecg() without arguments is safe.
         """
         if not self.band_map:
-            logger.info("No band_map defined — skipping ECG preprocessing.")
+            logger.info("No band_map defined - skipping ECG preprocessing.")
             return
 
         original_band = self.active_band
@@ -342,7 +344,7 @@ class PhysioData:
                 self.hrv_map[band] = cs
             elif getattr(cs, "rtops_locked", False):
                 # R-peak times came from an authoritative source (e.g. CARSPAN
-                # .evt) — keep them as-is.  The ECG was still filtered above
+                # .evt) - keep them as-is.  The ECG was still filtered above
                 # for display, but no re-detection runs over the epochs.
                 logger.info(
                     f"Band '{band}': R-peak times locked, skipping re-detection."
@@ -351,7 +353,7 @@ class PhysioData:
                 # etc.) are populated from the EVT R-top times.  Without this,
                 # all beats remain at the default "N" label set in __init__,
                 # causing metrics that exclude artefact intervals (TL, SL, …)
-                # to use incorrect data — and the user would need to make a
+                # to use incorrect data - and the user would need to make a
                 # dummy edit in the preprocessing UI to trigger classify_ibi()
                 # indirectly via RTopController.
                 if classify and cs.times.size > 0:
@@ -449,7 +451,7 @@ class PhysioData:
             ep_end = float(epoch.end)
 
             # Skip the default 'experiment' epoch when it still spans
-            # the whole recording — running per-epoch on a single epoch
+            # the whole recording - running per-epoch on a single epoch
             # equal to the full signal would just reproduce the
             # whole-recording case.
             covers_full = (
@@ -471,7 +473,7 @@ class PhysioData:
             labels_all.append(resp_ep.labels)
 
         if not starts_all:
-            # No task epoch contributed any phases — fall through to the
+            # No task epoch contributed any phases - fall through to the
             # whole-recording analysis so the user still gets something
             # rather than an empty RespirationSeries.
             return RespirationSeries.from_timeseries(rsp_ts)

@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 from typing import Any
 
 from PySide6.QtWidgets import (
@@ -29,7 +31,7 @@ from PySide6.QtGui import QColor
 
 
 # ======================================================================
-# Existing dialog — directory editor (unchanged)
+# Existing dialog - directory editor (unchanged)
 # ======================================================================
 
 
@@ -109,7 +111,7 @@ class DirectorySelectorDialog(QDialog):
 
 
 # ======================================================================
-# New dialog — dynamic parameters editor
+# New dialog - dynamic parameters editor
 # ======================================================================
 
 # Keys whose sections are handled by other dialogs or are not editable here
@@ -157,14 +159,14 @@ def _label(key: str) -> str:
     """Turn a snake_case or camelCase key into a human-readable label.
 
     Keys that already contain a space or a parenthesis are treated as
-    *pre-formatted* — the workspace author chose that spelling for the
+    *pre-formatted* - the workspace author chose that spelling for the
     dialog and we round-trip it untouched. Without that early return,
     ``.title()`` would mangle ``"window (sec)"`` into ``"Window (Sec)"``
     and re-title other unit-bearing keys in surprising ways.
     """
     import re
 
-    # Pre-formatted key — already laid out the way the author wants it
+    # Pre-formatted key - already laid out the way the author wants it
     # shown. Bypass camelCase/snake_case splitting and title-casing.
     if " " in key or "(" in key or ")" in key:
         return key
@@ -186,7 +188,7 @@ class _ColorButton(QPushButton):
     Push button that doubles as a colour swatch and a colour picker.
 
     The button's *text* is the colour string itself (e.g. ``"darkgreen"``
-    or ``"#aa3322"``) — that way the surrounding ``ParametersEditorDialog``
+    or ``"#aa3322"``) - that way the surrounding ``ParametersEditorDialog``
     can read the value via ``widget.text()`` exactly like a ``QLineEdit``,
     no special-casing required.
 
@@ -224,7 +226,7 @@ class _ColorButton(QPushButton):
                 "}"
             )
         else:
-            # Invalid / empty value — keep the system look so the user
+            # Invalid / empty value - keep the system look so the user
             # notices the field is unset.
             self.setStyleSheet("")
 
@@ -233,7 +235,7 @@ class _ColorButton(QPushButton):
         seed = QColor(self._color) if QColor(self._color).isValid() else QColor("white")
         chosen = QColorDialog.getColor(seed, self, "Pick a band colour")
         if chosen.isValid():
-            # ``name()`` returns ``#rrggbb`` — universally accepted by
+            # ``name()`` returns ``#rrggbb`` - universally accepted by
             # both matplotlib and Qt, even though the original workspace
             # may have used SVG colour names like ``"darkgreen"``.
             self._color = chosen.name()
@@ -241,7 +243,7 @@ class _ColorButton(QPushButton):
 
 
 # ----------------------------------------------------------------------
-# Bool dropdown — used wherever a workspace value is a Python bool
+# Bool dropdown - used wherever a workspace value is a Python bool
 # ----------------------------------------------------------------------
 
 
@@ -257,7 +259,7 @@ def _make_bool_checkbox(value: bool) -> QCheckBox:
 
 
 # ----------------------------------------------------------------------
-# Multi-selector — used by Profile Settings to pick which bands to plot
+# Multi-selector - used by Profile Settings to pick which bands to plot
 # ----------------------------------------------------------------------
 
 
@@ -266,14 +268,14 @@ class _AdaptiveBandWidget(QWidget):
 
     Renders as one row:
 
-        [— none — ▾]   below rp (Hz): [0.04]   above rp (Hz): [0.04]
+        [- none - ▾]   below rp (Hz): [0.04]   above rp (Hz): [0.04]
 
-    The dropdown lists every band in the universe plus a "— none —"
-    sentinel. Only one band can be adaptive at a time — physiologically,
+    The dropdown lists every band in the universe plus a "- none -"
+    sentinel. Only one band can be adaptive at a time - physiologically,
     adaptive tracking makes sense only for the respiratory band (HF),
     not for multiple bands simultaneously.
 
-    The half-width fields are disabled when "— none —" is selected.
+    The half-width fields are disabled when "- none -" is selected.
 
     ``get_value()`` returns a dict with zero or one entry that round-trips
     directly into ``workspace["Profiles"]["adaptive_bands"]``:
@@ -286,7 +288,7 @@ class _AdaptiveBandWidget(QWidget):
     _LOW_KEY   = "lower half-width (Hz)"
     _HIGH_KEY  = "upper half-width (Hz)"
     _DEFAULT   = 0.04
-    _NONE_TEXT = "— none —"
+    _NONE_TEXT = "- none -"
 
     def __init__(
         self,
@@ -301,13 +303,13 @@ class _AdaptiveBandWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         # Resolve current single selection (take first entry if dict has
-        # more than one — legacy multi-band workspaces are collapsed here).
+        # more than one - legacy multi-band workspaces are collapsed here).
         current_name  = next(iter(current), None)
         current_entry = current.get(current_name, {}) if current_name else {}
         low_val  = float(current_entry.get(self._LOW_KEY,  self._DEFAULT))
         high_val = float(current_entry.get(self._HIGH_KEY, self._DEFAULT))
 
-        # Dropdown: "— none —" first, then band names in universe order.
+        # Dropdown: "- none -" first, then band names in universe order.
         self._combo = QComboBox()
         self._combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._combo.addItem(self._NONE_TEXT)
@@ -319,7 +321,7 @@ class _AdaptiveBandWidget(QWidget):
         else:
             self._combo.setCurrentIndex(0)
 
-        # Half-width fields — enabled only when a band is selected.
+        # Half-width fields - enabled only when a band is selected.
         active = current_name is not None and current_name in universe
         self._lbl_low  = QLabel("below rp (Hz):")
         self._low_edit = QLineEdit(str(low_val))
@@ -340,7 +342,7 @@ class _AdaptiveBandWidget(QWidget):
         layout.addStretch()
 
     def _on_selection_changed(self, index: int) -> None:
-        enabled = index > 0   # index 0 is "— none —"
+        enabled = index > 0   # index 0 is "- none -"
         for w in (self._lbl_low, self._low_edit, self._lbl_high, self._high_edit):
             w.setEnabled(enabled)
 
@@ -364,14 +366,14 @@ class _BandMultiSelectWidget(QListWidget):
     """Tick-box list of band names; ticked items round-trip as a list.
 
     Each row carries a Qt check-box (``ItemIsUserCheckable``) so users
-    pick bands by ticking them rather than by row-selecting them — the
+    pick bands by ticking them rather than by row-selecting them - the
     selection mode is explicitly disabled so the highlight bar doesn't
     fight with the check-state.
 
     Populated from the live set of band names (the keys of
     ``FrequencyAnalysis.bands``) so the user can only pick bands that
     actually exist. The initial list is whatever the workspace had
-    saved, intersected with the universe — silently dropping any stale
+    saved, intersected with the universe - silently dropping any stale
     names left over after a band rename.
 
     ``ParametersEditorDialog`` recognises this widget type in its
@@ -427,7 +429,7 @@ class ParametersEditorDialog(QDialog):
       - ``QLineEdit``  for everything else (int, float, str, None)
 
     When OK is pressed, ``get_parameters()`` returns a deep copy of the
-    workspace with every edited value written back — ready to be merged by
+    workspace with every edited value written back - ready to be merged by
     the caller via ``_deep_merge`` or written straight to disk.
     """
 
@@ -448,7 +450,7 @@ class ParametersEditorDialog(QDialog):
         # _BandMultiSelectWidget (.selected_names()).
         self._widgets: dict[str, tuple[QWidget, Any]] = {}
 
-        # Universe of band names — looked up here so the editor's
+        # Universe of band names - looked up here so the editor's
         # widget-builder helpers can offer it to the band multiselect.
         self._all_band_names: list[str] = list(
             (workspace.get("FrequencyAnalysis", {}) or {})
@@ -481,7 +483,7 @@ class ParametersEditorDialog(QDialog):
         for tab_label, _ in _TAB_LAYOUT:
             section_keys = sections_per_tab.get(tab_label, [])
             if not section_keys:
-                # Always show every declared tab — an empty tab is
+                # Always show every declared tab - an empty tab is
                 # better than silently dropping a settings category.
                 section_keys = []
             tabs.addTab(
@@ -502,7 +504,7 @@ class ParametersEditorDialog(QDialog):
         outer.addWidget(buttons)
 
     def _build_tab(self, workspace: dict, section_keys: list[str]) -> QWidget:
-        """Build one tab pane — a vertical scroll of section group boxes."""
+        """Build one tab pane - a vertical scroll of section group boxes."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -528,7 +530,7 @@ class ParametersEditorDialog(QDialog):
 
     def _make_group(self, title: str, data: dict, prefix: str) -> QGroupBox:
         # Render as a matrix only when this dict-of-dicts is *actually*
-        # shaped like a band table — every inner dict must carry
+        # shaped like a band table - every inner dict must carry
         # numeric ``low`` / ``high`` and a non-empty string ``color``.
         # Plain ``key in v`` is too loose: an earlier loose check could
         # have written ``low: None / high: None / color: None`` into
@@ -597,12 +599,12 @@ class ParametersEditorDialog(QDialog):
 
         # ---- post-loop: wire adaptive_bands selection → grey-out sibling widgets
         # When the user picks a band in the adaptive-band dropdown:
-        #   • the regular "bands" list is greyed — one adaptive band drives
+        #   • the regular "bands" list is greyed - one adaptive band drives
         #     the profile, the static list is no longer the primary selector.
         #   • the adaptive_source combo is enabled (it becomes meaningful).
         #   • the smooth_breath_freq checkbox is enabled (only relevant when
         #     an adaptive band is active).
-        # When "— none —" is selected: reverse all three.
+        # When "- none -" is selected: reverse all three.
         ab_path            = f"{prefix}.adaptive_bands"
         bands_path         = f"{prefix}.bands"
         source_path        = f"{prefix}.adaptive_source"
@@ -632,7 +634,7 @@ class ParametersEditorDialog(QDialog):
     # Workspace paths whose value is a list of band names. Each gets
     # rendered as a tick-box band picker (``_BandMultiSelectWidget``)
     # bound to the live universe of band names from
-    # ``FrequencyAnalysis.bands`` — so the user can only check bands
+    # ``FrequencyAnalysis.bands`` - so the user can only check bands
     # that actually exist, and stale names left over from a band rename
     # get silently dropped on save.
     _BAND_LIST_PATHS: frozenset[str] = frozenset({
@@ -661,7 +663,7 @@ class ParametersEditorDialog(QDialog):
     # Columns rendered in the band matrix, in display order. Each entry
     # is ``(inner_key, header)``. Any inner keys NOT listed here (e.g.
     # ``alpha`` on the FullRange band) are silently preserved by the
-    # deep-copy in ``get_parameters`` — they survive the round-trip
+    # deep-copy in ``get_parameters`` - they survive the round-trip
     # without showing up in the editor.
     #
     # The CARSPAN ``TAnaBand.RespirationBand`` flag intentionally lives
@@ -681,7 +683,7 @@ class ParametersEditorDialog(QDialog):
         """True iff *v* is a dict that genuinely describes a frequency band.
 
         Requires numeric ``low`` and ``high`` and a non-empty string
-        ``color``. Bare presence of the keys is not enough — a bug in an
+        ``color``. Bare presence of the keys is not enough - a bug in an
         earlier version could leave ``low / high / color`` set to
         ``None`` in unrelated dicts and we must not promote those to
         a matrix.
@@ -701,7 +703,7 @@ class ParametersEditorDialog(QDialog):
         """Render *data* as a matrix: row per outer key, columns per inner key.
 
         Used for the FrequencyAnalysis bands section. The outer key (band
-        name) is shown as a read-only label — renaming a band would
+        name) is shown as a read-only label - renaming a band would
         change its semantic meaning, so renames belong in the JSON
         directly. ``low`` / ``high`` get plain line edits; ``color``
         gets a swatch button that opens ``QColorDialog``.
@@ -721,7 +723,7 @@ class ParametersEditorDialog(QDialog):
 
         # ---- data rows ----
         for row_idx, (row_key, row_value) in enumerate(data.items(), start=1):
-            # Name cell — read-only.
+            # Name cell - read-only.
             name_label = QLabel(row_key)
             name_label.setMinimumWidth(120)
             grid.addWidget(name_label, row_idx, 0)
@@ -761,7 +763,7 @@ class ParametersEditorDialog(QDialog):
         choice sets in different sections.
 
         Booleans always render as a True / False dropdown regardless of
-        the enum tables — typing "True" / "False" into a free-text field
+        the enum tables - typing "True" / "False" into a free-text field
         is awkward and easy to mistype. ``_coerce`` already converts the
         dropdown's text back to a Python bool on read, so the round-trip
         is invisible to the rest of the dialog.
@@ -800,7 +802,7 @@ class ParametersEditorDialog(QDialog):
         return edit
 
     # ------------------------------------------------------------------
-    # Value extraction — coerce back to the original Python type
+    # Value extraction - coerce back to the original Python type
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -860,7 +862,7 @@ class ParametersEditorDialog(QDialog):
             elif isinstance(widget, _BandMultiSelectWidget):
                 coerced = widget.selected_names()
             elif isinstance(widget, QCheckBox):
-                # Checkboxes always represent Python bools — read directly,
+                # Checkboxes always represent Python bools - read directly,
                 # no string coercion needed.
                 coerced = widget.isChecked()
             else:

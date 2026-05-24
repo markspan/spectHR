@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/RespirationSeriesView.py
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ class RespirationSeriesView:
     Zero-copy view into a parent RespirationSeries.
 
     Uses composition: holds a reference to the parent and an index array.
-    Does NOT inherit from RespirationSeries — it cannot own data or call
+    Does NOT inherit from RespirationSeries - it cannot own data or call
     from_timeseries.  Methods that only make sense on the full series are
     deliberately absent.
 
@@ -36,7 +38,7 @@ class RespirationSeriesView:
         self._epoch: Optional[str] = None
 
     # ------------------------------------------------------------------
-    # Data interface — composition, not ownership
+    # Data interface - composition, not ownership
     # ------------------------------------------------------------------
 
     @property

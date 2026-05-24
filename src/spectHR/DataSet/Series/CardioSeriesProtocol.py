@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/CardioSeriesProtocol.py
 """
 Structural protocol shared by CardioSeries and CardioSeriesView.
@@ -76,7 +78,7 @@ class CardioSeriesLike(Protocol):
         ...
 
     def _mmi2_factor(self, mean_convention: "MeanConvention") -> float:
-        """mean_ibi_ms squared — the mMI2 unit-conversion multiplier."""
+        """mean_ibi_ms squared - the mMI2 unit-conversion multiplier."""
         ...
 
     # --- view construction -----------------------------------------------

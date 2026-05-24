@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 from pathlib import Path
 import csv
 import numpy as np
@@ -29,14 +31,14 @@ class ParametersPlotWidget(QWidget):
     columns are immediately usable and the raw-array columns (described
     below) parse with one ``strsplit`` / ``split`` call:
 
-    - ``{basename}.csv`` — time-domain HRV metrics per epoch.
-    - ``{basename}_psd.csv`` — for every configured band, the
+    - ``{basename}.csv`` - time-domain HRV metrics per epoch.
+    - ``{basename}_psd.csv`` - for every configured band, the
       integrated ``<band>_power`` (scalar) plus the raw PSD slice
       inside that band's frequency range. The raw slice is two cells
       per band, each a comma-separated list of equal length:
       ``<band>_freqs`` (Hz) and ``<band>_psd_raw`` (power values at
       those frequencies).
-    - ``{basename}_profiles.csv`` — for every configured band, the
+    - ``{basename}_profiles.csv`` - for every configured band, the
       five summary statistics (``mean / std / min / max / t_max``)
       plus the raw band-power-per-window time series in
       ``<band>_profile_raw`` (comma-separated). The window-centre
@@ -146,7 +148,7 @@ class ParametersPlotWidget(QWidget):
                         out.append("" if v is None else str(v))
                 w.writerow(out)
 
-        # Spectral companion files — best-effort. A failure to compute
+        # Spectral companion files - best-effort. A failure to compute
         # band powers or a profile for any single epoch is logged and
         # leaves that epoch's per-band cells empty; a wholesale failure
         # of the whole pass (e.g. no PSD method set on the series) is
@@ -163,7 +165,7 @@ class ParametersPlotWidget(QWidget):
             
         # Compose the same summary message the user sees in the log and the
         # message box, so the log file and the dialog stay in sync.  Writing
-        # three CSVs in one click, so list them explicitly — that way the
+        # three CSVs in one click, so list them explicitly - that way the
         # user can paste the dialog text straight into a downstream script.
         export_dir = self._resolve_export_dir()
         files_written = []
@@ -185,7 +187,7 @@ class ParametersPlotWidget(QWidget):
         return get_export_dir(self.workspace, context="Parameters")
     
     # ------------------------------------------------------------------
-    # Spectral companion CSVs — one row per epoch, wide layout
+    # Spectral companion CSVs - one row per epoch, wide layout
     # ------------------------------------------------------------------
 
     def _iter_active_epochs(self):
@@ -193,7 +195,7 @@ class ParametersPlotWidget(QWidget):
         the same order the time-domain table uses.
 
         Mirrors the iteration inside ``CardioSeries.hrv_epoch_table`` so
-        the row order of the three CSVs lines up — joining them in R or
+        the row order of the three CSVs lines up - joining them in R or
         SPSS on ``epoch`` then becomes a simple one-to-one merge.
         """
         for label, epoch in self.dataset.epochs.items():
@@ -208,7 +210,7 @@ class ParametersPlotWidget(QWidget):
         """Return ``[(name, low, high), ...]`` for every configured band.
 
         Reads ``FrequencyAnalysis.bands`` from the workspace. Returns
-        ``[]`` when no workspace is attached or the section is empty —
+        ``[]`` when no workspace is attached or the section is empty -
         the caller is expected to fall back to whatever the active PSD
         method carries.
         """
@@ -231,14 +233,14 @@ class ParametersPlotWidget(QWidget):
         return edges
 
     def _save_psd_csv(self) -> None:
-        """Write ``{basename}_psd.csv`` — one row per epoch, scalar + raw data.
+        """Write ``{basename}_psd.csv`` - one row per epoch, scalar + raw data.
 
         Per band, the row carries:
 
-        * ``<band>_power`` — integrated band power (mMI² by default).
-        * ``<band>_freqs`` — comma-separated list of the PSD's
+        * ``<band>_power`` - integrated band power (mMI² by default).
+        * ``<band>_freqs`` - comma-separated list of the PSD's
           frequency bins (Hz) inside ``[low, high]``.
-        * ``<band>_psd_raw`` — comma-separated list of the PSD values
+        * ``<band>_psd_raw`` - comma-separated list of the PSD values
           at exactly those frequencies (mMI²/Hz by default).
 
         ``<band>_freqs`` and ``<band>_psd_raw`` have equal length for a
@@ -272,7 +274,7 @@ class ParametersPlotWidget(QWidget):
 
             try:
                 view = hrv[label]
-                # Single PSD call per epoch — band powers are then just
+                # Single PSD call per epoch - band powers are then just
                 # rectangular integrations of slices of this one array,
                 # and the raw slices we expose to the CSV are pulled
                 # straight off the same arrays. Costs one PSD per epoch
@@ -286,12 +288,12 @@ class ParametersPlotWidget(QWidget):
                 # the integrated band-power columns use the same unit
                 # without the ``/Hz`` suffix, so strip it once and
                 # record the band-power unit. The raw PSD column keeps
-                # the per-Hz interpretation — the same as what the PSD
+                # the per-Hz interpretation - the same as what the PSD
                 # plot draws.
                 row["unit"] = (psd_res.unit or "").replace("/Hz", "")
 
                 # Fall back to the active method's bands when the
-                # workspace had none — keeps the file useful for ad-hoc
+                # workspace had none - keeps the file useful for ad-hoc
                 # scripts that bypass the workspace dialog.
                 if not bands:
                     method = getattr(view, "psd_method", None) or getattr(
@@ -311,7 +313,7 @@ class ParametersPlotWidget(QWidget):
                     mask = (freqs >= low) & (freqs <= high)
                     if not np.any(mask):
                         # Band entirely outside the PSD's frequency
-                        # range — integrate to 0 and emit empty list
+                        # range - integrate to 0 and emit empty list
                         # cells so the column shapes stay rectangular.
                         row[f"{name}_power"] = 0.0
                         row[f"{name}_freqs"] = ""
@@ -347,7 +349,7 @@ class ParametersPlotWidget(QWidget):
                 )
 
     def _save_profile_csv(self) -> None:
-        """Write ``{basename}_profiles.csv`` — summary stats *and* raw data per epoch.
+        """Write ``{basename}_profiles.csv`` - summary stats *and* raw data per epoch.
 
         Mirrors the profile plot widget's band selection logic exactly:
 
@@ -377,7 +379,7 @@ class ParametersPlotWidget(QWidget):
             )
             return
 
-        # ---- workspace settings — mirror ProfilePlotWidget.__init__ ----
+        # ---- workspace settings - mirror ProfilePlotWidget.__init__ ----
         profs = self.workspace.get("Profiles", {}) or {}
         window_s = float(profs.get("window (sec)", profs.get("window_s", 30.0)))
         step_s   = float(profs.get("step (sec)",   profs.get("step_s",   5.0)))
@@ -392,7 +394,7 @@ class ParametersPlotWidget(QWidget):
             .get("bands", {}) or {}
         )
 
-        # Determine which bands to export — same logic as the plot widget:
+        # Determine which bands to export - same logic as the plot widget:
         # adaptive band overrides the static selection when one is chosen.
         adaptive_bands_cfg: dict = profs.get("adaptive_bands", {}) or {}
         adaptive_band_name: str | None = next(iter(adaptive_bands_cfg), None)
@@ -446,7 +448,7 @@ class ParametersPlotWidget(QWidget):
                 row["unit"]   = result.unit   or ""
                 row["n_windows"] = int(result.timestamps.size)
 
-                # Epoch-relative time axis — t=0 at the epoch's first
+                # Epoch-relative time axis - t=0 at the epoch's first
                 # R-peak, matching the profile plot's x-axis origin.
                 t_rel = (
                     result.timestamps

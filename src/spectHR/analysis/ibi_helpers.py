@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/ibi_helpers.py
 """
 Pure IBI helper functions.
@@ -10,7 +12,7 @@ These functions are called by:
 - ``spectHR.analysis.time_metrics``    (metric computations)
 - ``spectHR.analysis.frequency_metrics``
 - ``CardioMetricsMixin`` thin wrappers (so the ``PSDEngine`` duck-typed
-  protocol — ``_ibi_clean_pairs``, ``_event_times_clean``, etc. — keeps
+  protocol - ``_ibi_clean_pairs``, ``_event_times_clean``, etc. - keeps
   working unchanged on ``CardioSeries`` / ``CardioSeriesView`` instances)
 """
 from __future__ import annotations
@@ -167,7 +169,7 @@ def mean_ibi_ms_arithmetic(series) -> float:
 
 
 def mmi2_factor(series, mean_convention: str) -> float:
-    """``mean_ibi_ms²`` — converts events²/Hz to mMI²/Hz.
+    """``mean_ibi_ms²`` - converts events²/Hz to mMI²/Hz.
 
     Parameters
     ----------

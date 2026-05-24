@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 _psd_utils.py – Shared helpers for all PSD back-ends.
 
@@ -7,7 +9,7 @@ WelchPSD.py, LombScarglePSD.py, and CarspanPSD.py.
 Also defines :class:`PSDResult`, the small dataclass every compute
 function returns. Keeping the result type next to the helpers (rather
 than next to the consumer in CardioMetricsMixin) lets the compute
-modules stay self-contained — they own the raw output shape.
+modules stay self-contained - they own the raw output shape.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from scipy.stats import chi2
 
 
 # ---------------------------------------------------------------------------
-# PSDResult — common output type for every PSD back-end
+# PSDResult - common output type for every PSD back-end
 # ---------------------------------------------------------------------------
 
 
@@ -51,7 +53,7 @@ class ProfileResult:
     band-power integration that :class:`PSDResult` would yield for a
     whole epoch, but recomputed inside each of a series of overlapping
     sliding windows (CARSPAN manual §3.3.5, Eq. 3.34 / 3.35). The result
-    is therefore a 2-D array — one band-power time series per band.
+    is therefore a 2-D array - one band-power time series per band.
 
     Fields
     ------
@@ -65,7 +67,7 @@ class ProfileResult:
         window had too few samples to compute a PSD.
     unit : str
         Display unit of the band-power values (e.g. ``"mMI²"``, ``"ms²"``).
-        Already the band-power unit — no ``/Hz`` suffix.
+        Already the band-power unit - no ``/Hz`` suffix.
     method : str
         PSD algorithm used inside each window
         (``"carspan"`` / ``"carspan_strict"`` / ``"welch"`` /

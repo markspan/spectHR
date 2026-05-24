@@ -1,10 +1,12 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 PSD plotting widget for multiple CardioSeriesView objects.
 
 Design
 ------
 - ``PSDPlotWidget`` is a container holding one ``_SinglePSDPlot`` per epoch.
-- PSD values are computed by ``series.psd()`` / ``series.band_powers()`` —
+- PSD values are computed by ``series.psd()`` / ``series.band_powers()`` -
   which internally call the refactored ``compute_*_psd`` functions.  All
   plotting-specific decisions (x-limits, y-limits, CI shading, band fills,
   legend, titles) live in this widget.
@@ -51,7 +53,7 @@ Y_SCALE_F_MIN: float = 0.08
 
 # Multiplicative step used when the user resizes the y-axis with the
 # arrow keys.  ``Up`` shrinks y-max by this factor (zooms in vertically),
-# ``Down`` grows it by the reciprocal — chosen so the two are symmetric
+# ``Down`` grows it by the reciprocal - chosen so the two are symmetric
 # and a few presses give a noticeable but not jarring change.
 _Y_ZOOM_STEP_UP:   float = 0.80   # Up arrow   → y-max × 0.80  (zoom in)
 _Y_ZOOM_STEP_DOWN: float = 1.25   # Down arrow → y-max × 1.25  (zoom out)
@@ -62,7 +64,7 @@ _Y_TOP_FLOOR:      float = 1e-12
 # Both are vector / lossless and suitable for print-ready figures; the
 # user can pick whichever their downstream pipeline prefers.
 _EXPORT_FORMATS: tuple[str, ...] = ("pdf",)
-# Default location used when no workspace is supplied — mirrors the
+# Default location used when no workspace is supplied - mirrors the
 # ``OutputDirectory`` default in ``spectUI.workSpace._DEFAULT_WORKSPACE``.
 _DEFAULT_EXPORT_DIR: Path = user_documents_path() / "spectHR" / "export"
 # Characters not allowed in filenames on Windows (and friends elsewhere).
@@ -119,7 +121,7 @@ def _wants_smoothing(series, psd_method: Optional[PsdMethod], method_name: str) 
 
     Only the CARSPAN methods carry a ``smooth_for_display`` setting
     (it's a knob on :class:`CarspanOptions`). For Welch / Lomb-Scargle
-    this returns False unconditionally — the plot widget never smooths
+    this returns False unconditionally - the plot widget never smooths
     those.
     """
     if method_name not in ("carspan", "carspan_strict"):
@@ -135,7 +137,7 @@ def _wants_smoothing(series, psd_method: Optional[PsdMethod], method_name: str) 
 def _fetch(
     series, label: str, psd_method: Optional[PsdMethod] = None
 ) -> _PlotData:
-    """Call ``series.psd()`` and ``series.band_powers()`` — never raises.
+    """Call ``series.psd()`` and ``series.band_powers()`` - never raises.
 
     ``psd_method`` (when given) is passed through as an explicit
     override on the series call; otherwise the series' own
@@ -143,7 +145,7 @@ def _fetch(
 
     If the active method is CARSPAN and ``smooth_for_display`` is True,
     the plot widget applies the CARSPAN 3-point moving-average smoother
-    here, locally — the compute layer is left un-smoothed so band-power
+    here, locally - the compute layer is left un-smoothed so band-power
     integration runs on the raw periodogram (which is what Pascal does
     via ``PDSin_BCK``).
     """
@@ -224,7 +226,7 @@ def _sanitize_filename(name: str) -> str:
     """
     Replace whitespace and filesystem-unsafe characters in *name* with ``_``.
 
-    Used to build cross-platform filenames from dataset and epoch labels —
+    Used to build cross-platform filenames from dataset and epoch labels -
     e.g. ``"a #1"`` becomes ``"a_1"``, ``"rest / sit"`` becomes
     ``"rest_sit"``.  Trailing underscores and leading dots (which would
     otherwise hide files on Unix) are stripped.
@@ -262,7 +264,7 @@ def _y_max(data: _PlotData, scale_min: float, scale_max: float) -> float:
     """
     Maximum PSD value in the scaling band range.
 
-    Includes the upper CI bound up to 3× the PSD peak — so tight CIs
+    Includes the upper CI bound up to 3× the PSD peak - so tight CIs
     (Welch) are respected but wide CIs (Lomb-Scargle, short CARSPAN) don't
     blow up the axis.  Frequencies below ``Y_SCALE_F_MIN`` are excluded
     so VLF drift power doesn't dominate the y-limit.
@@ -359,7 +361,7 @@ class PSDPlotWidget(QWidget):
     ) -> None:
         super().__init__(parent)
 
-        # Everything the widget needs comes from the workspace dict —
+        # Everything the widget needs comes from the workspace dict -
         # the library reads no globals. The series should already have
         # ``psd_method`` set by the UI (MainWindow does this on dataset
         # load and after Edit Parameters), so we pass psd_method=None
@@ -444,7 +446,7 @@ class PSDPlotWidget(QWidget):
         save_all.activated.connect(self._save_all_plots)
 
     # ------------------------------------------------------------------
-    # Keyboard interaction — linked y-axis zoom across all subplots
+    # Keyboard interaction - linked y-axis zoom across all subplots
     # ------------------------------------------------------------------
 
     def _zoom_in(self) -> None:
@@ -469,7 +471,7 @@ class PSDPlotWidget(QWidget):
             subplot.canvas.draw_idle()
 
     # ------------------------------------------------------------------
-    # Print-ready export — PrintScreen saves every plot as PDF + SVG
+    # Print-ready export - PrintScreen saves every plot as PDF + SVG
     # ------------------------------------------------------------------
 
     def _save_all_plots(self) -> None:
@@ -481,7 +483,7 @@ class PSDPlotWidget(QWidget):
         platformdirs default (``Documents/spectHR/export``) is used.
 
         For each subplot we emit one file per format in ``_EXPORT_FORMATS``
-        (currently PDF and SVG — both vector, both lossless).  Existing
+        (currently PDF and SVG - both vector, both lossless).  Existing
         files with the same name are silently overwritten so re-pressing
         PrintScreen during interactive y-axis tuning keeps a single set
         of fresh exports.
@@ -672,7 +674,7 @@ def _band_draw_extents(bands: dict) -> Dict[str, Tuple[float, float]]:
 
     With CARSPAN-style gapped bands (e.g. 0.06→0.07, 0.14→0.15) the
     polygon's ``low`` and ``high`` are pushed to the midpoint with the
-    adjacent band so the fills meet visually — but the band-power
+    adjacent band so the fills meet visually - but the band-power
     *integration* still uses the configured edges (handled by the
     mixin).  ``FullRange`` keeps its own range.
     """

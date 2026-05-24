@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 start_stop.py – Standard ``start <name>`` / ``stop <name>`` epoch builder.
 
@@ -79,7 +81,7 @@ def build_epochs_from_markers(
                 start = ongoing.pop(label, bounds_start)
                 epochs[label] = Epoch(active=True, start=start, end=float(t))
 
-    # Anything still in `ongoing` had a start but no matching stop — close
+    # Anything still in `ongoing` had a start but no matching stop - close
     # those epochs at the end of the recording.
     for label, start in ongoing.items():
         epochs[label] = Epoch(active=True, start=float(start), end=bounds_end)

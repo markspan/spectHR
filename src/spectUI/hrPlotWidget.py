@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
 import math
@@ -253,7 +255,7 @@ class HRPlotWidget(QWidget):
 
         # Same-length output: HR at valid positions, NaN elsewhere.
         # The NaN entries are what makes matplotlib break the line at
-        # exactly the right place — there's no bridging across the
+        # exactly the right place - there's no bridging across the
         # invalid stretch.
         hr = np.full_like(ibi, np.nan)
         hr[valid] = 60.0 / ibi[valid]
@@ -639,7 +641,7 @@ class HRPlotWidget(QWidget):
             show_xlabel=True,
         )
 
-        # Recreate the rectangle every time — most robust behaviour.
+        # Recreate the rectangle every time - most robust behaviour.
         y0, y1 = self.ax_overview.get_ylim()
         self.overview_window = OverviewWindow(
             self.ax_overview,

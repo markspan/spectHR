@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 _loader_utils.py – Helpers shared by the file loaders in this package.
 
@@ -26,8 +28,8 @@ def is_inverted_ecg(values: np.ndarray) -> bool:
     """
     Heuristic: does the ECG signal appear to have inverted polarity?
 
-    Looks at the centre third of the recording — a region that avoids
-    settling artefacts near the start/end — and compares how far the mean
+    Looks at the centre third of the recording - a region that avoids
+    settling artefacts near the start/end - and compares how far the mean
     sits from the minimum vs. the maximum.  When R-peaks point downward
     the dominant excursion is below the mean, pushing the ratio above
     ``_POLARITY_THRESHOLD``.
@@ -56,7 +58,7 @@ def is_inverted_ecg(values: np.ndarray) -> bool:
     mean_value = float(centre_third.mean())
     denom = abs(mean_value - float(centre_third.max()))
     if denom == 0:
-        # Flat or degenerate window — heuristic cannot decide.
+        # Flat or degenerate window - heuristic cannot decide.
         return False
 
     magic = abs(mean_value - float(centre_third.min())) / denom

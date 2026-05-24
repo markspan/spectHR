@@ -1,3 +1,5 @@
+# Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
+# SPDX-License-Identifier: GPL-3.0-or-later
 import copy
 import json
 import os
@@ -69,13 +71,13 @@ _DEFAULT_WORKSPACE = {
     # Spectral profiles
     # ------------------------------------------------------------------
     # A spectral profile is the time course of a band-power measure
-    # inside one epoch — implemented as the standard PSD pipeline
+    # inside one epoch - implemented as the standard PSD pipeline
     # applied to a window that slides along the recording with a fixed
     # step (see CARSPAN manual §3.3.5, Eq. 3.34 / 3.35). The compute
     # algorithm and band definitions are inherited from
     # ``FrequencyAnalysis`` so a profile of `band X` is computed with
     # the same PSD method (Welch / Lomb-Scargle / CARSPAN / strict) and
-    # the same edges as the corresponding PSD band — they're two views
+    # the same edges as the corresponding PSD band - they're two views
     # of the same underlying analysis.
     #
     # ``bands`` lists the band names (matching keys in
@@ -100,7 +102,7 @@ _DEFAULT_WORKSPACE = {
         # ``TAnaBand.RespirationBand`` flag, "Add variable band" button
         # in ``F_SpecAnalysisProfiles.pas``).
         #
-        # Stored here on Profiles — not on FrequencyAnalysis.bands —
+        # Stored here on Profiles - not on FrequencyAnalysis.bands -
         # because the flag is consulted *only* by the sliding-window
         # profile compute (``band_power_profile``). Whole-epoch PSDs and
         # band_powers always use the absolute Hz edges from
@@ -117,7 +119,7 @@ _DEFAULT_WORKSPACE = {
         #   (band_high = resp_freq + upper_half_width).
         #
         # The static ``FrequencyAnalysis.bands`` edges (``low``/``high``)
-        # are left untouched — they remain the edges for whole-epoch
+        # are left untouched - they remain the edges for whole-epoch
         # band powers and PSD display. Only the profile builder uses
         # these half-widths.
         #
@@ -126,14 +128,14 @@ _DEFAULT_WORKSPACE = {
         # (paced breathing, stress protocols, biofeedback). Typically
         # only HF is tracked. Has effect only when a RespirationSeries
         # is present; without a breathing signal the bands silently fall
-        # back to their static edges — exactly what CARSPAN does when
+        # back to their static edges - exactly what CARSPAN does when
         # ``FRespFreqList`` is empty.
         "adaptive_bands": {},
         # How the per-window breathing frequency is derived for adaptive bands:
-        #   "respiration_channel" — CARSPAN-faithful: use the mean breath
+        #   "respiration_channel" - CARSPAN-faithful: use the mean breath
         #     frequency from the RespirationSeries in PhysioData.rsp_map.
         #     Falls back to static edges if no respiration channel is loaded.
-        #   "psd_peak" — no respiration channel required: find the frequency
+        #   "psd_peak" - no respiration channel required: find the frequency
         #     of maximum power within the band's static [low, high] range in
         #     the per-window PSD, and centre the adaptive band there.
         "adaptive_source": "respiration_channel",
@@ -150,10 +152,10 @@ _DEFAULT_WORKSPACE = {
         # raw per-window breathing frequency, no temporal smoothing).
         "smooth_breath_freq": False,
         # Apply Pascal's 3-point MA along each band's time series before
-        # plotting. Same kernel + edge policy as the PSD smoother — plot
+        # plotting. Same kernel + edge policy as the PSD smoother - plot
         # only; band-power integration is unaffected. Defaults to
         # False because the reference Delphi profile view doesn't apply
-        # any time-axis smoother — the plotted line is the raw
+        # any time-axis smoother - the plotted line is the raw
         # band-power per profile window. Flip to True for an
         # easier-on-the-eye curve when the data is noisy.
         "smooth_for_display": False,
@@ -177,8 +179,8 @@ _DEFAULT_WORKSPACE = {
     #
     # Set ``per_epoch: true`` to iterate over the recording's epochs and
     # build the RespirationSeries from per-epoch segmentations
-    # concatenated together. The default ``experiment`` epoch — which
-    # the loaders create as a placeholder spanning the entire recording —
+    # concatenated together. The default ``experiment`` epoch - which
+    # the loaders create as a placeholder spanning the entire recording -
     # is skipped when it still covers the whole signal, so turning the
     # flag on without defining task epochs yet is a no-op.
     "RespirationAnalysis": {
@@ -219,7 +221,7 @@ def get_export_dir(workspace, *, context: str = "Export"):
     -------
     pathlib.Path
         The directory the caller should write to. Existence is **not**
-        guaranteed — callers should call ``mkdir(parents=True,
+        guaranteed - callers should call ``mkdir(parents=True,
         exist_ok=True)`` and handle ``OSError`` themselves.
 
     Notes
@@ -258,7 +260,7 @@ def LoadWorkspace(json_file=None) -> dict:
 
     Side effects are intentionally minimal: this function only reads /
     writes the JSON file and ensures cache / output directories exist.
-    PSD configuration is **not** pushed into any module-level globals —
+    PSD configuration is **not** pushed into any module-level globals -
     callers should use :func:`psd_method_from_workspace` to build a
     :class:`PsdMethod` and assign it to each series via
     ``series.psd_method = …``.
@@ -334,7 +336,7 @@ def _migrate_respiration_band_to_profiles(workspace: dict) -> None:
 
     # Second pass: if adaptive_bands is still a list (old format from the
     # first iteration of the feature), convert it to the new dict format
-    # with default half-widths, keeping only the first entry — adaptive
+    # with default half-widths, keeping only the first entry - adaptive
     # tracking is now a single-band setting.
     adaptive_val = profiles.get("adaptive_bands")
     if isinstance(adaptive_val, list):
@@ -367,7 +369,7 @@ def _migrate_window_keys(workspace: dict) -> None:
 
     An earlier version of ``_DEFAULT_WORKSPACE`` stored the sliding-window
     parameters as ``window_s`` and ``step_s``. The canonical names are now
-    ``"window (sec)"`` and ``"step (sec)"`` — the pre-formatted spelling
+    ``"window (sec)"`` and ``"step (sec)"`` - the pre-formatted spelling
     that passes through ``_label()`` unchanged and appears cleanly in the
     Edit-Parameters dialog.
 
@@ -438,7 +440,7 @@ def _bands_from_workspace(
     bands_dict
         ``workspace["FrequencyAnalysis"]["bands"]``.
     adaptive_bands
-        ``workspace["Profiles"]["adaptive_bands"]`` — a dict of
+        ``workspace["Profiles"]["adaptive_bands"]`` - a dict of
         ``{band_name: {"lower half-width (Hz)": float,
                        "upper half-width (Hz)": float}}``.
         ``None`` or ``{}`` ⇒ every band is static.
@@ -485,8 +487,8 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
     # The adaptive-bands dict lives on the Profiles tab (see the
     # ``adaptive_bands`` comment in ``_DEFAULT_WORKSPACE``). It is
     # propagated down to :class:`BandSpec` here so the compute layer
-    # (``band_power_profile``) sees a unified band table — each adaptive
-    # band carries its own resp_low/resp_high half-widths — without
+    # (``band_power_profile``) sees a unified band table - each adaptive
+    # band carries its own resp_low/resp_high half-widths - without
     # having to reach into the workspace dict itself.
     profiles_cfg = workspace.get("Profiles", {}) or {}
     adaptive_bands = dict(profiles_cfg.get("adaptive_bands", {}) or {})
