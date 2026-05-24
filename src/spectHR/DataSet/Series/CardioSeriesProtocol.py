@@ -22,8 +22,8 @@ from typing import TYPE_CHECKING, Protocol, Tuple, runtime_checkable
 import numpy as np
 
 if TYPE_CHECKING:
-    from spectHR.Tools.PSD._psd_utils import PSDResult
-    from spectHR.Tools.PSD._psd_config import MeanConvention
+    from spectHR.analysis.psd._utils import PSDResult
+    from spectHR.analysis.psd._config import MeanConvention
 
 
 @runtime_checkable
@@ -55,7 +55,7 @@ class CardioSeriesLike(Protocol):
         ...
 
     # --- PSD engine duck-typed helpers -----------------------------------
-    # Called by PSDEngine; implemented as thin wrappers in CardioMetricsMixin.
+    # Called by PSDEngine; implemented as thin wrappers in CardioSeriesView.
 
     def _ibi_clean_pairs(self) -> Tuple[np.ndarray, np.ndarray]:
         """Aligned (times_s, ibi_ms) with artefact intervals removed.

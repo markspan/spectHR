@@ -1,22 +1,11 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Band-power integration (CARSPAN manual Eq. 3.28).
-
-Rectangular-rule integration of a PSD over a frequency band, with
-per-bin Δf computed from centred neighbour spacing so the same helper
-adapts to both uniform grids (Welch, Lomb-Scargle) and the
-Resample-binned CARSPAN display grid.
-
-Lives in :mod:`spectHR.Tools.PSD` rather than alongside the mixin
-because it has no series dependency - it just takes two arrays and two
-floats. Imported by :class:`CardioMetricsMixin` for its ``band_power``
-and ``band_powers`` methods.
-"""
+# spectHR/analysis/psd/_band_power.py
+"""Band-power integration (CARSPAN manual Eq. 3.28)."""
 
 from __future__ import annotations
 
 import numpy as np
-
 
 __all__ = ["band_power_rectangular"]
 
@@ -30,14 +19,11 @@ def band_power_rectangular(
     """Rectangular-rule band power integration (CARSPAN Eq. 3.28).
 
     ``B = Σ S_xx(fₖ) · Δfₖ`` for ``f_low ≤ fₖ ≤ f_high``, both endpoints
-    inclusive. Per-bin Δfₖ is the centred neighbour spacing, so the
-    integration adapts to both uniform (Welch, L-S) and the
+    inclusive. Per-bin Δfₖ is the centred neighbour spacing so the
+    integration adapts to both uniform (Welch, Lomb-Scargle) and the
     Resample-binned CARSPAN display grid.
 
-    Returns 0 if no bin falls inside the band (e.g. a band that lies
-    entirely below the lowest frequency of the spectrum, or above the
-    highest). For a single in-band bin, ``Δf`` falls back to the
-    spectrum's first-bin spacing.
+    Returns 0 if no bin falls inside the band.
     """
     mask = (freqs >= f_low) & (freqs <= f_high)
     band_freqs = freqs[mask]

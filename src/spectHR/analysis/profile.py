@@ -1,19 +1,19 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# spectHR/Tools/Profile.py
+# spectHR/analysis/profile.py
 """
 Sliding-window band-power profile computation.
 
 This module contains the standalone implementation of the CARSPAN
 ``RunProfileSommation`` pipeline (``T_AnaFunctions.pas`` 2888–3056).
-It was extracted from ``CardioMetricsMixin`` so the algorithm can be
+It was extracted from ``CardioSeriesView`` so the algorithm can be
 developed, tested, and reasoned about independently of the series class.
 
 Public surface
 --------------
 compute_band_power_profile(series, *, window_s, step_s, ...) -> ProfileResult
 
-``CardioMetricsMixin.band_power_profile`` is a thin wrapper that calls
+``CardioSeriesView.band_power_profile`` is a thin wrapper that calls
 this function; existing call sites need no changes.
 """
 from __future__ import annotations
@@ -23,14 +23,14 @@ from typing import Optional
 
 import numpy as np
 
-from spectHR.Tools.PSD._psd_config import (
+from spectHR.analysis.psd._config import (
     PsdMethod,
     _DEFAULT_PSD_METHOD,
     respiration_min,
     respiration_max,
 )
-from spectHR.Tools.PSD._band_power import band_power_rectangular
-from spectHR.Tools.PSD._psd_utils import ProfileResult
+from spectHR.analysis.psd._band_power import band_power_rectangular
+from spectHR.analysis.psd._utils import ProfileResult
 from spectHR.Tools.Logger import logger
 
 
@@ -94,7 +94,7 @@ def compute_band_power_profile(
     Faithful port of CARSPAN's ``RunAnalysis(Tag=1)`` profile pipeline
     from ``T_AnaFunctions.pas`` (``RunDFT`` 2032, ``RunPDS`` 2152,
     ``RunResample`` 2320, ``RunMAW`` 2421, ``RunProfileSommation``
-    2888–3056).  See ``CardioMetricsMixin.band_power_profile`` for the
+    2888–3056).  See ``CardioSeriesView.band_power_profile`` for the
     full step-by-step docstring.
 
     Parameters
@@ -197,7 +197,8 @@ def compute_band_power_profile(
             if win_view.times.size < 4:
                 continue
             try:
-                psd_result = win_view._psd_for_band_power(profile_method)
+                from spectHR.analysis.psd._engine import PSDEngine as _PSDEngine
+                psd_result = _PSDEngine(win_view).for_band_power(profile_method)
             except Exception:
                 continue
             psd_cache[i] = psd_result
@@ -274,7 +275,8 @@ def compute_band_power_profile(
             if win_view.times.size < 4:
                 continue
             try:
-                psd_result = win_view._psd_for_band_power(profile_method)
+                from spectHR.analysis.psd._engine import PSDEngine as _PSDEngine
+                psd_result = _PSDEngine(win_view).for_band_power(profile_method)
             except Exception:
                 continue
 

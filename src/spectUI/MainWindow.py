@@ -236,7 +236,7 @@ class MainWindow(QMainWindow):
         On OK:
         1. The updated values are written back into self.workspace.
         2. The workspace JSON file is saved immediately so the changes persist.
-        3. The CardioMetricsMixin module-level globals are re-applied in-process
+        3. The CardioSeriesView module-level globals are re-applied in-process
            so any subsequent PSD computation uses the new settings without a restart.
         4. The PSD tab is refreshed if a dataset is currently loaded.
         """
@@ -256,12 +256,6 @@ class MainWindow(QMainWindow):
             #    PsdMethod, which is what drives subsequent
             #    psd() / band_power() / band_powers() calls.
             if self.dataset is not None:
-                try:
-                    psd_method = spQt.psd_method_from_workspace(self.workspace)
-                    self.dataset.set_psd_method(psd_method)
-                except Exception as e:
-                    logger.warning(f"Could not rebuild PsdMethod: {e}")
-
                 # 3. Refresh the PSD and Profile plots immediately if a
                 #    dataset is loaded - Profile Settings live in the
                 #    same workspace dialog so any band-list / window /
@@ -559,14 +553,6 @@ class MainWindow(QMainWindow):
                     return
 
             self.dataset = dataset
-            # Push the current PsdMethod onto every series in the dataset
-            # so subsequent psd() / band_power() calls have a config to
-            # read from. Library code never touches workspace JSON.
-            try:
-                psd_method = spQt.psd_method_from_workspace(self.workspace)
-                self.dataset.set_psd_method(psd_method)
-            except Exception as e:
-                logger.warning(f"Could not attach PsdMethod to dataset: {e}")
             if hasattr(dataset, "has_ecg") and dataset.has_ecg:
                 self.show_preprocessing_plot(self.dataset)
                 self.ui.Views.setTabVisible(0, True)
@@ -599,11 +585,6 @@ class MainWindow(QMainWindow):
                 dataset.save(self.savename)
 
             self.dataset = dataset
-            try:
-                psd_method = spQt.psd_method_from_workspace(self.workspace)
-                self.dataset.set_psd_method(psd_method)
-            except Exception as e:
-                logger.warning(f"Could not attach PsdMethod to dataset: {e}")
             self.show_preprocessing_plot(self.dataset)
             self.show_hr_plot(self.dataset)
             self.show_poincare_plot(self.dataset)

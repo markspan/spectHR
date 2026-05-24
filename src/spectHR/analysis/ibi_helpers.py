@@ -11,7 +11,7 @@ arrays.  There are no side effects and no imports of dataset classes.
 These functions are called by:
 - ``spectHR.analysis.time_metrics``    (metric computations)
 - ``spectHR.analysis.frequency_metrics``
-- ``CardioMetricsMixin`` thin wrappers (so the ``PSDEngine`` duck-typed
+- ``CardioSeriesView`` thin wrappers (so the ``PSDEngine`` duck-typed
   protocol - ``_ibi_clean_pairs``, ``_event_times_clean``, etc. - keeps
   working unchanged on ``CardioSeries`` / ``CardioSeriesView`` instances)
 """
@@ -101,7 +101,7 @@ def successive_diffs_ms(series) -> np.ndarray:
 
 # ---------------------------------------------------------------------------
 # PSD protocol helpers
-# (called by CardioMetricsMixin thin wrappers; also used by PSDEngine)
+# (called by CardioSeriesView thin wrappers; also used by PSDEngine)
 # ---------------------------------------------------------------------------
 
 def ibi_clean_pairs(series) -> Tuple[np.ndarray, np.ndarray]:

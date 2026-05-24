@@ -37,7 +37,7 @@ import numpy as np
 from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
-from spectHR.DataSet.Series.CardioMetricsMixin import PsdMethod
+from spectHR.analysis.psd._config import PsdMethod
 from spectUI._plot_smoothing import ma3
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from spectHR.analysis.profile import compute_band_power_profile
 from spectUI._uitools import show_export_summary
 from spectUI.workSpace import get_export_dir, psd_method_from_workspace
 
@@ -161,7 +162,7 @@ def _fetch_profile(
     smooth_breath_freq: bool = False,
     smooth: bool = False,
 ) -> _ProfilePlotData:
-    """Call ``series.band_power_profile()`` - never raises.
+    """Compute band-power profile for one series - never raises.
 
     Failures (epoch too short, no PSD method set, etc.) come back as a
     ``_ProfilePlotData`` with ``error`` populated so the renderer can
@@ -174,14 +175,14 @@ def _fetch_profile(
     statistics over the profile (mean, peak time, etc.) computed by
     downstream code keep their actual numerical values.
 
-    ``adaptive_source`` is forwarded directly to
-    :meth:`CardioMetricsMixin.band_power_profile` - ``"respiration_channel"``
-    uses the CARSPAN-faithful breathing signal; ``"psd_peak"`` derives
-    the breathing frequency from the per-window PSD peak within the
-    band's static ``[low, high]`` range (no respiration channel needed).
+    ``adaptive_source`` is forwarded to ``compute_band_power_profile`` -
+    ``"respiration_channel"`` uses the CARSPAN-faithful breathing signal;
+    ``"psd_peak"`` derives the breathing frequency from the per-window PSD
+    peak within the band's static ``[low, high]`` range.
     """
     try:
-        result = series.band_power_profile(
+        result = compute_band_power_profile(
+            series,
             window_s=window_s,
             step_s=step_s,
             psd_method=psd_method,
@@ -721,5 +722,3 @@ class ProfilePlotWidget(QWidget):
         ax.legend(loc="upper right", fontsize=7)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-
-        return ax

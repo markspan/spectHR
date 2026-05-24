@@ -1,7 +1,8 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
+# spectHR/analysis/psd/_carspan.py
 """
-CarspanPSD.py – CARSPAN spectral analysis for HRV.
+# spectHR/analysis/psd/_carspan.py
 
 The module exposes a single :func:`compute_carspan_psd` function whose
 behaviour is fully driven by :class:`CarspanOptions`. The ``signal``
@@ -61,7 +62,7 @@ from typing import Literal, Optional, Tuple
 import numpy as np
 from scipy.signal import get_window
 
-from spectHR.Tools.PSD._psd_utils import (
+from spectHR.analysis.psd._utils import (
     PSDResult,
     _chi2_ci,
     _require_min_samples,

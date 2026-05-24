@@ -43,14 +43,26 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
-from spectHR.Tools.PSD import WelchPSD, LombScarglePSD, CarspanPSD
-from spectHR.Tools.PSD.CarspanPSD import CarspanOptions
-from spectHR.Tools.PSD._psd_config import (
+from spectHR.analysis.psd._welch import compute_welch_psd as _compute_welch_psd
+from spectHR.analysis.psd._lombscargle import compute_lombscargle_psd as _compute_lombscargle_psd
+from spectHR.analysis.psd._carspan import (
+    CarspanOptions,
+    compute_carspan_psd as _compute_carspan_psd,
+    carspan_strict_options,
+)
+from spectHR.analysis.psd._config import (
     BandSpec,
     MeanConvention,
     PsdMethod,
 )
-from spectHR.Tools.PSD._psd_utils import PSDResult
+from spectHR.analysis.psd._utils import PSDResult
+from spectHR.analysis.ibi_helpers import (
+    ibi_clean_pairs,
+    event_times_clean,
+    mean_ibi_ms,
+    mean_ibi_ms_arithmetic,
+    mmi2_factor,
+)
 
 
 __all__ = ["PSDEngine"]
@@ -197,7 +209,7 @@ class PSDEngine:
             return 1.0, "ms²/Hz"
         # mMI²/Hz = ms²/Hz × 10⁶ / mean_ibi_ms². Always uses T/N here;
         # the arithmetic-mean convention is CARSPAN-strict only.
-        return 1e6 / self._series._mmi2_factor("harmonic"), "mMI²/Hz"
+        return 1e6 / mmi2_factor(self._series, "harmonic"), "mMI²/Hz"
 
     def _carspan_display(
         self,
@@ -217,30 +229,30 @@ class PSDEngine:
         """
         units = str(carspan_opts.plot_units)
         if mean_convention == "arithmetic":
-            mean_ibi_ms = self._series._mean_ibi_ms_arithmetic()
+            mean_ibi_ms_val = mean_ibi_ms_arithmetic(self._series)
         else:
-            mean_ibi_ms = self._series._mean_ibi_ms()
+            mean_ibi_ms_val = mean_ibi_ms(self._series)
 
         if getattr(carspan_opts, "signal", "events") == "ibi_amplitude":
             # IBI-amplitude raw spectrum is already in ms²/Hz (Eq. 3.21).
             if units.lower().startswith("ms"):
                 return 1.0, "ms²/Hz"
             # mMI²/Hz = ms²/Hz × 10⁶ / mean_ms² (Eq. 3.20 + milli²).
-            return 1.0e6 / (mean_ibi_ms ** 2), "mMI²/Hz"
+            return 1.0e6 / (mean_ibi_ms_val ** 2), "mMI²/Hz"
 
         # Unit-impulse SOC path - legacy conversion.
         if units.lower().startswith("ms"):
-            return (mean_ibi_ms ** 4) * 1e-6, "ms²/Hz"
-        return mean_ibi_ms ** 2, "mMI²/Hz"
+            return (mean_ibi_ms_val ** 4) * 1e-6, "ms²/Hz"
+        return mean_ibi_ms_val ** 2, "mMI²/Hz"
 
     # ------------------------------------------------------------------
     # Back-end dispatchers (one per algorithm)
     # ------------------------------------------------------------------
 
     def _psd_welch(self, method: PsdMethod, *, with_ci: bool = True) -> PSDResult:
-        ibi_times_s, ibi_values_ms = self._series._ibi_clean_pairs()
+        ibi_times_s, ibi_values_ms = ibi_clean_pairs(self._series)
         convert, unit = self._ibi_psd_display(method.welch.units)
-        raw = WelchPSD.compute_welch_psd(
+        raw = _compute_welch_psd(
             ibi_times_s,
             ibi_values_ms,
             alpha_ci=method.alpha_ci,
@@ -257,9 +269,9 @@ class PSDEngine:
     def _psd_lombscargle(
         self, method: PsdMethod, *, with_ci: bool = True
     ) -> PSDResult:
-        ibi_times_s, ibi_values_ms = self._series._ibi_clean_pairs()
+        ibi_times_s, ibi_values_ms = ibi_clean_pairs(self._series)
         convert, unit = self._ibi_psd_display(method.lombscargle.units)
-        raw = LombScarglePSD.compute_lombscargle_psd(
+        raw = _compute_lombscargle_psd(
             ibi_times_s,
             ibi_values_ms,
             alpha_ci=method.alpha_ci,
@@ -284,8 +296,8 @@ class PSDEngine:
         forces ``method.carspan`` to :func:`carspan_strict_options`).
         """
         convert, unit = self._carspan_display(method.carspan, method.mean_convention)
-        raw = CarspanPSD.compute_carspan_psd(
-            self._series._event_times_clean(),
+        raw = _compute_carspan_psd(
+            event_times_clean(self._series),
             alpha_ci=method.alpha_ci,
             options=method.carspan,
         )
@@ -312,7 +324,7 @@ class PSDEngine:
         ``method`` field on the returned PSDResult is rebranded to
         ``"carspan_strict"`` so downstream code can tell the two apart.
         """
-        strict_opts = CarspanPSD.carspan_strict_options(
+        strict_opts = carspan_strict_options(
             smooth_for_display=bool(method.carspan.smooth_for_display),
             f_max=float(method.carspan.f_max),
             plot_units=str(method.carspan.plot_units),

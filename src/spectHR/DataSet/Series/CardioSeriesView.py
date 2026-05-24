@@ -1,34 +1,40 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/CardioSeriesView.py
+"""
+Zero-copy view into a CardioSeries.
+
+Design
+------
+CardioSeriesView is a pure data accessor. It holds a reference to a parent
+CardioSeries and an index array, and exposes the subset of times, labels, and
+derived IBIs that fall within that slice.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
-from spectHR.DataSet.Series.CardioMetricsMixin import CardioMetricsMixin
-
 if TYPE_CHECKING:
     from spectHR.DataSet.PhysioData import PhysioData
     from spectHR.DataSet.Series.CardioSeries import CardioSeries
 
 
-class CardioSeriesView(CardioMetricsMixin):
+__all__ = ["CardioSeriesView"]
+
+
+class CardioSeriesView:
     """
     Zero-copy view into a parent CardioSeries.
 
     Uses composition: holds a reference to the parent and an index array.
-    Does NOT inherit from CardioSeries - it cannot own data, classify IBIs,
-    or replace peaks.  Methods that only make sense on the full series
-    (classify_ibi, replace_from_timeseries, from_timeseries, hrv_epoch_table)
-    are deliberately absent.
+    Does NOT inherit from CardioSeries and cannot own data, classify IBIs,
+    or replace peaks.
 
-    All HRV metric methods are inherited from CardioMetricsMixin and operate
-    correctly on the view's times and labels.
-
-    Use CardioSeriesLike (CardioSeriesProtocol.py) for type annotations where
-    either a CardioSeries or a CardioSeriesView may be passed.
+    Analysis methods (psd, band_power, metric_table, etc.) do not live here.
+    Pass this view to the analysis layer directly.
 
     Identity metadata
     -----------------
@@ -60,32 +66,11 @@ class CardioSeriesView(CardioMetricsMixin):
 
     @property
     def ibi(self) -> np.ndarray:
-        """
-        IBIs in seconds derived from this view's times, with a trailing NaN.
-
-        Pure computation - never mutates parent labels.
-        """
+        """IBIs in seconds derived from this view's times, with a trailing NaN."""
         t = self.times
         if t.size < 2:
             return np.asarray([np.nan], dtype=float)
         return np.concatenate([np.diff(t), np.array([np.nan], dtype=float)])
-
-    # ------------------------------------------------------------------
-    # PSD configuration - delegate to parent so the master CardioSeries
-    # is the single source of truth. Per-epoch views (created on demand
-    # via ``CardioSeries[label]``) are short-lived, so setting
-    # psd_method on each one is fragile; setting it on the parent and
-    # reading it through this property keeps every view in lock-step
-    # with whatever the UI most recently pushed.
-    # ------------------------------------------------------------------
-
-    @property
-    def psd_method(self):  # type: ignore[override]
-        return getattr(self._parent, "psd_method", None)
-
-    @psd_method.setter
-    def psd_method(self, value) -> None:
-        self._parent.psd_method = value
 
     # ------------------------------------------------------------------
     # Slicing

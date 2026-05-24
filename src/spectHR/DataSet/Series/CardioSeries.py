@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
-from spectHR.DataSet.Series.CardioMetricsMixin import CardioMetricsMixin
 from spectHR.DataSet.Series.IBIClassificationParams import DEFAULT_IBI_PARAMS
 
 if TYPE_CHECKING:
@@ -15,15 +14,16 @@ if TYPE_CHECKING:
     from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 
 
-class CardioSeries(CardioMetricsMixin):
+class CardioSeries:
     """
-    Container for R-peak times and per-interval labels, with HRV metric methods.
+    Container for R-peak times and per-interval labels.
 
     Conceptual model
     ----------------
     A CardioSeries *owns* a sequence of R-peak timestamps (seconds, dataset
     time base).  Inter-beat intervals (IBIs) are derived on demand from those
-    times.
+    times.  It does not expose HRV metric or PSD methods directly - obtain a
+    CardioSeriesView via view() or __getitem__ and call those methods there.
 
     Data arrays
     -----------
@@ -41,10 +41,9 @@ class CardioSeries(CardioMetricsMixin):
     Relationship to views
     ---------------------
     CardioSeries.view() and CardioSeries.__getitem__() return CardioSeriesView
-    objects (defined in CardioSeriesView.py).  Views do NOT inherit from
-    CardioSeries - they use composition and share metric methods via
-    CardioMetricsMixin.  Use CardioSeriesLike (CardioSeriesProtocol.py) for
-    type annotations where either is acceptable.
+    objects (defined in CardioSeriesView.py).  Views own all metric and PSD
+    methods.  Use CardioSeriesLike (CardioSeriesProtocol.py) for type
+    annotations where either is acceptable.
     """
 
     def __init__(self, times: np.ndarray) -> None:

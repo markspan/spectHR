@@ -3,16 +3,12 @@
 """PSD configuration dataclasses - algorithm-agnostic.
 
 ``BandSpec`` (a frequency-band edge pair) and ``PsdMethod`` (the active
-algorithm + its options bundles) used to live in
-:mod:`spectHR.DataSet.Series.CardioMetricsMixin`. They moved here so the
-PSD configuration types sit alongside the algorithm-specific options
-dataclasses (``WelchOptions``, ``LombscargleOptions``, ``CarspanOptions``)
-instead of being buried inside the mixin file.
+algorithm + its options bundles) live here so the PSD configuration types
+sit alongside the algorithm-specific options dataclasses
+(``WelchOptions``, ``LombscargleOptions``, ``CarspanOptions``).
 
-``CardioMetricsMixin`` re-exports :class:`BandSpec` and :class:`PsdMethod`
-for back-compat, so existing imports
-``from spectHR.DataSet.Series.CardioMetricsMixin import BandSpec``
-keep working.
+``CardioSeriesView`` re-exports :class:`BandSpec` and :class:`PsdMethod`
+for convenience, so UI code can import them from a single location.
 """
 
 from __future__ import annotations
@@ -20,9 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Literal
 
-from spectHR.Tools.PSD.WelchPSD import WelchOptions
-from spectHR.Tools.PSD.LombScarglePSD import LombscargleOptions
-from spectHR.Tools.PSD.CarspanPSD import CarspanOptions
+from spectHR.analysis.psd._welch import WelchOptions
+from spectHR.analysis.psd._lombscargle import LombscargleOptions
+from spectHR.analysis.psd._carspan import CarspanOptions
 
 
 __all__ = [
@@ -62,7 +58,7 @@ class BandSpec:
     Respiration-tracked bands
     -------------------------
     When ``respiration_band`` is True, the profile builder
-    (:meth:`CardioMetricsMixin.band_power_profile`) centers the band on
+    (:meth:`CardioSeriesView.band_power_profile`) centers the band on
     the per-window breathing frequency using dedicated half-width fields
     :attr:`resp_low` and :attr:`resp_high`, which are completely
     independent of the absolute-Hz edges :attr:`low` / :attr:`high`.

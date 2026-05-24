@@ -17,7 +17,7 @@ Direct usage
 
 Lazy access via the series object
 ----------------------------------
->>> series.rmssd()           # CardioMetricsMixin.__getattr__ dispatches here
+>>> series.rmssd()           # CardioSeriesView.__getattr__ dispatches here
 >>> series.metric_table()    # computes all registered metrics on the series
 """
 

@@ -6,13 +6,10 @@ import os
 from typing import Any, Dict
 
 from spectHR.Tools.Logger import logger
-from spectHR.DataSet.Series.CardioMetricsMixin import (
-    BandSpec,
-    PsdMethod,
-)
-from spectHR.Tools.PSD.WelchPSD import WelchOptions
-from spectHR.Tools.PSD.LombScarglePSD import LombscargleOptions
-from spectHR.Tools.PSD.CarspanPSD import CarspanOptions
+from spectHR.analysis.psd._config import BandSpec, PsdMethod
+from spectHR.analysis.psd._welch import WelchOptions
+from spectHR.analysis.psd._lombscargle import LombscargleOptions
+from spectHR.analysis.psd._carspan import CarspanOptions
 
 from platformdirs import user_documents_path
 from PySide6.QtWidgets import QTreeWidgetItem
@@ -263,7 +260,7 @@ def LoadWorkspace(json_file=None) -> dict:
     PSD configuration is **not** pushed into any module-level globals -
     callers should use :func:`psd_method_from_workspace` to build a
     :class:`PsdMethod` and assign it to each series via
-    ``series.psd_method = …``.
+    the PsdMethod is passed explicitly to psd() / band_power() calls.
 
     Returns
     -------
@@ -480,7 +477,7 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
 
     The UI calls this once after :func:`LoadWorkspace` and again after
     every Edit-Parameters save, then assigns the result to every
-    series instance via ``series.psd_method = method``.
+    the PsdMethod is passed explicitly to every compute call.
     """
     fa = workspace.get("FrequencyAnalysis", {}) or {}
 

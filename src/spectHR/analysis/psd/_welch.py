@@ -1,19 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""
-WelchPSD.py – Welch power spectral density for IBI series.
-
-The irregularly-sampled IBI values are cubic-interpolated onto a uniform
-grid (default 4 Hz), then handed to ``scipy.signal.welch``.
-
-Output units: **ms²/Hz**.  Conversion to mMI²/Hz is done by the caller
-(CardioFrequencyMetricsMixin).
-
-References
-----------
-P. D. Welch, "The use of fast Fourier transform for the estimation of
-power spectra", IEEE Trans. Audio Electroacoust., 1967.
-"""
+# spectHR/analysis/psd/_welch.py
+"""Welch power spectral density for IBI series (output: ms²/Hz)."""
 
 from __future__ import annotations
 
@@ -24,7 +12,7 @@ import numpy as np
 from scipy import signal
 from scipy.interpolate import interp1d
 
-from spectHR.Tools.PSD._psd_utils import (
+from spectHR.analysis.psd._utils import (
     PSDResult,
     _chi2_ci,
     _require_min_samples,
@@ -34,14 +22,10 @@ from spectHR.Tools.PSD._psd_utils import (
 
 @dataclass(frozen=True)
 class WelchOptions:
-    """Configuration for ``compute_welch_psd``.
-
-    All values are pure Python defaults; the spectUI layer overrides
-    them from the workspace JSON by building a fresh ``WelchOptions``.
-    """
+    """Configuration for ``compute_welch_psd``."""
 
     fs: float = 4.0
-    """Resampling frequency in Hz used before the Welch averaging."""
+    """Resampling frequency in Hz used before Welch averaging."""
 
     nperseg: int = 256
     """Samples per Welch segment."""
@@ -56,7 +40,7 @@ class WelchOptions:
     """``scipy.signal.get_window`` name."""
 
     units: str = "mMI²"
-    """Output unit chosen by the caller's display layer: ``"mMI²"`` (normalised) or ``"ms²"`` (raw)."""
+    """Output unit hint: ``"mMI²"`` (normalised) or ``"ms²"`` (raw)."""
 
 
 _DEFAULT_WELCH_OPTIONS = WelchOptions()
@@ -69,23 +53,9 @@ def compute_welch_psd(
     alpha_ci: float = 0.05,
     options: Optional[WelchOptions] = None,
 ) -> PSDResult:
-    """
-    Welch PSD of an IBI series with chi-squared confidence intervals.
+    """Welch PSD of an IBI series with chi-squared confidence intervals.
 
-    Parameters
-    ----------
-    ibi_times_s, ibi_values_ms : np.ndarray
-        Timestamps (s) and IBI durations (ms) of each valid IBI.
-    alpha_ci : float
-        CI significance level (default 0.05 → 95 % CI).
-    options : WelchOptions, optional
-        Welch tuning. Defaults to ``WelchOptions()`` when not provided.
-
-    Returns
-    -------
-    PSDResult
-        ``power`` in **ms²/Hz** (raw unit). The caller (typically the
-        ``CardioMetricsMixin``) applies any further unit conversion.
+    Returns ``power`` in ms²/Hz. Unit conversion to mMI²/Hz is done by PSDEngine.
     """
     opts = options if options is not None else _DEFAULT_WELCH_OPTIONS
 
@@ -97,7 +67,6 @@ def compute_welch_psd(
 
     _require_min_samples(ibi_times_s.size, 4, "Welch PSD")
 
-    # Resample onto a uniform grid via cubic interpolation.
     dt = 1.0 / fs
     t_uniform = np.arange(float(ibi_times_s[0]), float(ibi_times_s[-1]), dt)
     ibi_resampled = interp1d(
@@ -121,17 +90,6 @@ def compute_welch_psd(
         scaling="density",
     )
 
-    # Effective degrees of freedom with window-overlap correction.
-    #
-    # For K independent segments: ν = 2K.  Overlapping segments are
-    # partially correlated, which reduces ν.  The correction uses the
-    # normalised window autocorrelation ρ at the segment step offset
-    # (Percival & Walden, 1993, §6.7):
-    #
-    #     ν = 2K / (1 + 2(1 − 1/K) ρ²)
-    #
-    # ρ is computed numerically from the actual window samples so that
-    # any window shape (Hann, Tukey, Hamming, …) is handled correctly.
     step = nperseg - noverlap
     n_segments = max(1, 1 + (n_samples - nperseg) // step)
 
@@ -141,7 +99,6 @@ def compute_welch_psd(
         rho = float(np.dot(w_arr[: nperseg - step], w_arr[step:])) / w_sq
         dof = 2.0 * n_segments / (1.0 + 2.0 * (1.0 - 1.0 / n_segments) * rho ** 2)
     else:
-        rho = 0.0
         dof = float(2 * n_segments)
 
     ci_lower, ci_upper = _chi2_ci(power, dof, alpha_ci)

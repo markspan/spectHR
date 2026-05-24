@@ -186,7 +186,7 @@ class PhysioData:
         labels : np.ndarray, shape (n_epochs,)
             Epoch names, in iteration order.
         cols : list[str]
-            Metric names, ordered by ``CardioSeries.METRIC_ORDER`` then
+            Metric names, ordered by ``METRIC_ORDER`` (parametersPlotWidget) then
             alphabetically for any extras.
         values : np.ndarray, shape (n_epochs, n_metrics), dtype float64
             Metric values; NaN where a metric could not be computed.
@@ -204,14 +204,15 @@ class PhysioData:
         for label, ep in self.epochs.items():
             if getattr(ep, "active", False):
                 labels_list.append(label)
-                rows.append(hrv.metric_table_epoch(ep.start, ep.end))
+                from spectHR.analysis import get_metrics
+                view = hrv.view(ep.start, ep.end)
+                rows.append({name: float(fn(view)) for name, fn in get_metrics().items()})
 
         if not rows:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
 
         keys = set().union(*(d.keys() for d in rows))
-        cols = [c for c in hrv.METRIC_ORDER if c in keys]
-        cols.extend(sorted(keys - set(cols)))
+        cols = sorted(keys)
         col_idx = {c: j for j, c in enumerate(cols)}
 
         values = np.full((len(rows), len(cols)), np.nan, dtype=float)
@@ -222,25 +223,6 @@ class PhysioData:
                     values[i, j] = float(v)
 
         return np.asarray(labels_list, dtype=object), cols, values
-
-    # ------------------------------------------------------------ #
-    # PSD configuration                                             #
-    # ------------------------------------------------------------ #
-
-    def set_psd_method(self, psd_method) -> None:
-        """Assign *psd_method* to every master CardioSeries in this dataset.
-
-        ``hrv_map`` is the canonical ``{band_id → CardioSeries}`` mapping
-        for the dataset. Setting ``psd_method`` on each master series is
-        enough because ``CardioSeriesView`` delegates the attribute to
-        its parent - so per-epoch views built later via
-        ``CardioSeries[epoch_label]`` automatically see the same value.
-
-        The library owns this walk so the UI can stay shape-agnostic:
-        callers just do ``dataset.set_psd_method(method)``.
-        """
-        for series in self.hrv_map.values():
-            series.psd_method = psd_method
 
     # ------------------------------------------------------------ #
     # ECG preprocessing                                             #
@@ -484,8 +466,6 @@ class PhysioData:
             np.concatenate(labels_all),
         )
 
-    # ------------------------------------------------------------ #
-    # Persistence                                                   #
     # ------------------------------------------------------------ #
 
     def save(self, path: Path) -> None:

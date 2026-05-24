@@ -9,7 +9,6 @@
 from spectHR.DataSet.Series.TimeSeries import TimeSeries, TimeSeriesView
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.Series.CardioSeriesProtocol import CardioSeriesLike
-from spectHR.DataSet.Series.CardioMetricsMixin import CardioMetricsMixin
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
 from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
@@ -23,7 +22,6 @@ __all__ = [
     "EventSeries",
     # Cardio
     "CardioSeriesLike",
-    "CardioMetricsMixin",
     "CardioSeries",
     "CardioSeriesView",
     # Respiration

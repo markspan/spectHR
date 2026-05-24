@@ -27,7 +27,11 @@ import numpy as np
 from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
-from spectHR.DataSet.Series.CardioMetricsMixin import PsdMethod
+from spectHR.analysis.psd._config import PsdMethod
+from spectHR.analysis.psd._engine import PSDEngine
+from spectHR.analysis.psd._band_power import band_power_rectangular
+from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
+from spectUI.workSpace import psd_method_from_workspace
 from spectUI._plot_smoothing import ma3
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -126,9 +130,7 @@ def _wants_smoothing(series, psd_method: Optional[PsdMethod], method_name: str) 
     """
     if method_name not in ("carspan", "carspan_strict"):
         return False
-    active = psd_method if psd_method is not None else getattr(
-        series, "psd_method", None
-    )
+    active = psd_method
     if active is None:
         return False
     return bool(getattr(active.carspan, "smooth_for_display", False))
@@ -137,11 +139,9 @@ def _wants_smoothing(series, psd_method: Optional[PsdMethod], method_name: str) 
 def _fetch(
     series, label: str, psd_method: Optional[PsdMethod] = None
 ) -> _PlotData:
-    """Call ``series.psd()`` and ``series.band_powers()`` - never raises.
+    """Compute PSD and band powers for one series - never raises.
 
-    ``psd_method`` (when given) is passed through as an explicit
-    override on the series call; otherwise the series' own
-    ``psd_method`` attribute (set by the UI on dataset load) is used.
+    ``psd_method`` is passed explicitly. The series carries no UI state.
 
     If the active method is CARSPAN and ``smooth_for_display`` is True,
     the plot widget applies the CARSPAN 3-point moving-average smoother
@@ -149,14 +149,10 @@ def _fetch(
     integration runs on the raw periodogram (which is what Pascal does
     via ``PDSin_BCK``).
     """
-    psd_kwargs = {"with_ci": True}
-    bp_kwargs: Dict[str, Any] = {}
-    if psd_method is not None:
-        psd_kwargs["psd_method"] = psd_method
-        bp_kwargs["psd_method"] = psd_method
+    method = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
 
     try:
-        result = series.psd(**psd_kwargs)
+        result = PSDEngine(series).compute(method, with_ci=True)
     except Exception as e:
         return _PlotData(
             label=label,
@@ -171,9 +167,11 @@ def _fetch(
         )
 
     try:
-        band_powers = series.band_powers(**bp_kwargs)
-        if not isinstance(band_powers, dict):
-            band_powers = {}
+        bp_result = PSDEngine(series).for_band_power(method)
+        band_powers = {
+            name: band_power_rectangular(bp_result.freqs, bp_result.power, band.low, band.high)
+            for name, band in method.bands.items()
+        }
     except Exception as e:
         print(f"Warning: band powers failed for {label}: {e}")
         band_powers = {}
@@ -361,18 +359,19 @@ class PSDPlotWidget(QWidget):
     ) -> None:
         super().__init__(parent)
 
-        # Everything the widget needs comes from the workspace dict -
-        # the library reads no globals. The series should already have
-        # ``psd_method`` set by the UI (MainWindow does this on dataset
-        # load and after Edit Parameters), so we pass psd_method=None
-        # here and let each series use its own attribute.
+        # Extract the PsdMethod from the workspace and pass it explicitly
+        # to every compute call - the series objects carry no UI state.
         bands_dict = _bands_from_workspace(workspace)
         ci_alpha = _ci_alpha_from_workspace(workspace)
         x_min, x_max, scale_min, scale_max = _band_bounds(bands_dict)
+        psd_method: Optional[PsdMethod] = (
+            psd_method_from_workspace(workspace) if workspace is not None else None
+        )
 
         # One call to the PSD backends per series; compute y-max before drawing.
         plots: List[_PlotData] = [
-            _fetch(series, label) for series, label in zip(series_list, labels)
+            _fetch(series, label, psd_method=psd_method)
+            for series, label in zip(series_list, labels)
         ]
         y_max = max((_y_max(p, scale_min, scale_max) for p in plots), default=0.0)
         y_top = y_max * 1.1 if y_max > 0 else 1.0

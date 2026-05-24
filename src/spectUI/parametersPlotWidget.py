@@ -15,7 +15,33 @@ from PySide6.QtWidgets import (
 )
 
 from spectHR.Tools.Logger import logger
-from spectHR.Tools.PSD._band_power import band_power_rectangular
+
+# Display order for HRV metrics in the parameters table and CSV export.
+# Columns not listed here are appended alphabetically after these.
+METRIC_ORDER = [
+    "count",
+    "mean",
+    "stationarity",
+    "median",
+    "min",
+    "max",
+    "rmssd",
+    "sdnn",
+    "sdsd",
+    "sd1",
+    "sd2",
+    "sd_ratio",
+    "ellipse_area",
+    "fullrange_power",
+    "vlf_power",
+    "lf_power",
+    "hf_power",
+    "lf_hf_ratio",
+]
+from spectHR.analysis.psd._band_power import band_power_rectangular
+from spectHR.analysis.psd._engine import PSDEngine
+from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
+from spectHR.analysis.profile import compute_band_power_profile
 from spectUI._uitools import show_export_summary
 from spectUI.workSpace import get_export_dir, psd_method_from_workspace
 
@@ -97,6 +123,17 @@ class ParametersPlotWidget(QWidget):
         self.setFocus()
 
         labels, cols, values = self.dataset.hrv_epoch_table()
+
+        # Re-order columns: known metrics first (METRIC_ORDER), then extras
+        # alphabetically. hrv_epoch_table returns cols sorted; presentation
+        # order is a UI concern owned here.
+        ordered = [c for c in METRIC_ORDER if c in cols]
+        ordered += sorted(c for c in cols if c not in ordered)
+        if ordered != list(cols):
+            col_idx = {c: i for i, c in enumerate(cols)}
+            new_order = [col_idx[c] for c in ordered]
+            values = values[:, new_order] if values.size else values
+            cols = ordered
 
         subject = getattr(dataset, "basename", None)
         n_rows = int(labels.shape[0])
@@ -280,7 +317,8 @@ class ParametersPlotWidget(QWidget):
                 # straight off the same arrays. Costs one PSD per epoch
                 # instead of two (one for the unit / spectrum + one
                 # implicitly inside ``band_powers``).
-                psd_res = view.psd(with_ci=False)
+                psd_method_here = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
+                psd_res = PSDEngine(view).compute(psd_method_here, with_ci=False)
                 freqs = np.asarray(psd_res.freqs)
                 power = np.asarray(psd_res.power)
                 row["method"] = (psd_res.method or "")
@@ -293,19 +331,12 @@ class ParametersPlotWidget(QWidget):
                 row["unit"] = (psd_res.unit or "").replace("/Hz", "")
 
                 # Fall back to the active method's bands when the
-                # workspace had none - keeps the file useful for ad-hoc
-                # scripts that bypass the workspace dialog.
+                # workspace had none.
                 if not bands:
-                    method = getattr(view, "psd_method", None) or getattr(
-                        hrv, "psd_method", None
-                    )
-                    if method is not None:
-                        bands_iter = [
-                            (name, b.low, b.high)
-                            for name, b in method.bands.items()
-                        ]
-                    else:
-                        bands_iter = []
+                    bands_iter = [
+                        (name, b.low, b.high)
+                        for name, b in psd_method_here.bands.items()
+                    ]
                 else:
                     bands_iter = bands
 
@@ -437,7 +468,8 @@ class ParametersPlotWidget(QWidget):
 
             try:
                 view = hrv[label]
-                result = view.band_power_profile(
+                result = compute_band_power_profile(
+                    view,
                     window_s=window_s,
                     step_s=step_s,
                     psd_method=prof_psd_method,
