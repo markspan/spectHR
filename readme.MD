@@ -1118,10 +1118,9 @@ Fork the repository and open a pull request with a clear description of the chan
 
 The core HRV and spectral analysis algorithms in spectHR are derived from
 [CARSPAN](https://www.rug.nl/staff/l.j.m.mulder/carspan), a cardiovascular
-analysis package developed at the University of Groningen. New algorithms
-developed in spectHR are contributed back to CARSPAN. We are grateful to the
-authors of CARSPAN -- Ben Mulder and Arie van Roon -- for building and sharing
-that foundation. The CARSPAN manual was written by Hedwig Hofstetter and Ben Mulder.
+analysis package developed at the University of Groningen. We are grateful to the
+authors of CARSPAN -- Ben Mulder and Arie van Roon -- for their work. 
+The CARSPAN manual was written by Ben Mulder, Arie van Roon and Hedwig Hofstetter.
 
 ---
 
