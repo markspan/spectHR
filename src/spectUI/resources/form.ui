@@ -316,6 +316,35 @@ border-radius: 1px;
          </item>
         </layout>
        </widget>
+       <widget class="QWidget" name="LogTab">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <attribute name="title">
+         <string>Log</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="verticalLayout_log">
+         <item>
+          <widget class="QPlainTextEdit" name="logView">
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+           <property name="font">
+            <font>
+             <family>Courier New</family>
+             <pointsize>9</pointsize>
+            </font>
+           </property>
+           <property name="lineWrapMode">
+            <enum>QPlainTextEdit::LineWrapMode::NoWrap</enum>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
       </widget>
      </widget>
     </item>

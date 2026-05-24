@@ -12,7 +12,7 @@ matplotlib.use("QtAgg", force=True)
 import webbrowser
 
 from PySide6.QtCore import QFile, Qt
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtGui import QAction, QFont, QTextCursor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,8 +22,30 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QVBoxLayout,
+    QToolButton,
     QTreeWidgetItem,
 )
+
+
+class _QtLogHandler(logging.Handler):
+    """Logging handler that appends records to a QPlainTextEdit widget."""
+
+    def __init__(self, widget):
+        super().__init__()
+        self._widget = widget
+        self.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        ))
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self._widget.appendPlainText(msg)
+            # Keep the view scrolled to the latest entry.
+            self._widget.moveCursor(QTextCursor.End)
+        except Exception:
+            self.handleError(record)
 
 from pathlib import Path
 
@@ -64,6 +86,11 @@ class MainWindow(QMainWindow):
         ui_file.close()
 
         self.setCentralWidget(self.ui)
+
+        # Route all spectHR log output to the Log tab as well as the console.
+        self._log_handler = _QtLogHandler(self.ui.logView)
+        logging.getLogger("spectHR").addHandler(self._log_handler)
+
         self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
         self.ui.actionAdd_Epoch.setStatusTip("Add a new epoch spanning the full recording")
         self.ui.actionAdd_Epoch.setToolTip("Add a new epoch spanning the full recording")   
@@ -151,6 +178,19 @@ class MainWindow(QMainWindow):
 
         self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
         self.ui.Views.currentChanged.connect(self.on_tab_changed)
+
+        # Hide the Log tab from the tab strip and pin a toggle button to the
+        # top-right corner of the tab bar so it is always visually at the right.
+        self._log_tab_index = 7
+        self._pre_log_index = 0
+        self.ui.Views.tabBar().setTabVisible(self._log_tab_index, False)
+
+        self._log_btn = QToolButton(self.ui.Views)
+        self._log_btn.setText("Log")
+        self._log_btn.setCheckable(True)
+        self._log_btn.setAutoRaise(True)
+        self._log_btn.toggled.connect(self._on_log_btn_toggled)
+        self.ui.Views.setCornerWidget(self._log_btn, Qt.TopRightCorner)
 
         self.dataset = None
 
@@ -340,15 +380,29 @@ class MainWindow(QMainWindow):
     # Tab / file selection handlers
     # ------------------------------------------------------------------
 
+    def _on_log_btn_toggled(self, checked):
+        """Show the Log page when the corner button is pressed, restore on release."""
+        if checked:
+            self._pre_log_index = self.ui.Views.currentIndex()
+            self.ui.Views.setCurrentIndex(self._log_tab_index)
+        else:
+            self.ui.Views.setCurrentIndex(self._pre_log_index)
+
     def on_tab_changed(self, index):
         # Tab order in form.ui (`Views` QTabWidget):
         #   0 — Preprocessing
-        #   1 — HR
+        #   1 — IBI Series
         #   2 — Poincaré
         #   3 — Epochs
         #   4 — PSD
         #   5 — Profiles
         #   6 — Parameters
+        #   7 — Log  (hidden from tab strip; driven by the corner-widget button)
+        # Keep the Log button checked state in sync when a regular tab is clicked.
+        self._log_btn.blockSignals(True)
+        self._log_btn.setChecked(index == self._log_tab_index)
+        self._log_btn.blockSignals(False)
+
         QApplication.setOverrideCursor(Qt.WaitCursor)
         if self.dataset is not None:
             self.dataset.save(self.savename)

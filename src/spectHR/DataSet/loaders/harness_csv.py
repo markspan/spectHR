@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 
-from scipy.interpolate import interp1d
 import numpy as np
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
@@ -81,6 +80,7 @@ def load_harness_raw_csv(
     if not valid.any():
         raise ValueError("Harness CSV contains no valid timestamps")
 
+    from scipy.interpolate import interp1d
     ms_filled = interp1d(
         sample_indices[valid],
         ms[valid],

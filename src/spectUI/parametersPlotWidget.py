@@ -94,7 +94,7 @@ class ParametersPlotWidget(QWidget):
         )
         self.setFocus()
 
-        labels, cols, values = self.dataset.hrv.hrv_epoch_table(self.dataset)
+        labels, cols, values = self.dataset.hrv_epoch_table()
 
         subject = getattr(dataset, "basename", None)
         n_rows = int(labels.shape[0])

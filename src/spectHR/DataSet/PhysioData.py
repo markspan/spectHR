@@ -170,6 +170,57 @@ class PhysioData:
             return None
         return self.hrv_map.get(self.active_band)
 
+    def hrv_epoch_table(
+        self,
+    ) -> "tuple[np.ndarray, list[str], np.ndarray]":
+        """Compute all HRV metrics for every active epoch.
+
+        Iterates over ``self.epochs``, computes each metric on the active
+        ``CardioSeries`` (``self.hrv``) restricted to that epoch's bounds,
+        and assembles the results into a rectangular matrix.
+
+        Returns
+        -------
+        labels : np.ndarray, shape (n_epochs,)
+            Epoch names, in iteration order.
+        cols : list[str]
+            Metric names, ordered by ``CardioSeries.METRIC_ORDER`` then
+            alphabetically for any extras.
+        values : np.ndarray, shape (n_epochs, n_metrics), dtype float64
+            Metric values; NaN where a metric could not be computed.
+
+        Returns three empty containers when no active epochs exist or no
+        active HRV series is loaded.
+        """
+        hrv = self.hrv
+        if hrv is None:
+            return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
+
+        labels_list: list = []
+        rows: list[dict[str, float]] = []
+
+        for label, ep in self.epochs.items():
+            if getattr(ep, "active", False):
+                labels_list.append(label)
+                rows.append(hrv.metric_table_epoch(ep.start, ep.end))
+
+        if not rows:
+            return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
+
+        keys = set().union(*(d.keys() for d in rows))
+        cols = [c for c in hrv.METRIC_ORDER if c in keys]
+        cols.extend(sorted(keys - set(cols)))
+        col_idx = {c: j for j, c in enumerate(cols)}
+
+        values = np.full((len(rows), len(cols)), np.nan, dtype=float)
+        for i, d in enumerate(rows):
+            for k, v in d.items():
+                j = col_idx.get(k)
+                if j is not None:
+                    values[i, j] = float(v)
+
+        return np.asarray(labels_list, dtype=object), cols, values
+
     # ------------------------------------------------------------ #
     # PSD configuration                                             #
     # ------------------------------------------------------------ #
@@ -381,9 +432,6 @@ class PhysioData:
         whole-signal segmentation so the call is never a no-op when the
         user explicitly asked for per-epoch mode.
         """
-        # Local import to avoid a circular reference at module-load time.
-        from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
-
         if rsp_ts.times.size < 5 or not getattr(self, "epochs", None):
             return RespirationSeries.from_timeseries(rsp_ts)
 

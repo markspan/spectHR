@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 import numpy as np
-import scipy.signal as signal
 
 from spectHR.Tools.Logger import logger
 
@@ -22,19 +21,6 @@ class TimeSeries:
     - Does NOT know about PhysioData, epochs, or stream names
     - Provides identity-neutral views via .view()
     """
-
-    # ------------------------------------------------------------------
-    # ECG polarity heuristic weights (used by detect_ecg_polarity)
-    # ------------------------------------------------------------------
-    # Three independent heuristics are combined into a single score.
-    # Positive total → signal is inverted; negative → normal orientation.
-    # Weights reflect relative reliability: peak prominence is the most
-    # direct indicator (1.0), Hilbert envelope energy is secondary (0.8),
-    # and percentile asymmetry is the weakest signal (0.5).
-    # ClassVar prevents dataclass from treating these as instance fields.
-    _POLARITY_WEIGHT_PEAK:     ClassVar[float] = 1.0
-    _POLARITY_WEIGHT_ENVELOPE: ClassVar[float] = 0.8
-    _POLARITY_WEIGHT_EXTREMA:  ClassVar[float] = 0.5
 
     times: np.ndarray
     values: np.ndarray
@@ -56,114 +42,19 @@ class TimeSeries:
         min_peak_distance: float = 0.25,
         return_debug: bool = False,
     ) -> str | tuple[str, dict]:
+        """Determine whether this ECG signal is correctly oriented or inverted.
+
+        Delegates to :func:`spectHR.Tools.ECGProcessing.detect_ecg_polarity`.
+        See that function for full parameter and return-value documentation.
         """
-        Determine whether an ECG signal is correctly oriented or inverted.
-
-        Parameters
-        ----------
-        bandpass : tuple[float, float], optional
-            Bandpass filter (Hz) used to emphasize QRS complexes.
-        min_peak_distance : float, optional
-            Minimum distance between peaks (seconds).
-        return_debug : bool, optional
-            If True, also return a dictionary with diagnostic metrics.
-
-        Returns
-        -------
-        polarity : {"normal", "inverted"}
-            Estimated ECG polarity.
-        debug : dict, optional
-            Diagnostic metrics used for the decision.
-
-        Notes
-        -----
-        This method is intentionally conservative and robust:
-        - No single heuristic determines polarity.
-        - Designed for experimental ECG data with artifacts.
-        """
-        fs = self.srate
-        ecg = self.values.copy()
-
-        if ecg.ndim != 1:
-            raise ValueError("ECG signal must be 1D")
-
-        ecg = np.asarray(ecg, dtype=float)
-        ecg = ecg[ecg.size // 4 : -ecg.size // 4] if ecg.size > 100 else ecg
-        ecg -= np.nanmedian(ecg)
-
-        # ------------------------------------------------------------------
-        # 1. Bandpass filter (QRS emphasis)
-        # ------------------------------------------------------------------
-        nyq = 0.5 * fs
-        b, a = signal.butter(
-            3,
-            [bandpass[0] / nyq, bandpass[1] / nyq],
-            btype="bandpass",
+        from spectHR.Tools.ECGProcessing import detect_ecg_polarity
+        return detect_ecg_polarity(
+            self.times,
+            self.values,
+            bandpass=bandpass,
+            min_peak_distance=min_peak_distance,
+            return_debug=return_debug,
         )
-        ecg_f = signal.filtfilt(b, a, ecg)
-
-        # ------------------------------------------------------------------
-        # 2. Peak polarity dominance
-        # ------------------------------------------------------------------
-        distance_samples = int(min_peak_distance * fs)
-
-        pos_peaks, pos_props = signal.find_peaks(
-            ecg_f,
-            distance=distance_samples,
-            prominence=np.std(ecg_f),
-        )
-
-        neg_peaks, neg_props = signal.find_peaks(
-            -ecg_f,
-            distance=distance_samples,
-            prominence=np.std(ecg_f),
-        )
-
-        pos_prom = np.sum(pos_props["prominences"]) if len(pos_peaks) else 0.0
-        neg_prom = np.sum(neg_props["prominences"]) if len(neg_peaks) else 0.0
-
-        peak_score = pos_prom - neg_prom
-
-        # ------------------------------------------------------------------
-        # 3. Upper vs lower envelope energy
-        # ------------------------------------------------------------------
-        analytic = signal.hilbert(ecg_f)
-        envelope = np.abs(analytic)
-
-        upper_energy = np.mean(envelope[ecg_f > 0]) if np.any(ecg_f > 0) else 0.0
-        lower_energy = np.mean(envelope[ecg_f < 0]) if np.any(ecg_f < 0) else 0.0
-
-        envelope_score = upper_energy - lower_energy
-
-        # ------------------------------------------------------------------
-        # 4. Extrema asymmetry
-        # ------------------------------------------------------------------
-        p95 = np.percentile(ecg_f, 95)
-        p05 = np.percentile(ecg_f, 5)
-
-        extrema_score = p95 + p05  # positive if upper tail dominates
-
-        # ------------------------------------------------------------------
-        # 5. Aggregate decision
-        # ------------------------------------------------------------------
-        total_score = (
-            self._POLARITY_WEIGHT_PEAK     * peak_score
-            + self._POLARITY_WEIGHT_ENVELOPE * envelope_score
-            + self._POLARITY_WEIGHT_EXTREMA  * extrema_score
-        )
-
-        polarity = "normal" if total_score < 0 else "inverted"
-
-        debug = dict(
-            peak_score=peak_score,
-            envelope_score=envelope_score,
-            extrema_score=extrema_score,
-            total_score=total_score,
-            n_pos_peaks=len(pos_peaks),
-            n_neg_peaks=len(neg_peaks),
-        )
-
-        return (polarity, debug) if return_debug else polarity
 
     def flip(self) -> None:
         """Invert the signal values in place."""
@@ -177,70 +68,39 @@ class TimeSeries:
         cutoff: float = 0.1,
         order: int | None = None,
         inplace: bool = True,
-    ) -> TimeSeries:
-        """
-        Apply a zero-phase Butterworth filter to the signal.
+    ) -> "TimeSeries":
+        """Apply a zero-phase Butterworth filter to the signal.
+
+        Delegates to :func:`spectHR.Tools.SignalProcessing.butterworth_filter`.
+        See that function for full parameter documentation.
 
         Parameters
         ----------
         filter_type : {"lowpass", "highpass"}
-            Type of Butterworth filter.
         cutoff : float
             Cutoff frequency in Hz.
-        order : int | None
-            If None, estimate order using buttord; otherwise use explicitly.
+        order : int or None
+            Filter order; auto-estimated when ``None``.
         inplace : bool
-            If True, modify this TimeSeries in place.
-            If False, return a filtered copy.
-
-        Returns
-        -------
-        TimeSeries
-            Filtered TimeSeries (self or a copy).
+            If ``True`` (default), modify this series in place and return
+            ``self``. If ``False``, return a filtered copy.
         """
         if self.srate is None:
             raise ValueError("Cannot filter TimeSeries with unknown sampling rate.")
 
-        if filter_type not in ("lowpass", "highpass"):
-            raise ValueError("filter_type must be 'lowpass' or 'highpass'")
-
-        srate = float(self.srate)
-        nyq = 0.5 * srate
-        norm_cutoff = cutoff / nyq
-
-        if not 0.0 < norm_cutoff < 1.0:
-            raise ValueError("Cutoff frequency must be between 0 and Nyquist.")
-
-        # --------------------------------------------------
-        # Filter design
-        # --------------------------------------------------
-        if order is None:
-            passband = norm_cutoff * 1.1
-            stopband = norm_cutoff / 1.5
-            N, wn = signal.buttord(passband, stopband, gpass=1, gstop=5)
-        else:
-            N = int(order)
-            wn = norm_cutoff
-
-        btype = "low" if filter_type == "lowpass" else "high"
-        b, a = signal.butter(N, wn, btype=btype, analog=False)
-
-        logger.info(
-            f"Filtering TimeSeries ({btype} Butterworth): "
-            f"N={N}, cutoff={cutoff} Hz, srate={srate:.2f} Hz"
+        from spectHR.Tools.SignalProcessing import butterworth_filter
+        filtered = butterworth_filter(
+            self.values,
+            self.srate,
+            filter_type=filter_type,
+            cutoff=cutoff,
+            order=order,
         )
-
-        # --------------------------------------------------
-        # Apply filter
-        # --------------------------------------------------
-        values = self.values.astype(float)
-        filtered = signal.filtfilt(b, a, values)
 
         if inplace:
             self.values[:] = filtered
             return self
 
-        # Copy semantics
         return TimeSeries(self.times.copy(), filtered)
 
     def __getitem__(self, idx):
