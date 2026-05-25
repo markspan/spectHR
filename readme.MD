@@ -680,7 +680,7 @@ The four "*ignored on the `ibi_amplitude` branch*" rows are kept on the preset o
 
 Mulder's manual gives two algebraically equivalent ways to write the CARSPAN spectrum, depending on what you treat as the "data" entering the DFT.
 
-**Unit-impulse view (Eq. 3.19; used by `carspan`).** Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heartbeat is modelled as a sequence of unit impulses at the R-peak times $t_i$:
+**Unit-impulse view (Eq. 3.19; used by `carspan`).** Following Rompelman (1985) and Mulder [(1988)](#ref-mulder1988), the heartbeat is modelled as a sequence of unit impulses at the R-peak times $t_i$:
 
 <div align="center">
 
@@ -1160,11 +1160,8 @@ Peabody, J.E., Ryznar, R., Ziesmann, M.T., & Gillman, L. (2023). A systematic re
 <a id="ref-derivecourt2008"></a>
 De Rivecourt, M., Kuperus, M.N., Post, W.J., & Mulder, L.J.M. (2008). Cardiovascular and eye activity measures as indices for momentary changes in mental effort during simulated flight. *Ergonomics*, 51, 1295–1319. https://doi.org/10.1080/00140130802120267
 
-<a id="ref-rompelman1980"></a>
-Rompelman, O. (1980). Heart rate variability and the assessment of mental workload. In B.K.P. Horn (Ed.), *Methods of Information in Medicine*. Stuttgart: Schattauer.
-
-<a id="ref-rompelman1977"></a>
-Rompelman, O., Coenen, A.J.R.M., & Kitney, R.I. (1977). Measurement of heart-rate variability: Part 1 - Comparative study of heart-rate variability analysis methods. *Medical and Biological Engineering and Computing*, 15, 233–239. https://doi.org/10.1007/BF02441043
+<a id="ref-rompelman1985"></a>
+Rompelman, O. (1985). Spectral analysis of heart-rate variability. In J.F. Orlebeke, G.Mulder and L.J.P. van Doornen (eds.), *Psychophysiology of cardiovascular control* (pp. 315-331). New York: Plenum Press.
 
 <a id="ref-stuiver2014"></a>
 Stuiver, A., & Mulder, L.J.M. (2014). Cardiovascular state changes in simulated work environments. *Frontiers in Neuroscience*, 8, 399. https://doi.org/10.3389/fnins.2014.00399
