@@ -1,7 +1,7 @@
 """
 tests/test_band_power_profile.py — sliding-window spectral profiles.
 
-Covers :meth:`CardioMetricsMixin.band_power_profile`, the faithful port
+Covers :func:`compute_band_power_profile`, the faithful port
 of CARSPAN's ``RunProfileSommation`` (``T_AnaFunctions.pas`` 2888-3056).
 The profile recomputes band power inside a window that slides along the
 recording, so these tests check four things the README's "Profiles"
@@ -33,11 +33,8 @@ import pytest
 
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
 from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
-from spectHR.DataSet.Series.CardioMetricsMixin import (
-    BandSpec,
-    PsdMethod,
-)
-from spectHR.Tools.PSD._psd_utils import ProfileResult
+from spectHR.analysis.psd import BandSpec, PsdMethod, ProfileResult
+from spectHR.analysis.profile import compute_band_power_profile
 
 from conftest import (   # imported via pytest rootdir/conftest.py
     WORKSPACE_BANDS,
@@ -126,7 +123,7 @@ class TestProfileResultStructure:
 
     def test_returns_profileresult(self):
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=_static_method()
         )
         assert isinstance(res, ProfileResult)
@@ -134,7 +131,7 @@ class TestProfileResultStructure:
     def test_array_shapes_consistent(self):
         method = _static_method()
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(window_s=40.0, step_s=10.0, psd_method=method)
+        res = compute_band_power_profile(cs,window_s=40.0, step_s=10.0, psd_method=method)
         n_bands = len(method.bands)
         n_windows = res.timestamps.size
         assert res.band_power.shape == (n_bands, n_windows)
@@ -142,7 +139,7 @@ class TestProfileResultStructure:
 
     def test_method_and_params_recorded(self):
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=_static_method("welch")
         )
         assert res.method == "welch"
@@ -153,7 +150,7 @@ class TestProfileResultStructure:
         """Profile values are band powers, so the unit must not carry the
         spectral-density ``/Hz`` suffix."""
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=_static_method()
         )
         assert "/Hz" not in res.unit and "/hz" not in res.unit
@@ -161,7 +158,7 @@ class TestProfileResultStructure:
     def test_resp_freqs_none_without_adaptive_band(self):
         """No adaptive band configured → ``resp_freqs`` stays ``None``."""
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=_static_method()
         )
         assert res.resp_freqs is None
@@ -174,7 +171,7 @@ class TestProfileWindowEnumeration:
     def test_window_count_matches_formula(self):
         window_s, step_s = 40.0, 10.0
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=window_s, step_s=step_s, psd_method=_static_method()
         )
         duration = float(cs.times[-1] - cs.times[0])
@@ -184,7 +181,7 @@ class TestProfileWindowEnumeration:
     def test_timestamps_are_window_centres(self):
         window_s, step_s = 40.0, 10.0
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=window_s, step_s=step_s, psd_method=_static_method()
         )
         t0 = float(cs.times[0])
@@ -195,7 +192,7 @@ class TestProfileWindowEnumeration:
 
     def test_consecutive_centres_step_apart(self):
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=_static_method()
         )
         diffs = np.diff(res.timestamps)
@@ -213,30 +210,30 @@ class TestProfileValidation:
     def test_nonpositive_window_raises(self):
         cs = make_spectral_cs(0.25)
         with pytest.raises(ValueError):
-            cs.band_power_profile(window_s=0.0, step_s=5.0)
+            compute_band_power_profile(cs,window_s=0.0, step_s=5.0)
 
     def test_nonpositive_step_raises(self):
         cs = make_spectral_cs(0.25)
         with pytest.raises(ValueError):
-            cs.band_power_profile(window_s=30.0, step_s=0.0)
+            compute_band_power_profile(cs,window_s=30.0, step_s=0.0)
 
     def test_step_not_smaller_than_window_raises(self):
         """Step >= window means no overlap → no profile."""
         cs = make_spectral_cs(0.25)
         with pytest.raises(ValueError):
-            cs.band_power_profile(window_s=30.0, step_s=30.0)
+            compute_band_power_profile(cs,window_s=30.0, step_s=30.0)
 
     def test_view_shorter_than_window_raises(self):
         """A recording shorter than one window cannot produce a profile."""
         # ~16 s of beats, asking for a 60 s window.
         cs = make_cs([800.0] * 20)
         with pytest.raises(ValueError):
-            cs.band_power_profile(window_s=60.0, step_s=5.0)
+            compute_band_power_profile(cs,window_s=60.0, step_s=5.0)
 
     def test_single_rpeak_raises(self):
         cs = CardioSeries(np.array([0.0]))
         with pytest.raises(ValueError):
-            cs.band_power_profile(window_s=30.0, step_s=5.0)
+            compute_band_power_profile(cs,window_s=30.0, step_s=5.0)
 
 
 # ===========================================================================
@@ -252,7 +249,7 @@ class TestProfileStaticBandPower:
     )
     def test_band_power_finite_and_nonnegative(self, algorithm):
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=_static_method(algorithm)
         )
         finite = res.band_power[np.isfinite(res.band_power)]
@@ -268,18 +265,17 @@ class TestProfileStaticBandPower:
         profile, for every PSD algorithm — confirming the per-window
         integration is reading real spectral content, not noise."""
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=_static_method(algorithm)
         )
         hf = res.band_power[res.band_names.index("HF")]
         lf = res.band_power[res.band_names.index("LF")]
         assert np.nanmedian(hf) > np.nanmedian(lf)
 
-    def test_method_override_beats_instance_attribute(self):
-        """An explicit ``psd_method`` overrides the series' own attribute."""
+    def test_explicit_psd_method_is_used(self):
+        """An explicit ``psd_method`` argument determines the algorithm."""
         cs = make_spectral_cs(0.25)
-        cs.psd_method = _static_method("carspan")
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=_static_method("welch")
         )
         assert res.method == "welch"
@@ -301,7 +297,7 @@ class TestProfileNaNWindow:
         # windows over the dense stretches stay finite.
         ibi_ms = [800.0] * 74 + [70000.0] + [800.0] * 74
         cs = make_cs(ibi_ms)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=_static_method()
         )
 
@@ -330,11 +326,11 @@ class TestProfileAdaptiveFallback:
         method = _adaptive_hf_method(resp_low=0.05, resp_high=0.05)
         cs = make_spectral_cs(0.25)  # bare series, no _pd
 
-        as_channel = cs.band_power_profile(
+        as_channel = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=method,
             adaptive_source="respiration_channel",
         )
-        as_peak = cs.band_power_profile(
+        as_peak = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=method,
             adaptive_source="psd_peak",
         )
@@ -345,7 +341,7 @@ class TestProfileAdaptiveFallback:
         method = _adaptive_hf_method()
         cs = make_spectral_cs(0.25)
         with caplog.at_level(logging.WARNING, logger="spectHR"):
-            cs.band_power_profile(
+            compute_band_power_profile(cs,
                 window_s=40.0, step_s=10.0, psd_method=method,
                 adaptive_source="respiration_channel",
             )
@@ -356,7 +352,7 @@ class TestProfileAdaptiveFallback:
         sit inside the HF search range it scanned."""
         method = _adaptive_hf_method(resp_low=0.05, resp_high=0.05)
         cs = make_spectral_cs(0.25)
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=40.0, step_s=10.0, psd_method=method,
             adaptive_source="psd_peak",
         )
@@ -385,7 +381,7 @@ class TestProfileAdaptiveRespiration:
         cs = make_spectral_cs(0.25)
         _attach_respiration(cs, freq_hz=0.25)
 
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=method,
             adaptive_source="respiration_channel",
         )
@@ -401,7 +397,7 @@ class TestProfileAdaptiveRespiration:
         cs = make_spectral_cs(0.25)
         _attach_respiration(cs, freq_hz=0.25)
 
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=method,
             adaptive_source="respiration_channel",
         )
@@ -417,7 +413,7 @@ class TestProfileAdaptiveRespiration:
         cs = make_spectral_cs(0.25)
         _attach_respiration(cs, freq_hz=0.25)
 
-        res = cs.band_power_profile(
+        res = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=method,
             adaptive_source="respiration_channel",
             smooth_breath_freq=True,
@@ -434,11 +430,11 @@ class TestProfileAdaptiveRespiration:
         cs = make_spectral_cs(0.25)
         _attach_respiration(cs, freq_hz=0.25)
 
-        adaptive = cs.band_power_profile(
+        adaptive = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=_adaptive_hf_method(),
             adaptive_source="respiration_channel",
         )
-        static = cs.band_power_profile(
+        static = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=_static_method(),
         )
         hf_a = adaptive.band_power[adaptive.band_names.index("HF")]

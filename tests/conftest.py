@@ -13,10 +13,7 @@ import numpy as np
 import pytest
 
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
-from spectHR.DataSet.Series.CardioMetricsMixin import (
-    BandSpec,
-    PsdMethod,
-)
+from spectHR.analysis.psd import BandSpec, PsdMethod
 
 
 # ---------------------------------------------------------------------------
@@ -185,21 +182,16 @@ def typical_cs():
     ibi_ms = 800.0 + rng.normal(0.0, 30.0, 250)
     ibi_ms = np.clip(ibi_ms, 400.0, 1500.0)
     cs = make_cs(ibi_ms)
-    cs.psd_method = PsdMethod(algorithm="carspan", bands=dict(WORKSPACE_BANDS))
     return cs
 
 
 @pytest.fixture
 def lf_cs():
-    """LF-dominant spectral series, pre-configured for PSD."""
-    cs = make_spectral_cs(0.10)
-    cs.psd_method = PsdMethod(algorithm="carspan", bands=dict(WORKSPACE_BANDS))
-    return cs
+    """LF-dominant spectral series."""
+    return make_spectral_cs(0.10)
 
 
 @pytest.fixture
 def hf_cs():
-    """HF-dominant spectral series, pre-configured for PSD."""
-    cs = make_spectral_cs(0.25)
-    cs.psd_method = PsdMethod(algorithm="carspan", bands=dict(WORKSPACE_BANDS))
-    return cs
+    """HF-dominant spectral series."""
+    return make_spectral_cs(0.25)

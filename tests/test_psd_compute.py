@@ -20,16 +20,12 @@ from dataclasses import FrozenInstanceError, replace
 import numpy as np
 import pytest
 
-from spectHR.Tools.PSD._psd_utils import PSDResult
-from spectHR.Tools.PSD.WelchPSD import (
+from spectHR.analysis.psd import (
+    PSDResult,
     WelchOptions,
     compute_welch_psd,
-)
-from spectHR.Tools.PSD.LombScarglePSD import (
     LombscargleOptions,
     compute_lombscargle_psd,
-)
-from spectHR.Tools.PSD.CarspanPSD import (
     CarspanOptions,
     carspan_strict_options,
     compute_carspan_psd,
