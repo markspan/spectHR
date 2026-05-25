@@ -1184,4 +1184,11 @@ Tegegne, B., Man, T., van Roon, A., Riese, H., & Snieder, H. (2019). To the Edit
 <a id="ref-vanroon2025"></a>
 van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. *Entropy*, 27(8), 861. https://doi.org/10.3390/e27080861
 
-<a id
+<a id="ref-dewaard1996"></a>
+de Waard, D. (1996). The measurement of drivers' mental workload. Ph.D. Thesis, University of Groningen.
+
+<a id="ref-taskforce1996"></a>
+Task Force of the European Society of Cardiology and the North American Society of Pacing and Electrophysiology (1996). Heart rate variability: standards of measurement, physiological interpretation and clinical use. *Circulation*, 93(5), 1043–1065. https://doi.org/10.1161/01.CIR.93.5.1043
+
+<a id="ref-tegegne2018"></a>
+Tegegne, B., Man, T., van Roon, A., Riese, H., & Snieder, H. (2019). To the Editor: 10-second ECG-based RMSSD as valid measure of HRV. *Heart Rhythm*, 16(3), e35. https://doi.org/10.1016/j.hrthm.2018.12.022
