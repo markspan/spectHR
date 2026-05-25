@@ -1137,7 +1137,7 @@ de Geus, E.J.C., Gianaros, P.J., Brindle, R.C., Jennings, J.R., & Berntson, G.G.
 Mulder, B., Hofstetter, H., & van Roon, A. (2009). *CARSPAN for Windows: User's manual* (Version 0.0.1.36). University of Groningen. [docs/Carspan_Manual_VERSION_36.pdf](docs/Carspan_Manual_VERSION_36.pdf)
 
 <a id="ref-mulder1980"></a>
-Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Groningen.
+Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Groningen.[ref](https://research.rug.nl/en/publications/the-heart-of-mental-effort/)
 
 <a id="ref-mulder1988"></a>
 Mulder, L.J.M. (1988). *Assessment of cardiovascular reactivity by means of spectral analysis*. Ph.D. Thesis, University of Groningen.
