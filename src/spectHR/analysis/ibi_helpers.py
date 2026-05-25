@@ -6,14 +6,12 @@ Pure IBI helper functions.
 
 Every function here takes a ``CardioSeriesLike`` as its first argument and
 performs read-only operations on its ``.times``, ``.ibi``, and ``.labels``
-arrays.  There are no side effects and no imports of dataset classes.
+arrays. There are no side effects and no imports of dataset classes.
 
 These functions are called by:
-- ``spectHR.analysis.time_metrics``    (metric computations)
+- ``spectHR.analysis.time_metrics`` (metric computations)
 - ``spectHR.analysis.frequency_metrics``
-- ``CardioSeriesView`` thin wrappers (so the ``PSDEngine`` duck-typed
-  protocol - ``_ibi_clean_pairs``, ``_event_times_clean``, etc. - keeps
-  working unchanged on ``CardioSeries`` / ``CardioSeriesView`` instances)
+- ``spectHR.analysis.psd._engine.PSDEngine`` (IBI preparation for PSD back-ends)
 """
 from __future__ import annotations
 

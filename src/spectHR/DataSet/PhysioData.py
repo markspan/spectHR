@@ -18,6 +18,7 @@ from spectHR.DataSet.epoch_builders import build_epochs_from_markers
 from spectHR.DataSet.loaders import get_loader
 from spectHR.DataSet.StreamAccessor import StreamAccessor
 from spectHR.Tools.Logger import logger
+from spectHR.analysis import get_metrics
 
 
 class PhysioData:
@@ -186,8 +187,7 @@ class PhysioData:
         labels : np.ndarray, shape (n_epochs,)
             Epoch names, in iteration order.
         cols : list[str]
-            Metric names, ordered by ``METRIC_ORDER`` (parametersPlotWidget) then
-            alphabetically for any extras.
+            Metric names, sorted alphabetically.
         values : np.ndarray, shape (n_epochs, n_metrics), dtype float64
             Metric values; NaN where a metric could not be computed.
 
@@ -204,7 +204,6 @@ class PhysioData:
         for label, ep in self.epochs.items():
             if getattr(ep, "active", False):
                 labels_list.append(label)
-                from spectHR.analysis import get_metrics
                 view = hrv.view(ep.start, ep.end)
                 rows.append({name: float(fn(view)) for name, fn in get_metrics().items()})
 

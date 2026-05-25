@@ -28,7 +28,7 @@ from scipy.signal import butter, sosfiltfilt, savgol_filter, find_peaks, buttord
 from spectHR.Tools.Logger import logger
 
 
-__all__ = ["segment_respiration"]
+__all__ = ["segment_respiration", "mean_breath_frequency_hz"]
 
 
 def segment_respiration(
@@ -236,3 +236,44 @@ def segment_respiration(
         np.asarray(ends_list,   dtype=float),
         np.asarray(labels_list, dtype=object),
     )
+
+
+def mean_breath_frequency_hz(view) -> "Optional[float]":
+    """Mean breathing frequency for the phases in *view*, in Hz.
+
+    Pairs each phase with its successor (INH -> EXH or EXH -> INH) into a
+    full breath cycle and averages ``1 / cycle_period``.  With ``N`` phases
+    in the view this produces ``N-1`` cycle estimates, which is the most
+    data-efficient unbiased estimator on the alternating phase sequence built
+    by :func:`segment_respiration`.
+
+    Equivalent to CARSPAN's ``1 / LProfile.MeanIn`` used in
+    ``RunProfileSommation`` (``T_AnaFunctions.pas`` 2944-2952) when the
+    input signal is ``RespPeriod``.  spectHR does not carry a ``RespPeriod``
+    series, so we derive the same number directly from the phase-segmented
+    respiration signal.
+
+    Parameters
+    ----------
+    view : RespirationSeriesView
+        An epoch or time-range slice of a RespirationSeries.  Must expose
+        ``.starts`` and ``.ends`` as 1-D float arrays of equal length.
+
+    Returns
+    -------
+    float or None
+        Mean breath frequency in Hz, or ``None`` when fewer than two phases
+        fall inside the view (no full cycle could be reconstructed) or when
+        every paired cycle duration is non-positive (degenerate data).
+    """
+    starts = np.asarray(view.starts, dtype=float)
+    ends   = np.asarray(view.ends,   dtype=float)
+    if starts.size < 2:
+        return None
+    # One cycle per adjacent (INH+EXH) or (EXH+INH) pair.
+    # Cycle duration = end of the second phase - start of the first.
+    cycle_periods = ends[1:] - starts[:-1]
+    cycle_periods = cycle_periods[cycle_periods > 0]
+    if cycle_periods.size == 0:
+        return None
+    return float(1.0 / np.mean(cycle_periods))

@@ -20,10 +20,10 @@ class CardioSeries:
 
     Conceptual model
     ----------------
-    A CardioSeries *owns* a sequence of R-peak timestamps (seconds, dataset
-    time base).  Inter-beat intervals (IBIs) are derived on demand from those
-    times.  It does not expose HRV metric or PSD methods directly - obtain a
-    CardioSeriesView via view() or __getitem__ and call those methods there.
+    A CardioSeries owns a sequence of R-peak timestamps (seconds, dataset
+    time base). Inter-beat intervals (IBIs) are derived on demand from those
+    times. It does not compute HRV metrics or PSD; pass a CardioSeries or
+    CardioSeriesView to functions in spectHR.analysis instead.
 
     Data arrays
     -----------
@@ -41,9 +41,8 @@ class CardioSeries:
     Relationship to views
     ---------------------
     CardioSeries.view() and CardioSeries.__getitem__() return CardioSeriesView
-    objects (defined in CardioSeriesView.py).  Views own all metric and PSD
-    methods.  Use CardioSeriesLike (CardioSeriesProtocol.py) for type
-    annotations where either is acceptable.
+    objects (defined in CardioSeriesView.py). Use CardioSeriesLike
+    (CardioSeriesProtocol.py) for type annotations where either is acceptable.
     """
 
     def __init__(self, times: np.ndarray) -> None:
@@ -289,25 +288,6 @@ class CardioSeries:
         v._stream = self._stream
         v._epoch = None
         return v
-
-    # ------------------------------------------------------------------
-    # Epoch aggregation
-    # ------------------------------------------------------------------
-
-    def hrv_epoch_table(
-        self,
-        physiodata: "PhysioData",
-    ) -> "tuple[np.ndarray, list[str], np.ndarray]":
-        """Compute all HRV metrics for every active epoch.
-
-        Delegates to :meth:`PhysioData.hrv_epoch_table`, which owns the
-        epoch-iteration and matrix-assembly logic. The ``physiodata``
-        argument is accepted for backward compatibility with call sites that
-        pass the dataset explicitly; if ``self._pd`` is also set it is
-        preferred over the argument.
-        """
-        pd = self._pd if self._pd is not None else physiodata
-        return pd.hrv_epoch_table()
 
     def __repr__(self) -> str:
         return f"CardioSeries(n={self.times.size}, stream={self._stream!r})"

@@ -1,40 +1,24 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# spectHR/Tools/PSD/PSDEngine.py
+# spectHR/analysis/psd/_engine.py
 """
 PSD dispatch, unit conversion, and band-mask logic.
-
-This module contains all the frequency-domain compute plumbing that was
-previously embedded in ``CardioMetricsMixin`` as a collection of private
-``_psd_*`` methods. Extracting it here means the mixin retains only the
-public API surface (``psd``, ``band_power``, ``band_powers``), while the
-algorithm-selection, unit-conversion, and result-assembly code lives in
-one inspectable, testable class.
 
 Public surface
 --------------
 PSDEngine(series)
-    Take any object that satisfies the data-accessor protocol (see below)
-    and expose:
+    Accepts any CardioSeriesLike (times, labels, ibi arrays plus view()).
+    Exposes:
 
     compute(method, *, with_ci) -> PSDResult
-        Full PSD computation with unit conversion and CI.
+        Full PSD computation with unit conversion and optional CI.
     for_band_power(method) -> PSDResult
-        Same as compute(..., with_ci=False) - used by band-power
-        integration, which does not need confidence intervals.
+        Same as compute(..., with_ci=False). Used for band-power
+        integration where confidence intervals are not needed.
 
-Data-accessor protocol
-----------------------
-The *series* argument must provide:
-
-- ``_ibi_clean_pairs() -> (times_s, ibi_ms)``
-- ``_event_times_clean() -> np.ndarray``
-- ``_mean_ibi_ms() -> float``
-- ``_mean_ibi_ms_arithmetic() -> float``
-- ``_mmi2_factor(mean_convention) -> float``
-
-``CardioSeries`` and ``CardioSeriesView`` both satisfy this protocol
-through ``CardioMetricsMixin``.
+The engine calls helper functions from spectHR.analysis.ibi_helpers
+directly; it does not rely on any methods on the series object beyond
+the three data arrays.
 """
 from __future__ import annotations
 
@@ -77,8 +61,8 @@ class PSDEngine:
 
     Example
     -------
-    >>> engine = PSDEngine(series)
-    >>> result = engine.compute(series.psd_method)
+    >>> method = PsdMethod()
+    >>> result = PSDEngine(series).compute(method)
     """
 
     def __init__(self, series) -> None:

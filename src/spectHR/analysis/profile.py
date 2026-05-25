@@ -4,17 +4,12 @@
 """
 Sliding-window band-power profile computation.
 
-This module contains the standalone implementation of the CARSPAN
-``RunProfileSommation`` pipeline (``T_AnaFunctions.pas`` 2888–3056).
-It was extracted from ``CardioSeriesView`` so the algorithm can be
-developed, tested, and reasoned about independently of the series class.
+Standalone implementation of the CARSPAN ``RunProfileSommation`` pipeline
+(``T_AnaFunctions.pas`` 2888-3056).
 
 Public surface
 --------------
 compute_band_power_profile(series, *, window_s, step_s, ...) -> ProfileResult
-
-``CardioSeriesView.band_power_profile`` is a thin wrapper that calls
-this function; existing call sites need no changes.
 """
 from __future__ import annotations
 
@@ -32,23 +27,11 @@ from spectHR.analysis.psd._config import (
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._utils import ProfileResult
 from spectHR.Tools.Logger import logger
+from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
+from spectHR.analysis.psd._engine import PSDEngine
 
 
 __all__ = ["compute_band_power_profile"]
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-def _resolve_psd_method(series, override: Optional[PsdMethod]) -> PsdMethod:
-    """Pick the PsdMethod: explicit override → series attribute → module default."""
-    if override is not None:
-        return override
-    instance_attr = getattr(series, "psd_method", None)
-    if instance_attr is not None:
-        return instance_attr
-    return _DEFAULT_PSD_METHOD
 
 
 def _ma3(arr: np.ndarray) -> np.ndarray:
@@ -94,14 +77,13 @@ def compute_band_power_profile(
     Faithful port of CARSPAN's ``RunAnalysis(Tag=1)`` profile pipeline
     from ``T_AnaFunctions.pas`` (``RunDFT`` 2032, ``RunPDS`` 2152,
     ``RunResample`` 2320, ``RunMAW`` 2421, ``RunProfileSommation``
-    2888–3056).  See ``CardioSeriesView.band_power_profile`` for the
-    full step-by-step docstring.
+    2888-3056).
 
     Parameters
     ----------
     series : CardioSeriesLike
-        Must implement ``.times``, ``.ibi``, ``.labels``, ``.view()``,
-        ``._psd_for_band_power()``, and optionally ``._pd``.
+        Must expose ``.times``, ``.ibi``, ``.labels``, ``.view()``,
+        and optionally ``._pd`` (for respiration channel access).
     window_s : float
         Window length in seconds.
     step_s : float
@@ -131,7 +113,7 @@ def compute_band_power_profile(
             f"window_s ({window_s}) so the windows overlap."
         )
 
-    method = _resolve_psd_method(series, psd_method)
+    method = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
 
     if series.times.size < 2:
         raise ValueError("Need at least 2 R-peaks for a profile.")
@@ -197,8 +179,7 @@ def compute_band_power_profile(
             if win_view.times.size < 4:
                 continue
             try:
-                from spectHR.analysis.psd._engine import PSDEngine as _PSDEngine
-                psd_result = _PSDEngine(win_view).for_band_power(profile_method)
+                psd_result = PSDEngine(win_view).for_band_power(profile_method)
             except Exception:
                 continue
             psd_cache[i] = psd_result
@@ -207,7 +188,7 @@ def compute_band_power_profile(
 
             if adaptive_source == "respiration_channel" and rsp_series is not None:
                 rsp_view = rsp_series.view(win_start, win_end)
-                rf = rsp_view.mean_breath_frequency_hz()
+                rf = mean_breath_frequency_hz(rsp_view)
                 if rf is not None and resp_freqs is not None:
                     resp_freqs[i] = rf
 
@@ -275,8 +256,7 @@ def compute_band_power_profile(
             if win_view.times.size < 4:
                 continue
             try:
-                from spectHR.analysis.psd._engine import PSDEngine as _PSDEngine
-                psd_result = _PSDEngine(win_view).for_band_power(profile_method)
+                psd_result = PSDEngine(win_view).for_band_power(profile_method)
             except Exception:
                 continue
 

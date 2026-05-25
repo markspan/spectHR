@@ -1,6 +1,19 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/DataSet/Series/RespirationSeriesView.py
+"""
+Zero-copy view into a RespirationSeries.
+
+Design
+------
+RespirationSeriesView is a pure data accessor. It holds a reference to a
+parent RespirationSeries and an index array, and exposes the subset of
+starts, ends, and labels that fall within that slice.
+
+Respiration analysis functions (e.g. mean_breath_frequency_hz) are
+standalone functions in spectHR.Tools.RespirationSegmentation that accept
+a view as their argument.
+"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
@@ -16,12 +29,8 @@ class RespirationSeriesView:
     Zero-copy view into a parent RespirationSeries.
 
     Uses composition: holds a reference to the parent and an index array.
-    Does NOT inherit from RespirationSeries - it cannot own data or call
-    from_timeseries.  Methods that only make sense on the full series are
-    deliberately absent.
-
-    Mutations to the parent RespirationSeries are reflected in the view.
-    View methods never modify the parent.
+    Does NOT inherit from RespirationSeries and cannot own data or call
+    from_timeseries. View methods never modify the parent.
 
     Identity metadata
     -----------------
@@ -91,47 +100,6 @@ class RespirationSeriesView:
         v._stream = self._stream
         v._epoch = epoch_label
         return v
-
-    # ------------------------------------------------------------------
-    # Aggregate measures
-    # ------------------------------------------------------------------
-
-    def mean_breath_frequency_hz(self) -> Optional[float]:
-        """Mean breathing frequency inside this view, in Hz.
-
-        Pairs each phase with its successor (INH->EXH or EXH->INH)
-        into a full breath cycle and averages ``1 / cycle_period``.
-        With ``N`` phases in the view this produces ``N-1`` cycle
-        estimates, which is the most data-efficient unbiased
-        estimator on the alternating phase sequence built by
-        :meth:`RespirationSeries.from_timeseries`.
-
-        Equivalent to CARSPAN's ``1 / LProfile.MeanIn`` used in
-        ``RunProfileSommation`` (``T_AnaFunctions.pas`` 2944-2952)
-        when the input signal is ``RespPeriod``. spectHR does not
-        carry a ``RespPeriod`` series, so we derive the same number
-        directly from the phase-segmented respiration signal.
-
-        Returns
-        -------
-        float or None
-            The mean breath frequency in Hz, or ``None`` when fewer
-            than two phases fall inside the view (no full cycle
-            could be reconstructed). Also returns ``None`` if every
-            paired cycle came out non-positive (degenerate data).
-        """
-        n = int(self._idx.size)
-        if n < 2:
-            return None
-        starts = self.starts
-        ends = self.ends
-        # One cycle per adjacent (INH+EXH) or (EXH+INH) pair.
-        # Cycle duration = end of the second phase - start of the first.
-        cycle_periods = ends[1:] - starts[:-1]
-        cycle_periods = cycle_periods[cycle_periods > 0]
-        if cycle_periods.size == 0:
-            return None
-        return float(1.0 / np.mean(cycle_periods))
 
     # ------------------------------------------------------------------
     # Representation

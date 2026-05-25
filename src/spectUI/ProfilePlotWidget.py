@@ -398,13 +398,9 @@ class ProfilePlotWidget(QWidget):
         # legend entries for those bands get an "(adaptive)" suffix.
         adaptive_names: frozenset = frozenset(adaptive_bands_cfg.keys())
 
-        # Build the PsdMethod directly from the workspace so adaptive
-        # band settings (Profiles.adaptive_bands) are always reflected
-        # in the computation - regardless of whether the caller has
-        # already pushed the method onto each series via set_psd_method.
-        # Passing it explicitly to _fetch_profile is the single source
-        # of truth for this widget; the series.psd_method fallback in
-        # _resolve_method is a safety net for other call sites.
+        # Build the PsdMethod from the workspace and pass it explicitly so
+        # adaptive band settings (Profiles.adaptive_bands) are always
+        # reflected in the computation.
         prof_psd_method: Optional[PsdMethod] = (
             psd_method_from_workspace(workspace) if workspace is not None else None
         )

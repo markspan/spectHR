@@ -11,14 +11,10 @@ Each function accepts a single ``CardioSeriesLike`` argument (anything that
 exposes ``.times``, ``.ibi``, and ``.labels`` arrays) and returns a ``float``
 (or ``np.nan`` when the metric cannot be computed).
 
-No algorithms live on the ``CardioSeries`` class anymore.  These functions
-are accessed through:
-
-1. ``series.rmssd()`` - ``CardioSeriesView.__getattr__`` dispatches to
-   the registry and returns a bound zero-argument lambda.
-2. ``import spectHR.analysis as hrv; hrv.rmssd(series)`` - direct call.
-3. ``hrv.get_metrics()`` - returns the full ``{name: fn}`` dict for
-   automatic table building.
+Usage:
+    import spectHR.analysis as hrv
+    hrv.rmssd(series)       # call a metric directly
+    hrv.get_metrics()       # {name: fn} dict for automatic table building
 """
 from __future__ import annotations
 

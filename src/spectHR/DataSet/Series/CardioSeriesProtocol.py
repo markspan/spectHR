@@ -4,26 +4,23 @@
 """
 Structural protocol shared by CardioSeries and CardioSeriesView.
 
-CardioSeriesLike lets functions (PSDEngine, Profile, analysis metrics)
+CardioSeriesLike lets functions (PSDEngine, profile, analysis metrics)
 accept either a full CardioSeries or an epoch / time-range view of one,
 with isinstance() support thanks to @runtime_checkable.
 
 What belongs here
 -----------------
-Only members *actually called* by algorithm code (PSDEngine, Profile,
-spectHR.analysis functions) belong in this protocol.  Public-API methods
-such as psd() and band_power() are provided by CardioMetricsMixin and are
-not part of the structural contract that algorithm modules depend on.
+Only members actually called by algorithm code belong in this protocol.
+That is the three data arrays (times, labels, ibi) and the view()
+constructor. PSD helper functions live in spectHR.analysis.ibi_helpers
+and take a CardioSeriesLike as their first argument; they are not methods
+on the series and so do not appear here.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, Tuple, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import numpy as np
-
-if TYPE_CHECKING:
-    from spectHR.analysis.psd._utils import PSDResult
-    from spectHR.analysis.psd._config import MeanConvention
 
 
 @runtime_checkable
@@ -36,8 +33,6 @@ class CardioSeriesLike(Protocol):
     -------
     >>> def compute_metrics(series: CardioSeriesLike) -> dict: ...
     """
-
-    # --- core data arrays ------------------------------------------------
 
     @property
     def times(self) -> np.ndarray:
@@ -53,36 +48,6 @@ class CardioSeriesLike(Protocol):
     def ibi(self) -> np.ndarray:
         """Inter-beat intervals in seconds, trailing NaN for alignment."""
         ...
-
-    # --- PSD engine duck-typed helpers -----------------------------------
-    # Called by PSDEngine; implemented as thin wrappers in CardioSeriesView.
-
-    def _ibi_clean_pairs(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Aligned (times_s, ibi_ms) with artefact intervals removed.
-        Used by Welch and Lomb-Scargle PSD back-ends.
-        """
-        ...
-
-    def _event_times_clean(self) -> np.ndarray:
-        """R-peak timestamps with artefact-labelled beats removed.
-        Used by the CARSPAN event-series PSD path.
-        """
-        ...
-
-    def _mean_ibi_ms(self) -> float:
-        """Mean IBI in ms under the T/N harmonic convention."""
-        ...
-
-    def _mean_ibi_ms_arithmetic(self) -> float:
-        """Mean IBI in ms under CARSPAN arithmetic-mean-of-rate convention."""
-        ...
-
-    def _mmi2_factor(self, mean_convention: "MeanConvention") -> float:
-        """mean_ibi_ms squared - the mMI2 unit-conversion multiplier."""
-        ...
-
-    # --- view construction -----------------------------------------------
-    # Called by Profile.py and metric_table_epoch.
 
     def view(self, starttime: float, endtime: float) -> "CardioSeriesLike":
         """Return a zero-copy view restricted to [starttime, endtime]."""

@@ -5,13 +5,11 @@
 HRV metric registry.
 
 Functions decorated with ``@hrv_metric`` are stored here and discovered
-automatically by ``CardioSeries.metric_table()`` and
-``PhysioData.hrv_epoch_table()``.
+automatically by ``PhysioData.hrv_epoch_table()``.
 
-Replaces the old ``dir(cls)`` class-introspection pattern.  The registry is
-a plain module-level dict; there is no base class requirement.  New metrics
-are added simply by decorating a standalone function - no class editing
-needed.
+The registry is a plain module-level dict; there is no base class
+requirement. New metrics are added simply by decorating a standalone
+function.
 """
 from __future__ import annotations
 

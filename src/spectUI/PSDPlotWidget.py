@@ -80,8 +80,8 @@ def _bands_from_workspace(workspace: Optional[Dict[str, Any]]) -> Dict[str, dict
 
     The plotting helpers (``_band_bounds``, ``_band_draw_extents``,
     ``_draw_band_fill``) work on this raw dict form. A separate
-    :class:`PsdMethod` is built from the same data and pushed to each
-    series via ``series.psd_method = …`` for the *compute* path.
+    :class:`PsdMethod` is built from the same data and passed explicitly
+    to ``PSDEngine.compute`` for the compute path.
     """
     if workspace is None:
         return {}

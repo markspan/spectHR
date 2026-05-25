@@ -16,8 +16,8 @@ class StreamAccessor:
     """
     Design role
     -----------
-    - Provides dataset-aware access to a specific TimeSeries.
-    - ONLY place that stamps view identity: (_pd, _stream, _epoch)
+    Provides dataset-aware epoch slicing for a TimeSeries. Stamps
+    ``_pd``, ``_stream``, and ``_epoch`` identity on the returned view.
 
     Examples
     --------

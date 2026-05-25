@@ -126,16 +126,6 @@ class TimeSeries:
             return None
         return float(1.0 / np.mean(diffs))
 
-    @srate.setter
-    def srate(self, value: Optional[float]) -> None:
-        """
-        Set the sampling rate manually.
-
-        Args:
-            value: Optional[float]
-                Sampling rate in Hz, or None to clear.
-        """
-        self._srate = value
 
     def view(
         self, starttime: float | None = None, endtime: float | None = None

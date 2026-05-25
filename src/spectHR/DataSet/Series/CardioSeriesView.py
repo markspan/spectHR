@@ -33,9 +33,6 @@ class CardioSeriesView:
     Does NOT inherit from CardioSeries and cannot own data, classify IBIs,
     or replace peaks.
 
-    Analysis methods (psd, band_power, metric_table, etc.) do not live here.
-    Pass this view to the analysis layer directly.
-
     Identity metadata
     -----------------
     _pd     : PhysioData linkage (propagated from parent)

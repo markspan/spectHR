@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 import spectHR as cs
 from spectHR.DataSet.PhysioData import PhysioData
+from spectHR.analysis.time_metrics import sd1, sd2
 
 
 class PoincarePlotWidget(QWidget):
@@ -164,8 +165,8 @@ class PoincarePlotWidget(QWidget):
 
             ellipse = Ellipse(
                 (mean_ibi, mean_ibi),
-                rt.sd1() / 500.0, # Be Aware
-                rt.sd2() / 500.0, # Be Aware
+                sd1(rt) / 500.0,  # Be Aware
+                sd2(rt) / 500.0,  # Be Aware
                 angle=-45,
                 facecolor=color,
                 edgecolor="black",

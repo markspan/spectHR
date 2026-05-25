@@ -231,7 +231,7 @@ class ParametersPlotWidget(QWidget):
         """Yield ``(label, epoch)`` pairs for every active epoch, in
         the same order the time-domain table uses.
 
-        Mirrors the iteration inside ``CardioSeries.hrv_epoch_table`` so
+        Mirrors the iteration inside ``PhysioData.hrv_epoch_table`` so
         the row order of the three CSVs lines up - joining them in R or
         SPSS on ``epoch`` then becomes a simple one-to-one merge.
         """
