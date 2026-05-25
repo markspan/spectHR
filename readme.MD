@@ -1122,6 +1122,8 @@ analysis package developed at the University of Groningen. We are grateful to th
 authors of CARSPAN -- Ben Mulder and Arie van Roon -- for their work. Which is actually all the hard work.
 The CARSPAN manual was written by Ben Mulder, Arie van Roon and Hedwig Hofstetter.
 
+Parts of the documentation and the structuring of the codebase were developed with the assistance of large language models (LLMs), in particular Anthropic's Claude. All content was reviewed and verified by the authors.
+
 ---
 
 ## License
