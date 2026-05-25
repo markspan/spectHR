@@ -134,7 +134,7 @@ spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder,
 
 ### Practical considerations
 
-**Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals (visible in spectHR's shaded CI band). Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2018) showed that a 10-second ECG can yield a valid RMSSD estimate in large samples.
+**Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals (visible in spectHR's shaded CI band). Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2019) showed that a 10-second ECG can yield a valid RMSSD estimate in large samples.
 
 **Artefacts are critical.** A single missed or spurious R-peak introduces broadband spectral energy that can swamp the genuine HRV signal ([Mulder, 1988](#ref-mulder1988)). This is why spectHR requires the user to inspect and verify the IBI series before computing any metrics.
 
@@ -264,7 +264,7 @@ Configure it under **WorkSpace → Edit Parameters → Profile Settings**:
 | Setting | Default | What it does |
 |---|---|---|
 | `bands` | `["LF", "HF"]` | Tick-box list of band names to plot. Must match band names defined under PSD Settings; stale names from a band rename are dropped automatically. Ignored when an adaptive band is active - the adaptive band is shown alone. |
-| `window_s` | 30 s | Length of the sliding window, in seconds. CARSPAN manual recommends `window_s ≥ 3 · 1/f_l_min` for reliable estimates of the lowest band (i.e. ≥ 50 s for an LF lower edge of 0.06 Hz). |
+| `window_s` | 30 s | Length of the sliding window, in seconds. [CARSPAN manual](#ref-carspan-manual) recommends `window_s ≥ 3 · 1/f_l_min` for reliable estimates of the lowest band (i.e. ≥ 50 s for an LF lower edge of 0.06 Hz). |
 | `step_s` | 5 s | Step between successive windows. Must be strictly smaller than `window_s` (otherwise the windows don't overlap). |
 | `smooth_for_display` | `false` | Apply the same 3-point moving-average smoother used by the PSD plot, along each band's time series. **Off by default**. |
 | `adaptive_band` | *(none)* | Selects one band to act as the **adaptive band** whose edges follow the per-window breathing frequency rather than fixed Hz limits. When set, that band is the only one plotted and the right y-axis shows the breathing frequency trace. |
@@ -652,7 +652,7 @@ CARSPAN takes a different approach. Instead of resampling the IBI series onto a 
 
 spectHR has **one CARSPAN compute function** (`compute_carspan_psd`) with **two presets** of its `CarspanOptions` dataclass, exposed in the workspace as `method: "carspan"` (configurable) and `method: "carspan_strict"` (manual-faithful):
 
-- **`carspan_strict`** is the preset bundle returned by `carspan_strict_options()`. Locks every setting the CARSPAN manual leaves implicit, including `signal: "ibi_amplitude"` which switches the DFT to the IBI-amplitude formula of Eq. 3.21 of the CARSPAN manual. Reproduces the manual's epoch #2 reference (`example1.EVT`, p. 121) within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
+- **`carspan_strict`** is the preset bundle returned by `carspan_strict_options()`. Locks every setting the [CARSPAN manual](#ref-carspan-manual) leaves implicit, including `signal: "ibi_amplitude"` which switches the DFT to the IBI-amplitude formula of Eq. 3.21 of the [CARSPAN manual](#ref-carspan-manual). Reproduces the manual's epoch #2 reference (`example1.EVT`, p. 121) within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
 - **`carspan`** is the configurable variant. By default it's the unit-impulse SOC of Eq. 3.19, with the window, amplitude correction, reference-grid DC subtraction, and skip-first-event all exposed as separate workspace fields. Use this when you want to explore the effect of any of those settings.
 
 Because both come from the same function, *every* setting `carspan_strict` uses is reachable from the configurable side too. The strict preset is exactly:
@@ -680,7 +680,7 @@ The four "*ignored on the `ibi_amplitude` branch*" rows are kept on the preset o
 
 Mulder's manual gives two algebraically equivalent ways to write the CARSPAN spectrum, depending on what you treat as the "data" entering the DFT.
 
-**Unit-impulse view (Eq. 3.19; used by `carspan`).** Following Rompelman (1975) and Mulder [(1988)](#ref-mulder1988), the heartbeat is modelled as a sequence of unit impulses at the R-peak times $t_i$:
+**Unit-impulse view (Eq. 3.19; used by `carspan`).** Following Rompelman [(1985)](#ref-rompelman1985) and Mulder [(1988)](#ref-mulder1988), the heartbeat is modelled as a sequence of unit impulses at the R-peak times $t_i$:
 
 <div align="center">
 
@@ -710,7 +710,7 @@ where $x_i$ is the arithmetic-mean-subtracted IBI in ms, $t_i$ the local IBI dur
 
 The two views describe the *same physical signal* and would integrate to the same total energy under continuous-signal idealisations. In the discrete sampled implementation they produce different magnitudes (per-bin scaling differs by ~ $\overline{\text{IBI}}^2$ ). The strict path is the one whose discrete output matches the manual's tabulated reference values.
 
-**Which one matches the manual?** The strict path: verified against epoch #2 of `example1.EVT` (CARSPAN manual p. 121) to within ~2 % on every band, ~0.03 % on LF.
+**Which one matches the manual?** The strict path: verified against epoch #2 of `example1.EVT` ([CARSPAN manual](#ref-carspan-manual) p. 121) to within ~2 % on every band, ~0.03 % on LF.
 
 Internally, both variants run through the same `compute_carspan_psd` function in `CarspanPSD.py`; the `signal` field of `CarspanOptions` (`"events"` vs `"ibi_amplitude"`) selects the algorithm. The `carspan_strict_options()` helper builds the preset that locks in the manual-faithful choices for the IBI-amplitude path.
 
@@ -762,10 +762,10 @@ Or as JSON:
 
 Two things to know:
 
-1. **`signal: "ibi_amplitude"`** is the switch that selects the manual-faithful algorithm (CARSPAN manual Eq. 3.21). On this branch the other strict-bundle fields (`amplitude_correction`, `skip_first_event`, `dc_removal`, `dc_grid`) are **ignored** by the compute layer (the manual fixes their values), so they don't need to appear in the Edit Parameters dialog.
+1. **`signal: "ibi_amplitude"`** is the switch that selects the manual-faithful algorithm ([CARSPAN manual](#ref-carspan-manual) Eq. 3.21). On this branch the other strict-bundle fields (`amplitude_correction`, `skip_first_event`, `dc_removal`, `dc_grid`) are **ignored** by the compute layer (the manual fixes their values), so they don't need to appear in the Edit Parameters dialog.
 2. **`window: "5% cosine bell"`** matches `TaperPercent := 5` (5 % cosine taper per side). The default of `"10% cosine bell"` is 10 % per side, which leaves ~3–5 % more energy on the table and is the single largest source of disagreement with strict if you only flip `signal`.
 
-Verified on epoch #2 of `example1.EVT`: setting `signal: "ibi_amplitude"` + `window: "5% cosine bell"` on the configurable `carspan` path reproduces `carspan_strict` to within ~1 % on every band (and the CARSPAN manual reference to within ~1 %, actually closer than strict on some bands because the residuals from the two sub-percent effects partially cancel).
+Verified on epoch #2 of `example1.EVT`: setting `signal: "ibi_amplitude"` + `window: "5% cosine bell"` on the configurable `carspan` path reproduces `carspan_strict` to within ~1 % on every band (and the [CARSPAN manual](#ref-carspan-manual) reference to within ~1 %, actually closer than strict on some bands because the residuals from the two sub-percent effects partially cancel).
 
 Two small residuals remain between `carspan + signal=ibi_amplitude` and pure `carspan_strict`:
 
@@ -906,14 +906,14 @@ In both cases the factor $10^6$ (explicit above for strict, implicit in the even
 
 ### Spectral profiles
 
-A **spectral profile** is the time-resolved evolution of band power within one epoch (CARSPAN manual §3.3.5). Where the PSD tab collapses time and gives one spectrum per epoch, the Profiles tab does the opposite: it collapses *frequency* inside each band and gives one curve per band drawn against time, answering *"how did this band's power rise and fall over the recording?"* rather than *"how is power distributed across frequency?"*
+A **spectral profile** is the time-resolved evolution of band power within one epoch ([CARSPAN manual](#ref-carspan-manual) §3.3.5). Where the PSD tab collapses time and gives one spectrum per epoch, the Profiles tab does the opposite: it collapses *frequency* inside each band and gives one curve per band drawn against time, answering *"how did this band's power rise and fall over the recording?"* rather than *"how is power distributed across frequency?"*
 
 Configure profiles under **WorkSpace → Edit Parameters → Profile Settings**:
 
 | Setting | Default | What it does |
 |---|---|---|
 | `bands` | `["LF", "HF"]` | Band names to plot. Must match names under PSD Settings; stale names are dropped automatically. Ignored when an adaptive band is active. |
-| `window_s` | 30 s | Window length $W$ in seconds. For the LF band (lower edge 0.06 Hz) the manual recommends $W \ge 50$ s; see algorithm detail for the general criterion. |
+| `window_s` | 30 s | Window length $W$ in seconds. For the LF band (lower edge 0.06 Hz) the [CARSPAN manual](#ref-carspan-manual) recommends $W \ge 50$ s; see algorithm detail for the general criterion. |
 | `step_s` | 5 s | Step $S$ in seconds. Must be strictly less than $W$ so that consecutive windows overlap. |
 | `smooth_for_display` | `false` | Apply a 3-point moving average along each band's time series for display only.|
 | `adaptive_band` | *(none)* | One band whose edges follow the per-window breathing frequency rather than fixed Hz limits. When set, only that band is plotted and a right-hand y-axis shows the breathing frequency trace. |
@@ -929,7 +929,7 @@ The implementation is `CardioMetricsMixin.band_power_profile`, following CARSPAN
 
 #### Step 1: Window enumeration
 
-The CARSPAN manual (§3.3.5, Eq. 3.34) defines the profile time series as a weighted sum of per-window band values $B_{x,i}(f_l, f_h)$:
+The [CARSPAN manual](#ref-carspan-manual) (§3.3.5, Eq. 3.34) defines the profile time series as a weighted sum of per-window band values $B_{x,i}(f_l, f_h)$:
 
 <div align="center">
 
@@ -1113,7 +1113,7 @@ The core HRV and spectral analysis algorithms in spectHR are derived from
 CARSPAN, a cardiovascular
 analysis package developed at the University of Groningen. We are grateful to the
 authors of CARSPAN -- Ben Mulder and Arie van Roon -- for their work. Which is actually all the hard work.
-The CARSPAN manual was written by Ben Mulder, Arie van Roon and Hedwig Hofstetter.
+The [CARSPAN manual](#ref-carspan-manual) was written by Ben Mulder, Arie van Roon and Hedwig Hofstetter.
 
 LLM's were used in the creation of the documentation and the (re-)structuring of the code. All edits were checked by a human.
 
@@ -1130,17 +1130,14 @@ spectHR is released under the GNU GPL-3.0 license. See the [LICENSE](LICENSE) fi
 <a id="ref-arutyunova2024"></a>
 Arutyunova, K.R., Bakhchina, A.V., Konovalov, D.I., Margaryan, M., Filimonov, A.V., & Shishalov, I.S. (2024). Heart rate dynamics for cognitive load estimation in a driving simulation task. *Scientific Reports*, 14, 31656. https://doi.org/10.1038/s41598-024-79728-x
 
-<a id="ref-billman2013"></a>
-Billman, G.E. (2013). The LF/HF ratio does not accurately measure cardiac sympatho-vagal balance. *Frontiers in Physiology*, 4, 26. https://doi.org/10.3389/fphys.2013.00026
-
 <a id="ref-degeus2019"></a>
 de Geus, E.J.C., Gianaros, P.J., Brindle, R.C., Jennings, J.R., & Berntson, G.G. (2019). Should heart rate variability be "corrected" for heart rate? Biological, quantitative, and interpretive considerations. *Psychophysiology*, 56(2), e13287. https://doi.org/10.1111/psyp.13287
 
+<a id="ref-carspan-manual"></a>
+Mulder, B., Hofstetter, H., & van Roon, A. (2009). *CARSPAN for Windows: User's manual* (Version 0.0.1.36). University of Groningen. [docs/Carspan_Manual_VERSION_36.pdf](docs/Carspan_Manual_VERSION_36.pdf)
+
 <a id="ref-mulder1980"></a>
 Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Groningen.
-
-<a id="ref-mulder1985"></a>
-Mulder, L.J.M. (1985). Mental load, mental effort and attention. In A.W.K. Gaillard & W. Ritter (Eds.), *Tutorials in Event Related Potential Research: Endogenous Components*. Amsterdam: North Holland.
 
 <a id="ref-mulder1988"></a>
 Mulder, L.J.M. (1988). *Assessment of cardiovascular reactivity by means of spectral analysis*. Ph.D. Thesis, University of Groningen.
@@ -1160,11 +1157,8 @@ Peabody, J.E., Ryznar, R., Ziesmann, M.T., & Gillman, L. (2023). A systematic re
 <a id="ref-derivecourt2008"></a>
 De Rivecourt, M., Kuperus, M.N., Post, W.J., & Mulder, L.J.M. (2008). Cardiovascular and eye activity measures as indices for momentary changes in mental effort during simulated flight. *Ergonomics*, 51, 1295–1319. https://doi.org/10.1080/00140130802120267
 
-<a id="ref-rompelman1980"></a>
-Rompelman, O. (1980). Heart rate variability and the assessment of mental workload. In B.K.P. Horn (Ed.), *Methods of Information in Medicine*. Stuttgart: Schattauer.
-
-<a id="ref-rompelman1977"></a>
-Rompelman, O., Coenen, A.J.R.M., & Kitney, R.I. (1977). Measurement of heart-rate variability: Part 1 - Comparative study of heart-rate variability analysis methods. *Medical and Biological Engineering and Computing*, 15, 233–239. https://doi.org/10.1007/BF02441043
+<a id="ref-rompelman1985"></a>
+Rompelman, O. (1985). Spectral analysis of heart-rate variability. In J.F. Orlebeke, G. Mulder, & L.J.P. van Doornen (Eds.), *Psychophysiology of Cardiovascular Control* (pp. 315–331). New York: Plenum Press.
 
 <a id="ref-stuiver2014"></a>
 Stuiver, A., & Mulder, L.J.M. (2014). Cardiovascular state changes in simulated work environments. *Frontiers in Neuroscience*, 8, 399. https://doi.org/10.3389/fnins.2014.00399
@@ -1172,7 +1166,7 @@ Stuiver, A., & Mulder, L.J.M. (2014). Cardiovascular state changes in simulated 
 <a id="ref-taskforce1996"></a>
 Task Force of the European Society of Cardiology and the North American Society of Pacing and Electrophysiology (1996). Heart rate variability: standards of measurement, physiological interpretation and clinical use. *Circulation*, 93(5), 1043–1065. https://doi.org/10.1161/01.CIR.93.5.1043
 
-<a id="ref-tegegne2018"></a>
+<a id="ref-tegegne2019"></a>
 Tegegne, B., Man, T., van Roon, A., Riese, H., & Snieder, H. (2019). To the Editor: 10-second ECG-based RMSSD as valid measure of HRV. *Heart Rhythm*, 16(3), e35. https://doi.org/10.1016/j.hrthm.2018.10.038
 
 <a id="ref-vanroon2025"></a>
