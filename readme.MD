@@ -1137,16 +1137,16 @@ de Geus, E.J.C., Gianaros, P.J., Brindle, R.C., Jennings, J.R., & Berntson, G.G.
 Mulder, B., Hofstetter, H., & van Roon, A. (2009). *CARSPAN for Windows: User's manual* (Version 0.0.1.36). University of Groningen. [docs/Carspan_Manual_VERSION_36.pdf](docs/Carspan_Manual_VERSION_36.pdf)
 
 <a id="ref-mulder1980"></a>
-Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Groningen.[ref](https://research.rug.nl/en/publications/the-heart-of-mental-effort/)
+Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Groningen. [Ref](https://research.rug.nl/en/publications/the-heart-of-mental-effort/)
 
 <a id="ref-mulder1988"></a>
-Mulder, L.J.M. (1988). *Assessment of cardiovascular reactivity by means of spectral analysis*. Ph.D. Thesis, University of Groningen.
+Mulder, L.J.M. (1988). *Assessment of cardiovascular reactivity by means of spectral analysis*. Ph.D. Thesis, University of Groningen. [Ref](https://research.rug.nl/en/publications/assessment-of-cardiovascular-reactivity-by-means-of-spectral-anal/)
 
 <a id="ref-mulder1992"></a>
 Mulder, L.J.M. (1992). Measurement and analysis methods of heart rate and respiration for use in applied environments. *Biological Psychology*, 34, 205–236. https://doi.org/10.1016/0301-0511(92)90016-N
 
 <a id="ref-mulder1989"></a>
-Mulder, L.J.M. (1989). Cardiovascular reactivity and mental workload. *International Journal of Psychophysiology*, 7, 321.
+Mulder, L.J.M. (1989). Cardiovascular reactivity and mental workload. *International Journal of Psychophysiology*, 7, 321. https://doi.org/10.1016/0167-8760(89)90258-4
 
 <a id="ref-mulder2004"></a>
 Mulder, L.J.M., de Waard, D., & Brookhuis, K.A. (2004). Estimating mental effort using heart rate and heart rate variability. In N.A. Stanton, A. Hedge, K. Brookhuis, E. Salas, & H. Hendrick (Eds.), *Handbook of Human Factors and Ergonomics Methods* (pp. 20.1–20.8). Boca Raton: CRC Press. https://doi.org/10.1201/9780203489925.ch20
