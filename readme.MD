@@ -1122,7 +1122,8 @@ analysis package developed at the University of Groningen. We are grateful to th
 authors of CARSPAN -- Ben Mulder and Arie van Roon -- for their work. Which is actually all the hard work.
 The CARSPAN manual was written by Ben Mulder, Arie van Roon and Hedwig Hofstetter.
 
- LLM's were used in the creation of the documentation and the (re-)structuring of the code.
+LLM's were used in the creation of the documentation and the (re-)structuring of the code.
+
 ---
 
 ## License
@@ -1186,9 +1187,3 @@ van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of math
 
 <a id="ref-dewaard1996"></a>
 de Waard, D. (1996). The measurement of drivers' mental workload. Ph.D. Thesis, University of Groningen.
-
-<a id="ref-taskforce1996"></a>
-Task Force of the European Society of Cardiology and the North American Society of Pacing and Electrophysiology (1996). Heart rate variability: standards of measurement, physiological interpretation and clinical use. *Circulation*, 93(5), 1043–1065. https://doi.org/10.1161/01.CIR.93.5.1043
-
-<a id="ref-tegegne2018"></a>
-Tegegne, B., Man, T., van Roon, A., Riese, H., & Snieder, H. (2019). To the Editor: 10-second ECG-based RMSSD as valid measure of HRV. *Heart Rhythm*, 16(3), e35. https://doi.org/10.1016/j.hrthm.2018.12.022
