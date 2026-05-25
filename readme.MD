@@ -134,7 +134,7 @@ spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder,
 
 ### Practical considerations
 
-**Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals (visible in spectHR's shaded CI band). Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2018) showed that a 10-second ECG yields a valid RMSSD estimate in large samples.
+**Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals (visible in spectHR's shaded CI band). Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2018) showed that a 10-second ECG can yield a valid RMSSD estimate in large samples.
 
 **Artefacts are critical.** A single missed or spurious R-peak introduces broadband spectral energy that can swamp the genuine HRV signal ([Mulder, 1988](#ref-mulder1988)). This is why spectHR requires the user to inspect and verify the IBI series before computing any metrics.
 
@@ -266,12 +266,12 @@ Configure it under **WorkSpace → Edit Parameters → Profile Settings**:
 | `bands` | `["LF", "HF"]` | Tick-box list of band names to plot. Must match band names defined under PSD Settings; stale names from a band rename are dropped automatically. Ignored when an adaptive band is active - the adaptive band is shown alone. |
 | `window_s` | 30 s | Length of the sliding window, in seconds. CARSPAN manual recommends `window_s ≥ 3 · 1/f_l_min` for reliable estimates of the lowest band (i.e. ≥ 50 s for an LF lower edge of 0.06 Hz). |
 | `step_s` | 5 s | Step between successive windows. Must be strictly smaller than `window_s` (otherwise the windows don't overlap). |
-| `smooth_for_display` | `false` | Apply the same 3-point moving-average smoother used by the PSD plot, along each band's time series. **Off by default** to match the Delphi reference (which never smooths the profile time series). |
+| `smooth_for_display` | `false` | Apply the same 3-point moving-average smoother used by the PSD plot, along each band's time series. **Off by default**. |
 | `adaptive_band` | *(none)* | Selects one band to act as the **adaptive band** whose edges follow the per-window breathing frequency rather than fixed Hz limits. When set, that band is the only one plotted and the right y-axis shows the breathing frequency trace. |
 | `adaptive_source` | `respiration channel` | Where the per-window breathing frequency comes from. `respiration channel` uses the mean cycle period from the accelerometer-derived respiration signal (CARSPAN-faithful). `psd peak` finds the spectral peak inside the band's `resp_low`–`resp_high` search range instead, which works even without a dedicated respiration signal. |
 | `smooth breath frequency` | `false` | Apply a 3-point moving average to the sequence of per-window breathing frequencies before they are used to set the adaptive band edges. Smoothing removes single-window jumps. |
 
-Each profile dot is plotted at the **centre of the window that produced it**, not at the window's left edge. That matches Delphi's `PlotProfiles` (`T_AnaFunctions.pas:1521`), and the same convention `scipy.signal.spectrogram` uses with `mode='psd'`. So the first dot for a 30 s window lands at `t = 15 s` within the epoch; the apparent "gap" at the left of each plot is the half-window that the first window's centre is offset from `t = 0`.
+Each profile dot is plotted at the **centre of the window that produced it**, not at the window's left edge. So the first dot for a 30 s window lands at `t = 15 s` within the epoch; the apparent "gap" at the left of each plot is the half-window that the first window's centre is offset from `t = 0`.
 
 ---
 
@@ -877,7 +877,7 @@ $$B'(f_l, f_h) = \frac{10^6}{\overline{\text{IBI}}_{\text{ms}}^2}\, B(f_l, f_h) 
 
 The mean IBI here is the **harmonic mean** of IBI (= arithmetic mean of the per-beat instantaneous rate); It differs from $T/N$ by ~0.3–0.8 % at typical resting HRV.
 
-**Configurable (unit-impulse SOC, Eq. 3.19).** The raw spectrum is in events²/Hz. Eq. 3.20 divides by the squared mean rate $`\bar x = 1/\overline{\text{IBI}}_{\text{sec}}`$ to get a dimensionless modulation index, which the implementation re-expresses as a multiply-by-$`\overline{\text{IBI}}_{\text{ms}}^2`$ on the events²/Hz spectrum (legacy mapping kept for back-compat):
+**Configurable (unit-impulse SOC, Eq. 3.19).** The raw spectrum is in events²/Hz. Eq. 3.20 divides by the squared mean rate $`\bar x = 1/\overline{\text{IBI}}_{\text{sec}}`$ to get a dimensionless modulation index, which the implementation re-expresses as a multiply-by-$`\overline{\text{IBI}}_{\text{ms}}^2`$ on the events²/Hz spectrum:
 
 <div align="center">
 
@@ -915,7 +915,7 @@ Configure profiles under **WorkSpace → Edit Parameters → Profile Settings**:
 | `bands` | `["LF", "HF"]` | Band names to plot. Must match names under PSD Settings; stale names are dropped automatically. Ignored when an adaptive band is active. |
 | `window_s` | 30 s | Window length $W$ in seconds. For the LF band (lower edge 0.06 Hz) the manual recommends $W \ge 50$ s; see algorithm detail for the general criterion. |
 | `step_s` | 5 s | Step $S$ in seconds. Must be strictly less than $W$ so that consecutive windows overlap. |
-| `smooth_for_display` | `false` | Apply a 3-point moving average along each band's time series for display only. Off by default to match the Delphi reference. |
+| `smooth_for_display` | `false` | Apply a 3-point moving average along each band's time series for display only.|
 | `adaptive_band` | *(none)* | One band whose edges follow the per-window breathing frequency rather than fixed Hz limits. When set, only that band is plotted and a right-hand y-axis shows the breathing frequency trace. |
 | `adaptive_source` | `respiration channel` | Where per-window breathing frequency comes from. `respiration channel` uses the accelerometer-derived signal (CARSPAN-faithful). `psd peak` finds the spectral peak inside the band's static search range; no dedicated respiration channel is required. |
 | `smooth_breath_freq` | `false` | Apply a 3-point moving average to the per-window breathing-frequency sequence before using it to set adaptive band edges. |
@@ -925,7 +925,7 @@ Configure profiles under **WorkSpace → Edit Parameters → Profile Settings**:
 
 The implementation is `CardioMetricsMixin.band_power_profile`, following CARSPAN's `RunProfileSommation` (`T_AnaFunctions.pas` 2888–3056).
 
-**spectHR extension: multiple PSD back-ends.** The CARSPAN Delphi implementation supports profiles only for the SOC spectral path. spectHR runs the same sliding-window scheme for all four methods (Welch, Lomb-Scargle, CARSPAN, and CARSPAN-strict), dispatching through the same `band_powers()` call used by the PSD tab. The active PSD method in *Edit Parameters → PSD Settings* applies immediately to profiles.
+**spectHR extension: multiple PSD back-ends.** CARSPAN supports profiles only for the SOC spectral path. spectHR runs the same sliding-window scheme for all four methods (Welch, Lomb-Scargle, CARSPAN, and CARSPAN-strict), dispatching through the same `band_powers()` call used by the PSD tab. The active PSD method in *Edit Parameters → PSD Settings* applies immediately to profiles.
 
 #### Step 1: Window enumeration
 
@@ -953,7 +953,6 @@ $$N = \left\lfloor \frac{T - W}{S} \right\rfloor + 1$$
 
 </div>
 
-(Delphi: `GetNrOfProfiles` / `GetProfileData`, `T_AnaFunctions.pas:1153,1115`.)
 
 **Sizing criteria.** For the window: the lowest band frequency $f_l$ must satisfy $f_l > 1/W$; for reliability $W$ should be at least three times that minimum ($W \ge 3/f_{l,\min}$). The number of frequency points in band $[f_l, f_h]$ at window length $W$ is:
 
@@ -969,7 +968,7 @@ A window with fewer than four R-peaks cannot yield a reliable PSD (CARSPAN's min
 
 #### Step 2: Per-window PSD (§3.3.4, no 0.01 Hz interpolation)
 
-The manual (§3.3.5) explicitly states that the fixed 0.01 Hz frequency-grid interpolation applied for single-epoch spectral functions is *not* applied for profiles. spectHR follows this: the per-window PSD is computed by `_psd_for_band_power` on the R-peaks inside each window without resampling beyond what the chosen back-end itself performs. For `carspan_strict` this is the SOC → auto-spectrum pipeline producing CARSPAN's `PDSin_BCK` (the backup copy the manual integrates, §3.2): *"No smoothing is carried out before computing the spectral band values."* For Welch and Lomb-Scargle the standard IBI-based spectrum is used - a spectHR extension not present in Delphi.
+The manual (§3.3.5) explicitly states that the fixed 0.01 Hz frequency-grid interpolation applied for single-epoch spectral functions is *not* applied for profiles. spectHR follows this: the per-window PSD is computed by `_psd_for_band_power` on the R-peaks inside each window without resampling beyond what the chosen back-end itself performs. For `carspan_strict` this is the SOC → auto-spectrum pipeline producing CARSPAN's `PDSin_BCK` (the backup copy the manual integrates, §3.2): *"No smoothing is carried out before computing the spectral band values."* For Welch and Lomb-Scargle the standard IBI-based spectrum is used.
 
 #### Step 3: Band-power integration
 
@@ -1037,7 +1036,7 @@ with asymmetric boundary weights $\tilde{f}_b[0] = \tfrac{3}{8}f_b[0] + \tfrac{5
 
 #### Plot-only smoothing
 
-`smooth_for_display` applies the same 3-point moving average **along each band's time axis**, purely at the display stage; it never affects stored band powers or integration. Off by default because the Delphi reference plots raw per-window band power.
+`smooth_for_display` applies the same 3-point moving average **along each band's time axis**, purely at the display stage; it never affects stored band powers or integration. 
 
 </details>
 
@@ -1180,4 +1179,4 @@ Tegegne, B., Man, T., van Roon, A., Riese, H., & Snieder, H. (2019). To the Edit
 van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. *Entropy*, 27(8), 861. https://doi.org/10.3390/e27080861
 
 <a id="ref-dewaard1996"></a>
-de Waard, D. (1996). The measurement of drivers' mental workload. Ph.D. Thesis, University of Groningen.
+de Waard, D. (1996). *The measurement of drivers' mental workload*. Ph.D. Thesis, University of Groningen. https://www.researchgate.net/publication/237132452_The_Measurement_of_Drivers'_Mental_Workload
