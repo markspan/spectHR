@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/transfer.py
 """
-Transfer function computation (Respiration → HR coupling).
+Transfer function computation (Respiration -> HR coupling).
 
 Faithful Python port of the CARSPAN ``RunTransfer`` pipeline
-(``T_AnaFunctions.pas`` lines 492–809, 2178–2610).
+(``T_AnaFunctions.pas`` lines 492-809, 2178-2610).
 
 Pipeline
 --------
@@ -19,13 +19,14 @@ For a single epoch the steps are:
 3.  Compute the complex DFT for both signals at the cumulative-IBI time
     grid (the CARSPAN IBI-amplitude SOC convention, Eq. 3.21 + the
     analogous non-IBI column path).
-4.  Form the auto-spectra ``(2×10⁶/T)·|DFT|²`` and complex cross-spectrum
-    ``conj(DFT_in)·DFT_out·(2×10⁶/T)``; optionally apply the 3-point
-    triangular frequency smoother used in the profile path
-    (``T_AnaFunctions.pas:574-583``, WindowSize=3).
+4.  Form the auto-spectra ``(2x10^6/T) . |DFT|^2`` and complex
+    cross-spectrum ``conj(DFT_in).DFT_out.(2x10^6/T)``; optionally
+    apply the 3-point triangular frequency smoother used in the
+    profile path (``T_AnaFunctions.pas:574-583``, WindowSize=3) with
+    Pascal's exact edge policy (left mirror, right replicate-centre).
 5.  Transfer function  ``H = Cross / Auto_in``.
 6.  Modulus ``|H|``, wrapped phase ``arctan2(Im, Re)``, unwrapped phase
-    (threshold π, step 2π), squared coherence ``|Cross|²/(Auto_in·Auto_out)``.
+    (threshold pi, step 2pi), squared coherence ``|Cross|^2/(Auto_in.Auto_out)``.
 7.  Per-band summaries: power-weighted coherence, coherence-gated modulus
     and phase means (``Caluculate_WeightedCoherenceSum``,
     ``Caluculate_ModulusSum``, ``Caluculate_PhaseSum``).
@@ -44,7 +45,7 @@ useful for sliding-window (profile) analyses.
 
 References
 ----------
-CARSPAN manual §3.3.1–3.3.3; ``T_AnaFunctions.pas`` functions
+CARSPAN manual 3.3.1-3.3.3; ``T_AnaFunctions.pas`` functions
 ``CrossSpectrum`` (492), ``AutoSpectrum`` (416), ``Transfer`` (700),
 ``Modulus`` (723), ``Phase`` (744), ``UnwrapPhase`` (762),
 ``Coherence`` (784), ``Caluculate_WeightedCoherenceSum`` (883),
@@ -59,7 +60,9 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 
 from spectHR.analysis.ibi_helpers import event_times_clean
-from spectHR.analysis.psd._carspan import _make_window, _native_grid
+from spectHR.analysis.psd._carspan import _dft, _make_window, _native_grid
+from spectHR.analysis.profile import _setup_profile_grid
+from spectHR.analysis._smoothing import smooth3_triangular as _smooth3  # Pascal CrossSpectrum/AutoSpectrum WindowSize=3 (T_AnaFunctions.pas:443-487)
 
 
 __all__ = [
@@ -84,28 +87,28 @@ class BandTransfer:
     ----------
     weighted_coherence : float
         Power-weighted mean coherence over the band:
-        ``Σ(coh[k] × psd_in[k]) / Σ(psd_in[k])``.
+        ``Sum(coh[k] x psd_in[k]) / Sum(psd_in[k])``.
         Faithful to ``Caluculate_WeightedCoherenceSum``
         (``T_AnaFunctions.pas:883``).
     modulus : float
         Mean modulus over the band, restricted to bins where
-        ``coherence[k] ≥ min_coherence``.
+        ``coherence[k] >= min_coherence``.
         Faithful to ``Caluculate_ModulusSum``
         (``T_AnaFunctions.pas:963``).
     phase : float
         Mean **wrapped** phase (radians) over coherent bins in the band
-        (CARSPAN ``Phase2`` path — ``Phase(TransList)`` without
+        (CARSPAN ``Phase2`` path - ``Phase(TransList)`` without
         ``UnwrapPhase``; ``Caluculate_PhaseSum``,
         ``T_AnaFunctions.pas:935``).
     phase_unwrapped : float
         Mean **unwrapped** (within-epoch) phase (radians) over coherent
-        bins in the band (CARSPAN ``Phase`` path — ``Phase(TransList)``
-        mutated by ``UnwrapPhase(thresh=π, step=2π)`` before
+        bins in the band (CARSPAN ``Phase`` path - ``Phase(TransList)``
+        mutated by ``UnwrapPhase(thresh=pi, step=2pi)`` before
         ``Caluculate_PhaseSum``).
     n_points : int
         Total number of frequency bins inside the band.
     n_coherent : int
-        Number of bins where ``coherence ≥ min_coherence``.  When this
+        Number of bins where ``coherence >= min_coherence``.  When this
         is 0, ``modulus`` and ``phase`` are 0 and not meaningful.
     """
 
@@ -126,25 +129,25 @@ class TransferResult:
     Attributes
     ----------
     freqs : (N,) ndarray
-        Frequency grid in Hz (native Δf = 1/T grid, DC excluded).
+        Frequency grid in Hz (native df = 1/T grid, DC excluded).
     modulus : (N,) ndarray
-        ``|H(f)|`` — amplitude gain of the transfer function at each
+        ``|H(f)|`` - amplitude gain of the transfer function at each
         frequency.  Units are ``output_unit / input_unit`` (e.g. ms/V
         when HR is in ms and respiration in Volts).
     phase_wrapped : (N,) ndarray
-        ``arctan2(Im H, Re H)`` in radians, range ``(−π, +π]``.
+        ``arctan2(Im H, Re H)`` in radians, range ``(-pi, +pi]``.
         Faithful to ``T_AnaFunctions.pas:Phase()``.
     phase_unwrapped : (N,) ndarray
         Phase unwrapped across the spectrum using CARSPAN's threshold-
-        based convention (threshold = π, step = 2π).
+        based convention (threshold = pi, step = 2pi).
         Faithful to ``T_AnaFunctions.pas:UnwrapPhase()``.
     coherence : (N,) ndarray
-        Squared coherence ``|C(f)|²`` in ``[0, 1]``.  For a single
+        Squared coherence ``|C(f)|^2`` in ``[0, 1]``.  For a single
         un-smoothed epoch this is 1 everywhere (by construction); set
         ``smooth=True`` in :func:`compute_transfer` to obtain sub-unity
         estimates.
     freq_resolution : float
-        Frequency resolution ``Δf = 1/T`` in Hz.
+        Frequency resolution ``df = 1/T`` in Hz.
     method : str
         Algorithm label (``"carspan_transfer"``).
     band_results : dict[str, BandTransfer] or None
@@ -171,7 +174,7 @@ class TransferProfileResult:
 
     A profile is the time-resolved transfer statistics of a recording:
     modulus, coherence, and phase band-values recomputed inside each of a
-    series of overlapping sliding windows — exactly as CARSPAN's
+    series of overlapping sliding windows - exactly as CARSPAN's
     ``RunTransfer`` profile branch (``T_AnaFunctions.pas:2562-2608``)
     feeds the output loop in ``T_Output.pas`` (``acCoherence``,
     ``acModulus``, ``acPhase``).
@@ -194,12 +197,12 @@ class TransferProfileResult:
         Coherence-gated mean of the **within-window unwrapped** phase
         (radians) per band per window.  Corresponds to CARSPAN ``Phase``
         (the copy that *was* mutated by
-        ``UnwrapPhase(thresh=π, step=2π)``).
+        ``UnwrapPhase(thresh=pi, step=2pi)``).
     weighted_coherence : (n_bands, n_windows) float array
         Power-weighted mean coherence per band per window
         (``Caluculate_WeightedCoherenceSum``).
     n_coherent : (n_bands, n_windows) int array
-        Number of frequency bins with coherence ≥ ``min_coherence``
+        Number of frequency bins with coherence >= ``min_coherence``
         that contributed to the modulus / phase means in each window.
     window_s : float
         Window length in seconds.
@@ -222,7 +225,7 @@ class TransferProfileResult:
 
 
 # ---------------------------------------------------------------------------
-# Low-level signal-processing helpers
+# Low-level signal-processing helpers.
 # Each one is a direct port of a single named Pascal function.
 # ---------------------------------------------------------------------------
 
@@ -232,23 +235,26 @@ def _compute_dft(
     times: np.ndarray,
     weights: np.ndarray,
 ) -> np.ndarray:
-    """Complex DFT: ``X(f) = Σ wᵢ · exp(−2πj·f·tᵢ)``.
+    """Complex DFT: ``X(f) = Sum w_i . exp(-2*pi*j . f . t_i)``.
 
-    Used instead of the split real/imag form in ``_carspan._dft`` so that
-    the rest of the transfer pipeline can work with standard complex arrays.
+    Thin wrapper around :func:`spectHR.analysis.psd._carspan._dft`, which
+    returns the real and imaginary parts as separate arrays for use
+    inside the PSD pipeline (component-wise subtraction is cheaper than
+    complex multiplies). The transfer pipeline needs the result as a
+    standard complex array for the conjugate-multiplies in
+    :func:`_cross_spectrum`, :func:`_coherence`, etc., so we combine the
+    two halves here.
     """
-    phase = 2.0 * np.pi * np.outer(freqs, times)   # (n_freqs, n_beats)
-    re = np.dot(np.cos(phase), weights)
-    im = -np.dot(np.sin(phase), weights)
+    re, im = _dft(freqs, times, weights)
     return re + 1j * im
 
 
 def _auto_spectrum(dft: np.ndarray, T: float) -> np.ndarray:
-    """Auto-spectrum: ``(2×10⁶/T)·|DFT|²``.
+    """Auto-spectrum: ``(2x10^6/T) . |DFT|^2``.
 
     Faithful to ``T_AnaFunctions.pas:AutoSpectrum()`` (WindowSize=0)::
 
-        Dou := 1000000 * (2 * cd_real(conj(X)·X) / T)
+        Dou := 1000000 * (2 * cd_real(conj(X).X) / T)
     """
     return (2.0e6 / T) * (dft.real ** 2 + dft.imag ** 2)
 
@@ -258,7 +264,7 @@ def _cross_spectrum(
     dft_out: np.ndarray,
     T: float,
 ) -> np.ndarray:
-    """Complex cross-spectrum: ``conj(DFT_in)·DFT_out·(2×10⁶/T)``.
+    """Complex cross-spectrum: ``conj(DFT_in) . DFT_out . (2x10^6/T)``.
 
     Faithful to ``T_AnaFunctions.pas:CrossSpectrum()`` (WindowSize=0)::
 
@@ -269,36 +275,9 @@ def _cross_spectrum(
     return np.conj(dft_in) * dft_out * (2.0e6 / T)
 
 
-def _smooth3(x: np.ndarray) -> np.ndarray:
-    """3-point triangular frequency smoother (CARSPAN WindowSize=3).
-
-    ``T_AnaFunctions.pas:CreateWindow`` builds ``[0.5, 1.0, 0.5]`` for
-    WindowSize=3 (normalised sum = 2, effective weights 1/4 · 1/2 · 1/4).
-    Boundary bins are padded by mirror reflection, which matches the
-    Pascal head/tail initialisation in ``CrossSpectrum`` / ``AutoSpectrum``
-    when WindowSize != 0::
-
-        VCD_PElement(TMPVector, MaxPnt+index)^ := DCom;
-        VCD_PElement(TMPVector, MaxPnt-index)^ := DCom;   # mirror
-    """
-    if x.size < 3:
-        return x.copy()
-    w = np.array([0.5, 1.0, 0.5])
-    padded = np.pad(x, 1, mode="reflect")
-    return np.convolve(padded, w, mode="valid") / w.sum()
-
-
-def _smooth3_complex(x: np.ndarray) -> np.ndarray:
-    """Apply :func:`_smooth3` to real and imaginary parts independently.
-
-    Matches the Pascal ``MAW(..., Complex=True)`` path which separates
-    the real and imaginary lists before smoothing and recombines them.
-    """
-    return _smooth3(x.real) + 1j * _smooth3(x.imag)
-
 
 def _transfer_function(cross: np.ndarray, auto_in: np.ndarray) -> np.ndarray:
-    """Transfer function ``H = Cross / Auto_in`` (complex ÷ real).
+    """Transfer function ``H = Cross / Auto_in`` (complex / real).
 
     Faithful to ``T_AnaFunctions.pas:Transfer()``::
 
@@ -312,7 +291,7 @@ def _transfer_function(cross: np.ndarray, auto_in: np.ndarray) -> np.ndarray:
 
 
 def _modulus(H: np.ndarray) -> np.ndarray:
-    """``|H(f)| = sqrt(conj(H)·H)``.
+    """``|H(f)| = sqrt(conj(H).H)``.
 
     Faithful to ``T_AnaFunctions.pas:Modulus()``::
 
@@ -340,7 +319,7 @@ def _unwrap_phase(
 
     Direct port of ``T_AnaFunctions.pas:UnwrapPhase()`` (lines 762-780).
     The comparison always uses the *raw* (un-offset) phase values; the
-    offset (``ModFactor × step``) is accumulated separately::
+    offset (``ModFactor x step``) is accumulated separately::
 
         Next := Phase[0]
         for index := 0 to N-2:
@@ -382,7 +361,7 @@ def _coherence(
     auto_in: np.ndarray,
     auto_out: np.ndarray,
 ) -> np.ndarray:
-    """Squared coherence ``|Cross|² / (Auto_in × Auto_out)``.
+    """Squared coherence ``|Cross|^2 / (Auto_in x Auto_out)``.
 
     Faithful to ``T_AnaFunctions.pas:Coherence()``::
 
@@ -435,7 +414,7 @@ def _band_weighted_coherence(
     lo: int,
     hi: int,
 ) -> Tuple[float, int]:
-    """``Σ(coh[k]·psd_in[k]) / Σ(psd_in[k])`` over ``[lo, hi]`` inclusive.
+    """``Sum(coh[k].psd_in[k]) / Sum(psd_in[k])`` over ``[lo, hi]`` inclusive.
 
     Faithful to ``T_AnaFunctions.pas:Caluculate_WeightedCoherenceSum()``
     (lines 883-907).
@@ -616,7 +595,7 @@ def compute_transfer(
     cum_times = np.cumsum(ibi_s)    # (N-1,) seconds from first beat
 
     # ------------------------------------------------------------------ #
-    # 5. Native frequency grid (Df = 1/T, DC excluded)                   #
+    # 5. Native frequency grid (df = 1/T, DC excluded)                   #
     # ------------------------------------------------------------------ #
     freqs, delta_f = _native_grid(T=T, f_max=f_max)
     if freqs.size == 0:
@@ -641,12 +620,14 @@ def compute_transfer(
     cross    = _cross_spectrum(dft_rsp, dft_ibi, T)
 
     if smooth:
-        # Profile path: apply 3-point triangular smoother to spectra.
-        # In Pascal this is AutoSpectrum(..., WindowSize=3) and
-        # CrossSpectrum(..., WindowSize=3).
+        # Profile path: 3-point triangular smoother applied INSIDE Pascal's
+        # AutoSpectrum / CrossSpectrum when WindowSize=3 (T_AnaFunctions.pas
+        # 443-487 / 519-570). The single _smooth3 helper handles the real
+        # and complex branches together (Pascal calls AutoSpectrum and
+        # CrossSpectrum, which are separate functions sharing a kernel).
         auto_rsp = _smooth3(auto_rsp)
         auto_ibi = _smooth3(auto_ibi)
-        cross    = _smooth3_complex(cross)
+        cross    = _smooth3(cross)
 
     # ------------------------------------------------------------------ #
     # 8. Transfer function, modulus, phase, coherence                     #
@@ -764,31 +745,16 @@ def compute_transfer_profile(
     """
     if not bands:
         raise ValueError("bands must not be empty for a transfer profile.")
-    if window_s <= 0 or step_s <= 0:
-        raise ValueError("window_s and step_s must both be > 0.")
-    if step_s >= window_s:
-        raise ValueError(
-            f"step_s ({step_s!r}s) must be strictly smaller than "
-            f"window_s ({window_s!r}s) so windows overlap."
-        )
-    if series.times.size < 2:
-        raise ValueError("Need at least 2 R-peaks for a transfer profile.")
 
-    t0       = float(series.times[0])
-    t_end    = float(series.times[-1])
-    duration = t_end - t0
-
-    if duration < window_s:
-        raise ValueError(
-            f"Recording too short ({duration:.1f} s) for "
-            f"window_s={window_s} s."
-        )
+    # Validate parameters and build the time axis (delegates to the helper
+    # shared with spectHR.analysis.profile.compute_band_power_profile).
+    n_windows, timestamps, t0 = _setup_profile_grid(
+        series, window_s=window_s, step_s=step_s, context="transfer profile",
+    )
 
     band_names = list(bands.keys())
     n_bands    = len(band_names)
-    n_windows  = int((duration - window_s) / step_s) + 1
 
-    timestamps = np.empty(n_windows, dtype=np.float64)
     mod_grid   = np.full((n_bands, n_windows), np.nan)
     phw_grid   = np.full((n_bands, n_windows), np.nan)
     phu_grid   = np.full((n_bands, n_windows), np.nan)
@@ -796,9 +762,9 @@ def compute_transfer_profile(
     ncoh_grid  = np.zeros((n_bands, n_windows), dtype=int)
 
     for i in range(n_windows):
-        win_start      = t0 + i * step_s
-        win_end        = win_start + window_s
-        timestamps[i]  = win_start + window_s / 2.0
+        # Window span; timestamps were pre-filled by _setup_profile_grid.
+        win_start = t0 + i * step_s
+        win_end   = win_start + window_s
 
         win_view = series.view(win_start, win_end)
         if win_view.times.size < 4:

@@ -38,7 +38,7 @@ from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
 from spectHR.analysis.psd._config import PsdMethod
-from spectUI._plot_smoothing import ma3
+from spectUI._plot_smoothing import smooth3
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -209,7 +209,7 @@ def _fetch_profile(
     )
 
     if smooth and band_power.size:
-        # Apply ``ma3`` per band row (along the time axis). NaN windows
+        # Apply ``smooth3`` per band row (along the time axis). NaN windows
         # in the raw profile would otherwise propagate through the
         # rolling mean; replacing NaN with 0 before smoothing trades
         # a small bias at the gap for a continuous-looking curve.
@@ -218,12 +218,12 @@ def _fetch_profile(
         for i in range(band_power.shape[0]):
             row = band_power[i]
             row_clean = np.where(np.isfinite(row), row, 0.0)
-            smoothed[i] = ma3(row_clean)
+            smoothed[i] = smooth3(row_clean)
         band_power = smoothed
 
         if resp_freqs is not None:
             rf_clean = np.where(np.isfinite(resp_freqs), resp_freqs, 0.0)
-            resp_freqs = ma3(rf_clean)
+            resp_freqs = smooth3(rf_clean)
 
     return _ProfilePlotData(
         label=label,

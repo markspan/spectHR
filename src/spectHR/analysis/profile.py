@@ -14,7 +14,7 @@ compute_band_power_profile(series, *, window_s, step_s, ...) -> ProfileResult
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -29,25 +29,13 @@ from spectHR.analysis.psd._utils import ProfileResult
 from spectHR.Tools.Logger import logger
 from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
 from spectHR.analysis.psd._engine import PSDEngine
+from spectHR.analysis._smoothing import smooth3 as _ma3  # CARSPAN MAW kernel (T_AnaFunctions.pas:595-643)
 
 
 __all__ = ["compute_band_power_profile"]
 
 
-def _ma3(arr: np.ndarray) -> np.ndarray:
-    """Pascal-faithful 3-point moving average (same kernel as the display smoother).
 
-    Boundary weights match CARSPAN's ``MAW`` pass:
-        out[0]   = 3/8 · arr[0] + 5/8 · arr[1]
-        out[N-1] = 5/8 · arr[N-2] + 3/8 · arr[N-1]
-    """
-    if arr.size < 3:
-        return arr.copy()
-    out = np.empty_like(arr, dtype=np.float64)
-    out[1:-1] = (arr[:-2] + arr[1:-1] + arr[2:]) / 3.0
-    out[0]    = 3.0 / 8.0 * arr[0]  + 5.0 / 8.0 * arr[1]
-    out[-1]   = 5.0 / 8.0 * arr[-2] + 3.0 / 8.0 * arr[-1]
-    return out
 
 
 def _strip_hz(unit_str: str) -> str:
@@ -57,6 +45,77 @@ def _strip_hz(unit_str: str) -> str:
         if raw.endswith(suffix):
             return raw[: -len(suffix)].rstrip()
     return raw
+
+
+def _setup_profile_grid(
+    series,
+    *,
+    window_s: float,
+    step_s: float,
+    context: str = "profile",
+) -> Tuple[int, np.ndarray, float]:
+    """Validate sliding-window parameters and build the window time-axis.
+
+    Shared by :func:`compute_band_power_profile` and
+    :func:`spectHR.analysis.transfer.compute_transfer_profile` so both
+    pipelines enumerate windows on exactly the same arithmetic - the
+    Delphi ``GetNrOfProfiles`` / ``GetProfileData`` rules
+    (``T_AnaFunctions.pas`` 1115, 1153).
+
+    Parameters
+    ----------
+    series : CardioSeriesLike
+        Series exposing ``.times`` (sorted seconds).
+    window_s, step_s : float
+        Sliding-window length and step in seconds.  ``step_s`` must be
+        strictly smaller than ``window_s`` so consecutive windows overlap.
+    context : str
+        Label used in error messages (e.g. ``"transfer profile"``) so the
+        ValueError points the user at the right pipeline.
+
+    Returns
+    -------
+    n_windows : int
+        ``N = floor((T - W) / S) + 1`` where ``T = times[-1] - times[0]``.
+    timestamps : (n_windows,) ndarray
+        Window-centre times in seconds - pre-filled so callers can leave
+        empty-window NaN cells without losing their time-axis entry.
+    t0 : float
+        Time of the first R-peak; window ``i`` spans
+        ``[t0 + i * step_s,  t0 + i * step_s + window_s]``.
+
+    Raises
+    ------
+    ValueError
+        On non-positive parameters, ``step_s >= window_s``, a sub-2-peak
+        series, or a series shorter than one window.
+    """
+    if window_s <= 0 or step_s <= 0:
+        raise ValueError(
+            f"window_s and step_s must both be > 0 "
+            f"(got window_s={window_s}, step_s={step_s})."
+        )
+    if step_s >= window_s:
+        raise ValueError(
+            f"step_s ({step_s}) must be strictly smaller than "
+            f"window_s ({window_s}) so the windows overlap."
+        )
+    if series.times.size < 2:
+        raise ValueError(f"Need at least 2 R-peaks for a {context}.")
+
+    t0       = float(series.times[0])
+    t_end    = float(series.times[-1])
+    duration = t_end - t0
+    if duration < window_s:
+        raise ValueError(
+            f"View too short ({duration:.1f}s) for window={window_s}s."
+        )
+    n_windows  = int((duration - window_s) / step_s) + 1
+    # Window centres t_i^c = t0 + i*step_s + W/2 (Delphi GetProfileData,
+    # T_AnaFunctions.pas:1115). Pre-filled so windows that hit the < 4
+    # R-peak gate still get a correct time-axis entry.
+    timestamps = t0 + np.arange(n_windows) * step_s + window_s / 2.0
+    return n_windows, timestamps, t0
 
 
 # ---------------------------------------------------------------------------
@@ -104,41 +163,25 @@ def compute_band_power_profile(
         ``band_power`` of shape ``(n_bands, n_windows)``, ``unit``,
         ``method``, ``window_s``, ``step_s``, ``resp_freqs``.
     """
-    # Validation
-    if window_s <= 0 or step_s <= 0:
-        raise ValueError("window_s and step_s must both be > 0.")
-    if step_s >= window_s:
-        raise ValueError(
-            f"step_s ({step_s}) must be strictly smaller than "
-            f"window_s ({window_s}) so the windows overlap."
-        )
+    # Validate parameters and build the time axis (delegates to the helper
+    # shared with spectHR.analysis.transfer.compute_transfer_profile).
+    n_windows, timestamps, t0 = _setup_profile_grid(
+        series, window_s=window_s, step_s=step_s, context="profile",
+    )
 
     method = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
 
-    if series.times.size < 2:
-        raise ValueError("Need at least 2 R-peaks for a profile.")
-
-    # CARSPAN manual §3.3.5: "the interpolation to a fixed frequency of
+    # CARSPAN manual 3.3.5: "the interpolation to a fixed frequency of
     # 0.01 Hz is not applied" for the profile compute path.
     profile_method = replace(
         method,
         carspan=replace(method.carspan, resample_to_display_grid=False),
     )
 
-    # Step 1: window enumeration
-    t0       = float(series.times[0])
-    t_end    = float(series.times[-1])
-    duration = t_end - t0
-    if duration < window_s:
-        raise ValueError(
-            f"View too short ({duration:.1f}s) for window={window_s}s."
-        )
-    n_windows  = int((duration - window_s) / step_s) + 1
     band_names = list(method.bands.keys())
     bands_list = list(method.bands.items())
     n_bands    = len(band_names)
     grid       = np.full((n_bands, n_windows), np.nan, dtype=np.float64)
-    timestamps = np.empty(n_windows, dtype=np.float64)
 
     has_adaptive_band = any(b.respiration_band for _, b in bands_list)
     resp_freqs: "np.ndarray | None" = (
@@ -172,10 +215,10 @@ def compute_band_power_profile(
         psd_cache: list = [None] * n_windows
 
         for i in range(n_windows):
+            # Window span; timestamps were pre-filled by _setup_profile_grid.
             win_start = t0 + i * step_s
             win_end   = win_start + window_s
-            timestamps[i] = win_start + window_s / 2.0
-            win_view = series.view(win_start, win_end)
+            win_view  = series.view(win_start, win_end)
             if win_view.times.size < 4:
                 continue
             try:
@@ -249,10 +292,10 @@ def compute_band_power_profile(
     else:
         # Single-pass: no adaptive bands, no PSD caching needed.
         for i in range(n_windows):
+            # Window span; timestamps were pre-filled by _setup_profile_grid.
             win_start = t0 + i * step_s
             win_end   = win_start + window_s
-            timestamps[i] = win_start + window_s / 2.0
-            win_view = series.view(win_start, win_end)
+            win_view  = series.view(win_start, win_end)
             if win_view.times.size < 4:
                 continue
             try:

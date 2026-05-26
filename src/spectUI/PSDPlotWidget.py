@@ -32,7 +32,7 @@ from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 from spectUI.workSpace import psd_method_from_workspace
-from spectUI._plot_smoothing import ma3
+from spectUI._plot_smoothing import smooth3
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -186,9 +186,9 @@ def _fetch(
 
     # Plot-only display smoothing for the CARSPAN methods.
     if _wants_smoothing(series, psd_method, result.method):
-        power = ma3(power)
-        ci_lower = ma3(ci_lower) if ci_lower is not None else None
-        ci_upper = ma3(ci_upper) if ci_upper is not None else None
+        power = smooth3(power)
+        ci_lower = smooth3(ci_lower) if ci_lower is not None else None
+        ci_upper = smooth3(ci_upper) if ci_upper is not None else None
 
     return _PlotData(
         label=label,
