@@ -4,7 +4,7 @@
 Spectral-profile plotting widget - sibling of :class:`PSDPlotWidget`.
 
 A *profile* is the time course of a band-power measure inside one epoch
-(CARSPAN manual §3.3.5): the configured PSD is recomputed in a sliding
+(CARSPAN manual SS3.3.5): the configured PSD is recomputed in a sliding
 window along the epoch, and each band integrates to one curve over
 time. Where :class:`PSDPlotWidget` shows the spectrum of an epoch,
 :class:`ProfilePlotWidget` shows how each band-power evolves *within*
@@ -21,7 +21,7 @@ Design
   drawn. Stale band names (e.g. left behind after a band rename) are
   silently skipped.
 - Each trace is plotted as a line + a ``fill_between(y, 0)`` polygon
-  using the workspace's band colour with transparency, matching the
+  using the workspace band colour with transparency, matching the
   PSD-plot aesthetic.
 """
 
@@ -29,16 +29,18 @@ from __future__ import annotations
 
 import re
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
-from spectHR.analysis.psd._config import PsdMethod
+from spectHR.analysis.psd._config import PsdMethod, _DEFAULT_PSD_METHOD
+from spectHR.analysis.psd._engine import PSDEngine
 from spectUI._plot_smoothing import smooth3
+from spectUI._plot_zoom import YZoomMixin, Y_TOP_FLOOR
+from spectUI._plot_export import PlotExportMixin, sanitize_filename
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -53,22 +55,17 @@ from PySide6.QtWidgets import (
 )
 
 from spectHR.analysis.profile import compute_band_power_profile
-from spectUI._uitools import show_export_summary
-from spectUI.workSpace import get_export_dir, psd_method_from_workspace
+from spectUI.workSpace import psd_method_from_workspace
 
 warnings.filterwarnings("ignore")
 
 
 # Y-axis zoom step and floor - identical contract to PSDPlotWidget so
 # the keyboard interaction feels uniform across the two plot tabs.
-_Y_ZOOM_STEP_UP:   float = 0.80   # Up    → y-max × 0.80   (zoom in)
-_Y_ZOOM_STEP_DOWN: float = 1.25   # Down  → y-max × 1.25   (zoom out)
-_Y_TOP_FLOOR:      float = 1e-12
+# Zoom step constants and Y_TOP_FLOOR live in _plot_zoom (imported above).
 
 # File formats produced when the user saves the plots via Shift+Ctrl+P.
-_EXPORT_FORMATS: tuple[str, ...] = ("pdf",)
-_DEFAULT_EXPORT_DIR: Path = user_documents_path() / "spectHR" / "export"
-_FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
+# Export formats, filename sanitiser, and export dir live in _plot_export.
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +74,7 @@ _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
 
 def _bands_from_workspace(workspace: Optional[Dict[str, Any]]) -> Dict[str, dict]:
-    """Return the workspace's bands dict (band-name → ``{low, high, color, alpha}``).
+    """Return the workspace bands dict (band-name -> ``{low, high, color, alpha}``).
 
     The compute layer cares about the frequency edges; the plot widget
     uses the same dict for colour / alpha lookups when drawing the
@@ -96,7 +93,7 @@ def _profile_settings_from_workspace(
     """Return ``workspace["Profiles"]`` with sensible defaults.
 
     ``bands`` defaults to the *non-FullRange* named bands; ``window_s``
-    and ``step_s`` come from the CARSPAN manual's typical profile
+    and ``step_s`` come from the CARSPAN manual typical profile
     settings; ``smooth_for_display`` defaults to ``False`` (the
     Delphi-faithful behaviour - the reference profile view plots the
     raw band-power-per-window line). Flip to ``True`` in Profile
@@ -113,6 +110,7 @@ def _profile_settings_from_workspace(
         return {
             "window_s": 30.0, "step_s": 5.0, "bands": [],
             "smooth_for_display": False,
+            "show_spectrogram": False,
         }
     profs = workspace.get("Profiles", {}) or {}
     window_s = profs.get("window (sec)", profs.get("window_s", 30.0))
@@ -122,12 +120,10 @@ def _profile_settings_from_workspace(
         "step_s":   float(step_s),
         "bands":    list(profs.get("bands", []) or []),
         "smooth_for_display": bool(profs.get("smooth_for_display", False)),
+        "show_spectrogram":   bool(profs.get("show_spectrogram",   False)),
     }
 
 
-def _sanitize_filename(name: str) -> str:
-    """Same as ``PSDPlotWidget._sanitize_filename`` - kept local to avoid coupling."""
-    return _FILENAME_BAD_CHARS.sub("_", name).strip("._")
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +133,7 @@ def _sanitize_filename(name: str) -> str:
 
 @dataclass
 class _ProfilePlotData:
-    """Everything needed to draw one epoch's profile plot."""
+    """Everything needed to draw one epoch profile plot."""
 
     label: str
     timestamps: np.ndarray            # shape (n_windows,)
@@ -148,7 +144,83 @@ class _ProfilePlotData:
     window_s: float
     step_s: float
     error: Optional[str] = None
-    resp_freqs: Optional[np.ndarray] = None  # shape (n_windows,), NaN when unavailable
+    resp_freqs: Optional[np.ndarray] = None    # shape (n_windows,), NaN when unavailable
+    spectra_freqs: Optional[np.ndarray] = None # shape (n_freqs,) -- common freq grid
+    spectra_grid:  Optional[np.ndarray] = None # shape (n_freqs, n_windows) -- raw power
+
+
+def _fetch_spectrogram_grid(
+    series,
+    *,
+    window_s: float,
+    step_s: float,
+    psd_method: Optional[PsdMethod] = None,
+) -> "tuple[Optional[np.ndarray], Optional[np.ndarray]]":
+    """Collect per-window full PSD arrays for the spectrogram view.
+
+    Runs a dedicated sliding-window pass (independent of the band-power
+    profile pass) so the existing ``compute_band_power_profile`` interface
+    is unchanged.
+
+    Returns
+    -------
+    freqs : (n_freqs,) ndarray or None
+        Common frequency grid (from the first valid window).
+    spectra_grid : (n_freqs, n_windows) ndarray or None
+        Raw PSD power per frequency per window. ``np.nan`` for failed windows.
+        Power values are *not* normalised here -- normalisation is deferred to
+        the plot layer so the colour scale reflects the actual epoch range.
+    """
+    try:
+        method = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
+        # CARSPAN profile path: no resampling to the display grid.
+        profile_method = replace(
+            method,
+            carspan=replace(method.carspan, resample_to_display_grid=False),
+        )
+        t0       = float(series.times[0])
+        duration = float(series.times[-1]) - t0
+        if duration < window_s:
+            return None, None
+
+        n_windows = int((duration - window_s) / step_s) + 1
+        common_freqs: Optional[np.ndarray] = None
+        psd_cache: dict = {}
+
+        for i in range(n_windows):
+            win_start = t0 + i * step_s
+            win_end   = win_start + window_s
+            win_view  = series.view(win_start, win_end)
+            if win_view.times.size < 4:
+                continue
+            try:
+                psd_result = PSDEngine(win_view).for_band_power(profile_method)
+            except Exception:
+                continue
+            psd_cache[i] = psd_result
+            if common_freqs is None and psd_result.freqs.size:
+                common_freqs = psd_result.freqs.copy()
+
+        if common_freqs is None or common_freqs.size == 0:
+            return None, None
+
+        n_freqs = common_freqs.size
+        grid = np.full((n_freqs, n_windows), np.nan, dtype=np.float64)
+        for i, psd_result in psd_cache.items():
+            if psd_result.freqs.size == 0:
+                continue
+            if np.array_equal(psd_result.freqs, common_freqs):
+                grid[:, i] = psd_result.power
+            else:
+                # Interpolate to common grid; extrapolation -> NaN.
+                grid[:, i] = np.interp(
+                    common_freqs, psd_result.freqs, psd_result.power,
+                    left=np.nan, right=np.nan,
+                )
+        return common_freqs, grid
+
+    except Exception:
+        return None, None
 
 
 def _fetch_profile(
@@ -161,6 +233,7 @@ def _fetch_profile(
     adaptive_source: str = "respiration_channel",
     smooth_breath_freq: bool = False,
     smooth: bool = False,
+    show_spectrogram: bool = False,
 ) -> _ProfilePlotData:
     """Compute band-power profile for one series - never raises.
 
@@ -170,7 +243,7 @@ def _fetch_profile(
 
     When ``smooth`` is True, the same Pascal-faithful 3-point MA the
     PSD widget applies to spectra is applied here along the *time*
-    axis of each band's profile. The smoother lives in the plot layer
+    axis of each band profile. The smoother lives in the plot layer
     only - the compute returns un-smoothed values so band-power
     statistics over the profile (mean, peak time, etc.) computed by
     downstream code keep their actual numerical values.
@@ -178,7 +251,7 @@ def _fetch_profile(
     ``adaptive_source`` is forwarded to ``compute_band_power_profile`` -
     ``"respiration_channel"`` uses the CARSPAN-faithful breathing signal;
     ``"psd_peak"`` derives the breathing frequency from the per-window PSD
-    peak within the band's static ``[low, high]`` range.
+    peak within the band static ``[low, high]`` range.
     """
     try:
         result = compute_band_power_profile(
@@ -225,6 +298,13 @@ def _fetch_profile(
             rf_clean = np.where(np.isfinite(resp_freqs), resp_freqs, 0.0)
             resp_freqs = smooth3(rf_clean)
 
+    spec_freqs: Optional[np.ndarray] = None
+    spec_grid:  Optional[np.ndarray] = None
+    if show_spectrogram:
+        spec_freqs, spec_grid = _fetch_spectrogram_grid(
+            series, window_s=window_s, step_s=step_s, psd_method=psd_method,
+        )
+
     return _ProfilePlotData(
         label=label,
         timestamps=np.asarray(result.timestamps).ravel(),
@@ -235,16 +315,18 @@ def _fetch_profile(
         window_s=float(result.window_s),
         step_s=float(result.step_s),
         resp_freqs=resp_freqs,
+        spectra_freqs=spec_freqs,
+        spectra_grid=spec_grid,
     )
 
 
 # Band-power profiles are notoriously spiky - one outlier window inside
-# a CARSPAN-strict epoch can be 10×+ the typical peak. Scaling the
+# a CARSPAN-strict epoch can be 10x+ the typical peak. Scaling the
 # y-axis to the absolute max therefore squashes the bulk of the curve
 # into a flat band along the bottom of the plot. We use a high
 # percentile across the plotted bands instead, with a small headroom
-# factor on top. The user can still ↓-arrow to zoom out and see the
-# outliers, or ↑-arrow to zoom further in.
+# factor on top. The user can still down-arrow to zoom out and see the
+# outliers, or up-arrow to zoom further in.
 _AUTOSCALE_PERCENTILE: float = 97.0
 _AUTOSCALE_HEADROOM:   float = 1.20
 
@@ -256,7 +338,7 @@ def _y_max(data: _ProfilePlotData, bands_to_plot: List[str]) -> float:
     plotted-band window in the epoch) - a sensible default that shows
     the bulk of the curve without an outlier window dominating the
     axis. Excludes bands not in *bands_to_plot* so the y-scale tracks
-    the user's actual selection.
+    the user actual selection.
 
     The caller applies a headroom multiplier (``_AUTOSCALE_HEADROOM``)
     on top of this value so the curve doesn't graze the top of the
@@ -289,7 +371,7 @@ def _y_max(data: _ProfilePlotData, bands_to_plot: List[str]) -> float:
 
 
 class _SingleProfilePlot(QWidget):
-    """One matplotlib figure showing a single epoch's profile."""
+    """One matplotlib figure showing a single epoch profile."""
 
     def __init__(
         self,
@@ -300,6 +382,7 @@ class _SingleProfilePlot(QWidget):
         bands: Optional[Dict[str, dict]] = None,
         bands_to_plot: Optional[List[str]] = None,
         adaptive_names: Optional[frozenset] = None,
+        show_spectrogram: bool = False,
     ) -> None:
         super().__init__(parent)
         # Same white-figure / white-widget combo as PSDPlotWidget so the
@@ -316,16 +399,23 @@ class _SingleProfilePlot(QWidget):
         self.setLayout(layout)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        ProfilePlotWidget.plot_on_axis(
-            self.ax,
-            data,
-            bands=bands or {},
-            bands_to_plot=bands_to_plot or [],
-            adaptive_names=adaptive_names or frozenset(),
-            resp_freqs=data.resp_freqs,
-        )
-        self.ax.set_title(f"Profile – {data.label}")
-        self.ax.set_ylim(bottom=0.0, top=max(y_top, _Y_TOP_FLOOR))
+        # Store mode so the container can skip y-zoom for spectrogram tiles.
+        self._is_spectrogram: bool = show_spectrogram
+
+        if show_spectrogram:
+            ProfilePlotWidget.plot_spectrogram_on_axis(self.ax, data)
+            self.ax.set_title(f"{data.label}")
+        else:
+            ProfilePlotWidget.plot_on_axis(
+                self.ax,
+                data,
+                bands=bands or {},
+                bands_to_plot=bands_to_plot or [],
+                adaptive_names=adaptive_names or frozenset(),
+                resp_freqs=data.resp_freqs,
+            )
+            self.ax.set_title(f"Profile - {data.label}")
+            self.ax.set_ylim(bottom=0.0, top=max(y_top, Y_TOP_FLOOR))
 
         # If plot_on_axis added a twinx for the breathing-freq axis it
         # will be the second axes in the figure. Expose it so the
@@ -341,7 +431,7 @@ class _SingleProfilePlot(QWidget):
 # ---------------------------------------------------------------------------
 
 
-class ProfilePlotWidget(QWidget):
+class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
     """Grid of profile plots (one per epoch) sharing a uniform y-limit.
 
     Parameters
@@ -356,6 +446,8 @@ class ProfilePlotWidget(QWidget):
         bands``), band display attributes (``FrequencyAnalysis.bands``),
         and the export directory (``Directories.OutputDirectory``).
     """
+
+    _export_context = "Profile"
 
     def __init__(
         self,
@@ -373,6 +465,7 @@ class ProfilePlotWidget(QWidget):
         window_s: float = prof_cfg["window_s"]
         step_s:   float = prof_cfg["step_s"]
         smooth:   bool  = prof_cfg["smooth_for_display"]
+        show_spectrogram: bool = prof_cfg["show_spectrogram"]
         profs_raw = (workspace or {}).get("Profiles", {}) or {}
         adaptive_source: str = str(
             profs_raw.get("adaptive_source", "respiration_channel")
@@ -413,6 +506,7 @@ class ProfilePlotWidget(QWidget):
                 psd_method=prof_psd_method,
                 adaptive_source=adaptive_source,
                 smooth_breath_freq=smooth_breath_freq,
+                show_spectrogram=show_spectrogram,
             )
             for series, label in zip(series_list, labels)
         ]
@@ -421,7 +515,7 @@ class ProfilePlotWidget(QWidget):
         # whole point of plotting them side-by-side. The scale itself
         # is autoscaled to the cross-epoch 97th percentile (see
         # ``_y_max``) rather than the absolute max, so a single outlier
-        # window in one epoch doesn't squash the rest. The ↑/↓ keys
+        # window in one epoch doesn't squash the rest. The up/down keys
         # remain available for manual fine-tuning.
         y_max = max(
             (_y_max(p, bands_to_plot) for p in plots), default=0.0,
@@ -451,7 +545,8 @@ class ProfilePlotWidget(QWidget):
         self._bands_dict: Dict[str, dict] = bands_dict
         self._bands_to_plot: List[str] = bands_to_plot
         self._subplots: List[_SingleProfilePlot] = []
-        self._y_top: float = max(float(y_top), _Y_TOP_FLOOR)
+        self._y_top: float = max(float(y_top), Y_TOP_FLOOR)
+        self._show_spectrogram: bool = show_spectrogram
 
         # ---- scroll area + 2-column grid ------------------------------
         self.setStyleSheet("background-color: white;")
@@ -469,6 +564,7 @@ class ProfilePlotWidget(QWidget):
                 data, y_top,
                 bands=bands_dict, bands_to_plot=bands_to_plot,
                 adaptive_names=adaptive_names,
+                show_spectrogram=show_spectrogram,
             )
             # Apply the shared breathing-freq y-range so the right axis
             # is identical across all epoch panels.
@@ -499,89 +595,110 @@ class ProfilePlotWidget(QWidget):
         save_all.setContext(Qt.WidgetWithChildrenShortcut)
         save_all.activated.connect(self._save_all_plots)
 
-    # ------------------------------------------------------------------
-    # Keyboard - shared y-axis zoom
-    # ------------------------------------------------------------------
-
-    def _zoom_in(self) -> None:
-        """Up arrow: shrink the shared y-max (zoom in)."""
-        self._set_y_top(self._y_top * _Y_ZOOM_STEP_UP)
-
-    def _zoom_out(self) -> None:
-        """Down arrow: grow the shared y-max (zoom out)."""
-        self._set_y_top(self._y_top * _Y_ZOOM_STEP_DOWN)
-
-    def _set_y_top(self, new_y_top: float) -> None:
-        """Apply ``new_y_top`` to every linked subplot and redraw."""
-        new_y_top = max(float(new_y_top), _Y_TOP_FLOOR)
-        self._y_top = new_y_top
-        for subplot in self._subplots:
-            subplot.ax.set_ylim(bottom=0.0, top=new_y_top)
-            subplot.canvas.draw_idle()
-
-    # ------------------------------------------------------------------
-    # Export - Shift+Ctrl+P writes every plot to the output directory
-    # ------------------------------------------------------------------
-
-    def _save_all_plots(self) -> None:
-        export_dir = self._resolve_export_dir()
-        try:
-            export_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            msg = f"Profile export: could not create {export_dir!s}: {exc}"
-            logger.warning(msg)
-            show_export_summary(
-                self, context="Profile", summary=msg, failures=(msg,),
-            )
-            return
-
-        prefix = self._dataset_prefix()
-        n_saved = 0
-        failures: list[str] = []
-        for label, subplot in zip(self._labels, self._subplots):
-            stem = self._build_filename_stem(prefix, label)
-            for fmt in _EXPORT_FORMATS:
-                path = export_dir / f"{stem}.{fmt}"
-                try:
-                    subplot.canvas.figure.savefig(
-                        path, format=fmt, bbox_inches="tight",
-                    )
-                    n_saved += 1
-                except (OSError, ValueError) as exc:
-                    fail_msg = f"failed to write {path!s}: {exc}"
-                    failures.append(fail_msg)
-                    logger.warning(f"Profile export: {fail_msg}")
-
-        summary = (
-            f"Profile export: saved {n_saved} file(s) "
-            f"({len(self._subplots)} plot(s) × {len(_EXPORT_FORMATS)} format(s)) "
-            f"to {export_dir!s}"
-        )
-        logger.info(summary)
-        show_export_summary(
-            self, context="Profile", summary=summary, failures=failures,
-        )
-
-    def _resolve_export_dir(self) -> Path:
-        """Delegated to ``workSpace.get_export_dir`` for cross-widget parity."""
-        return get_export_dir(self._workspace, context="Profile")
-
-    def _dataset_prefix(self) -> str:
-        for series in self._series_list:
-            pd = getattr(series, "_pd", None)
-            basename = getattr(pd, "basename", None)
-            if basename:
-                return _sanitize_filename(str(basename))
-        return "Profile"
-
-    @staticmethod
-    def _build_filename_stem(prefix: str, label: str) -> str:
-        clean_label = _sanitize_filename(label) or "epoch"
-        return f"{prefix}_Profile_{clean_label}"
 
     # ------------------------------------------------------------------
     # Pure plotting backend
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def plot_spectrogram_on_axis(
+        ax: Axes,
+        data: "_ProfilePlotData",
+    ) -> Axes:
+        """Draw a time-frequency spectrogram for one epoch.
+
+        X-axis : time within epoch (seconds, same origin as the line view).
+        Y-axis : frequency (Hz).
+        Colour : per-window PSD power normalised to [0, 1] across the epoch
+                 using the RdYlBu_r colormap (blue = minimum power,
+                 red = maximum power) -- the standard neuroimaging ERSP palette.
+
+        The colour scale is epoch-local: the min and max are taken across
+        all finite cells of this epoch spectrogram grid so that weak-signal
+        epochs don't appear flat, and the shape of the spectral distribution
+        is always visible regardless of absolute power magnitude.
+        """
+        if (
+            data.spectra_grid is None
+            or data.spectra_freqs is None
+            or data.timestamps.size == 0
+        ):
+            msg = data.error or "No spectrogram data"
+            ax.text(
+                0.5, 0.5, msg,
+                ha="center", va="center",
+                transform=ax.transAxes, color="gray",
+            )
+            return ax
+
+        freqs = data.spectra_freqs                 # (n_freqs,)
+        grid  = data.spectra_grid                  # (n_freqs, n_windows)
+
+        # Epoch-local normalisation: 0 -> min power, 1 -> max power.
+        finite = grid[np.isfinite(grid)]
+        if finite.size < 2:
+            ax.text(
+                0.5, 0.5, "Insufficient spectrogram data",
+                ha="center", va="center",
+                transform=ax.transAxes, color="gray",
+            )
+            return ax
+        p_min = float(np.nanmin(finite))
+        p_max = float(np.nanmax(finite))
+        if p_max <= p_min:
+            p_max = p_min + 1.0
+        norm_grid = (grid - p_min) / (p_max - p_min)
+
+        # Time axis: epoch-relative seconds (0 = first window centre).
+        t0    = float(data.timestamps[0]) - data.window_s / 2.0
+        t_rel = data.timestamps - t0
+
+        pcm = ax.pcolormesh(
+            t_rel, freqs, norm_grid,
+            cmap="RdYlBu_r", vmin=0.0, vmax=1.0,
+            shading="nearest",
+        )
+
+        # ---- all main-axes operations first ----------------------------
+        ax.set_xlabel("Time within epoch [s]")
+        ax.set_ylabel("Frequency [Hz]")
+        ax.set_xlim(data.window_s / 2.0, float(t_rel[-1]) + data.step_s * 0.5)
+        ax.set_ylim(float(freqs[0]), float(freqs[-1]))
+
+        if data.resp_freqs is not None:
+            rf = np.asarray(data.resp_freqs).ravel()
+            if rf.size == data.timestamps.size and np.any(np.isfinite(rf)):
+                ax.plot(
+                    t_rel, rf,
+                    "g--", lw=2.0, alpha=.5,
+                    label="breath. freq.",
+                    zorder=5,
+                )
+                ax.legend(loc="upper right", fontsize=7, framealpha=0.75)
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        method_label = data.method.replace("_", " ").capitalize()
+        ax.set_title(
+            f"{method_label}",
+            fontsize=8, loc="left", color="dimgray",
+        )
+
+        # ---- colourbar in its own inset axes ---------------------------
+        # Using cax= instead of ax= avoids matplotlib resizing / sharing
+        # the main axes y-limits with the colourbar.
+        unit_str = f" [{data.unit}]" if getattr(data, "unit", "") else ""
+        cax = ax.inset_axes([1.03, 0.0, 0.04, 1.0])  # right of ax, full height
+        cbar = ax.figure.colorbar(pcm, cax=cax)
+        cbar.set_label(f"Power{unit_str}", fontsize=7)
+        cbar.set_ticks([0.0, 0.5, 1.0])
+        cbar.ax.set_yticklabels(
+            ["Low","Active","High"],
+            fontsize=6,
+        )
+
+        return ax
 
     @staticmethod
     def plot_on_axis(
@@ -593,7 +710,7 @@ class ProfilePlotWidget(QWidget):
         adaptive_names: Optional[frozenset] = None,
         resp_freqs: Optional[np.ndarray] = None,
     ) -> Axes:
-        """Draw one epoch's profile: filled traces for each chosen band.
+        """Draw one epoch profile: filled traces for each chosen band.
 
         Parameters
         ----------
@@ -606,7 +723,7 @@ class ProfilePlotWidget(QWidget):
             Drives the trace colour and fill alpha; missing entries fall
             back to a sensible default.
         bands_to_plot : list[str], optional
-            Subset of ``data.band_names`` to draw. Empty / ``None`` ⇒
+            Subset of ``data.band_names`` to draw. Empty / ``None`` =>
             draw every band the profile carries.
         """
         bands = bands or {}
@@ -629,7 +746,7 @@ class ProfilePlotWidget(QWidget):
         # plot is easier to read in epoch-relative seconds).
         t0 = float(data.timestamps[0]) - data.window_s / 2.0
         t_rel = data.timestamps - t0
-        ax.set_xlim(0.0, float(t_rel[-1] + data.window_s / 2.0))
+        ax.set_xlim(data.window_s / 2.0, float(t_rel[-1]) + data.step_s / 2.0)
 
         # ---- collect valid band rows ----------------------------------
         # Build (name, row, spec, mean_power) for every band that exists
@@ -645,12 +762,10 @@ class ProfilePlotWidget(QWidget):
             band_entries.append((name, row, spec, mean_power))
 
         # ---- pass 1: fills - highest power first (rendered lowest) ----
-        # Sorting highest-to-lowest means the dominant band's fill sits
-        # at the bottom; lower-power bands' fills are drawn on top so
+        # Sorting highest-to-lowest means the dominant band fill sits
+        # at the bottom; lower-power bands fills are drawn on top so
         # their area is never fully buried. All fills share zorder=2 so
         # matplotlib composites them in draw order (first = bottom).
-        # Adaptive bands always fill with the band's own colour regardless
-        # of the line colour chosen in pass 2.
         for name, row, spec, _ in sorted(band_entries, key=lambda x: -x[3]):
             color = spec.get("color", "gray")
             fill_alpha = float(spec.get("alpha", 0.20))
@@ -661,7 +776,7 @@ class ProfilePlotWidget(QWidget):
 
         # ---- pass 2: lines - drawn after ALL fills --------------------
         # zorder=3 puts every line on top of every fill unconditionally,
-        # so each band's curve is legible regardless of power ratio.
+        # so each band curve is legible regardless of power ratio.
         # Adaptive bands get a black line so the tracking variation stands
         # out clearly against the coloured fill.
         for name, row, spec, _ in band_entries:

@@ -753,8 +753,16 @@ class PrepPlotWidget(QWidget):
         except Exception:
             pass
 
-        # Rebuild Qt canvas
-        self.canvas.setParent(None)
+        # Rebuild Qt canvas. Hide and deleteLater the old canvas
+        # BEFORE detaching it, otherwise Qt promotes the formerly-
+        # parented widget to a top-level window the moment it loses
+        # its parent, which surfaces as an orphan plot in its own
+        # window when this dock is the active tab during the swap.
+        old_canvas = self.canvas
+        old_canvas.hide()
+        old_canvas.setParent(None)
+        old_canvas.deleteLater()
+
         self.canvas = FigureCanvas(self.fig)
 
         # Required for key events
@@ -859,13 +867,13 @@ class PrepPlotWidget(QWidget):
         # Y-scaling
         # ------------------------------------------------------------
         if self.ax_br is None:
-            # No breathing → normal autoscale
+            # No breathing, normal autoscale
             self.ax_ecg.relim()
             self.ax_ecg.autoscale_view(scalex=False, scaley=True)
             return
 
         # ------------------------------------------------------------
-        # Breathing present → lift ECG upward
+        # Breathing present, lift ECG upward
         # ------------------------------------------------------------
         self.ax_ecg.relim()
         self.ax_ecg.autoscale(enable=True, axis="y")

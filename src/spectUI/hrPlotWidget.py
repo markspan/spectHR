@@ -218,7 +218,7 @@ class HRPlotWidget(QWidget):
 
         Only beats labelled ``"N"`` (normal) carry a finite HR value.
         Every other label (``"L"``, ``"S"``, ``"TL"``, ``"SL"``,
-        ``"SNS"`` …) and every non-finite / non-positive IBI is
+        ``"SNS"`` ...) and every non-finite / non-positive IBI is
         replaced with ``NaN`` in the output series. ``matplotlib.plot``
         treats ``NaN`` in the y-array as a break in the line, so the
         rendered trace is **discontinuous across the gap** instead of
@@ -465,8 +465,17 @@ class HRPlotWidget(QWidget):
         self.hrfig.canvas.header_visible = False  # type: ignore[attr-defined]
         self.hrfig.tight_layout()
 
-        # Rebuild Qt canvas
-        self.canvas.setParent(None)
+        # Rebuild Qt canvas. The old canvas must be hidden BEFORE
+        # setParent(None), otherwise Qt promotes a previously-visible
+        # widget to a top-level window the moment it loses its parent,
+        # which surfaces as an orphaned IBI plot in its own window when
+        # the IBI dock is the active tab during the swap. deleteLater
+        # frees the C++ side on the next event-loop turn.
+        old_canvas = self.canvas
+        old_canvas.hide()
+        old_canvas.setParent(None)
+        old_canvas.deleteLater()
+
         self.canvas = FigureCanvas(self.hrfig)
         # Insert new canvas at index 0: at the top
         self.layout().insertWidget(0, self.canvas)  # type: ignore[arg-type]

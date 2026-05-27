@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import pickle
 from typing import Any
 
@@ -468,8 +469,24 @@ class PhysioData:
     # ------------------------------------------------------------ #
 
     def save(self, path: Path) -> None:
-        """Save the PhysioData object to disk as a pickle (.pkl)."""
+        """Save the PhysioData object to disk as a pickle (.pkl).
+
+        The object is serialised to memory first.  If a file already
+        exists at *path* and its MD5 matches the new bytes, the write is
+        skipped entirely -- avoiding unnecessary disk I/O and preventing
+        the file's mtime from advancing when nothing actually changed.
+        """
         path = Path(path).with_suffix(".pkl")
-        with path.open("wb") as f:
-            pickle.dump(self, f)
-        logger.info(f"PhysioData saved to {path}")
+        data = pickle.dumps(self, protocol=pickle.HIGHEST_PROTOCOL)
+        new_hash = hashlib.md5(data).digest()
+
+        if path.exists():
+            try:
+                old_hash = hashlib.md5(path.read_bytes()).digest()
+                if old_hash == new_hash:
+                    return
+            except OSError:
+                pass  # can't read the old file - just overwrite
+
+        path.write_bytes(data)
+        logger.debug(f"PhysioData saved to {path}")

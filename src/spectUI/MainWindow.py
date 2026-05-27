@@ -1,19 +1,30 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-import json
+"""
+spectHR main window, dock-based variant.
+
+Layout is built on PySide6-QtAds. Every former tab is now a CDockWidget
+that can be dragged, floated, retabbed or moved to a second monitor.
+Chrome (menubar, statusbar, QActions) is loaded from resources/form.ui
+so menu authoring stays in Designer.
+"""
+from __future__ import annotations
+
+import logging
+import os
 import pickle
 import sys
-import os
-import logging
+import webbrowser
+from pathlib import Path
 
-# Force Matplotlib to use the Qt backend inside a PySide6 app (macOS-safe)
+# Force Matplotlib to use the Qt backend inside a PySide6 app (macOS-safe).
 os.environ.setdefault("MPLBACKEND", "QtAgg")
 import matplotlib
 
 matplotlib.use("QtAgg", force=True)
-import webbrowser
 
-from PySide6.QtCore import QFile, Qt
+import PySide6QtAds as QtAds
+from PySide6.QtCore import QByteArray, QFile, QSettings, Qt
 from PySide6.QtGui import QAction, QFont, QTextCursor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -23,16 +34,56 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMainWindow,
     QMenu,
-    QVBoxLayout,
-    QToolButton,
+    QPlainTextEdit,
+    QScrollArea,
+    QTreeWidget,
     QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
+
+import spectUI as spQt
+from spectHR._version import __version__
+from spectHR.DataSet.Epoch import Epoch
+from spectHR.DataSet.PhysioData import PhysioData
+from spectHR.DataSet.Series import CardioSeries
+from spectHR.Tools.Logger import logger
+
+
+# QSettings keys. Organisation and application names are set on the
+# QApplication before MainWindow is built so the store lands in a
+# predictable per-platform location.
+_ORG_NAME             = "spectHR"
+_APP_NAME             = "spectHR"
+_SETTINGS_GEOMETRY    = "MainWindow/geometry"
+_SETTINGS_WINDOWSTATE = "MainWindow/windowState"
+_SETTINGS_DOCKSTATE   = "MainWindow/dockState"
+_SETTINGS_LAST_PERSP  = "MainWindow/lastPerspective"
+_SETTINGS_PERSPS      = "Perspectives"
+
+# Dock objectName strings. CDockManager.saveState keys the saved layout
+# by objectName, so these are on-disk contract: do not change once shipped.
+_DOCK_TREE          = "dock.workspace"
+_DOCK_PREPROCESSING = "dock.preprocessing"
+_DOCK_IBI           = "dock.ibi"
+_DOCK_POINCARE      = "dock.poincare"
+_DOCK_EPOCHS        = "dock.epochs"
+_DOCK_PSD           = "dock.psd"
+_DOCK_PROFILES      = "dock.profiles"
+_DOCK_PARAMETERS    = "dock.parameters"
+_DOCK_LOG           = "dock.log"
+
+# Built-in perspectives, captured once so the user always has a way
+# back to a known layout via View > Layout.
+_BUILTIN_PERSPECTIVE_DEFAULT  = "Default"
+_BUILTIN_PERSPECTIVE_COMPARE  = "Compare"
+_BUILTIN_PERSPECTIVE_PSDFOCUS = "PSD focus"
 
 
 class _QtLogHandler(logging.Handler):
     """Logging handler that appends records to a QPlainTextEdit widget."""
 
-    def __init__(self, widget):
+    def __init__(self, widget: QPlainTextEdit):
         super().__init__()
         self._widget = widget
         self.setFormatter(logging.Formatter(
@@ -49,67 +100,238 @@ class _QtLogHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
-from pathlib import Path
-
-from spectHR._version import __version__
-from spectHR.DataSet.Epoch import Epoch
-from spectHR.DataSet.PhysioData import PhysioData
-from spectHR.DataSet.Series import CardioSeries
-import spectUI as spQt
-
-from spectHR.Tools.Logger import logger
-
 
 class MainWindow(QMainWindow):
     """
-    Main application window for the spectQt ECG pre-processing GUI.
+    Main application window for the spectHR HRV analyser.
 
-    The workspace dict has two top-level chapters:
-        workspace["Directories"]      - DataDirectory, CacheDirectory, OutputDirectory
-        workspace["FrequencyAnalysis"] - HRV frequency band configuration
-        workspace["CardioParameters"] - IBI classification and ECG preprocessing
+    Workspace dict chapters,
 
-    All directory accesses use workspace["Directories"][key].
+        workspace["Directories"]       , DataDirectory, CacheDirectory, OutputDirectory.
+        workspace["FrequencyAnalysis"] , HRV frequency band configuration.
+        workspace["CardioParameters"]  , IBI classification and ECG preprocessing.
+
+    Layout is a tabified central dock group with the workspace tree on
+    the left and the log dock at the bottom (hidden by default). Last
+    layout and named perspectives persist via QSettings.
     """
 
-    def __init__(self):
-        super(MainWindow, self).__init__()
-        logging.getLogger('matplotlib.font_manager').disabled = True
+    # ------------------------------------------------------------------
+    # Construction
+    # ------------------------------------------------------------------
 
-        # Load the UI file
+    def __init__(self):
+        super().__init__()
+        logging.getLogger("matplotlib.font_manager").disabled = True
+
+        # ---- chrome from form.ui (menubar, statusbar, actions) ------
         base_dir = Path(__file__).parent
         ui_path = base_dir / "resources" / "form.ui"
         ui_file = QFile(ui_path)
         if not ui_file.open(QFile.ReadOnly):
-            logger.error("Cannot open UI file:", ui_file.errorString())
+            logger.error("Cannot open UI file: %s", ui_file.errorString())
             sys.exit(-1)
         loader = QUiLoader()
         self.ui = loader.load(ui_file)
         ui_file.close()
 
-        self.setCentralWidget(self.ui)
+        # Reparent menubar and statusbar onto self. Actions stay
+        # accessible via self.ui.actionXxx because they remain children
+        # of self.ui in the Qt object tree.
+        self.setMenuBar(self.ui.menuBar())
+        self.setStatusBar(self.ui.statusBar())
 
-        # Route all spectHR log output to the Log tab as well as the console.
-        self._log_handler = _QtLogHandler(self.ui.logView)
-        logging.getLogger("spectHR").addHandler(self._log_handler)
-
-        self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
-        self.ui.actionAdd_Epoch.setStatusTip("Add a new epoch spanning the full recording")
-        self.ui.actionAdd_Epoch.setToolTip("Add a new epoch spanning the full recording")   
-        self.ui.actionAdd_Epoch.setShortcut("Ctrl+N")
         self.setWindowTitle(f"spectHR (v{__version__}) - ECG / HRV Analysis")
         self.resize(1920, 1080)
-        self.ui.Splitter.setSizes([200, 1700])
 
-        # Initialize workspace (also applies FrequencyAnalysis bands)
-        # Store the path so EditParameters can save back to the same file
+        # ---- application state --------------------------------------
+        self.dataset: PhysioData | None = None
+        self.savename: Path | None = None
+
+        # Refresh registry, dock objectName -> refresh fn.
+        self._refresh_fns: dict[str, callable] = {}
+
+        # ---- workspace ----------------------------------------------
         from platformdirs import user_documents_path
 
         self.workspace_file = user_documents_path() / "DefaultWorkSpace.json"
         self.workspace = spQt.LoadWorkspace(self.workspace_file)
-        spQt.PopulateTree(self.ui.treeWidget, self.workspace)
 
-        # Menu wiring - Workspace / Directories
+        # ---- dock layout --------------------------------------------
+        # CDockManager installs itself as the QMainWindow central widget.
+        QtAds.CDockManager.setConfigFlag(
+            QtAds.CDockManager.OpaqueSplitterResize, True,
+        )
+        QtAds.CDockManager.setConfigFlag(
+            QtAds.CDockManager.XmlCompressionEnabled, False,
+        )
+        self.dock_manager = QtAds.CDockManager(self)
+
+        self._build_docks()
+        self._wire_menus()
+        self._wire_actions()
+
+        # Capture built-in perspectives before any saved user state is
+        # restored, so the user always has a way back from a bad drag.
+        self._capture_builtin_perspectives()
+
+        # Restore last session. Must follow _build_docks() so the dock
+        # objectNames it keys on are already registered.
+        self._restore_session()
+
+        # Tree population fires selectionChanged, which expects every
+        # dock to already exist, so do it last.
+        spQt.PopulateTree(self.tree_widget, self.workspace)
+
+    # ------------------------------------------------------------------
+    # Dock construction
+    # ------------------------------------------------------------------
+
+    def _build_docks(self) -> None:
+        """
+        Create every CDockWidget and place it in the dock manager.
+
+        Default layout, workspace tree left, seven analysis views
+        tabified centre, log bottom and hidden.
+        """
+        # ---- workspace tree dock ------------------------------------
+        self.tree_widget = QTreeWidget()
+        self.tree_widget.setHeaderLabel("Workspace")
+        self.tree_widget.setRootIsDecorated(True)
+        self.tree_widget.setAnimated(True)
+        self.tree_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
+        self.tree_widget.itemSelectionChanged.connect(self.on_file_selection)
+
+        tree_dock = self._new_dock(_DOCK_TREE, "Workspace", self.tree_widget)
+        self.dock_manager.addDockWidget(QtAds.LeftDockWidgetArea, tree_dock)
+        self.tree_dock = tree_dock
+
+        # ---- analysis plot widgets ----------------------------------
+        self.prep_plot_widget       = spQt.PrepPlotWidget()
+        self.hr_plot_widget         = spQt.HRPlotWidget()
+        self.poincare_plot_widget   = spQt.PoincarePlotWidget()
+        self.epoch_plot_widget      = spQt.EpochPlotWidget()
+        self.parameters_plot_widget = spQt.ParametersPlotWidget()
+
+        # PSD / Profiles live in their own scroll area. The inner plot
+        # widget is rebuilt on every refresh, so we hold the layout,
+        # not the widget.
+        self.psd_scroll, self.psd_layout = self._make_scrollable_host()
+        self.profile_scroll, self.profile_layout = self._make_scrollable_host()
+
+        # ---- log dock content ---------------------------------------
+        self.log_view = QPlainTextEdit()
+        self.log_view.setReadOnly(True)
+        font = QFont("Courier New", 9)
+        self.log_view.setFont(font)
+        self.log_view.setLineWrapMode(QPlainTextEdit.NoWrap)
+        # Route all spectHR log output to the Log dock as well as the console.
+        self._log_handler = _QtLogHandler(self.log_view)
+        logging.getLogger("spectHR").addHandler(self._log_handler)
+
+        # ---- centre tab group ---------------------------------------
+        # First dock seeds the centre area, the rest are tabified into it.
+        prep_dock = self._new_dock(
+            _DOCK_PREPROCESSING, "Preprocessing", self.prep_plot_widget,
+        )
+        first_area = self.dock_manager.addDockWidget(
+            QtAds.CenterDockWidgetArea, prep_dock,
+        )
+
+        def _tab(name: str, title: str, widget: QWidget) -> QtAds.CDockWidget:
+            dock = self._new_dock(name, title, widget)
+            self.dock_manager.addDockWidget(
+                QtAds.CenterDockWidgetArea, dock, first_area,
+            )
+            return dock
+
+        ibi_dock      = _tab(_DOCK_IBI,        "IBI Series",  self.hr_plot_widget)
+        poincare_dock = _tab(_DOCK_POINCARE,   "Poincare",    self.poincare_plot_widget)
+        epochs_dock   = _tab(_DOCK_EPOCHS,     "Epochs",      self.epoch_plot_widget)
+        psd_dock      = _tab(_DOCK_PSD,        "PSD",         self.psd_scroll)
+        profiles_dock = _tab(_DOCK_PROFILES,   "Profiles",    self.profile_scroll)
+        params_dock   = _tab(_DOCK_PARAMETERS, "Parameters",  self.parameters_plot_widget)
+
+        # ---- log dock -----------------------------------------------
+        log_dock = self._new_dock(_DOCK_LOG, "Log", self.log_view)
+        self.dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, log_dock)
+        log_dock.toggleView(False)  # hidden by default
+
+        self.docks: dict[str, QtAds.CDockWidget] = {
+            _DOCK_TREE:          tree_dock,
+            _DOCK_PREPROCESSING: prep_dock,
+            _DOCK_IBI:           ibi_dock,
+            _DOCK_POINCARE:      poincare_dock,
+            _DOCK_EPOCHS:        epochs_dock,
+            _DOCK_PSD:           psd_dock,
+            _DOCK_PROFILES:      profiles_dock,
+            _DOCK_PARAMETERS:    params_dock,
+            _DOCK_LOG:           log_dock,
+        }
+
+        # ---- refresh wiring -----------------------------------------
+        # Each content dock owns a refresh fn fired on visibilityChanged.
+        # Replaces the old on_tab_changed index dispatch, and refreshes
+        # unconditionally so peak edits, epoch toggles and parameter
+        # changes always show up next time the dock is brought forward.
+        self._refresh_fns = {
+            _DOCK_PREPROCESSING: self._refresh_preprocessing,
+            _DOCK_IBI:           self._refresh_ibi,
+            _DOCK_POINCARE:      self._refresh_poincare,
+            _DOCK_EPOCHS:        self._refresh_epochs,
+            _DOCK_PSD:           self._refresh_psd,
+            _DOCK_PROFILES:      self._refresh_profile,
+            _DOCK_PARAMETERS:    self._refresh_parameters,
+        }
+
+        for name, refresh_fn in self._refresh_fns.items():
+            dock = self.docks[name]
+            # Capture name by default-arg, otherwise the closure binds
+            # the loop variable and every dock would route to the last.
+            dock.visibilityChanged.connect(
+                lambda visible, n=name: self._on_dock_visible(n, visible),
+            )
+
+    def _new_dock(
+        self,
+        object_name: str,
+        title: str,
+        widget: QWidget,
+    ) -> QtAds.CDockWidget:
+        """Create a CDockWidget with stable object name and embedded widget."""
+        dock = QtAds.CDockWidget(title)
+        dock.setObjectName(object_name)
+        dock.setWidget(widget)
+        return dock
+
+    def _make_scrollable_host(self) -> tuple[QScrollArea, QVBoxLayout]:
+        """
+        Build the scroll-area + content-widget pair used by PSD and Profile.
+
+        Returns the inner layout too, the refresh helpers swap the plot
+        widget on every call so they need direct addWidget / takeAt
+        access against the same layout shape the old .ui forms had.
+        """
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout()
+        content.setLayout(layout)
+        scroll.setWidget(content)
+        return scroll, layout
+
+    # ------------------------------------------------------------------
+    # Menu and action wiring
+    # ------------------------------------------------------------------
+
+    def _wire_actions(self) -> None:
+        """Connect QActions defined in form.ui to their slots."""
+        self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
+        self.ui.actionAdd_Epoch.setStatusTip("Add a new epoch spanning the full recording")
+        self.ui.actionAdd_Epoch.setToolTip("Add a new epoch spanning the full recording")
+        self.ui.actionAdd_Epoch.setShortcut("Ctrl+N")
+
         self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
         self.ui.actionOpen_Workspace.setShortcut("Ctrl+O")
         self.ui.actionOpen_Workspace.setStatusTip("Open a workspace file")
@@ -138,64 +360,278 @@ class MainWindow(QMainWindow):
         self.ui.actionDocumentation.setStatusTip("Open the spectHR documentation")
         self.ui.actionDocumentation.setToolTip("Open the spectHR documentation")
 
-        self.ui.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.ui.treeWidget.customContextMenuRequested.connect(self.show_context_menu)
+    def _wire_menus(self) -> None:
+        """
+        Build the View menu at runtime.
 
-        # Embed plot widgets
-        self.prep_plot_widget = spQt.PrepPlotWidget()
-        layout1 = QVBoxLayout()
-        layout1.addWidget(self.prep_plot_widget)
-        self.ui.mplPreProcessing.setLayout(layout1)
+        One toggle action per dock, plus a Layout submenu for
+        perspectives. Built in code so a new dock or perspective is a
+        Python edit, not a menu-XML edit.
+        """
+        menubar = self.menuBar()
+        # Slot the View menu in just before Help so the established
+        # WorkSpace, Edits, View, Help order reads naturally.
+        view_menu = QMenu("View", self)
+        help_action = self.ui.menuHelp.menuAction()
+        menubar.insertMenu(help_action, view_menu)
+        self.view_menu = view_menu
 
-        self.hr_plot_widget = spQt.HRPlotWidget()
-        layout2 = QVBoxLayout()
-        layout2.addWidget(self.hr_plot_widget)
-        self.ui.mplHRSeries.setLayout(layout2)
+        for name in (
+            _DOCK_TREE,
+            _DOCK_PREPROCESSING,
+            _DOCK_IBI,
+            _DOCK_POINCARE,
+            _DOCK_EPOCHS,
+            _DOCK_PSD,
+            _DOCK_PROFILES,
+            _DOCK_PARAMETERS,
+            _DOCK_LOG,
+        ):
+            view_menu.addAction(self.docks[name].toggleViewAction())
 
-        self.poincare_plot_widget = spQt.PoincarePlotWidget()
-        layout3 = QVBoxLayout()
-        layout3.addWidget(self.poincare_plot_widget)
-        self.ui.mplPoincare.setLayout(layout3)
+        view_menu.addSeparator()
 
-        self.epoch_plot_widget = spQt.EpochPlotWidget()
-        layout4 = QVBoxLayout()
-        layout4.addWidget(self.epoch_plot_widget)
-        self.ui.mplEpochs.setLayout(layout4)
+        layout_menu = view_menu.addMenu("Layout")
+        self.layout_menu = layout_menu
+        self._rebuild_layout_menu()
 
-        self.welch_psd_layout = QVBoxLayout()
-        self.ui.scrollAreaWidgetContents.setLayout(self.welch_psd_layout)
+    def _rebuild_layout_menu(self) -> None:
+        """Repopulate the Layout submenu, called after perspective changes."""
+        self.layout_menu.clear()
 
-        # Profile tab uses the same scroll-area-with-content-widget
-        # nesting as the PSD tab (defined in form.ui). The layout itself
-        # is created here and attached to the content widget so
-        # show_profile_plot can swap children in / out the same way
-        # show_psd_plot does.
-        self.profile_layout = QVBoxLayout()
-        self.ui.scrollAreaWidgetContentsProfile.setLayout(self.profile_layout)
+        save_action = QAction("Save current as perspective...", self)
+        save_action.triggered.connect(self._action_save_perspective)
+        self.layout_menu.addAction(save_action)
 
-        self.parameters_plot_widget = spQt.ParametersPlotWidget()
-        layout5 = QVBoxLayout()
-        layout5.addWidget(self.parameters_plot_widget)
-        self.ui.mplParameters.setLayout(layout5)
+        reset_action = QAction("Reset to default", self)
+        reset_action.triggered.connect(
+            lambda: self.dock_manager.openPerspective(_BUILTIN_PERSPECTIVE_DEFAULT)
+        )
+        self.layout_menu.addAction(reset_action)
 
-        self.ui.treeWidget.itemSelectionChanged.connect(self.on_file_selection)
-        self.ui.Views.currentChanged.connect(self.on_tab_changed)
+        manage_action = QAction("Manage perspectives...", self)
+        manage_action.triggered.connect(self._action_manage_perspectives)
+        self.layout_menu.addAction(manage_action)
 
-        # Hide the Log tab from the tab strip and pin a toggle button to the
-        # top-right corner of the tab bar so it is always visually at the right.
-        self._log_tab_index = 7
-        self._pre_log_index = 0
-        self.ui.Views.tabBar().setTabVisible(self._log_tab_index, False)
+        self.layout_menu.addSeparator()
 
-        self._log_btn = QToolButton(self.ui.Views)
-        self._log_btn.setText("Log")
-        self._log_btn.setCheckable(True)
-        self._log_btn.setAutoRaise(True)
-        self._log_btn.toggled.connect(self._on_log_btn_toggled)
-        self.ui.Views.setCornerWidget(self._log_btn, Qt.TopRightCorner)
+        for name in self.dock_manager.perspectiveNames():
+            action = QAction(name, self)
+            action.triggered.connect(
+                lambda _checked=False, n=name: self.dock_manager.openPerspective(n)
+            )
+            self.layout_menu.addAction(action)
 
-        self.dataset = None
+    # ------------------------------------------------------------------
+    # Perspective and session-state plumbing
+    # ------------------------------------------------------------------
 
+    def _capture_builtin_perspectives(self) -> None:
+        """
+        Snapshot the built-in named perspectives.
+
+        Default is the post-construction layout. Compare splits Epochs
+        and Poincare under the centre area for artefact QC. PSD focus
+        floats the PSD dock so it can live on a second monitor. All
+        three are captured against the fresh layout, before any saved
+        user state is restored, so they always resolve to something
+        sensible.
+        """
+        # Default ---------------------------------------------------------
+        self.dock_manager.addPerspective(_BUILTIN_PERSPECTIVE_DEFAULT)
+
+        # Compare ---------------------------------------------------------
+        # Move Epochs out into a vertical split under the centre area,
+        # add Poincare alongside it as a tab.
+        epochs_dock = self.docks[_DOCK_EPOCHS]
+        poincare_dock = self.docks[_DOCK_POINCARE]
+        # Drop Epochs below the central area, stacked compare view.
+        if not epochs_dock.isFloating():
+            self.dock_manager.addDockWidget(
+                QtAds.BottomDockWidgetArea,
+                epochs_dock,
+                self.docks[_DOCK_PREPROCESSING].dockAreaWidget(),
+            )
+        if not poincare_dock.isFloating():
+            self.dock_manager.addDockWidgetTab(
+                QtAds.CenterDockWidgetArea, poincare_dock
+            )
+        self.dock_manager.addPerspective(_BUILTIN_PERSPECTIVE_COMPARE)
+
+        # Reset before capturing PSD focus so the perspectives compose
+        # rather than stack.
+        self.dock_manager.openPerspective(_BUILTIN_PERSPECTIVE_DEFAULT)
+
+        # PSD focus -------------------------------------------------------
+        psd_dock = self.docks[_DOCK_PSD]
+        if not psd_dock.isFloating():
+            psd_dock.setFloating()
+        self.dock_manager.addPerspective(_BUILTIN_PERSPECTIVE_PSDFOCUS)
+
+        # Back to default as the displayed layout.
+        self.dock_manager.openPerspective(_BUILTIN_PERSPECTIVE_DEFAULT)
+
+    def _restore_session(self) -> None:
+        """
+        Restore window geometry and dock layout from QSettings.
+
+        Two passes, user-saved perspectives first (loadPerspectives),
+        then the last-active dock state (restoreState). With no saved
+        state the default captured in _capture_builtin_perspectives
+        stands.
+        """
+        settings = QSettings(_ORG_NAME, _APP_NAME)
+
+        # Named perspectives ------------------------------------------
+        settings.beginGroup(_SETTINGS_PERSPS)
+        try:
+            self.dock_manager.loadPerspectives(settings)
+        finally:
+            settings.endGroup()
+        # Newly loaded perspectives change the menu contents.
+        self._rebuild_layout_menu()
+
+        # Window chrome -----------------------------------------------
+        geom = settings.value(_SETTINGS_GEOMETRY)
+        if isinstance(geom, QByteArray) and not geom.isEmpty():
+            self.restoreGeometry(geom)
+        win_state = settings.value(_SETTINGS_WINDOWSTATE)
+        if isinstance(win_state, QByteArray) and not win_state.isEmpty():
+            self.restoreState(win_state)
+
+        # Dock layout -------------------------------------------------
+        dock_state = settings.value(_SETTINGS_DOCKSTATE)
+        if isinstance(dock_state, QByteArray) and not dock_state.isEmpty():
+            self.dock_manager.restoreState(dock_state)
+        else:
+            # First-run, leave the default tabified layout in place.
+            pass
+
+    def closeEvent(self, event) -> None:
+        """Persist current geometry, window state and dock layout on close."""
+        settings = QSettings(_ORG_NAME, _APP_NAME)
+
+        # Named perspectives (writes one subkey per perspective name).
+        settings.beginGroup(_SETTINGS_PERSPS)
+        try:
+            self.dock_manager.savePerspectives(settings)
+        finally:
+            settings.endGroup()
+
+        settings.setValue(_SETTINGS_GEOMETRY,    self.saveGeometry())
+        settings.setValue(_SETTINGS_WINDOWSTATE, self.saveState())
+        settings.setValue(_SETTINGS_DOCKSTATE,   self.dock_manager.saveState())
+
+        # Let QtAds run its own teardown before the QMainWindow destructor.
+        self.dock_manager.deleteLater()
+
+        super().closeEvent(event)
+
+    def _action_save_perspective(self) -> None:
+        """Prompt for a perspective name, snapshot current layout under it."""
+        name, ok = QInputDialog.getText(
+            self, "Save perspective", "Perspective name:",
+        )
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        self.dock_manager.addPerspective(name)
+        self._rebuild_layout_menu()
+        logger.info("Saved layout as perspective %r", name)
+
+    def _action_manage_perspectives(self) -> None:
+        """Simple remove-by-name dialog for user-defined perspectives."""
+        existing = [
+            n for n in self.dock_manager.perspectiveNames()
+            if n not in (
+                _BUILTIN_PERSPECTIVE_DEFAULT,
+                _BUILTIN_PERSPECTIVE_COMPARE,
+                _BUILTIN_PERSPECTIVE_PSDFOCUS,
+            )
+        ]
+        if not existing:
+            return
+        name, ok = QInputDialog.getItem(
+            self,
+            "Remove perspective",
+            "Perspective:",
+            existing,
+            0,
+            False,
+        )
+        if not ok or not name:
+            return
+        self.dock_manager.removePerspective(name)
+        self._rebuild_layout_menu()
+        logger.info("Removed perspective %r", name)
+
+    # ------------------------------------------------------------------
+    # Per-dock visibilityChanged dispatch
+    # ------------------------------------------------------------------
+
+    def _on_dock_visible(self, name: str, visible: bool) -> None:
+        """
+        Refresh the dock whenever it is brought forward.
+
+        Matches the old QTabWidget.currentChanged behaviour, persist the
+        dataset, then recompute the plot. Always recompute (no dirty
+        flag), so peak edits, epoch toggles, parameter tweaks and any
+        other side-effects of working in another dock always appear.
+
+        Floating content docks are refreshed too. A floating dock
+        stays visible regardless of which tab is active in the main
+        window, so its own visibilityChanged signal never fires on a
+        centre-tab switch. Without this they go stale after edits
+        made in other docks (epoch resizing, peak edits, parameter
+        changes).
+        """
+        if not visible:
+            return
+        if self.dataset is None:
+            return
+        refresh_fn = self._refresh_fns.get(name)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            # Persist current state before recomputing, the old
+            # on_tab_changed did the same on every tab switch.
+            if self.savename is not None:
+                self.dataset.save(self.savename)
+            if refresh_fn is not None:
+                refresh_fn()
+            # Floating content docks piggy-back on every visibility
+            # change so they catch mutations done elsewhere.
+            for other_name, dock in self.docks.items():
+                if other_name == name:
+                    continue
+                other_fn = self._refresh_fns.get(other_name)
+                if other_fn is None:
+                    continue
+                if dock.isClosed() or not dock.isFloating():
+                    continue
+                other_fn()
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def _refresh_preprocessing(self) -> None:
+        self.show_preprocessing_plot(self.dataset)
+
+    def _refresh_ibi(self) -> None:
+        self.show_hr_plot(self.dataset)
+
+    def _refresh_poincare(self) -> None:
+        self.show_poincare_plot(self.dataset)
+
+    def _refresh_epochs(self) -> None:
+        self.show_epoch_plot(self.dataset)
+
+    def _refresh_psd(self) -> None:
+        self.show_psd_plot(self.dataset)
+
+    def _refresh_profile(self) -> None:
+        self.show_profile_plot(self.dataset)
+
+    def _refresh_parameters(self) -> None:
+        self.show_parameters_plot(self.dataset)
 
     # ------------------------------------------------------------------
     # Workspace menu actions
@@ -209,7 +645,7 @@ class MainWindow(QMainWindow):
         if file_path:
             self.workspace_file = file_path
             self.workspace = spQt.LoadWorkspace(file_path)
-            spQt.PopulateTree(self.ui.treeWidget, self.workspace)
+            spQt.PopulateTree(self.tree_widget, self.workspace)
 
     def SaveWorkSpace(self):
         """Save the current workspace to a JSON file."""
@@ -227,48 +663,41 @@ class MainWindow(QMainWindow):
         dialog = spQt.DirectorySelectorDialog(self.workspace["Directories"])
         if dialog.exec_() == QInputDialog.Accepted:
             self.workspace["Directories"] = dialog.get_directories()
-            spQt.PopulateTree(self.ui.treeWidget, self.workspace)
+            spQt.PopulateTree(self.tree_widget, self.workspace)
 
     def EditParameters(self):
         """
         Edit all non-directory parameters in the workspace via a dynamic form.
 
-        On OK:
+        On OK,
+
         1. The updated values are written back into self.workspace.
         2. The workspace JSON file is saved immediately so the changes persist.
-        3. The CardioSeriesView module-level globals are re-applied in-process
-           so any subsequent PSD computation uses the new settings without a restart.
-        4. The PSD tab is refreshed if a dataset is currently loaded.
+        3. The PSD and Profile docks are refreshed if a dataset is loaded,
+           the other docks are marked dirty so they refresh on next show.
         """
         dialog = spQt.ParametersEditorDialog(self.workspace, parent=self)
         if dialog.exec_() == QDialog.Accepted:
             self.workspace = dialog.get_parameters(self.workspace)
 
-            # 1. Save to disk immediately
             try:
                 spQt.SaveWorkspace(self.workspace, self.workspace_file)
             except Exception as e:
                 logger.warning(f"Could not save workspace after parameter edit: {e}")
 
-            # 2. Rebuild the PsdMethod from the updated workspace and
-            #    push it onto every loaded series. The library reads
-            #    nothing from globals; each series carries its own
-            #    PsdMethod, which is what drives subsequent
-            #    psd() / band_power() / band_powers() calls.
             if self.dataset is not None:
-                # 3. Refresh the PSD and Profile plots immediately if a
-                #    dataset is loaded - Profile Settings live in the
-                #    same workspace dialog so any band-list / window /
-                #    step change has to take effect right away too.
+                # PSD and Profiles depend directly on what was edited,
+                # refresh them now. The other docks recompute the next
+                # time the user brings them forward.
                 self.show_psd_plot(self.dataset)
                 self.show_profile_plot(self.dataset)
 
     # ------------------------------------------------------------------
-    # Context menu
+    # Workspace tree context menu
     # ------------------------------------------------------------------
 
     def show_context_menu(self, position):
-        item = self.ui.treeWidget.itemAt(position)
+        item = self.tree_widget.itemAt(position)
         if not item:
             return
         if (
@@ -279,8 +708,8 @@ class MainWindow(QMainWindow):
             return
 
         context_menu = QMenu(self)
-        reload_action = QAction("Reload Raw", self)
-        invert_action = QAction("Invert ECG Polarity", self)
+        reload_action    = QAction("Reload Raw", self)
+        invert_action    = QAction("Invert ECG Polarity", self)
         retrigger_action = QAction("Retrigger ECG", self)
 
         reload_action.triggered.connect(lambda: self.reload(item))
@@ -290,7 +719,7 @@ class MainWindow(QMainWindow):
         context_menu.addAction(reload_action)
         context_menu.addAction(invert_action)
         context_menu.addAction(retrigger_action)
-        context_menu.exec_(self.ui.treeWidget.viewport().mapToGlobal(position))
+        context_menu.exec_(self.tree_widget.viewport().mapToGlobal(position))
 
     # ------------------------------------------------------------------
     # File operations
@@ -343,8 +772,6 @@ class MainWindow(QMainWindow):
 
     def reload(self, item):
         """Discard cache and reload from raw file."""
-        import os
-
         self.dataset.save(self.savename)
         backup = (
             Path(self.workspace["Directories"]["CacheDirectory"]) / "LASTDELETED.pkl"
@@ -373,51 +800,11 @@ class MainWindow(QMainWindow):
         return bool(ra.get("per_epoch", False))
 
     # ------------------------------------------------------------------
-    # Tab / file selection handlers
+    # File selection
     # ------------------------------------------------------------------
 
-    def _on_log_btn_toggled(self, checked):
-        """Show the Log page when the corner button is pressed, restore on release."""
-        if checked:
-            self._pre_log_index = self.ui.Views.currentIndex()
-            self.ui.Views.setCurrentIndex(self._log_tab_index)
-        else:
-            self.ui.Views.setCurrentIndex(self._pre_log_index)
-
-    def on_tab_changed(self, index):
-        # Tab order in form.ui (`Views` QTabWidget):
-        #   0 - Preprocessing
-        #   1 - IBI Series
-        #   2 - Poincaré
-        #   3 - Epochs
-        #   4 - PSD
-        #   5 - Profiles
-        #   6 - Parameters
-        #   7 - Log  (hidden from tab strip; driven by the corner-widget button)
-        # Keep the Log button checked state in sync when a regular tab is clicked.
-        self._log_btn.blockSignals(True)
-        self._log_btn.setChecked(index == self._log_tab_index)
-        self._log_btn.blockSignals(False)
-
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        if self.dataset is not None:
-            self.dataset.save(self.savename)
-        if index == 1 and self.dataset is not None:
-            self.show_hr_plot(self.dataset)
-        if index == 2 and self.dataset is not None:
-            self.show_poincare_plot(self.dataset)
-        if index == 3 and self.dataset is not None:
-            self.show_epoch_plot(self.dataset)
-        if index == 4 and self.dataset is not None:
-            self.show_psd_plot(self.dataset)
-        if index == 5 and self.dataset is not None:
-            self.show_profile_plot(self.dataset)
-        if index == 6 and self.dataset is not None:
-            self.show_parameters_plot(self.dataset)
-        QApplication.restoreOverrideCursor()
-
     def on_file_selection(self):
-        selected_items = self.ui.treeWidget.selectedItems()
+        selected_items = self.tree_widget.selectedItems()
         if not selected_items:
             return
         item = selected_items[0]
@@ -428,7 +815,7 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         dirs = self.workspace["Directories"]
 
-        # ── CASE 1: Dataset root node ─────────────────────────────────
+        # CASE 1, dataset root node ------------------------------------
         if meta.get("type") == "dataset":
             filename = meta["filename"]
             self.savename = Path(dirs["CacheDirectory"]) / (
@@ -449,13 +836,14 @@ class MainWindow(QMainWindow):
                 else:
                     _resaved = False
 
-                    # ----------------------------------------------------------
-                    # Migration 1: locked R-tops saved without IBI classification
-                    # ----------------------------------------------------------
-                    # Cached datasets saved before the locked-branch classify_ibi()
-                    # fix have all R-top labels at the default "N" - an impossible
-                    # result for real ECG data of any length.  Re-classify in place;
-                    # no ECG re-filtering needed.
+                    # ------------------------------------------------------
+                    # Migration 1, locked R-tops saved without IBI classification
+                    # ------------------------------------------------------
+                    # Cached datasets saved before the locked-branch
+                    # classify_ibi() fix have all R-top labels at the
+                    # default "N", an impossible result for real ECG of
+                    # any length. Re-classify in place, no ECG re-filtering
+                    # needed.
                     for _cs in dataset.hrv_map.values():
                         if (
                             getattr(_cs, "rtops_locked", False)
@@ -469,16 +857,17 @@ class MainWindow(QMainWindow):
                             _cs.classify_ibi()
                             _resaved = True
 
-                    # ----------------------------------------------------------
-                    # Migration 2: CARSPAN epoch-start convention
-                    # ----------------------------------------------------------
-                    # Cached datasets saved before the epoch-start fix have epoch
-                    # starts equal to the EVT marker time (e.g. 313.900 s) instead
-                    # of the last R-peak before the marker (e.g. 313.096 s).
+                    # ------------------------------------------------------
+                    # Migration 2, CARSPAN epoch-start convention
+                    # ------------------------------------------------------
+                    # Cached datasets saved before the epoch-start fix have
+                    # epoch starts equal to the EVT marker time
+                    # (e.g. 313.900 s) instead of the last R-peak before
+                    # the marker (e.g. 313.096 s).
                     #
-                    # Detection: if any non-experiment epoch's start time matches a
-                    # "Start Epoch #N" time in the TaskSeries EventSeries, the old
-                    # convention is still in use.
+                    # Detection, if any non-experiment epoch's start time
+                    # matches a "Start Epoch #N" time in the TaskSeries
+                    # EventSeries, the old convention is still in use.
                     if "TaskSeries" in dataset.events:
                         _task_ev = dataset.events["TaskSeries"]
                         _start_marker_times = {
@@ -501,9 +890,6 @@ class MainWindow(QMainWindow):
                                 for _epoch_name, _ep in dataset.epochs.items():
                                     if _epoch_name == "experiment":
                                         continue
-                                    # Only adjust epochs whose start still matches
-                                    # a marker time (leaves manually-edited epochs
-                                    # that don't match any marker time untouched).
                                     if any(
                                         abs(_ep.start - _smt) < 0.001
                                         for _smt in _start_marker_times
@@ -553,22 +939,11 @@ class MainWindow(QMainWindow):
                     return
 
             self.dataset = dataset
-            if hasattr(dataset, "has_ecg") and dataset.has_ecg:
-                self.show_preprocessing_plot(self.dataset)
-                self.ui.Views.setTabVisible(0, True)
-            else:
-                self.ui.Views.setTabVisible(0, False)
-                self.show_hr_plot(self.dataset)
-
-            self.show_poincare_plot(self.dataset)
-            self.show_epoch_plot(self.dataset)
-            self.show_psd_plot(self.dataset)
-            self.show_profile_plot(self.dataset)
-            self.show_parameters_plot(self.dataset)
+            self._on_dataset_loaded()
             QApplication.restoreOverrideCursor()
             return
 
-        # ── CASE 2: Band node ─────────────────────────────────────────
+        # CASE 2, band node -------------------------------------------
         if meta.get("type") == "band":
             filename = meta["filename"]
             band_id = meta["band_id"]
@@ -585,27 +960,40 @@ class MainWindow(QMainWindow):
                 dataset.save(self.savename)
 
             self.dataset = dataset
-            self.show_preprocessing_plot(self.dataset)
-            self.show_hr_plot(self.dataset)
-            self.show_poincare_plot(self.dataset)
-            self.show_epoch_plot(self.dataset)
-            self.show_psd_plot(self.dataset)
-            self.show_profile_plot(self.dataset)
-            self.show_parameters_plot(self.dataset)
+            self._on_dataset_loaded()
             QApplication.restoreOverrideCursor()
 
+    def _on_dataset_loaded(self) -> None:
+        """
+        Hook fired once a dataset is in self.dataset.
+
+        Eagerly refresh every content dock, matching the original
+        on_file_selection. Subsequent dock switches refresh on their
+        own via _on_dock_visible.
+        """
+        # Preprocessing dock visibility follows ECG availability.
+        has_ecg = bool(getattr(self.dataset, "has_ecg", False))
+        self.docks[_DOCK_PREPROCESSING].toggleView(has_ecg)
+
+        for name, refresh_fn in self._refresh_fns.items():
+            # Skip Preprocessing when the dataset has no ECG, the dock
+            # is hidden and there is nothing useful to draw.
+            if name == _DOCK_PREPROCESSING and not has_ecg:
+                continue
+            refresh_fn()
+
     # ------------------------------------------------------------------
-    # Plot helpers
+    # Plot helpers, unchanged semantics, now write into dock-hosted layouts
     # ------------------------------------------------------------------
 
     def show_preprocessing_plot(self, data):
+        if data is None:
+            return
         if data.has_ecg:
-            self.ui.Views.setTabVisible(0, True)
-            self.ui.Views.setCurrentIndex(0)
+            self.docks[_DOCK_PREPROCESSING].toggleView(True)
             self.prep_plot_widget.prepPlot(data)
         else:
-            self.ui.Views.setTabVisible(0, False)
-            self.ui.Views.setCurrentIndex(1)
+            self.docks[_DOCK_PREPROCESSING].toggleView(False)
 
     def show_hr_plot(self, data):
         if data is not None:
@@ -620,15 +1008,16 @@ class MainWindow(QMainWindow):
             self.poincare_plot_widget.poincarePlot(data)
 
     def show_psd_plot(self, dataset):
-        # Clear existing widgets
-        while self.welch_psd_layout.count():
-            item = self.welch_psd_layout.takeAt(0)
+        if dataset is None:
+            return
+        # Clear existing widgets ---------------------------------------
+        while self.psd_layout.count():
+            item = self.psd_layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.setParent(None)
                 widget.deleteLater()
 
-        # Collect active epochs
         pairs = []
         for label, epoch in dataset.epochs.items():
             if not epoch.active:
@@ -642,18 +1031,15 @@ class MainWindow(QMainWindow):
             return
 
         labels, views = zip(*pairs)
-
-        # Create container widget with all plots and uniform scaling.
-        # ``workspace`` is forwarded so PrintScreen knows where to save.
         psd_widget = spQt.PSDPlotWidget(views, labels, workspace=self.workspace)
-        self.welch_psd_layout.addWidget(psd_widget)
+        self.psd_layout.addWidget(psd_widget)
 
     def show_profile_plot(self, dataset):
-        """Same epoch-collection contract as :meth:`show_psd_plot`, but
-        builds a :class:`ProfilePlotWidget` instead - one sliding-window
-        band-power profile per epoch, drawn into the Profiles tab.
-        """
-        # Clear existing widgets - same swap-out pattern as the PSD tab.
+        """Same epoch-collection contract as :meth:`show_psd_plot`, builds a
+        :class:`ProfilePlotWidget` instead, one sliding-window band-power
+        profile per epoch, drawn into the Profiles dock."""
+        if dataset is None:
+            return
         while self.profile_layout.count():
             item = self.profile_layout.takeAt(0)
             widget = item.widget()
@@ -683,6 +1069,10 @@ class MainWindow(QMainWindow):
         if data is not None:
             self.parameters_plot_widget.display_parameters(data, self.workspace)
 
+    # ------------------------------------------------------------------
+    # Epoch creation
+    # ------------------------------------------------------------------
+
     def add_epoch(self):
         if self.dataset is None:
             return
@@ -703,10 +1093,14 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setOrganizationName(_ORG_NAME)
+    app.setApplicationName(_APP_NAME)
+
     default_font = QFont("Segoe UI", 12)
     default_font.setBold(False)
     app.setStyle("WindowsVista")
     app.setFont(default_font)
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

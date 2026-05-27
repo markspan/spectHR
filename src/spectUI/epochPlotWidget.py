@@ -18,8 +18,8 @@ class EpochPlotWidget(QWidget):
     Gantt-style editor for dataset.epochs (Dict[str, Epoch]).
 
     Each epoch draws one horizontal bar:
-        active=True   → shown
-        active=False  → hidden
+        active=True   -> shown
+        active=False  -> hidden
     """
 
     def __init__(self, parent=None):

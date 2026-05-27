@@ -16,6 +16,7 @@ dependencies = [
     "platformdirs",
     "matplotlib",
     "PySide6",
+    "PySide6-QtAds>=4.4",
     "qtawesome",
     "numpy",
     "scipy",

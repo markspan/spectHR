@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from platformdirs import user_documents_path
 
 from spectHR.Tools.Logger import logger
 from spectHR.analysis.psd._config import PsdMethod
@@ -33,6 +32,8 @@ from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 from spectUI.workSpace import psd_method_from_workspace
 from spectUI._plot_smoothing import smooth3
+from spectUI._plot_zoom import YZoomMixin, Y_TOP_FLOOR
+from spectUI._plot_export import PlotExportMixin, sanitize_filename
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -46,8 +47,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from spectUI._uitools import show_export_summary
-from spectUI.workSpace import get_export_dir
 
 warnings.filterwarnings("ignore")
 
@@ -59,20 +58,10 @@ Y_SCALE_F_MIN: float = 0.08
 # arrow keys.  ``Up`` shrinks y-max by this factor (zooms in vertically),
 # ``Down`` grows it by the reciprocal - chosen so the two are symmetric
 # and a few presses give a noticeable but not jarring change.
-_Y_ZOOM_STEP_UP:   float = 0.80   # Up arrow   → y-max × 0.80  (zoom in)
-_Y_ZOOM_STEP_DOWN: float = 1.25   # Down arrow → y-max × 1.25  (zoom out)
-# Floor that prevents y-max from collapsing to zero on long Up presses.
-_Y_TOP_FLOOR:      float = 1e-12
+# Zoom step constants live in _plot_zoom; Y_TOP_FLOOR is re-exported here
+# for the _SinglePSDPlot constructor that clamps the initial y-top.
 
-# File formats produced when the user saves the plots via PrintScreen.
-# Both are vector / lossless and suitable for print-ready figures; the
-# user can pick whichever their downstream pipeline prefers.
-_EXPORT_FORMATS: tuple[str, ...] = ("pdf",)
-# Default location used when no workspace is supplied - mirrors the
-# ``OutputDirectory`` default in ``spectUI.workSpace._DEFAULT_WORKSPACE``.
-_DEFAULT_EXPORT_DIR: Path = user_documents_path() / "spectHR" / "export"
-# Characters not allowed in filenames on Windows (and friends elsewhere).
-_FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
+# Export formats, filename sanitiser, and export dir live in _plot_export.
 
 
 def _bands_from_workspace(workspace: Optional[Dict[str, Any]]) -> Dict[str, dict]:
@@ -220,18 +209,6 @@ def _strip_per_hz(unit: str) -> str:
     return stripped
 
 
-def _sanitize_filename(name: str) -> str:
-    """
-    Replace whitespace and filesystem-unsafe characters in *name* with ``_``.
-
-    Used to build cross-platform filenames from dataset and epoch labels -
-    e.g. ``"a #1"`` becomes ``"a_1"``, ``"rest / sit"`` becomes
-    ``"rest_sit"``.  Trailing underscores and leading dots (which would
-    otherwise hide files on Unix) are stripped.
-    """
-    cleaned = _FILENAME_BAD_CHARS.sub("_", name).strip("._")
-    return cleaned
-
 
 def _band_bounds(bands: dict) -> Tuple[float, float, float, float]:
     """
@@ -262,7 +239,7 @@ def _y_max(data: _PlotData, scale_min: float, scale_max: float) -> float:
     """
     Maximum PSD value in the scaling band range.
 
-    Includes the upper CI bound up to 3× the PSD peak - so tight CIs
+    Includes the upper CI bound up to 3x the PSD peak, so tight CIs
     (Welch) are respected but wide CIs (Lomb-Scargle, short CARSPAN) don't
     blow up the axis.  Frequencies below ``Y_SCALE_F_MIN`` are excluded
     so VLF drift power doesn't dominate the y-limit.
@@ -335,7 +312,7 @@ class _SinglePSDPlot(QWidget):
 # ---------------------------------------------------------------------------
 
 
-class PSDPlotWidget(QWidget):
+class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
     """
     Grid of PSD plots (one per epoch) sharing a uniform y-limit.
 
@@ -348,6 +325,8 @@ class PSDPlotWidget(QWidget):
         Plot titles (e.g., epoch names).
     parent : QWidget, optional
     """
+
+    _export_context = "PSD"
 
     def __init__(
         self,
@@ -384,7 +363,7 @@ class PSDPlotWidget(QWidget):
         self._bands_dict: Dict[str, dict] = bands_dict
         self._ci_alpha: float = ci_alpha
         self._subplots: List[_SinglePSDPlot] = []
-        self._y_top: float = max(float(y_top), _Y_TOP_FLOOR)
+        self._y_top: float = max(float(y_top), Y_TOP_FLOOR)
 
         # Build the scroll area + grid container. Both get a white
         # background so the 5-pixel gaps between subplots and the
@@ -433,7 +412,7 @@ class PSDPlotWidget(QWidget):
         zoom_out.setContext(Qt.WidgetWithChildrenShortcut)
         zoom_out.activated.connect(self._zoom_out)
 
-        # Ctrl+P → save every subplot as print-ready vector files
+        # Ctrl+P, save every subplot as print-ready vector files
         # (PDF + SVG) into the configured export directory.  The bare
         # PrintScreen key is intentionally NOT used: every major desktop
         # (Windows clipboard capture, GNOME / KDE screenshot tools,
@@ -444,119 +423,10 @@ class PSDPlotWidget(QWidget):
         save_all.setContext(Qt.WidgetWithChildrenShortcut)
         save_all.activated.connect(self._save_all_plots)
 
-    # ------------------------------------------------------------------
-    # Keyboard interaction - linked y-axis zoom across all subplots
-    # ------------------------------------------------------------------
+    # _zoom_in / _zoom_out / _set_y_top inherited from YZoomMixin
 
-    def _zoom_in(self) -> None:
-        """Up arrow: shrink the shared y-max (zoom in vertically)."""
-        self._set_y_top(self._y_top * _Y_ZOOM_STEP_UP)
-
-    def _zoom_out(self) -> None:
-        """Down arrow: grow the shared y-max (zoom out vertically)."""
-        self._set_y_top(self._y_top * _Y_ZOOM_STEP_DOWN)
-
-    def _set_y_top(self, new_y_top: float) -> None:
-        """
-        Apply ``new_y_top`` to every linked subplot and redraw.
-
-        Clipped to ``_Y_TOP_FLOOR`` so repeated Up presses can't collapse
-        the axis to a zero-height range.
-        """
-        new_y_top = max(float(new_y_top), _Y_TOP_FLOOR)
-        self._y_top = new_y_top
-        for subplot in self._subplots:
-            subplot.ax.set_ylim(bottom=0.0, top=new_y_top)
-            subplot.canvas.draw_idle()
-
-    # ------------------------------------------------------------------
-    # Print-ready export - PrintScreen saves every plot as PDF + SVG
-    # ------------------------------------------------------------------
-
-    def _save_all_plots(self) -> None:
-        """
-        Save every subplot to the export directory in vector formats.
-
-        Output files are written to ``workspace["Directories"]["OutputDirectory"]``
-        when a workspace was supplied at construction; otherwise the
-        platformdirs default (``Documents/spectHR/export``) is used.
-
-        For each subplot we emit one file per format in ``_EXPORT_FORMATS``
-        (currently PDF and SVG - both vector, both lossless).  Existing
-        files with the same name are silently overwritten so re-pressing
-        PrintScreen during interactive y-axis tuning keeps a single set
-        of fresh exports.
-        """
-        export_dir = self._resolve_export_dir()
-        try:
-            export_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            msg = f"PSD export: could not create {export_dir!s}: {exc}"
-            logger.warning(msg)
-            QMessageBox.warning(self, "PSD export failed", msg)
-            return
-
-        prefix = self._dataset_prefix()
-        n_saved = 0
-        failures: list[str] = []
-        for label, subplot in zip(self._labels, self._subplots):
-            stem = self._build_filename_stem(prefix, label)
-            for fmt in _EXPORT_FORMATS:
-                path = export_dir / f"{stem}.{fmt}"
-                try:
-                    # ``bbox_inches="tight"`` trims excess whitespace; the
-                    # figure DPI is irrelevant for vector formats but
-                    # we keep the canvas's native size so the on-screen
-                    # aspect ratio is preserved in the saved file.
-                    subplot.canvas.figure.savefig(
-                        path,
-                        format=fmt,
-                        bbox_inches="tight",
-                    )
-                    n_saved += 1
-                except (OSError, ValueError) as exc:
-                    fail_msg = f"failed to write {path!s}: {exc}"
-                    failures.append(fail_msg)
-                    logger.warning(f"PSD export: {fail_msg}")
-
-        # Compose the same summary message the user sees in the log and the
-        # message box, so the log file and the dialog stay in sync.
-        summary = (
-            f"PSD export: saved {n_saved} file(s) "
-            f"({len(self._subplots)} plot(s) × {len(_EXPORT_FORMATS)} format(s)) "
-            f"to {export_dir!s}"
-        )
-        logger.info(summary)
-
-        # Show the dialog via the shared helper so all three
-        # export-capable widgets present the same look-and-feel.
-        show_export_summary(
-            self, context="PSD", summary=summary, failures=failures,
-        )
-
-    def _resolve_export_dir(self) -> Path:
-        """Pick the output directory from the workspace, or fall back to default.
-
-        Delegates to :func:`spectUI.workSpace.get_export_dir` so the
-        export-capable widgets (PSD, Profile, Parameters) share the same
-        accessor and fallback rule.
-        """
-        return get_export_dir(self._workspace, context="PSD")
-
-    def _dataset_prefix(self) -> str:
-        """Best-effort dataset name extracted from the first view's PhysioData."""
-        for series in self._series_list:
-            pd = getattr(series, "_pd", None)
-            basename = getattr(pd, "basename", None)
-            if basename:
-                return _sanitize_filename(str(basename))
-        return "PSD"
-
-    @staticmethod
-    def _build_filename_stem(prefix: str, label: str) -> str:
-        """``{prefix}_PSD_{label}`` with filesystem-unsafe characters scrubbed."""
-        clean_label = _sanitize_filename(label) or "epoch"
-        return f"{prefix}_PSD_{clean_label}"
+    # _save_all_plots / _resolve_export_dir / _dataset_prefix /
+    # _build_filename_stem  inherited from PlotExportMixin
 
     # ------------------------------------------------------------------
     # Pure plotting backend
@@ -640,9 +510,9 @@ class PSDPlotWidget(QWidget):
         # ---- Frequency-band fills + legend -----------------------------
         # Band power has the dimension of the PSD integrated over Hz, so
         # the unit is the PSD unit minus the "/Hz" suffix. ``data.unit``
-        # already reflects the workspace ``plot_units`` choice ("mMI²/Hz"
-        # or "ms²/Hz" for CARSPAN, the units workspace key for Welch /
-        # Lomb-Scargle), so the legend stays in sync automatically.
+        # already reflects the workspace ``plot_units`` choice
+        # ("mMI^2/Hz" or "ms^2/Hz" for CARSPAN, the units workspace key
+        # for Welch / Lomb-Scargle), so the legend stays in sync.
         power_unit = _strip_per_hz(data.unit)
         draw_extents = _band_draw_extents(bands)
         for name, spec in bands.items():
@@ -671,7 +541,7 @@ def _band_draw_extents(bands: dict) -> Dict[str, Tuple[float, float]]:
     """
     Return ``{name: (draw_low, draw_high)}`` extending fills to neighbour midpoints.
 
-    With CARSPAN-style gapped bands (e.g. 0.06→0.07, 0.14→0.15) the
+    With CARSPAN-style gapped bands (e.g. 0.06->0.07, 0.14->0.15) the
     polygon's ``low`` and ``high`` are pushed to the midpoint with the
     adjacent band so the fills meet visually - but the band-power
     *integration* still uses the configured edges (handled by the

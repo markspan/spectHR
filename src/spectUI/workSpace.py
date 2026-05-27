@@ -70,7 +70,7 @@ _DEFAULT_WORKSPACE = {
     # A spectral profile is the time course of a band-power measure
     # inside one epoch - implemented as the standard PSD pipeline
     # applied to a window that slides along the recording with a fixed
-    # step (see CARSPAN manual §3.3.5, Eq. 3.34 / 3.35). The compute
+    # step (see CARSPAN manual sec. 3.3.5, Eq. 3.34 / 3.35). The compute
     # algorithm and band definitions are inherited from
     # ``FrequencyAnalysis`` so a profile of `band X` is computed with
     # the same PSD method (Welch / Lomb-Scargle / CARSPAN / strict) and
@@ -84,8 +84,8 @@ _DEFAULT_WORKSPACE = {
     #
     # ``window (sec)`` and ``step (sec)`` are the sliding-window parameters
     # in seconds; step must be strictly smaller than window (otherwise
-    # there's no overlap → no profile), and the manual recommends
-    # window ≥ 3 · 1/f_l_min for reliable estimates.
+    # there's no overlap, no profile), and the manual recommends
+    # window >= 3 * 1/f_l_min for reliable estimates.
     # The pre-formatted key names (spaces + parentheses) are intentional:
     # they bypass the _label() camelCase/snake_case splitter and appear
     # in the dialog exactly as written here.
@@ -111,7 +111,7 @@ _DEFAULT_WORKSPACE = {
         #
         # "lower half-width (Hz)": how far below the per-window mean
         #   breathing frequency the band edge falls
-        #   (band_low  = resp_freq − lower_half_width).
+        #   (band_low  = resp_freq - lower_half_width).
         # "upper half-width (Hz)": how far above it
         #   (band_high = resp_freq + upper_half_width).
         #
@@ -143,7 +143,7 @@ _DEFAULT_WORKSPACE = {
         # spikes (e.g. a missed breath cycle or a noisy rsp signal) are
         # replaced by their neighbours' average before the band edges are
         # computed. Setting this to True requires a two-pass calculation
-        # (freq-collection pass → smooth → band-power pass); the
+        # (freq-collection pass, smooth, band-power pass); the
         # smoothed frequencies are also what the right-axis overlay in
         # the profile plot draws. Defaults to False (CARSPAN-faithful:
         # raw per-window breathing frequency, no temporal smoothing).
@@ -156,6 +156,15 @@ _DEFAULT_WORKSPACE = {
         # band-power per profile window. Flip to True for an
         # easier-on-the-eye curve when the data is noisy.
         "smooth_for_display": False,
+        # Toggle between the band-power line view (False, default) and a
+        # time-frequency spectrogram heatmap (True). In spectrogram mode the
+        # y-axis becomes frequency (Hz), the x-axis stays time, and the colour
+        # encodes normalised power (blue = minimum, red = maximum across the
+        # epoch). The colormap follows the standard neuroimaging ERSP
+        # convention (RdYlBu_r). All other profile settings (window, step,
+        # bands) remain active; the spectrogram is computed from the same
+        # per-window PSD call as the band-power profile.
+        "show_spectrogram": False,
     },
     # ------------------------------------------------------------------
     # Respiration analysis
@@ -164,8 +173,8 @@ _DEFAULT_WORKSPACE = {
     # prominence from the signal's own MAD/sigma (see the docstring at
     # ``spectHR.DataSet.Series.RespirationSeries.from_timeseries``):
     #
-    #   sigma     = 1.4826 · MAD(y)        # robust noise estimate
-    #   prominence = prominence_rel · sigma
+    #   sigma     = 1.4826 * MAD(y)        # robust noise estimate
+    #   prominence = prominence_rel * sigma
     #
     # When the full recording mixes resting and task periods, breathing
     # depth and noise level can differ substantially between them. A
@@ -407,7 +416,7 @@ def _ensure_dirs(workspace: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Workspace → PsdMethod translation
+# Workspace -> PsdMethod translation
 # ---------------------------------------------------------------------------
 
 
@@ -423,7 +432,7 @@ def _bands_from_workspace(
     consumed directly by ``PSDPlotWidget``.
 
     Adaptive (respiration-centered) half-widths come from
-    ``Profiles.adaptive_bands``, a dict that maps band name →
+    ``Profiles.adaptive_bands``, a dict that maps band name to
     ``{"lower half-width (Hz)": float, "upper half-width (Hz)": float}``.
     Only bands listed there get ``respiration_band=True``; the others
     keep static edges. This separation matches the user-facing layout
@@ -440,7 +449,7 @@ def _bands_from_workspace(
         ``workspace["Profiles"]["adaptive_bands"]`` - a dict of
         ``{band_name: {"lower half-width (Hz)": float,
                        "upper half-width (Hz)": float}}``.
-        ``None`` or ``{}`` ⇒ every band is static.
+        ``None`` or ``{}`` means every band is static.
     """
     adaptive = adaptive_bands or {}
     return {

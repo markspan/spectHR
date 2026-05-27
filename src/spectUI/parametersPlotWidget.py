@@ -274,11 +274,11 @@ class ParametersPlotWidget(QWidget):
 
         Per band, the row carries:
 
-        * ``<band>_power`` - integrated band power (mMI² by default).
+        * ``<band>_power`` - integrated band power (mMI^2 by default).
         * ``<band>_freqs`` - comma-separated list of the PSD's
           frequency bins (Hz) inside ``[low, high]``.
         * ``<band>_psd_raw`` - comma-separated list of the PSD values
-          at exactly those frequencies (mMI²/Hz by default).
+          at exactly those frequencies (mMI^2/Hz by default).
 
         ``<band>_freqs`` and ``<band>_psd_raw`` have equal length for a
         given band, so they can be zipped back into ``(freq, power)``
@@ -322,7 +322,7 @@ class ParametersPlotWidget(QWidget):
                 freqs = np.asarray(psd_res.freqs)
                 power = np.asarray(psd_res.power)
                 row["method"] = (psd_res.method or "")
-                # PSD result carries a per-Hz unit (e.g. ``mMI²/Hz``);
+                # PSD result carries a per-Hz unit (e.g. ``mMI^2/Hz``);
                 # the integrated band-power columns use the same unit
                 # without the ``/Hz`` suffix, so strip it once and
                 # record the band-power unit. The raw PSD column keeps

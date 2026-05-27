@@ -171,9 +171,9 @@ def _label(key: str) -> str:
     if " " in key or "(" in key or ")" in key:
         return key
 
-    # camelCase → words
+    # camelCase, words
     s = re.sub(r"([a-z])([A-Z])", r"\1 \2", key)
-    # underscores → spaces
+    # underscores, spaces
     s = s.replace("_", " ")
     return s.title()
 
@@ -268,7 +268,7 @@ class _AdaptiveBandWidget(QWidget):
 
     Renders as one row:
 
-        [- none - ▾]   below rp (Hz): [0.04]   above rp (Hz): [0.04]
+        [- none - v]   below rp (Hz): [0.04]   above rp (Hz): [0.04]
 
     The dropdown lists every band in the universe plus a "- none -"
     sentinel. Only one band can be adaptive at a time - physiologically,
@@ -421,7 +421,7 @@ class ParametersEditorDialog(QDialog):
     Generic dialog that reads *all* non-directory sections from the workspace
     dict and presents them as editable panels, one ``QGroupBox`` per section.
 
-    Nested sub-sections (e.g. FrequencyAnalysis → welch) each get their own
+    Nested sub-sections (e.g. FrequencyAnalysis -> welch) each get their own
     nested group box inside the parent panel.
 
     Scalar leaf values are rendered as:
@@ -444,7 +444,7 @@ class ParametersEditorDialog(QDialog):
             )
         )
 
-        # _widgets maps dotted key path → (widget, original_python_value).
+        # _widgets maps dotted key path -> (widget, original_python_value).
         # The widget type tells get_parameters how to harvest the value:
         # QLineEdit / QPushButton (.text()), QComboBox (.currentText()),
         # _BandMultiSelectWidget (.selected_names()).
@@ -597,14 +597,14 @@ class ParametersEditorDialog(QDialog):
                 row.addWidget(widget, 1)
                 layout.addLayout(row)
 
-        # ---- post-loop: wire adaptive_bands selection → grey-out sibling widgets
+        # ---- post-loop: wire adaptive_bands selection, grey out siblings
         # When the user picks a band in the adaptive-band dropdown:
-        #   • the regular "bands" list is greyed - one adaptive band drives
+        #   * the regular "bands" list is greyed, one adaptive band drives
         #     the profile, the static list is no longer the primary selector.
-        #   • the adaptive_source combo is enabled (it becomes meaningful).
-        #   • the smooth_breath_freq checkbox is enabled (only relevant when
+        #   * the adaptive_source combo is enabled (it becomes meaningful).
+        #   * the smooth_breath_freq checkbox is enabled (only relevant when
         #     an adaptive band is active).
-        # When "- none -" is selected: reverse all three.
+        # When "- none -" is selected, reverse all three.
         ab_path            = f"{prefix}.adaptive_bands"
         bands_path         = f"{prefix}.bands"
         source_path        = f"{prefix}.adaptive_source"

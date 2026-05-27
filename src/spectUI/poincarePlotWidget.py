@@ -24,7 +24,7 @@ from spectHR.analysis.time_metrics import sd1, sd2
 
 class PoincarePlotWidget(QWidget):
     """
-    Poincaré plot widget with epoch-based visibility control.
+    Poincare plot widget with epoch-based visibility control.
 
     Each epoch is rendered as:
     - a scatter of IBI[n] vs IBI[n+1]
@@ -74,7 +74,7 @@ class PoincarePlotWidget(QWidget):
     # ------------------------------------------------------------------
     def poincarePlot(self, dataset: PhysioData) -> None:
         """
-        Render the Poincaré plot for the given dataset.
+        Render the Poincare plot for the given dataset.
         """
         self.dataset = dataset
         self.setVisible(True)
@@ -106,7 +106,7 @@ class PoincarePlotWidget(QWidget):
     # Labels that mark an IBI as artefactual. Matches the convention used
     # by CardioFrequencyMetricsMixin (``_BAD_LABELS = ("TL", "T")``): TL =
     # "too long" interval, T = technical artefact. Both must be excluded
-    # from the Poincaré scatter, otherwise a single dropped beat leaves
+    # from the Poincare scatter, otherwise a single dropped beat leaves
     # a pair of outliers (one too-long, one too-short) that completely
     # blow up the plot's autoscaling and ellipse fit.
     _BAD_LABELS: tuple[str, ...] = ("TL", "T")
@@ -213,7 +213,7 @@ class PoincarePlotWidget(QWidget):
 
     def _configure_axes(self) -> None:
         """
-        Configure axis limits and styling based on plotted Poincaré points.
+        Configure axis limits and styling based on plotted Poincare points.
 
         This method is fully defensive:
         - Handles missing epochs
