@@ -49,6 +49,7 @@ class PoincarePlotWidget(QWidget):
 
         # Matplotlib figure
         self.fig, self.ax = plt.subplots(figsize=(6, 6))
+        plt.close(self.fig)  # prevent orphan figure window
         self.canvas = FigureCanvas(self.fig)
 
         # --- layout ----------------------------------------------------
@@ -142,7 +143,7 @@ class PoincarePlotWidget(QWidget):
         assert self.dataset is not None
 
         for name, epoch in self.dataset.epochs.items():
-            rt = self.dataset.hrv_map[self.dataset.active_band][name]
+            rt = self.dataset.hrv[name]
 
             if rt.ibi.size < 2:
                 continue
@@ -181,7 +182,7 @@ class PoincarePlotWidget(QWidget):
             self.scatter_handles[name] = scatter
             self.ellipse_handles[name] = ellipse
 
-        self.ax.plot([0,1], [0,1], ":", color="gray", lw=1)
+        # Identity line added after axis limits are set in _configure_axes.
 
     def _build_checkboxes(self) -> None:
         """Create one checkbox per epoch."""
@@ -259,18 +260,27 @@ class PoincarePlotWidget(QWidget):
             return
 
         # Compute padding (avoid zero / NaN span)
-        span = max(np.ptp(x_all), np.ptp(y_all))
+        span = max(x_all.max() - x_all.min(), y_all.max() - y_all.min())
         if not np.isfinite(span) or span == 0:
             span = 1e-6
 
         pad = 0.05 * span
 
-        self.ax.set_xlim(0 - pad, x_all.max() + pad)
-        self.ax.set_ylim(0 - pad, y_all.max() + pad)
+        x_lo = max(0.0, x_all.min() - pad)
+        x_hi = x_all.max() + pad
+        y_lo = max(0.0, y_all.min() - pad)
+        y_hi = y_all.max() + pad
+        self.ax.set_xlim(x_lo, x_hi)
+        self.ax.set_ylim(y_lo, y_hi)
 
         self.ax.set_aspect("equal", adjustable="box")
         self.ax.spines["top"].set_visible(False)
         self.ax.spines["right"].set_visible(False)
+
+        # Identity line spanning the full visible range
+        lim_lo = min(x_lo, y_lo)
+        lim_hi = max(x_hi, y_hi)
+        self.ax.plot([lim_lo, lim_hi], [lim_lo, lim_hi], ":", color="gray", lw=1)
 
 
     def _setup_cursor(self) -> None:

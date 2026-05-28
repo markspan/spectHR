@@ -58,21 +58,17 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
-import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
-import qtawesome as qta
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
 from matplotlib.ticker import MultipleLocator
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QIcon, QTransform
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -82,6 +78,7 @@ from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
 from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 from spectUI.LineHandler import LineHandler
+from spectUI._uitools import OverviewWindow, make_nav_button, style_axis_clean
 
 # ======================================================================
 # Type aliases
@@ -368,49 +365,8 @@ class RTopController:
 
 
 # ======================================================================
-# Overview window
+# OverviewWindow (shared, see spectUI._uitools)
 # ======================================================================
-
-
-class OverviewWindow:
-    """
-    Manages the overview rectangle that indicates the current zoom window
-    in the overview Axes.
-    """
-
-    def __init__(self, ax: Axes, x_min: float, x_max: float) -> None:
-        """
-        Parameters
-        ----------
-        ax:
-            Overview axis.
-        x_min, x_max:
-            Window bounds to visualize.
-        """
-        self.ax = ax
-        y0, y1 = ax.get_ylim()
-        self.patch = patches.Rectangle(
-            (x_min, y0),
-            x_max - x_min,
-            y1 - y0,
-            color="blue",
-            alpha=0.2,
-            animated=False,
-        )
-        ax.add_patch(self.patch)
-
-    def update_y(self) -> None:
-        """Update the vertical span of the patch to match current y-limits."""
-        y0, y1 = self.ax.get_ylim()
-        self.patch.set_y(y0)
-        self.patch.set_height(y1 - y0)
-
-    def set_window(self, x_min: float, x_max: float) -> None:
-        """Update rectangle position to new [x_min, x_max] window."""
-        self.patch.set_x(x_min)
-        self.patch.set_width(x_max - x_min)
-        self.update_y()
-
 
 # ======================================================================
 # PrepPlotWidget (UI + plotting)
@@ -549,72 +505,22 @@ class PrepPlotWidget(QWidget):
         )
 
     def _create_navigation_bar(self) -> QWidget:
-        """
-        Create the navigation bar with zoom/pan/next/prev controls.
-
-        Returns
-        -------
-        QWidget
-            A QWidget containing navigation buttons.
-        """
-
-        def make_btn(
-            icon_name: Optional[str],
-            callback,
-            rotate: int | bool = False,
-            tooltip: Optional[str] = None,
-        ) -> QPushButton:
-            btn = QPushButton()
-            if icon_name:
-                icon = qta.icon(icon_name)
-                if rotate:
-                    pixmap = icon.pixmap(QSize(48, 48))
-                    transform = QTransform().rotate(
-                        rotate if isinstance(rotate, int) else 0
-                    )
-                    rotated_pixmap = pixmap.transformed(transform)
-                    icon = QIcon(rotated_pixmap)
-                btn.setIcon(icon)
-                btn.setIconSize(QSize(48, 48))
-            btn.setFlat(True)
-            btn.setStyleSheet(
-                """
-                QPushButton {
-                    margin: 4px;
-                    width: 56px;
-                    height: 56px;
-                    border: none;
-                }
-                """
-            )
-            btn.clicked.connect(callback)
-            if tooltip:
-                btn.setToolTip(tooltip)
-            return btn
-
-        begin = make_btn(
-            "fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"
+        """Create the navigation bar with zoom/pan/next/prev controls."""
+        buttons = (
+            make_nav_button("fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"),
+            make_nav_button("fa6s.backward",          self.pan_left,               tooltip="Pan Left"),
+            make_nav_button("fa6s.square-caret-left", self.prev,                   tooltip="Previous non-normal R-top"),
+            make_nav_button("ei.zoom-in",             self.zoom_in,                tooltip="Zoom In"),
+            make_nav_button("ei.zoom-out",            self.zoom_out,               tooltip="Zoom Out"),
+            make_nav_button("fa6s.square-caret-right",self.next,                   tooltip="Next non-normal R-top"),
+            make_nav_button("fa6s.forward",           self.pan_right,              tooltip="Pan Right"),
+            make_nav_button("fa6s.right-to-bracket",  self.go_to_end,              tooltip="Goto End"),
         )
-        left = make_btn("fa6s.backward", self.pan_left, tooltip="Pan Left")
-        prev = make_btn(
-            "fa6s.square-caret-left", self.prev, tooltip="Previous non-normal R-top"
-        )
-        zoom_in = make_btn("ei.zoom-in", self.zoom_in, tooltip="Zoom In")
-        zoom_out = make_btn("ei.zoom-out", self.zoom_out, tooltip="Zoom Out")
-        nxt = make_btn(
-            "fa6s.square-caret-right", self.next, tooltip="Next non-normal R-top"
-        )
-        right = make_btn("fa6s.forward", self.pan_right, tooltip="Pan Right")
-        end = make_btn(
-            "fa6s.right-to-bracket", self.go_to_end, rotate=False, tooltip="Goto End"
-        )
-
         nav_layout = QHBoxLayout()
         nav_layout.setContentsMargins(0, 0, 0, 0)
         nav_layout.setSpacing(4)
-        for btn in (begin, left, prev, zoom_in, zoom_out, nxt, right, end):
+        for btn in buttons:
             nav_layout.addWidget(btn)
-
         nav_widget = QWidget()
         nav_widget.setLayout(nav_layout)
         nav_widget.setFixedHeight(50)
@@ -731,11 +637,11 @@ class PrepPlotWidget(QWidget):
         - 2 axes: ECG and overview
         """
         axes = self.fig.axes
-        if len(axes) == 2:
-            self.ax_ecg, self.ax_overview = axes
+        if len(axes) >= 2:
+            self.ax_ecg, self.ax_overview = axes[0], axes[-1]
         else:
             raise RuntimeError(
-                "Unexpected number of axes in provided figure; expected 2 (ECG + overview)."
+                "Unexpected number of axes in provided figure; expected at least 2 (ECG + overview)."
             )
 
     def _setup_matplotlib_canvas(self) -> None:
@@ -858,7 +764,7 @@ class PrepPlotWidget(QWidget):
         )
 
         # Styling (no y-axis, no top/side spines)
-        self._style_axis_clean(self.ax_ecg)
+        style_axis_clean(self.ax_ecg)
 
         # Time window
         self._set_time_axis(self.ax_ecg, self.data.view.x_min, self.data.view.x_max)
@@ -947,7 +853,7 @@ class PrepPlotWidget(QWidget):
         # Visual style: keep breathing subtle and clearly distinguishable
         ax_br.tick_params(axis="y", colors="green", labelsize=8)
         ax_br.spines["right"].set_alpha(0.3)
-        self._style_axis_clean(ax_br)
+        style_axis_clean(ax_br)
         ax_br.set_ylabel("Breathing", color="green", fontsize=8)
 
         # Keep breathing visually "under" the ECG
@@ -1152,7 +1058,7 @@ class PrepPlotWidget(QWidget):
         )
         self.ax_overview.set_title("")
         self.ax_overview.set_yticks([])
-        self._style_axis_clean(self.ax_overview)
+        style_axis_clean(self.ax_overview)
 
         self.overview_window = OverviewWindow(
             self.ax_overview,
@@ -1264,14 +1170,11 @@ class PrepPlotWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _axis_key(self, ax: Axes) -> Optional[str]:
-        """
-        Map an Axes instance to the ViewState y-key.
+        """Map an Axes to a ViewState ``y`` key, or None for untracked axes.
 
-        Returns
-        -------
-        Optional[str]
-            "ecg" for the main ECG axis, "br" for the breathing overlay axis,
-            None otherwise.
+        Returns ``"br"`` for the breathing twin-axis (y-zoom is supported).
+        Returns ``None`` for the ECG axis and any other axis — ECG y-zoom
+        is intentionally blocked so R-top markers stay anchored to the trace.
         """
         if ax is self._ax_br_twin:
             return "br"
@@ -1370,19 +1273,12 @@ class PrepPlotWidget(QWidget):
             if ax is self.ax_ecg:
                 # ECG: no y-zoom
                 return
-            if ystate.auto:
-                y0, y1 = ax.get_ylim()
-                ystate.auto = False
-                ystate.ymin = y0
-                ystate.ymax = y1
-            ymin = ystate.ymin
-            ymax = ystate.ymax
-            height = ymax - ymin
+            # ystate is already in manual mode (set above)
+            height = ystate.ymax - ystate.ymin
             if height <= 0:
                 return
             scale = 0.8 if event.key == "+" else 1.25
-            new_height = height * scale
-            ystate.ymax = ymin + new_height
+            ystate.ymax = ystate.ymin + height * scale
             self.redraw()
             return
 
@@ -1502,14 +1398,6 @@ class PrepPlotWidget(QWidget):
     # ------------------------------------------------------------------
     # Styling helpers
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _style_axis_clean(ax: Axes) -> None:
-        """Hide y-axis and unnecessary spines."""
-        ax.get_yaxis().set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.spines["left"].set_visible(False)
-        ax.spines["top"].set_visible(False)
 
     @staticmethod
     def _set_time_axis(ax: Axes, x_min: float, x_max: float) -> None:

@@ -22,7 +22,7 @@ dependencies = [
     "scipy",
     "pyxdf",
     "mplcursors",
-    "h5py",
+    "pyside6-qtads",
 ]
  
 [project.optional-dependencies]

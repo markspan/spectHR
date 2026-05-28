@@ -1,6 +1,5 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 
 from spectHR.Tools.Logger import logger
@@ -24,12 +23,10 @@ class DraggableVLine:
         Args:
             ax (matplotlib.axes.Axes): The axes to place the vertical line on.
             x_position (float): The initial x-coordinate for the line.
-            callback_drag (callable, optional): Callback for when the line is dragged.
+            callback_drag (callable, optional): Called with (old_x, new_x) on release.
+            callback_remove (callable, optional): Called with (old_x, new_x) when removed.
         """
         self.ax = ax
-        #self.line = self.ax.axvline(
-        #    x=x_position, color=color, lw=.8, linestyle='-', picker=True, pickradius=10,  alpha=.5)
-        # Determine current y-extent (stop at data y = 0)
         y_top = self.ax.get_ylim()[1]
 
         self.line, = self.ax.plot(
@@ -74,7 +71,6 @@ class DraggableVLine:
             ):
                 DraggableVLine.active_line = self.line
                 self.press = self.line.get_xdata()[0]
-                # logger.info(f'setting active line to line at {self.press}')
 
     def on_drag(self, event):
         """
@@ -91,26 +87,24 @@ class DraggableVLine:
                 self.ax.figure.canvas.draw_idle()
 
     def on_release(self, event):
-        """
-        Releases the drag operation. Call the drag_callback with the new_x value
+        """Fire the appropriate callback and reset drag state on mouse release.
+
+        Does nothing when the line was not pressed (``self.press is None``) or
+        the current mode is not ``'Drag'`` or ``'Remove'``.
 
         Args:
             event (matplotlib.backend_bases.Event): The mouse release event.
         """
-        if (DraggableVLine.mode not in ('Drag','Remove') or self.press is None):
+        if DraggableVLine.mode not in ('Drag', 'Remove') or self.press is None:
             return
 
-        # Callback with updated x-position if set
-        if DraggableVLine.mode == 'Drag' \
-            or self.press is None \
-                and self.callback_drag:
-            self.callback_drag(self.press, event.xdata)
+        if DraggableVLine.mode == 'Drag':
+            if self.callback_drag:
+                self.callback_drag(self.press, event.xdata)
 
-        if DraggableVLine.mode == 'Remove' \
-            or self.press is None \
-                and self.callback_remove:
-            self.callback_remove(self.press, event.xdata)
-            # logger.info(f'release line at {self.press}')
+        elif DraggableVLine.mode == 'Remove':
+            if self.callback_remove:
+                self.callback_remove(self.press, event.xdata)
             DraggableVLine.active_line = None
             try:
                 self.line.remove()
@@ -139,17 +133,16 @@ class LineHandler:
     Manages draggable lines on a plot, allowing add, remove, and drag operations.
 
     Attributes:
-        draggable_lines (set): A set of DraggableVLine objects on the plot.
-        callback_add (callable): Function to call when a line is added.
-        callback_remove (callable): Function to call when a line is removed.
+        draggable_lines (list): DraggableVLine objects currently on the plot.
+        callback_remove (callable): Called when a line is removed.
+        callback_drag (callable): Called when a line is dragged.
     """
 
     def __init__(self, ax, callback_remove=None, callback_drag=None):
         """
-        Initializes LineHandler with an empty set of draggable lines and optional callbacks.
+        Initializes LineHandler with an empty list of draggable lines and optional callbacks.
 
         Args:
-            callback_add (callable, optional): Callback for when a line is added.
             callback_remove (callable, optional): Callback for when a line is removed.
             callback_drag (callable, optional): Callback for when a line is dragged.
         """
@@ -161,11 +154,11 @@ class LineHandler:
 
     def add_line(self, x_position, color='red'):
         """
-        Adds a draggable line at the specified x position without plotting it.
+        Add a draggable vertical line at *x_position* on ``self.ax``.
 
         Args:
-            ax (matplotlib.axes.Axes): The axes on which to add the line.
             x_position (float): The x-coordinate for the new line.
+            color (str): Matplotlib colour string for the line (default ``'red'``).
         """
         self.draggable_lines.append(DraggableVLine(
             self.ax, x_position, self.callback_drag, self.callback_remove, color=color))
@@ -179,7 +172,7 @@ class LineHandler:
         """
         if line in self.draggable_lines:
             line.line.remove()  # Remove line from the plot
-            self.draggable_lines.discard(line)
+            self.draggable_lines.remove(line)
             plt.draw()
 
             if self.callback_remove:
@@ -197,5 +190,4 @@ class LineHandler:
         plt.draw()  # Redraw the canvas
 
     def update_mode(self, mode):
-        # logger.info(f'Changed mode to {mode}')
         DraggableVLine.mode = mode

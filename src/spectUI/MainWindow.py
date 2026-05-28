@@ -536,6 +536,22 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Persist current geometry, window state and dock layout on close."""
+        # Re-dock every floating panel before saving state.  Floating dock
+        # containers are independent top-level windows; if we save state while
+        # they are still floating the INI records them that way, and on the next
+        # launch ADS tries to recreate the floating windows — but the C++ objects
+        # are gone, causing a RuntimeError in visibilityChanged callbacks.
+        # Re-docking first means the saved state is always fully embedded, so
+        # restart is clean regardless of what the user left floating.
+        for dock in self.docks.values():
+            try:
+                if dock.isFloating():
+                    self.dock_manager.addDockWidget(
+                        QtAds.CenterDockWidgetArea, dock
+                    )
+            except RuntimeError:
+                pass
+
         settings = _make_settings()
 
         # Named perspectives (writes one subkey per perspective name).
@@ -549,9 +565,7 @@ class MainWindow(QMainWindow):
         settings.setValue(_SETTINGS_WINDOWSTATE, self.saveState())
         settings.setValue(_SETTINGS_DOCKSTATE,   self.dock_manager.saveState())
 
-        # Let QtAds run its own teardown before the QMainWindow destructor.
         self.dock_manager.deleteLater()
-
         super().closeEvent(event)
 
     # ------------------------------------------------------------------

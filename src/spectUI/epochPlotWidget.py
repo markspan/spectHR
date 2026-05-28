@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QInputDialog
 from spectHR.DataSet.Epoch import Epoch
 
 import numpy as np
+from spectHR.Tools.Logger import logger
 
 class EpochPlotWidget(QWidget):
     """

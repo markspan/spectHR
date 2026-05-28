@@ -1,5 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
+import re
 from typing import Any
 
 from PySide6.QtWidgets import (
@@ -179,8 +180,6 @@ def _label(key: str) -> str:
     ``.title()`` would mangle ``"window (sec)"`` into ``"Window (Sec)"``
     and re-title other unit-bearing keys in surprising ways.
     """
-    import re
-
     # Pre-formatted key - already laid out the way the author wants it
     # shown. Bypass camelCase/snake_case splitting and title-casing.
     if " " in key or "(" in key or ")" in key:

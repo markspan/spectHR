@@ -6,86 +6,21 @@ import math
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
-import qtawesome as qta
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.ticker import MultipleLocator
-from PySide6.QtCore import QSize
-from PySide6.QtGui import QIcon, QTransform
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
-
-# ======================================================================
-# View state & helpers
-# ======================================================================
-
-
-@dataclass
-class ViewState:
-    """
-    Holds the current x-range for the widget.
-    """
-
-    x_min: float
-    x_max: float
-
-    initial_xmin: Optional[float] = None
-    initial_xmax: Optional[float] = None
-    drag_mode: Optional[str] = None  # "left", "right", "center", or None
-
-    def width(self) -> float:
-        return self.x_max - self.x_min
-
-    def center(self) -> float:
-        return 0.5 * (self.x_min + self.x_max)
-
-
-class OverviewWindow:
-    """
-    Manages the overview rectangle that indicates the current zoom
-    window in the overview Axes.
-    """
-
-    def __init__(self, ax: Axes, x_min: float, x_max: float) -> None:
-        self.ax = ax
-        y0, y1 = ax.get_ylim()
-        self.patch = patches.Rectangle(
-            (x_min, y0),
-            x_max - x_min,
-            y1 - y0,
-            color="blue",
-            alpha=0.2,
-            animated=False,
-        )
-        ax.add_patch(self.patch)
-
-    def update_y(self) -> None:
-        """
-        Update the vertical span of the patch to match current y-limits.
-        """
-        y0, y1 = self.ax.get_ylim()
-        self.patch.set_y(y0)
-        self.patch.set_height(y1 - y0)
-
-    def set_window(self, x_min: float, x_max: float) -> None:
-        """
-        Update rectangle position to new [x_min, x_max] window.
-        """
-        self.patch.set_x(x_min)
-        self.patch.set_width(x_max - x_min)
-        self.update_y()
-
+from spectUI._uitools import OverviewWindow, make_nav_button, style_axis_clean
 
 # ======================================================================
 # HRPlotWidget (UI + plotting)
@@ -129,6 +64,7 @@ class HRPlotWidget(QWidget):
         # State
         self.data: Optional[PhysioData] = None
         self.overview_window: Optional[OverviewWindow] = None
+        self.rtop_ctrl = None  # not used in this widget; present for next/prev guards
 
         # Mpl event ids
         self._mpl_cid_press: Optional[int] = None
@@ -298,67 +234,22 @@ class HRPlotWidget(QWidget):
     # ==============================================================
 
     def _create_navigation_bar(self) -> QWidget:
-        """
-        Create the navigation bar with zoom/pan/next/prev controls.
-        """
-
-        def make_btn(
-            icon_name: Optional[str],
-            callback,
-            rotate: int | bool = False,
-            tooltip: Optional[str] = None,
-        ) -> QPushButton:
-            btn = QPushButton()
-            if icon_name:
-                icon = qta.icon(icon_name)
-                if rotate:
-                    pixmap = icon.pixmap(QSize(48, 48))
-                    transform = QTransform().rotate(
-                        rotate if isinstance(rotate, int) else 0
-                    )
-                    rotated_pixmap = pixmap.transformed(transform)
-                    icon = QIcon(rotated_pixmap)
-                btn.setIcon(icon)
-                btn.setIconSize(QSize(48, 48))
-            btn.setFlat(True)
-            btn.setStyleSheet(
-                """
-                QPushButton {
-                    margin: 4px;
-                    width: 56px;
-                    height: 56px;
-                    border: none;
-                }
-                """
-            )
-            btn.clicked.connect(callback)
-            if tooltip:
-                btn.setToolTip(tooltip)
-            return btn
-
-        begin = make_btn(
-            "fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"
+        """Create the navigation bar with zoom/pan/next/prev controls."""
+        buttons = (
+            make_nav_button("fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"),
+            make_nav_button("fa6s.backward",          self.pan_left,               tooltip="Pan Left"),
+            make_nav_button("fa6s.square-caret-left", self.prev,                   tooltip="Previous non-normal R-top"),
+            make_nav_button("ei.zoom-in",             self.zoom_in,                tooltip="Zoom In"),
+            make_nav_button("ei.zoom-out",            self.zoom_out,               tooltip="Zoom Out"),
+            make_nav_button("fa6s.square-caret-right",self.next,                   tooltip="Next non-normal R-top"),
+            make_nav_button("fa6s.forward",           self.pan_right,              tooltip="Pan Right"),
+            make_nav_button("fa6s.right-to-bracket",  self.go_to_end,              tooltip="Goto End"),
         )
-        left = make_btn("fa6s.backward", self.pan_left, tooltip="Pan Left")
-        prev = make_btn(
-            "fa6s.square-caret-left", self.prev, tooltip="Previous non-normal R-top"
-        )
-        zoom_in = make_btn("ei.zoom-in", self.zoom_in, tooltip="Zoom In")
-        zoom_out = make_btn("ei.zoom-out", self.zoom_out, tooltip="Zoom Out")
-        nxt = make_btn(
-            "fa6s.square-caret-right", self.next, tooltip="Next non-normal R-top"
-        )
-        right = make_btn("fa6s.forward", self.pan_right, tooltip="Pan Right")
-        end = make_btn(
-            "fa6s.right-to-bracket", self.go_to_end, rotate=False, tooltip="Goto End"
-        )
-
         nav_layout = QHBoxLayout()
         nav_layout.setContentsMargins(0, 0, 0, 0)
         nav_layout.setSpacing(4)
-        for btn in (begin, left, prev, zoom_in, zoom_out, nxt, right, end):
+        for btn in buttons:
             nav_layout.addWidget(btn)
-
         nav_widget = QWidget()
         nav_widget.setLayout(nav_layout)
         nav_widget.setFixedHeight(50)
@@ -444,6 +335,7 @@ class HRPlotWidget(QWidget):
             sharex=False,
             gridspec_kw={"height_ratios": [5, 1]},
         )
+        plt.close(self.hrfig)  # prevent orphan figure window
 
         self.ax_heartrate = ax_hr
         self.ax_overview = ax_overview
@@ -509,14 +401,6 @@ class HRPlotWidget(QWidget):
     # Rendering pipeline
     # ==============================================================
     @staticmethod
-    def _style_axis_clean(ax: Axes) -> None:
-        """Hide y-axis and remove left/right/top spines (borders)."""
-        ax.get_yaxis().set_visible(False)
-        ax.spines["left"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.spines["top"].set_visible(False)
-
-    @staticmethod
     def _set_time_axis(
         ax: Axes, x_min: float, x_max: float, *, show_xlabel: bool
     ) -> None:
@@ -559,7 +443,7 @@ class HRPlotWidget(QWidget):
         )
         # title
         self.ax_heartrate.set_title("IBI Timeseries Signal")
-        self._style_axis_clean(self.ax_heartrate)
+        style_axis_clean(self.ax_heartrate)
         self._set_time_axis(
             self.ax_heartrate,
             self.data.view.x_min,
@@ -622,7 +506,7 @@ class HRPlotWidget(QWidget):
 
         # Keep behind the HR trace
         self._ax_br_twin.set_zorder(0)
-        self._style_axis_clean(self._ax_br_twin)  # removes top/left/right spines too
+        style_axis_clean(self._ax_br_twin)  # removes top/left/right spines too
         # and typically you do NOT want an x-label on the twin axis:
         self._ax_br_twin.set_xlabel("")
 
@@ -642,7 +526,7 @@ class HRPlotWidget(QWidget):
         self.ax_overview.plot(
             heartrate.times, heartrate.values, linewidth=0.25, alpha=1, color="green"
         )
-        self._style_axis_clean(self.ax_overview)
+        style_axis_clean(self.ax_overview)
         self._set_time_axis(
             self.ax_overview,
             float(heartrate.times.min()),
@@ -651,7 +535,6 @@ class HRPlotWidget(QWidget):
         )
 
         # Recreate the rectangle every time - most robust behaviour.
-        y0, y1 = self.ax_overview.get_ylim()
         self.overview_window = OverviewWindow(
             self.ax_overview,
             self.data.view.x_min,
@@ -844,12 +727,11 @@ class HRPlotWidget(QWidget):
             if self.overview_window is not None:
                 self.overview_window.set_window(x_min, x_max)
             self.canvas.draw_idle()
-            self.redraw()
 
     def _on_release(self, event) -> None:
-        """
-        Matplotlib mouse release callback: finish dragging.
-        """
+        """Matplotlib mouse release callback: finish dragging."""
+        if self.data is None or self.data.view is None:
+            return
         self.data.view.drag_mode = None
         self.redraw()
 

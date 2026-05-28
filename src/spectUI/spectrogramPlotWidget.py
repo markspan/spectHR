@@ -74,6 +74,12 @@ def _spectrogram_settings_from_workspace(
     the per-window breathing-frequency trace on top of the heat map
     when a RespirationSeries is available for the epoch. ``colormap``
     is the matplotlib colormap name used by ``pcolormesh``.
+
+    ``adaptive_source`` is read from ``workspace["Profiles"]`` (the
+    same key ProfilePlotWidget uses) so the two views always agree on
+    how the per-window breathing frequency is derived:
+    ``"respiration_channel"`` — use the RSP signal, fall back to PSD
+    peak; ``"psd_peak"`` — use the HF spectral peak directly.
     """
     if workspace is None:
         return {
@@ -81,8 +87,10 @@ def _spectrogram_settings_from_workspace(
             "step_s":   5.0,
             "show_respiration_overlay": True,
             "colormap": _DEFAULT_COLORMAP,
+            "adaptive_source": "respiration_channel",
         }
-    spec = workspace.get("Spectrogram", {}) or {}
+    spec  = workspace.get("Spectrogram", {}) or {}
+    profs = workspace.get("Profiles",    {}) or {}
     window_s = spec.get("window (sec)", spec.get("window_s", 30.0))
     step_s   = spec.get("step (sec)",   spec.get("step_s",   5.0))
     return {
@@ -91,6 +99,9 @@ def _spectrogram_settings_from_workspace(
         "show_respiration_overlay":
             bool(spec.get("show_respiration_overlay", True)),
         "colormap": str(spec.get("colormap", _DEFAULT_COLORMAP)),
+        "adaptive_source": str(
+            profs.get("adaptive_source", "respiration_channel")
+        ),
     }
 
 
@@ -122,6 +133,7 @@ def _fetch_spectrogram(
     window_s: float,
     step_s: float,
     psd_method: Optional[PsdMethod] = None,
+    adaptive_source: str = "respiration_channel",
 ) -> _SpectrogramPlotData:
     """Compute the spectrogram grid for one cardio series, never raises.
 
@@ -134,8 +146,20 @@ def _fetch_spectrogram(
     the same method the band-power profile and PSD widgets use, so
     settings flow through uniformly.
 
-    The respiration trace (one breathing-frequency value per window)
-    is collected when available so the renderer can overlay it.
+    The per-window breathing frequency follows the same two-stage
+    strategy as ``compute_band_power_profile`` in ``profile.py``,
+    controlled by ``adaptive_source``:
+
+    * ``"respiration_channel"`` — Stage 1: derive the mean breath
+      frequency from the RSP signal via ``mean_breath_frequency_hz``.
+      Stage 2 (PSD peak) is used as a fallback when the RSP channel
+      is absent or yields no usable phases for a window.
+    * ``"psd_peak"`` — Stage 1 is skipped entirely; the HF spectral
+      peak is used for every window, matching the profile's behaviour
+      when that source is selected in Profile Settings.
+
+    This keeps the spectrogram's breathing-frequency overlay consistent
+    with the profile view regardless of which source the user chose.
     """
     empty = _SpectrogramPlotData(
         label=label,
@@ -169,10 +193,32 @@ def _fetch_spectrogram(
         if n_windows < 1:
             return replace(empty, error="No window fits")
 
+        # --- respiration setup (mirrors profile.py) -------------------
+        # Locate the RSP series once before the window loop.
+        rsp_series = None
+        pd = getattr(series, "_pd", None)
+        if pd is not None:
+            rsp_map = getattr(pd, "rsp_map", None) or {}
+            rsp_series = next(iter(rsp_map.values()), None)
+
+        # PSD-peak fallback: find the respiratory / HF band range.
+        # Use the first respiration-tracked band if one is configured,
+        # otherwise fall back to the standard HF range (0.15–0.40 Hz).
+        _RESP_LOW_DEFAULT  = 0.15
+        _RESP_HIGH_DEFAULT = 0.40
+        resp_band_low  = _RESP_LOW_DEFAULT
+        resp_band_high = _RESP_HIGH_DEFAULT
+        for _, band in method.bands.items():
+            if band.respiration_band:
+                resp_band_low  = band.low
+                resp_band_high = band.high
+                break
+
         common_freqs: Optional[np.ndarray] = None
         psd_cache: dict = {}
         method_label = ""
         unit = ""
+        resp_freqs_arr = np.full(n_windows, np.nan, dtype=np.float64)
 
         for i in range(n_windows):
             win_start = t0 + i * step_s
@@ -192,6 +238,33 @@ def _fetch_spectrogram(
                 common_freqs = psd_result.freqs.copy()
                 method_label = psd_result.method or ""
                 unit = psd_result.unit or ""
+
+            # Stage 1: RSP channel → mean_breath_frequency_hz.
+            # Skipped when adaptive_source == "psd_peak", mirroring
+            # profile.py's behaviour exactly.
+            if adaptive_source == "respiration_channel" and rsp_series is not None:
+                try:
+                    rsp_view = rsp_series.view(win_start, win_end)
+                    rf = mean_breath_frequency_hz(rsp_view)
+                    if rf is not None:
+                        resp_freqs_arr[i] = float(rf)
+                except Exception as exc:
+                    logger.debug(
+                        "Spectrogram resp-freq window %d RSP failed, %s",
+                        i, exc,
+                    )
+
+            # Stage 2: PSD-peak (always runs when adaptive_source == "psd_peak";
+            # runs as fallback when adaptive_source == "respiration_channel" but
+            # Stage 1 yielded nothing for this window).
+            if not np.isfinite(resp_freqs_arr[i]) and psd_result.freqs.size:
+                mask = (
+                    (psd_result.freqs >= resp_band_low)
+                    & (psd_result.freqs <= resp_band_high)
+                )
+                if mask.any():
+                    peak_idx = int(np.argmax(psd_result.power[mask]))
+                    resp_freqs_arr[i] = float(psd_result.freqs[mask][peak_idx])
 
         if common_freqs is None or common_freqs.size == 0:
             return replace(empty, error="No spectra computed")
@@ -216,7 +289,9 @@ def _fetch_spectrogram(
             dtype=np.float64,
         )
 
-        resp_freqs = _collect_resp_freqs(series, timestamps, window_s)
+        resp_freqs: Optional[np.ndarray] = (
+            resp_freqs_arr if np.any(np.isfinite(resp_freqs_arr)) else None
+        )
 
         return _SpectrogramPlotData(
             label=label,
@@ -232,49 +307,6 @@ def _fetch_spectrogram(
 
     except Exception as exc:
         return replace(empty, error=f"Spectrogram failed: {exc}")
-
-
-def _collect_resp_freqs(
-    series,
-    timestamps: np.ndarray,
-    window_s: float,
-) -> Optional[np.ndarray]:
-    """Per-window mean breathing frequency, when a RespirationSeries is around.
-
-    Mirrors the resp-freq lookup in
-    ``spectHR.analysis.profile.compute_band_power_profile``: pick the
-    first RespirationSeries off ``series._pd.rsp_map``, slice a view
-    spanning each window, hand the view to the free function
-    ``mean_breath_frequency_hz``. Returns ``None`` if the dataset
-    has no respiration channel or every window comes back NaN.
-    """
-    pd = getattr(series, "_pd", None)
-    if pd is None:
-        return None
-    rsp_map = getattr(pd, "rsp_map", None) or {}
-    if not rsp_map:
-        return None
-    rsp_series = next(iter(rsp_map.values()), None)
-    if rsp_series is None:
-        return None
-    out = np.full(timestamps.shape, np.nan, dtype=np.float64)
-    for i, centre in enumerate(timestamps):
-        win_start = float(centre) - window_s / 2.0
-        win_end   = float(centre) + window_s / 2.0
-        try:
-            rsp_view = rsp_series.view(win_start, win_end)
-            rf = mean_breath_frequency_hz(rsp_view)
-        except Exception as exc:
-            logger.debug(
-                "Spectrogram resp-freq window %d skipped, %s", i, exc,
-            )
-            continue
-        if rf is None:
-            continue
-        out[i] = float(rf)
-    if not np.any(np.isfinite(out)):
-        return None
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -348,10 +380,11 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
         super().__init__(parent)
 
         cfg = _spectrogram_settings_from_workspace(workspace)
-        window_s: float = cfg["window_s"]
-        step_s:   float = cfg["step_s"]
-        show_resp: bool = cfg["show_respiration_overlay"]
-        colormap:  str  = cfg["colormap"]
+        window_s:        float = cfg["window_s"]
+        step_s:          float = cfg["step_s"]
+        show_resp:       bool  = cfg["show_respiration_overlay"]
+        colormap:        str   = cfg["colormap"]
+        adaptive_source: str   = cfg["adaptive_source"]
 
         psd_method: Optional[PsdMethod] = (
             psd_method_from_workspace(workspace) if workspace is not None else None
@@ -363,6 +396,7 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
                 series, label,
                 window_s=window_s, step_s=step_s,
                 psd_method=psd_method,
+                adaptive_source=adaptive_source,
             )
             for series, label in zip(series_list, labels)
         ]

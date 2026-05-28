@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QPushButton,
     QVBoxLayout,
-    QWidget,
 )
 
 
@@ -50,8 +49,8 @@ class EventCodeWindow(QDialog):
         self.start_codes_list = QListWidget()
         self.stop_codes_list = QListWidget()
 
-        self.to_start_button = QPushButton("toStart")
-        self.to_stop_button = QPushButton("toStop")
+        self.to_start_button = QPushButton("To Start")
+        self.to_stop_button = QPushButton("To Stop")
         self.FullEpochButton = QPushButton("Full Epoch")
         self.ok_button = QPushButton("OK")
         self.ok_button.setEnabled(False)
@@ -79,8 +78,6 @@ class EventCodeWindow(QDialog):
         main_layout.addLayout(right_layout)
         main_layout.addLayout(button_layout)
 
-        central_widget = QWidget()
-        central_widget.setLayout(main_layout)
         self.setLayout(main_layout)
 
         # Populate the all codes list with unique event codes

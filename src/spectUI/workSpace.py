@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict
 
 from spectHR.Tools.Logger import logger
@@ -253,7 +254,6 @@ def get_export_dir(workspace, *, context: str = "Export"):
     :data:`DEFAULT_EXPORT_DIR`, so an export attempt always has somewhere
     to land instead of crashing on a ``KeyError``.
     """
-    from pathlib import Path  # localised to keep the module top tidy
     if workspace is not None:
         try:
             return Path(workspace["Directories"]["OutputDirectory"])
@@ -264,6 +264,20 @@ def get_export_dir(workspace, *, context: str = "Export"):
                 "export folder."
             )
     return DEFAULT_EXPORT_DIR
+
+
+def display_bands_from_workspace(workspace: "Dict[str, Any] | None") -> Dict[str, dict]:
+    """Return the raw bands dict from the workspace for plot rendering.
+
+    The plotting helpers (``_band_bounds``, ``_draw_band_fill``, etc.) work
+    on this raw ``{name: {low, high, color, alpha, …}}`` form. A separate
+    :class:`PsdMethod` is built from the same source for the compute path.
+    """
+    if workspace is None:
+        return {}
+    return dict(
+        (workspace.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
+    )
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -284,8 +298,7 @@ def LoadWorkspace(json_file=None) -> dict:
     writes the JSON file and ensures cache / output directories exist.
     PSD configuration is **not** pushed into any module-level globals -
     callers should use :func:`psd_method_from_workspace` to build a
-    :class:`PsdMethod` and assign it to each series via
-    the PsdMethod is passed explicitly to psd() / band_power() calls.
+    :class:`PsdMethod` and pass it explicitly to every compute call.
 
     Returns
     -------
@@ -501,8 +514,8 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
     """Build a :class:`PsdMethod` from a workspace dict.
 
     The UI calls this once after :func:`LoadWorkspace` and again after
-    every Edit-Parameters save, then assigns the result to every
-    the PsdMethod is passed explicitly to every compute call.
+    every Edit-Parameters save. The returned :class:`PsdMethod` is passed
+    explicitly to every compute call - the series objects carry no UI state.
     """
     fa = workspace.get("FrequencyAnalysis", {}) or {}
 

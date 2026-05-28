@@ -30,7 +30,7 @@ from spectHR.analysis.psd._config import PsdMethod
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
-from spectUI.workSpace import psd_method_from_workspace
+from spectUI.workSpace import psd_method_from_workspace, display_bands_from_workspace
 from spectUI._plot_smoothing import smooth3
 from spectUI._plot_zoom import YZoomMixin, Y_TOP_FLOOR
 from spectUI._plot_export import PlotExportMixin, sanitize_filename
@@ -62,21 +62,6 @@ Y_SCALE_F_MIN: float = 0.08
 # for the _SinglePSDPlot constructor that clamps the initial y-top.
 
 # Export formats, filename sanitiser, and export dir live in _plot_export.
-
-
-def _bands_from_workspace(workspace: Optional[Dict[str, Any]]) -> Dict[str, dict]:
-    """Return the workspace's bands dict (dict-of-dicts) for plotting.
-
-    The plotting helpers (``_band_bounds``, ``_band_draw_extents``,
-    ``_draw_band_fill``) work on this raw dict form. A separate
-    :class:`PsdMethod` is built from the same data and passed explicitly
-    to ``PSDEngine.compute`` for the compute path.
-    """
-    if workspace is None:
-        return {}
-    return dict(
-        (workspace.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
-    )
 
 
 def _ci_alpha_from_workspace(workspace: Optional[Dict[str, Any]]) -> float:
@@ -162,7 +147,7 @@ def _fetch(
             for name, band in method.bands.items()
         }
     except Exception as e:
-        print(f"Warning: band powers failed for {label}: {e}")
+        logger.warning(f"band powers failed for {label}: {e}")
         band_powers = {}
 
     power = np.asarray(result.power).ravel()
@@ -340,7 +325,7 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
 
         # Extract the PsdMethod from the workspace and pass it explicitly
         # to every compute call - the series objects carry no UI state.
-        bands_dict = _bands_from_workspace(workspace)
+        bands_dict = display_bands_from_workspace(workspace)
         ci_alpha = _ci_alpha_from_workspace(workspace)
         x_min, x_max, scale_min, scale_max = _band_bounds(bands_dict)
         psd_method: Optional[PsdMethod] = (

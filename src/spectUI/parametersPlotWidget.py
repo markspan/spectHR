@@ -317,7 +317,11 @@ class ParametersPlotWidget(QWidget):
                 # straight off the same arrays. Costs one PSD per epoch
                 # instead of two (one for the unit / spectrum + one
                 # implicitly inside ``band_powers``).
-                psd_method_here = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
+                psd_method_here = (
+                    psd_method_from_workspace(self.workspace)
+                    if self.workspace is not None
+                    else _DEFAULT_PSD_METHOD
+                )
                 psd_res = PSDEngine(view).compute(psd_method_here, with_ci=False)
                 freqs = np.asarray(psd_res.freqs)
                 power = np.asarray(psd_res.power)

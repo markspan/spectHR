@@ -54,7 +54,7 @@ from PySide6.QtWidgets import (
 )
 
 from spectHR.analysis.profile import compute_band_power_profile
-from spectUI.workSpace import psd_method_from_workspace
+from spectUI.workSpace import psd_method_from_workspace, display_bands_from_workspace
 
 warnings.filterwarnings("ignore")
 
@@ -67,43 +67,20 @@ warnings.filterwarnings("ignore")
 # Export formats, filename sanitiser, and export dir live in _plot_export.
 
 
-# ---------------------------------------------------------------------------
-# Workspace helpers - kept local so this widget has no spectUI cross-deps
-# ---------------------------------------------------------------------------
-
-
-def _bands_from_workspace(workspace: Optional[Dict[str, Any]]) -> Dict[str, dict]:
-    """Return the workspace bands dict (band-name -> ``{low, high, color, alpha}``).
-
-    The compute layer cares about the frequency edges; the plot widget
-    uses the same dict for colour / alpha lookups when drawing the
-    per-band traces. Mirrors :func:`PSDPlotWidget._bands_from_workspace`.
-    """
-    if workspace is None:
-        return {}
-    return dict(
-        (workspace.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
-    )
-
-
 def _profile_settings_from_workspace(
     workspace: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Return ``workspace["Profiles"]`` with sensible defaults.
 
-    ``bands`` defaults to the *non-FullRange* named bands; ``window_s``
-    and ``step_s`` come from the CARSPAN manual typical profile
-    settings; ``smooth_for_display`` defaults to ``False`` (the
-    Delphi-faithful behaviour - the reference profile view plots the
-    raw band-power-per-window line). Flip to ``True`` in Profile
-    Settings for a softened curve.
+    ``bands`` defaults to ``[]``; ``window (sec)`` and ``step (sec)``
+    default to the CARSPAN manual typical values of 30 s and 5 s;
+    ``smooth_for_display`` defaults to ``False`` (the Delphi-faithful
+    behaviour - the reference profile view plots the raw band-power-per-
+    window line). Flip to ``True`` in Profile Settings for a softer curve.
 
-    Workspace JSON exposes the time fields as the user-facing
-    ``"window (sec)"`` / ``"step (sec)"`` keys (so the Edit-Parameters
-    dialog labels them in a way researchers recognise from the CARSPAN
-    manual). The old snake_case ``"window_s"`` / ``"step_s"`` spellings
-    are still accepted as a fallback so older workspace JSON files
-    don't blow up after upgrade.
+    The canonical workspace keys are ``"window (sec)"`` / ``"step (sec)"``.
+    The old snake_case spellings ``"window_s"`` / ``"step_s"`` are still
+    accepted as a fallback so pre-migration workspace files don't break.
     """
     if workspace is None:
         return {
@@ -363,7 +340,7 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         super().__init__(parent)
 
         # ---- workspace-driven configuration ---------------------------
-        bands_dict = _bands_from_workspace(workspace)
+        bands_dict = display_bands_from_workspace(workspace)
         prof_cfg = _profile_settings_from_workspace(workspace)
         window_s: float = prof_cfg["window_s"]
         step_s:   float = prof_cfg["step_s"]
