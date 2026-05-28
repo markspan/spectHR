@@ -12,14 +12,10 @@ YZoomMixin
     Mixin that adds Up/Down arrow zoom to any ``QWidget`` subclass
     that exposes:
 
-    * ``self._y_top``         -- current shared y-max (float)
-    * ``self._subplots``      -- list of subplot objects with
-                                  ``.ax`` (Axes) and ``.canvas``
-                                  (FigureCanvas)
-    * ``self._show_spectrogram`` (optional bool) -- when True,
-                                  zoom is silently disabled because
-                                  the y-axis carries frequency, not
-                                  band power.
+    * ``self._y_top``    -- current shared y-max (float)
+    * ``self._subplots`` -- list of subplot objects with
+                            ``.ax`` (Axes) and ``.canvas``
+                            (FigureCanvas)
 """
 
 from __future__ import annotations
@@ -43,15 +39,9 @@ class YZoomMixin:
     def _set_y_top(self, new_y_top: float) -> None:
         """Apply *new_y_top* to every linked subplot and redraw.
 
-        Skipped silently when ``self._show_spectrogram`` is True,
-        because spectrogram tiles use a frequency y-axis and the
-        band-power zoom scale does not apply to them.
-
         Clipped to ``Y_TOP_FLOOR`` so repeated Up presses cannot
         collapse the axis to a zero-height range.
         """
-        if getattr(self, "_show_spectrogram", False):
-            return
         new_y_top = max(float(new_y_top), Y_TOP_FLOOR)
         self._y_top = new_y_top
         for subplot in self._subplots:

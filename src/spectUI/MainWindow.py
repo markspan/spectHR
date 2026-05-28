@@ -48,11 +48,17 @@ from spectHR.DataSet.Epoch import Epoch
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series import CardioSeries
 from spectHR.Tools.Logger import logger
+from spectUI import perspectives
 
 
-# QSettings keys. Organisation and application names are set on the
-# QApplication before MainWindow is built so the store lands in a
-# predictable per-platform location.
+# QSettings: stored in a per-user INI file rather than the platform
+# registry. The path comes from platformdirs so it lands in the
+# conventional config location on every OS:
+#   Windows: %APPDATA%\spectHR\spectHR.ini
+#   Linux  : ~/.config/spectHR/spectHR.ini
+#   macOS  : ~/Library/Application Support/spectHR/spectHR.ini
+# _ORG_NAME and _APP_NAME are kept around so the legacy registry
+# store can be detected and migrated once on startup.
 _ORG_NAME             = "spectHR"
 _APP_NAME             = "spectHR"
 _SETTINGS_GEOMETRY    = "MainWindow/geometry"
@@ -60,6 +66,49 @@ _SETTINGS_WINDOWSTATE = "MainWindow/windowState"
 _SETTINGS_DOCKSTATE   = "MainWindow/dockState"
 _SETTINGS_LAST_PERSP  = "MainWindow/lastPerspective"
 _SETTINGS_PERSPS      = "Perspectives"
+
+
+def _settings_path() -> Path:
+    """Absolute path to the INI file, parent dir created on demand."""
+    from platformdirs import user_config_path
+    config_dir = Path(user_config_path("spectHR", appauthor=False))
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "spectHR.ini"
+
+
+def _make_settings() -> QSettings:
+    """INI-backed QSettings store, the only call site that needs to know
+    where the file lives."""
+    return QSettings(str(_settings_path()), QSettings.IniFormat)
+
+
+def _migrate_from_registry_if_needed() -> None:
+    """Copy any legacy registry-backed settings into the new INI store.
+
+    Runs once. If the INI already has content the migration is
+    skipped, so a user who deletes the INI deliberately is not
+    silently re-populated from the registry. The legacy registry
+    keys are left in place, deleting them is something a user can
+    do manually with regedit once they have confirmed the INI works
+    for them.
+    """
+    target = _settings_path()
+    try:
+        if target.exists() and target.stat().st_size > 0:
+            return
+    except OSError:
+        return
+    legacy = QSettings(_ORG_NAME, _APP_NAME)
+    keys = legacy.allKeys()
+    if not keys:
+        return
+    fresh = _make_settings()
+    for key in keys:
+        fresh.setValue(key, legacy.value(key))
+    fresh.sync()
+    logger.info(
+        "Migrated %d setting(s) from registry to %s", len(keys), target,
+    )
 
 # Dock objectName strings. CDockManager.saveState keys the saved layout
 # by objectName, so these are on-disk contract: do not change once shipped.
@@ -69,15 +118,10 @@ _DOCK_IBI           = "dock.ibi"
 _DOCK_POINCARE      = "dock.poincare"
 _DOCK_EPOCHS        = "dock.epochs"
 _DOCK_PSD           = "dock.psd"
+_DOCK_SPECTROGRAM   = "dock.spectrogram"
 _DOCK_PROFILES      = "dock.profiles"
 _DOCK_PARAMETERS    = "dock.parameters"
 _DOCK_LOG           = "dock.log"
-
-# Built-in perspectives, captured once so the user always has a way
-# back to a known layout via View > Layout.
-_BUILTIN_PERSPECTIVE_DEFAULT  = "Default"
-_BUILTIN_PERSPECTIVE_COMPARE  = "Compare"
-_BUILTIN_PERSPECTIVE_PSDFOCUS = "PSD focus"
 
 
 class _QtLogHandler(logging.Handler):
@@ -217,8 +261,9 @@ class MainWindow(QMainWindow):
         # PSD / Profiles live in their own scroll area. The inner plot
         # widget is rebuilt on every refresh, so we hold the layout,
         # not the widget.
-        self.psd_scroll, self.psd_layout = self._make_scrollable_host()
-        self.profile_scroll, self.profile_layout = self._make_scrollable_host()
+        self.psd_scroll,        self.psd_layout        = self._make_scrollable_host()
+        self.spectrogram_scroll, self.spectrogram_layout = self._make_scrollable_host()
+        self.profile_scroll,    self.profile_layout    = self._make_scrollable_host()
 
         # ---- log dock content ---------------------------------------
         self.log_view = QPlainTextEdit()
@@ -246,12 +291,13 @@ class MainWindow(QMainWindow):
             )
             return dock
 
-        ibi_dock      = _tab(_DOCK_IBI,        "IBI Series",  self.hr_plot_widget)
-        poincare_dock = _tab(_DOCK_POINCARE,   "Poincare",    self.poincare_plot_widget)
-        epochs_dock   = _tab(_DOCK_EPOCHS,     "Epochs",      self.epoch_plot_widget)
-        psd_dock      = _tab(_DOCK_PSD,        "PSD",         self.psd_scroll)
-        profiles_dock = _tab(_DOCK_PROFILES,   "Profiles",    self.profile_scroll)
-        params_dock   = _tab(_DOCK_PARAMETERS, "Parameters",  self.parameters_plot_widget)
+        ibi_dock         = _tab(_DOCK_IBI,         "IBI Series",  self.hr_plot_widget)
+        poincare_dock    = _tab(_DOCK_POINCARE,    "Poincare",    self.poincare_plot_widget)
+        epochs_dock      = _tab(_DOCK_EPOCHS,      "Epochs",      self.epoch_plot_widget)
+        psd_dock         = _tab(_DOCK_PSD,         "PSD",         self.psd_scroll)
+        spectrogram_dock = _tab(_DOCK_SPECTROGRAM, "Spectrogram", self.spectrogram_scroll)
+        profiles_dock    = _tab(_DOCK_PROFILES,    "Profiles",    self.profile_scroll)
+        params_dock      = _tab(_DOCK_PARAMETERS,  "Parameters",  self.parameters_plot_widget)
 
         # ---- log dock -----------------------------------------------
         log_dock = self._new_dock(_DOCK_LOG, "Log", self.log_view)
@@ -265,6 +311,7 @@ class MainWindow(QMainWindow):
             _DOCK_POINCARE:      poincare_dock,
             _DOCK_EPOCHS:        epochs_dock,
             _DOCK_PSD:           psd_dock,
+            _DOCK_SPECTROGRAM:   spectrogram_dock,
             _DOCK_PROFILES:      profiles_dock,
             _DOCK_PARAMETERS:    params_dock,
             _DOCK_LOG:           log_dock,
@@ -281,6 +328,7 @@ class MainWindow(QMainWindow):
             _DOCK_POINCARE:      self._refresh_poincare,
             _DOCK_EPOCHS:        self._refresh_epochs,
             _DOCK_PSD:           self._refresh_psd,
+            _DOCK_SPECTROGRAM:   self._refresh_spectrogram,
             _DOCK_PROFILES:      self._refresh_profile,
             _DOCK_PARAMETERS:    self._refresh_parameters,
         }
@@ -383,6 +431,7 @@ class MainWindow(QMainWindow):
             _DOCK_POINCARE,
             _DOCK_EPOCHS,
             _DOCK_PSD,
+            _DOCK_SPECTROGRAM,
             _DOCK_PROFILES,
             _DOCK_PARAMETERS,
             _DOCK_LOG,
@@ -392,35 +441,9 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
 
         layout_menu = view_menu.addMenu("Layout")
-        self.layout_menu = layout_menu
-        self._rebuild_layout_menu()
-
-    def _rebuild_layout_menu(self) -> None:
-        """Repopulate the Layout submenu, called after perspective changes."""
-        self.layout_menu.clear()
-
-        save_action = QAction("Save current as perspective...", self)
-        save_action.triggered.connect(self._action_save_perspective)
-        self.layout_menu.addAction(save_action)
-
-        reset_action = QAction("Reset to default", self)
-        reset_action.triggered.connect(
-            lambda: self.dock_manager.openPerspective(_BUILTIN_PERSPECTIVE_DEFAULT)
+        self.perspective_menu = perspectives.PerspectiveMenu(
+            self, self.dock_manager, layout_menu,
         )
-        self.layout_menu.addAction(reset_action)
-
-        manage_action = QAction("Manage perspectives...", self)
-        manage_action.triggered.connect(self._action_manage_perspectives)
-        self.layout_menu.addAction(manage_action)
-
-        self.layout_menu.addSeparator()
-
-        for name in self.dock_manager.perspectiveNames():
-            action = QAction(name, self)
-            action.triggered.connect(
-                lambda _checked=False, n=name: self.dock_manager.openPerspective(n)
-            )
-            self.layout_menu.addAction(action)
 
     # ------------------------------------------------------------------
     # Perspective and session-state plumbing
@@ -438,14 +461,13 @@ class MainWindow(QMainWindow):
         sensible.
         """
         # Default ---------------------------------------------------------
-        self.dock_manager.addPerspective(_BUILTIN_PERSPECTIVE_DEFAULT)
+        self.dock_manager.addPerspective(perspectives.BUILTIN_DEFAULT)
 
         # Compare ---------------------------------------------------------
         # Move Epochs out into a vertical split under the centre area,
         # add Poincare alongside it as a tab.
         epochs_dock = self.docks[_DOCK_EPOCHS]
         poincare_dock = self.docks[_DOCK_POINCARE]
-        # Drop Epochs below the central area, stacked compare view.
         if not epochs_dock.isFloating():
             self.dock_manager.addDockWidget(
                 QtAds.BottomDockWidgetArea,
@@ -456,31 +478,36 @@ class MainWindow(QMainWindow):
             self.dock_manager.addDockWidgetTab(
                 QtAds.CenterDockWidgetArea, poincare_dock
             )
-        self.dock_manager.addPerspective(_BUILTIN_PERSPECTIVE_COMPARE)
+        self.dock_manager.addPerspective(perspectives.BUILTIN_COMPARE)
 
         # Reset before capturing PSD focus so the perspectives compose
         # rather than stack.
-        self.dock_manager.openPerspective(_BUILTIN_PERSPECTIVE_DEFAULT)
+        self.dock_manager.openPerspective(perspectives.BUILTIN_DEFAULT)
 
         # PSD focus -------------------------------------------------------
         psd_dock = self.docks[_DOCK_PSD]
         if not psd_dock.isFloating():
             psd_dock.setFloating()
-        self.dock_manager.addPerspective(_BUILTIN_PERSPECTIVE_PSDFOCUS)
+        self.dock_manager.addPerspective(perspectives.BUILTIN_PSDFOCUS)
 
         # Back to default as the displayed layout.
-        self.dock_manager.openPerspective(_BUILTIN_PERSPECTIVE_DEFAULT)
+        self.dock_manager.openPerspective(perspectives.BUILTIN_DEFAULT)
 
     def _restore_session(self) -> None:
         """
-        Restore window geometry and dock layout from QSettings.
+        Restore window geometry and dock layout from the INI store.
 
         Two passes, user-saved perspectives first (loadPerspectives),
         then the last-active dock state (restoreState). With no saved
         state the default captured in _capture_builtin_perspectives
         stands.
+
+        Runs the one-shot registry-to-INI migration first so a user
+        upgrading from a registry-backed build keeps their saved
+        layout and perspectives.
         """
-        settings = QSettings(_ORG_NAME, _APP_NAME)
+        _migrate_from_registry_if_needed()
+        settings = _make_settings()
 
         # Named perspectives ------------------------------------------
         settings.beginGroup(_SETTINGS_PERSPS)
@@ -489,7 +516,7 @@ class MainWindow(QMainWindow):
         finally:
             settings.endGroup()
         # Newly loaded perspectives change the menu contents.
-        self._rebuild_layout_menu()
+        self.perspective_menu.rebuild()
 
         # Window chrome -----------------------------------------------
         geom = settings.value(_SETTINGS_GEOMETRY)
@@ -509,7 +536,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Persist current geometry, window state and dock layout on close."""
-        settings = QSettings(_ORG_NAME, _APP_NAME)
+        settings = _make_settings()
 
         # Named perspectives (writes one subkey per perspective name).
         settings.beginGroup(_SETTINGS_PERSPS)
@@ -526,44 +553,6 @@ class MainWindow(QMainWindow):
         self.dock_manager.deleteLater()
 
         super().closeEvent(event)
-
-    def _action_save_perspective(self) -> None:
-        """Prompt for a perspective name, snapshot current layout under it."""
-        name, ok = QInputDialog.getText(
-            self, "Save perspective", "Perspective name:",
-        )
-        if not ok or not name.strip():
-            return
-        name = name.strip()
-        self.dock_manager.addPerspective(name)
-        self._rebuild_layout_menu()
-        logger.info("Saved layout as perspective %r", name)
-
-    def _action_manage_perspectives(self) -> None:
-        """Simple remove-by-name dialog for user-defined perspectives."""
-        existing = [
-            n for n in self.dock_manager.perspectiveNames()
-            if n not in (
-                _BUILTIN_PERSPECTIVE_DEFAULT,
-                _BUILTIN_PERSPECTIVE_COMPARE,
-                _BUILTIN_PERSPECTIVE_PSDFOCUS,
-            )
-        ]
-        if not existing:
-            return
-        name, ok = QInputDialog.getItem(
-            self,
-            "Remove perspective",
-            "Perspective:",
-            existing,
-            0,
-            False,
-        )
-        if not ok or not name:
-            return
-        self.dock_manager.removePerspective(name)
-        self._rebuild_layout_menu()
-        logger.info("Removed perspective %r", name)
 
     # ------------------------------------------------------------------
     # Per-dock visibilityChanged dispatch
@@ -627,6 +616,9 @@ class MainWindow(QMainWindow):
     def _refresh_psd(self) -> None:
         self.show_psd_plot(self.dataset)
 
+    def _refresh_spectrogram(self) -> None:
+        self.show_spectrogram_plot(self.dataset)
+
     def _refresh_profile(self) -> None:
         self.show_profile_plot(self.dataset)
 
@@ -686,10 +678,12 @@ class MainWindow(QMainWindow):
                 logger.warning(f"Could not save workspace after parameter edit: {e}")
 
             if self.dataset is not None:
-                # PSD and Profiles depend directly on what was edited,
-                # refresh them now. The other docks recompute the next
-                # time the user brings them forward.
+                # PSD, Spectrogram and Profiles depend directly on
+                # what was edited (bands, window, step, PSD method),
+                # refresh them now. The other docks recompute the
+                # next time the user brings them forward.
                 self.show_psd_plot(self.dataset)
+                self.show_spectrogram_plot(self.dataset)
                 self.show_profile_plot(self.dataset)
 
     # ------------------------------------------------------------------
@@ -1007,17 +1001,27 @@ class MainWindow(QMainWindow):
         if data is not None:
             self.poincare_plot_widget.poincarePlot(data)
 
-    def show_psd_plot(self, dataset):
+    def _swap_in_epoch_plot(self, layout, dataset, factory) -> None:
+        """
+        Replace the contents of ``layout`` with a freshly-built plot widget.
+
+        Shared body for the PSD, Spectrogram and Profile docks. Each
+        of them keeps a permanent QScrollArea in MainWindow and swaps
+        the inner plot widget on every refresh, the only thing that
+        varies between them is which widget class to construct.
+
+        ``factory`` takes ``(views, labels, workspace)`` and returns
+        a QWidget. The active-epoch (label, view) pairs are collected
+        here so the per-dock helpers stay one-liners.
+        """
         if dataset is None:
             return
-        # Clear existing widgets ---------------------------------------
-        while self.psd_layout.count():
-            item = self.psd_layout.takeAt(0)
+        while layout.count():
+            item = layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.setParent(None)
                 widget.deleteLater()
-
         pairs = []
         for label, epoch in dataset.epochs.items():
             if not epoch.active:
@@ -1026,44 +1030,28 @@ class MainWindow(QMainWindow):
                 pairs.append((label, dataset.hrv[label]))
             except Exception:
                 continue
-
         if not pairs:
             return
-
         labels, views = zip(*pairs)
-        psd_widget = spQt.PSDPlotWidget(views, labels, workspace=self.workspace)
-        self.psd_layout.addWidget(psd_widget)
+        layout.addWidget(factory(views, labels, self.workspace))
 
-    def show_profile_plot(self, dataset):
-        """Same epoch-collection contract as :meth:`show_psd_plot`, builds a
-        :class:`ProfilePlotWidget` instead, one sliding-window band-power
-        profile per epoch, drawn into the Profiles dock."""
-        if dataset is None:
-            return
-        while self.profile_layout.count():
-            item = self.profile_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.setParent(None)
-                widget.deleteLater()
-
-        pairs = []
-        for label, epoch in dataset.epochs.items():
-            if not epoch.active:
-                continue
-            try:
-                pairs.append((label, dataset.hrv[label]))
-            except Exception:
-                continue
-
-        if not pairs:
-            return
-
-        labels, views = zip(*pairs)
-        profile_widget = spQt.ProfilePlotWidget(
-            views, labels, workspace=self.workspace,
+    def show_psd_plot(self, dataset) -> None:
+        self._swap_in_epoch_plot(
+            self.psd_layout, dataset,
+            lambda v, l, w: spQt.PSDPlotWidget(v, l, workspace=w),
         )
-        self.profile_layout.addWidget(profile_widget)
+
+    def show_spectrogram_plot(self, dataset) -> None:
+        self._swap_in_epoch_plot(
+            self.spectrogram_layout, dataset,
+            lambda v, l, w: spQt.SpectrogramPlotWidget(v, l, workspace=w),
+        )
+
+    def show_profile_plot(self, dataset) -> None:
+        self._swap_in_epoch_plot(
+            self.profile_layout, dataset,
+            lambda v, l, w: spQt.ProfilePlotWidget(v, l, workspace=w),
+        )
 
     def show_parameters_plot(self, data):
         if data is not None:

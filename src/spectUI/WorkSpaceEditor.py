@@ -123,9 +123,10 @@ _EXCLUDED_SECTIONS = {"Directories"}
 # future workspace additions stay editable even before they're explicitly
 # routed.
 _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("General Settings",   ("CardioParameters", "RespirationAnalysis")),
-    ("PSD Settings",       ("FrequencyAnalysis",)),
-    ("Profile Settings",   ("Profiles",)),
+    ("General Settings",     ("CardioParameters", "RespirationAnalysis")),
+    ("PSD Settings",         ("FrequencyAnalysis",)),
+    ("Profile Settings",     ("Profiles",)),
+    ("Spectrogram Settings", ("Spectrogram",)),
 )
 
 # Known enumeration choices for specific leaf keys
@@ -152,6 +153,20 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     "FrequencyAnalysis.carspan.plot_units": ["mMI²/Hz", "ms²/Hz"],
     "FrequencyAnalysis.welch.units": ["mMI²", "ms²"],
     "FrequencyAnalysis.lombscargle.units": ["mMI²", "ms²"],
+    # Spectrogram tile colormap. Diverging and sequential maps that
+    # read well at the small tile sizes the Spectrogram dock uses.
+    "Spectrogram.colormap": [
+        "RdYlBu_r",
+        "viridis",
+        "magma",
+        "inferno",
+        "plasma",
+        "cividis",
+        "Greys",
+        "Blues",
+        "coolwarm",
+        "turbo",
+    ],
 }
 
 

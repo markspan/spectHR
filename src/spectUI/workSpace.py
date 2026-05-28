@@ -156,15 +156,31 @@ _DEFAULT_WORKSPACE = {
         # band-power per profile window. Flip to True for an
         # easier-on-the-eye curve when the data is noisy.
         "smooth_for_display": False,
-        # Toggle between the band-power line view (False, default) and a
-        # time-frequency spectrogram heatmap (True). In spectrogram mode the
-        # y-axis becomes frequency (Hz), the x-axis stays time, and the colour
-        # encodes normalised power (blue = minimum, red = maximum across the
-        # epoch). The colormap follows the standard neuroimaging ERSP
-        # convention (RdYlBu_r). All other profile settings (window, step,
-        # bands) remain active; the spectrogram is computed from the same
-        # per-window PSD call as the band-power profile.
-        "show_spectrogram": False,
+    },
+    # ------------------------------------------------------------------
+    # Spectrogram
+    # ------------------------------------------------------------------
+    # Time-frequency view of the per-window PSD. Sliding-window scheme
+    # mirrors Profiles, but the per-window PSD is kept whole and shown
+    # as a (time, freq, power) heat map rather than collapsed to band
+    # integrals. The PSD method (Welch, Lomb-Scargle, CARSPAN, strict)
+    # is inherited from FrequencyAnalysis so the colour-encoded
+    # spectrum stays consistent with the PSD and Profile views.
+    #
+    # window (sec) and step (sec) carry the same meaning as on the
+    # Profile side, per-window length and slide. show_respiration_
+    # overlay draws the per-window breathing-frequency trace over the
+    # heat map when a RespirationSeries is loaded for the epoch.
+    "Spectrogram": {
+        "window (sec)": 30.0,
+        "step (sec)":    5.0,
+        "show_respiration_overlay": True,
+        # Matplotlib colormap name driving the pcolormesh tile. The
+        # default (RdYlBu_r) is the standard neuroimaging ERSP palette,
+        # blue at low power and red at high. Any other matplotlib
+        # colormap name works at the renderer level; the Settings
+        # dialog dropdown lists the most useful subset.
+        "colormap": "RdYlBu_r",
     },
     # ------------------------------------------------------------------
     # Respiration analysis
