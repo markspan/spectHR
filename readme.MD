@@ -1149,15 +1149,23 @@ Three CARSPAN-faithful band summaries are computed per band $[f_l, f_h]$ on the 
 
 <div align="center">
 
-$$\bar M = \frac{1}{N_\text{coh}} \sum_{k \in [f_l, f_h] \,\wedge\, |C(f_k)|^2 \ge \text{min\_coh}} |H(f_k)|$$
-
-$$\bar \varphi = \frac{1}{N_\text{coh}} \sum_{k \in [f_l, f_h] \,\wedge\, |C(f_k)|^2 \ge \text{min\_coh}} \angle H(f_k)$$
-
-$$\bar C = \frac{\sum_{k \in [f_l, f_h]} |C(f_k)|^2 \cdot S_{xx}(f_k)}{\sum_{k \in [f_l, f_h]} S_{xx}(f_k)}$$
+$`\bar M = \frac{1}{N_\text{coh}} \sum_{f_k \in [f_l, f_h],\ |C(f_k)|^2 \ge c_{\min}} |H(f_k)|`$
 
 </div>
 
-Three names, three CARSPAN routines: `Caluculate_ModulusSum`, `Caluculate_PhaseSum`, `Caluculate_WeightedCoherenceSum`. Modulus and phase are gated by `min_coherence` (only bins whose coherence clears the threshold contribute); weighted coherence is power-weighted by the respiration spectrum and uses every in-band bin. `n_points` is the total number of in-band bins; `n_coherent` is how many of them cleared the gate. All four numbers go to `{basename}_transfer.csv`.
+<div align="center">
+
+$`\bar \varphi = \frac{1}{N_\text{coh}} \sum_{f_k \in [f_l, f_h],\ |C(f_k)|^2 \ge c_{\min}} \angle H(f_k)`$
+
+</div>
+
+<div align="center">
+
+$`\bar C = \frac{\sum_{f_l \le f_k \le f_h} |C(f_k)|^2 \cdot S_{xx}(f_k)}{\sum_{f_l \le f_k \le f_h} S_{xx}(f_k)}`$
+
+</div>
+
+where $`c_{\min}`$ is the `min_coherence` setting. Three names, three CARSPAN routines: `Caluculate_ModulusSum`, `Caluculate_PhaseSum`, `Caluculate_WeightedCoherenceSum`. Modulus and phase are gated by `min_coherence` (only bins whose coherence clears the threshold contribute); weighted coherence is power-weighted by the respiration spectrum and uses every in-band bin. `n_points` is the total number of in-band bins; `n_coherent` is how many of them cleared the gate. All four numbers go to `{basename}_transfer.csv`.
 
 #### Profile path
 
