@@ -1127,7 +1127,7 @@ $$|C(f)|^2 = \frac{|S_{xy}(f)|^2}{S_{xx}(f) \cdot S_{yy}(f)}$$
 
 </div>
 
-is algebraically identically $1$ at every frequency when the two spectra come from a single un-averaged periodogram. There is no actual statistical content. To get coherence values that mean anything, the cross- and auto-spectra must be averaged in some way before the ratio is taken. CARSPAN handles this by applying a 3-point triangular smoother (`WindowSize=3` in `AutoSpectrum` and `CrossSpectrum`) **only on the profile branch** (`FViewProgressAnalysis.Tag <> 0`); the single-epoch view passes `WindowSize=0` and would render a flat coherence$=1$ panel that's only useful as a sanity check. spectHR exposes the smoother as a single `smooth` Settings toggle defaulting to **true** on both paths, so the per-epoch Bode plot is informative out of the box. Set `smooth=false` to reproduce the CARSPAN-strict numbers.
+is algebraically identically $1$ at every frequency when the two spectra come from a single un-averaged periodogram. There is no actual statistical content. To get coherence values that mean anything, the cross- and auto-spectra must be averaged in some way before the ratio is taken. CARSPAN handles this by applying a 3-point triangular smoother (`WindowSize=3` in `AutoSpectrum` and `CrossSpectrum`) **only on the profile branch** (`FViewProgressAnalysis.Tag <> 0`); the single-epoch view passes `WindowSize=0` and would render a flat coherence $=1$ panel that's only useful as a sanity check. spectHR exposes the smoother as a single `smooth` Settings toggle defaulting to **true** on both paths, so the per-epoch Bode plot is informative out of the box. Set `smooth=false` to reproduce the CARSPAN-strict numbers.
 
 #### Transfer function, modulus, phase, coherence
 
