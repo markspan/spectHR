@@ -1115,7 +1115,7 @@ $$S_{xy}(f_k) = \tfrac{2 \cdot 10^6}{T} \, \overline{X_\text{rsp}} \cdot X_\text
 
 </div>
 
-The $10^6$ factor is the milli$^2$ scaling that makes the rest of the pipeline read in mMI$^2$, matching the PSD section above.
+The $10^6$ factor is the $milli^2$ scaling that makes the rest of the pipeline read in $mMI`^2`$, matching the PSD section above.
 
 #### The smoother (single deliberate divergence from CARSPAN)
 
