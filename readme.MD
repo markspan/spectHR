@@ -31,7 +31,8 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
 - [Step 6, Track band power over time (Profiles tab)](#step-6-track-band-power-over-time-profiles-tab)
-- [Step 7, Export your results (Parameters tab)](#step-7-export-your-results-parameters-tab)
+- [Step 7, Examine respiration -> HR coupling (Transfer tab)](#step-7-examine-respiration--hr-coupling-transfer-tab)
+- [Step 8, Export your results (Parameters tab)](#step-8-export-your-results-parameters-tab)
 
 </details>
 
@@ -71,6 +72,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 - [CARSPAN method](#carspan-method)
 - [Spectral profiles](#spectral-profiles)
 - [Adaptive bands](#adaptive-bands)
+- [Transfer functions](#transfer-functions)
 - [Confidence intervals](#confidence-intervals)
 - [Frequency bands](#frequency-bands-1)
 - [Units and normalisation](#units-and-normalisation)
@@ -174,7 +176,9 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | **Epochs** | Draw and adjust your analysis segments |
 | **PSD** | Read the frequency-domain power spectrum per epoch |
 | **Profiles** | Track each band's power as it evolves over time within an epoch |
-| **Parameters** | See all HRV metrics in a table and export three CSVs (time-domain, PSD, profile summaries) |
+| **Transfer** | Bode plot of how the breathing rhythm drives HRV: modulus, phase, and coherence over frequency for each epoch |
+| **Transfer profile** | Sliding-window time course of the same modulus / phase / coherence summaries per band |
+| **Parameters** | See all HRV metrics in a table and export five CSVs (time-domain, PSD, profile summaries, transfer band summaries, transfer-profile time series) |
 
 ---
 
@@ -275,7 +279,35 @@ Each profile dot is plotted at the **centre of the window that produced it**, no
 
 ---
 
-### Step 7, Export your results (Parameters tab)
+### Step 7, Examine respiration -> HR coupling (Transfer tab)
+
+The **Transfer tab** answers a different question from the PSD and Profiles tabs: not *"how much power is there in band X"*, but *"how much of the heart-rate fluctuation at frequency f can be predicted from the breathing signal at that frequency"*. The tab is only enabled when the recording carries a respiration channel; without one, the View-menu entry is greyed out and trying to open it pops a message explaining why.
+
+Each active epoch gets one **Bode tile** with three stacked panels sharing the frequency x-axis:
+
+- **Modulus** $|H(f)|$, how strongly breathing drives heart-rate variability at frequency $f$. Plotted as a black line with PSD-style under-curve fills coloured by band, and a legend showing the coherence-gated mean $|H|$ per band (the same number the export carries as `<band>_modulus`).
+- **Phase** $\angle H(f)$ in radians, the delay between breathing and the HRV response. Drawn as a dot scatter where bins with coherence $\ge$ `min_coherence` are solid and bins below the gate fade to `coherence_mask_alpha` (default 0.20), so the eye can tell at a glance which dots the band-mean phase actually used. Toggle wrapped / unwrapped in Settings.
+- **Coherence** $|C(f)|^2 \in [0, 1]$, the linear predictability of HRV from breathing at each frequency. A red dashed line at `min_coherence` marks the integrator's cutoff so the visual reference always tracks the statistical gate. When the recording's peak coherence is below 0.2 the y-axis auto-rescales so a weak curve stays visible.
+
+A sibling **Transfer profile tab** shows the same modulus / phase / coherence summaries as time series. Inside each epoch a fixed window slides at a fixed step (same parameters used by the Profiles tab) and the per-band BandTransfer summary (mean modulus, mean phase, weighted coherence) is collected per window. One coloured line per band on a time axis. Tile y-axes are linked to the same modulus scale on first draw; Up / Down arrows then act per tile (the one your mouse hovers over) so you can zoom into a quiet epoch without disturbing the rest.
+
+Both views share Settings, configurable under **WorkSpace -> Edit Parameters -> Transfer Settings**:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `window (sec)` / `step (sec)` | 30 / 5 | Sliding-window length and step used by the Transfer-profile view. Same sizing rules as the Profiles tab. |
+| `min_coherence` | 0.5 | Squared-coherence gate. In compute, only bins clearing this threshold contribute to band-mean modulus / phase. In the per-epoch plot, the red dashed reference line sits at this value and the phase mask fades bins below it. |
+| `f_min` / `f_max` | 0 / 0.5 Hz | Frequency-axis range for the per-epoch Bode plot. `f_max` also caps the native DFT grid. |
+| `smooth` | `true` | Apply a 3-point triangular smoother to the auto- and cross-spectra before computing $H$ and coherence. Required for meaningful per-epoch coherence; the manual-faithful CARSPAN single-block path used `smooth=false`, which collapses coherence to $1$ at every bin and is left here as an opt-out. |
+| `phase_view` | `wrapped` | Switch between wrapped (in $[-\pi, \pi]$) and unwrapped phase in the middle panel. |
+| `show_coherence_threshold` | `true` | Draw the red reference line at `min_coherence` on the coherence panel. |
+| `coherence_mask_alpha` | 0.20 | Opacity (0..1) applied to phase points where coherence is below `min_coherence`. Set to 0 to hide them entirely. |
+
+Shift+Ctrl+P exports every Transfer (and Transfer-profile) tile as PNG + PDF to the configured Output folder, alongside the existing PSD and Profile exports.
+
+---
+
+### Step 8, Export your results (Parameters tab)
 
 The **Parameters tab** shows a table with one row per epoch:
 
@@ -283,13 +315,15 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio, in **mMI²** by default; Welch can be switched to **ms²** via *Edit Parameters*
 
-Click **Save** to export. Three CSV files are written to the configured **Output** folder (see [Configuring the analysis](#configuring-the-analysis)). All three are one-row-per-epoch and use `epoch` as the natural join key, so they merge as standard data frames in R, JASP, or SPSS. The two spectral files also carry **raw-array columns** alongside the scalar summaries; those columns hold comma-separated numbers inside a single cell. Each such cell is quoted on write (RFC 4180), so any compliant CSV reader treats it as a single field, and downstream code unpacks the list with one `strsplit` (R) or `split` (Python) call.
+Click **Save** to export. Up to five CSV files are written to the configured **Output** folder (see [Configuring the analysis](#configuring-the-analysis)). All are one-row-per-epoch and use `epoch` as the natural join key, so they merge as standard data frames in R, JASP, or SPSS. The four spectral / transfer files also carry **raw-array columns** alongside the scalar summaries; those columns hold comma-separated numbers inside a single cell. Each such cell is quoted on write (RFC 4180), so any compliant CSV reader treats it as a single field, and downstream code unpacks the list with one `strsplit` (R) or `split` (Python) call.
 
 | File | Per-row contents |
 | --- | --- |
 | `{basename}.csv` | The table shown on screen, time-domain + Poincaré + integrated band powers. Scalars only. |
 | `{basename}_psd.csv` | Per band: scalar `<band>_power` plus the raw spectrum slice as two equal-length lists, `<band>_freqs` (Hz) and `<band>_psd_raw` (PSD values in mMI²/Hz by default). |
 | `{basename}_profiles.csv` | A shared `profile_timestamps` list (epoch-relative window-centre seconds) and, per band: the five summary statistics (`<band>_mean / _std / _min / _max / _t_max`) plus the raw band-power-per-window list `<band>_profile_raw`. |
+| `{basename}_transfer.csv` | The settings used (`smooth`, `min_coherence`, `f_max`) and, per band: `<band>_modulus`, `<band>_phase_wrapped`, `<band>_phase_unwrapped`, `<band>_weighted_coherence`, `<band>_n_points`, `<band>_n_coherent`. Scalars only; FullRange is skipped (a 0.02 -- 0.5 Hz integration is a near-duplicate of the underlying curve). Written only when the recording has a respiration channel. |
+| `{basename}_transfer_profile.csv` | The sliding-window settings (`window_s`, `step_s`, `smooth`, `min_coherence`, `f_max`), a shared `timestamps` list (epoch-relative window-centre seconds), and per band the five time series (`<band>_modulus`, `<band>_phase`, `<band>_phase_unwrapped`, `<band>_weighted_coherence`, `<band>_n_coherent`) as comma-separated arrays of length equal to `timestamps`. Written only when the recording has a respiration channel. |
 
 The bands you see in `_psd.csv` and `_profiles.csv` are exactly the bands defined under *Edit Parameters → PSD Settings → Bands*, in display order. The profile compute reuses the same band definitions as the PSD compute, so the two files describe the same partition of the spectrum.
 
@@ -1037,6 +1071,101 @@ with asymmetric boundary weights $\tilde{f}_b[0] = \tfrac{3}{8}f_b[0] + \tfrac{5
 #### Plot-only smoothing
 
 `smooth_for_display` applies the same 3-point moving average **along each band's time axis**, purely at the display stage; it never affects stored band powers or integration. 
+
+</details>
+
+---
+
+### Transfer functions
+
+The PSD, Profiles and Spectrogram views describe heart-rate variability **on its own**. The Transfer view describes how HRV is **driven by breathing**: a frequency-by-frequency answer to "how much of the heart-rate fluctuation at $f$ is linearly predictable from the breathing signal at $f$, and what is the gain and the phase delay of that prediction?". The implementation is `spectHR.analysis.transfer.compute_transfer` (single-block, one Bode plot per epoch) and `compute_transfer_profile` (sliding-window, one time series per band). Both are faithful ports of CARSPAN's `RunTransfer` (`T_AnaFunctions.pas` 2493--2610) with one deliberate change documented below.
+
+#### Reading the plots
+
+Both transfer views render as **three-row tiles per epoch**, all sharing the same x-axis. The Bode tile (per-epoch view) plots against frequency; the Transfer-profile tile plots against time within the epoch.
+
+| Row | Bode tile (per epoch) | Transfer-profile tile (sliding window) |
+|---|---|---|
+| **Top: modulus** | $\|H(f)\|$, a black line with PSD-style under-curve fills coloured by band. A peak at the breathing frequency means heart rate tracks breathing strongly there. The legend reports the coherence-gated mean $\|H\|$ per band (the same number that lands in `<band>_modulus`). Up / Down arrows shrink / grow the y-axis. | One coloured line per band: how the band-mean modulus changes window by window. Tiles start linked (same y-top across epochs) so cross-epoch reading works; Up / Down on a hovered tile unlinks just that one for a closer look. |
+| **Middle: phase** | $\angle H(f)$ as a dot scatter (radians on the y-axis). Solid dots are bins whose coherence cleared `min_coherence`; faded dots (opacity = `coherence_mask_alpha`) are bins below the gate, shown so you can see where phase becomes noisy. Toggle wrapped (default, $[-\pi, \pi]$) or unwrapped in Settings. A near-zero phase at the breathing frequency means heart rate follows breathing without delay; a non-zero phase reflects a respiratory-sinus-arrhythmia time lag. | One coloured line per band over time. Same wrapped / unwrapped toggle. Watch for sustained drifts away from the band's resting-state phase; those flag breathing-pattern changes that are reshaping the coupling. |
+| **Bottom: coherence** | $\|C(f)\|^2 \in [0, 1]$, the linear predictability of heart rate from breathing per bin. A red dashed line sits at `min_coherence` so the visual gate always matches the integrator's gate. If the recording's peak coherence falls below 0.2 the y-axis auto-rescales (with the peak value annotated on the y-label) so a faint trace stays visible instead of hugging the bottom spine. | Weighted-coherence per band as a time series, one coloured line per band. Same auto-rescale rule. Drops here mark windows where breathing stopped driving HRV cleanly. |
+
+Vertical band-coloured shading on the phase and coherence panels marks the configured frequency bands so a peak at, say, 0.25 Hz reads immediately as "inside HF". The modulus panel uses PSD-style **under-curve** fills instead of vertical bars so the area visually scales with $\|H\|$ in that band. FullRange is intentionally not drawn on either view: a 0.02 -- 0.5 Hz overlay would blanket the secondary panels, and the integrated $|H|$ over that whole range is rarely meaningful.
+
+Settings for both tiles (frequency range, smoothing, gate threshold, threshold-line toggle, mask alpha, phase view) live on a single **Transfer Settings** tab in *Edit Parameters*, paired horizontally where the keys go together so the dialog reads as a short list of related groups rather than a long ladder of fields.
+
+<details>
+<summary>Transfer, algorithm detail</summary>
+
+#### Inputs
+
+Two aligned signals: the IBI series from the heart and a continuous respiration signal (chest-belt accelerometer, thermistor, or any other 1-D breathing trace). Both are mean-subtracted, tapered with the CARSPAN 5 % index cosine bell (`TaperPercent := 5`), and IBI-amplitude weighted ($A_i = (x_i - \bar x) \cdot t_i$ in ms $\cdot$ s). The respiration signal is linearly interpolated at the R-peak times so the two channels share the same DFT evaluation grid (the cumulative R-peak times $T_i = \sum_{j \le i} t_j$).
+
+The native frequency grid is $f_k = k/T$ from $k = 1$ to $\lfloor f_\text{max} \cdot T \rfloor$, with $T$ the epoch span. The grid excludes DC and goes up to `f_max` (default 0.5 Hz).
+
+#### Auto and cross-spectra
+
+Two complex DFTs are computed on the same grid, $X_\text{rsp}(f_k)$ and $X_\text{ibi}(f_k)$. From those:
+
+<div align="center">
+
+$$S_{xx}(f_k) = \tfrac{2 \cdot 10^6}{T} \, |X_\text{rsp}|^2, \qquad S_{yy}(f_k) = \tfrac{2 \cdot 10^6}{T} \, |X_\text{ibi}|^2$$
+
+$$S_{xy}(f_k) = \tfrac{2 \cdot 10^6}{T} \, \overline{X_\text{rsp}} \cdot X_\text{ibi}$$
+
+</div>
+
+The $10^6$ factor is the milli$^2$ scaling that makes the rest of the pipeline read in mMI$^2$, matching the PSD section above.
+
+#### The smoother (single deliberate divergence from CARSPAN)
+
+The transfer formula
+
+<div align="center">
+
+$$|C(f)|^2 = \frac{|S_{xy}(f)|^2}{S_{xx}(f) \cdot S_{yy}(f)}$$
+
+</div>
+
+is algebraically identically $1$ at every frequency when the two spectra come from a single un-averaged periodogram. There is no actual statistical content. To get coherence values that mean anything, the cross- and auto-spectra must be averaged in some way before the ratio is taken. CARSPAN handles this by applying a 3-point triangular smoother (`WindowSize=3` in `AutoSpectrum` and `CrossSpectrum`) **only on the profile branch** (`FViewProgressAnalysis.Tag <> 0`); the single-epoch view passes `WindowSize=0` and would render a flat coherence$=1$ panel that's only useful as a sanity check. spectHR exposes the smoother as a single `smooth` Settings toggle defaulting to **true** on both paths, so the per-epoch Bode plot is informative out of the box. Set `smooth=false` to reproduce the CARSPAN-strict numbers.
+
+#### Transfer function, modulus, phase, coherence
+
+After the optional 3-point smoother:
+
+<div align="center">
+
+$$H(f) = \frac{S_{xy}(f)}{S_{xx}(f)}, \qquad |H(f)| = \sqrt{\Re\{H\}^2 + \Im\{H\}^2}, \qquad \angle H(f) = \arctan_2(\Im H, \Re H)$$
+
+$$|C(f)|^2 = \frac{|S_{xy}(f)|^2}{S_{xx}(f) \cdot S_{yy}(f)}$$
+
+</div>
+
+Phase is kept twice: the wrapped form $\angle H(f) \in (-\pi, \pi]$ for visual structure and a separately unwrapped copy where 2$\pi$ jumps are removed via the CARSPAN counter (`UnwrapPhase`, threshold $\pi$, step $2\pi$). The Settings dropdown switches between them in the plot; both go to the CSV.
+
+#### Band integrators
+
+Three CARSPAN-faithful band summaries are computed per band $[f_l, f_h]$ on the spectra above. Band indices follow the manual's $\lfloor f / \Delta f \rceil - 1$ rounding so they match `Caluculate_ModulusSum`'s edge-bin convention. For each band:
+
+<div align="center">
+
+$$\bar M = \frac{1}{N_\text{coh}} \sum_{k \in [f_l, f_h] \,\wedge\, |C(f_k)|^2 \ge \text{min\_coh}} |H(f_k)|$$
+
+$$\bar \varphi = \frac{1}{N_\text{coh}} \sum_{k \in [f_l, f_h] \,\wedge\, |C(f_k)|^2 \ge \text{min\_coh}} \angle H(f_k)$$
+
+$$\bar C = \frac{\sum_{k \in [f_l, f_h]} |C(f_k)|^2 \cdot S_{xx}(f_k)}{\sum_{k \in [f_l, f_h]} S_{xx}(f_k)}$$
+
+</div>
+
+Three names, three CARSPAN routines: `Caluculate_ModulusSum`, `Caluculate_PhaseSum`, `Caluculate_WeightedCoherenceSum`. Modulus and phase are gated by `min_coherence` (only bins whose coherence clears the threshold contribute); weighted coherence is power-weighted by the respiration spectrum and uses every in-band bin. `n_points` is the total number of in-band bins; `n_coherent` is how many of them cleared the gate. All four numbers go to `{basename}_transfer.csv`.
+
+#### Profile path
+
+`compute_transfer_profile` does the same arithmetic in a sliding window: a fixed `window_s` length, fixed `step_s` step, the per-window band summaries collected into a `(n_bands x n_windows)` array. The window-centre times go to the `timestamps` column. Windows with fewer than 4 R-peaks are skipped and their column is NaN, exactly like the Profiles path. The CSV row carries the same band fields as the single-block CSV, but as comma-separated arrays of length `len(timestamps)`.
+
+#### What survives, what changes
+
+A line-by-line comparison with `T_AnaFunctions.pas`: all the per-bin formulas (taper, DFT, auto / cross spectrum scaling, $|H|$, $\angle H$, $|C|^2$, `UnwrapPhase`), the three band integrators, and the bin-index rounding match exactly. Smoothing is the one knob the user can flip: on by default in spectHR (both paths), originally off in CARSPAN on the single-block path. The CSV's `smooth` column records which setting produced each row.
 
 </details>
 

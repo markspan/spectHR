@@ -10,7 +10,7 @@ Each tile holds three stacked subplots sharing the frequency x-axis:
                           below the coherence threshold are faded
                           via the coherence_mask_alpha setting.
     3. coherence |C(f)|^2 in [0, 1], optional horizontal threshold
-                          line at coherence_threshold_level. Auto-
+                          line at ``min_coherence``. Auto-
                           rescales when the peak is small so a flat-
                           near-zero line stays visible.
 
@@ -249,7 +249,6 @@ class _SingleTransferPlot(QWidget):
         bands: dict[str, dict] | None = None,
         phase_view: str = "wrapped",
         show_coherence_threshold: bool = True,
-        coherence_threshold_level: float = 0.5,
         coherence_mask_alpha: float = 0.20,
         min_coherence: float = 0.5,
         f_min: float = 0.0,
@@ -302,7 +301,6 @@ class _SingleTransferPlot(QWidget):
             bands=bands,
             phase_view=phase_view,
             show_coherence_threshold=show_coherence_threshold,
-            coherence_threshold_level=coherence_threshold_level,
             coherence_mask_alpha=coherence_mask_alpha,
             min_coherence=min_coherence,
             f_min=f_min,
@@ -380,7 +378,6 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
                 bands=bands,
                 phase_view=str(cfg["phase_view"]),
                 show_coherence_threshold=bool(cfg["show_coherence_threshold"]),
-                coherence_threshold_level=float(cfg["coherence_threshold_level"]),
                 coherence_mask_alpha=float(cfg["coherence_mask_alpha"]),
                 min_coherence=float(cfg["min_coherence"]),
                 f_min=float(cfg["f_min"]),
@@ -410,7 +407,6 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         bands: dict[str, dict],
         phase_view: str = "wrapped",
         show_coherence_threshold: bool = True,
-        coherence_threshold_level: float = 0.5,
         coherence_mask_alpha: float = 0.20,
         min_coherence: float = 0.5,
         f_min: float = 0.0,
@@ -521,10 +517,13 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
             ax_coh.set_ylabel(r"$|C(f)|^2$")
 
         if show_coherence_threshold and not low_coh_regime:
+            # The line marks the gate the band integrators use, so it
+            # always sits at min_coherence - drawing it anywhere else
+            # would lie about where the cutoff actually is.
             ax_coh.axhline(
-                coherence_threshold_level,
+                min_coherence,
                 color="red", lw=1.0, ls="--", alpha=0.7,
-                label=f"thr {coherence_threshold_level:.2f}",
+                label=f"min coh {min_coherence:.2f}",
                 zorder=2,
             )
             ax_coh.legend(loc="upper right", fontsize=7, framealpha=0.75)

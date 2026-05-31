@@ -215,10 +215,13 @@ _DEFAULT_WORKSPACE = {
         # "unwrapped" cumulates 2 pi jumps, useful for delay estimation.
         "phase_view":     "wrapped",
         # Horizontal coherence threshold line on the bottom panel of
-        # the per-epoch tile. Useful as a visual cue for which bins
-        # the band integrators are looking at.
+        # the per-epoch tile. The line sits at ``min_coherence`` (the
+        # statistical gate the band integrators use) - useful as a
+        # visual cue for which bins are being averaged into the band
+        # means. Toggle to hide it; the position itself follows
+        # ``min_coherence`` so the marker can't drift away from the
+        # actual cutoff.
         "show_coherence_threshold": True,
-        "coherence_threshold_level": 0.5,
         # Alpha applied to phase points below the coherence threshold,
         # so the user can see where phase is being read off noise.
         # 0.0 fully hides them, 1.0 shows them solid.
@@ -425,7 +428,6 @@ def transfer_settings_from_workspace(
         "smooth":                    True,
         "phase_view":                "wrapped",
         "show_coherence_threshold":  True,
-        "coherence_threshold_level": 0.5,
         "coherence_mask_alpha":      0.20,
     }
     if workspace is None:
@@ -447,9 +449,6 @@ def transfer_settings_from_workspace(
         "phase_view": str(cfg.get("phase_view", defaults["phase_view"])),
         "show_coherence_threshold": bool(
             cfg.get("show_coherence_threshold", defaults["show_coherence_threshold"])
-        ),
-        "coherence_threshold_level": float(
-            cfg.get("coherence_threshold_level", defaults["coherence_threshold_level"])
         ),
         "coherence_mask_alpha": float(
             cfg.get("coherence_mask_alpha", defaults["coherence_mask_alpha"])

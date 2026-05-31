@@ -10,7 +10,7 @@ time x-axis:
     2. phase(t)                one line per band, wrapped or unwrapped
                                per Settings.
     3. weighted coherence(t)   one line per band, optional horizontal
-                               threshold line at coherence_threshold_level.
+                               threshold line at ``min_coherence``.
 
 Per-band colours are pulled from FrequencyAnalysis.bands so the lines
 match the PSD / Profile / Spectrogram views.
@@ -193,7 +193,7 @@ class _SingleTransferProfilePlot(QWidget):
         bands: dict[str, dict] | None = None,
         phase_view: str = "wrapped",
         show_coherence_threshold: bool = True,
-        coherence_threshold_level: float = 0.5,
+        min_coherence: float = 0.5,
     ) -> None:
         super().__init__(parent)
         self.canvas: FigureCanvas = FigureCanvas(
@@ -245,7 +245,7 @@ class _SingleTransferProfilePlot(QWidget):
             bands=bands,
             phase_view=phase_view,
             show_coherence_threshold=show_coherence_threshold,
-            coherence_threshold_level=coherence_threshold_level,
+            min_coherence=min_coherence,
         )
         ax_mod.set_title(f"Transfer profile - {data.label}", fontsize=10)
         ax_mod.tick_params(labelbottom=False)
@@ -328,7 +328,7 @@ class TransferProfilePlotWidget(PlotExportMixin, QWidget):
                 bands=bands,
                 phase_view=str(cfg["phase_view"]),
                 show_coherence_threshold=bool(cfg["show_coherence_threshold"]),
-                coherence_threshold_level=float(cfg["coherence_threshold_level"]),
+                min_coherence=float(cfg["min_coherence"]),
             ),
         )
         # All tiles share the same initial modulus y-top so the
@@ -388,7 +388,7 @@ class TransferProfilePlotWidget(PlotExportMixin, QWidget):
         bands: dict[str, dict],
         phase_view: str = "wrapped",
         show_coherence_threshold: bool = True,
-        coherence_threshold_level: float = 0.5,
+        min_coherence: float = 0.5,
     ) -> None:
         """Draw modulus, phase and coherence time-series onto three axes.
 
@@ -481,10 +481,12 @@ class TransferProfilePlotWidget(PlotExportMixin, QWidget):
         ax_coh.set_xlabel("time within epoch [s]")
         ax_coh.set_xlim(*t_lim)
         if show_coherence_threshold and not low_coh_regime:
+            # Sits at min_coherence so the marker stays glued to the
+            # gate the band integrators actually use.
             ax_coh.axhline(
-                coherence_threshold_level,
+                min_coherence,
                 color="red", lw=1.0, ls="--", alpha=0.7,
-                label=f"thr {coherence_threshold_level:.2f}",
+                label=f"min coh {min_coherence:.2f}",
                 zorder=2,
             )
         ax_coh.spines["top"].set_visible(False)

@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QInputDialog,
+    QMessageBox,
     QMainWindow,
     QMenu,
     QPlainTextEdit,
@@ -1070,12 +1071,28 @@ class MainWindow(QMainWindow):
         has_ecg = bool(getattr(self.dataset, "has_ecg", False))
         self.docks[_DOCK_PREPROCESSING].toggleView(has_ecg)
 
-        # Transfer-family docks follow respiration availability.
+        # Transfer-family docks follow respiration availability. When
+        # the recording has no respiration channel we close them, grey
+        # out their View-menu toggle, and arm a visibility-guard that
+        # explains via QMessageBox if anything else (perspective
+        # restore, programmatic call) tries to open them.
         rsp_map = getattr(self.dataset, "rsp_map", None) or {}
         has_rsp = bool(rsp_map)
+        for name in (_DOCK_TRANSFER, _DOCK_TRANSFER_PROFILE):
+            dock = self.docks[name]
+            dock.toggleView(has_rsp and not dock.isClosed())
+            action = dock.toggleViewAction()
+            action.setEnabled(has_rsp)
+            if not has_rsp:
+                action.setToolTip(
+                    "Disabled: this recording has no respiration channel"
+                )
+            else:
+                action.setToolTip("")
         if not has_rsp:
-            self.docks[_DOCK_TRANSFER].toggleView(False)
-            self.docks[_DOCK_TRANSFER_PROFILE].toggleView(False)
+            self._arm_transfer_rsp_guard()
+        else:
+            self._disarm_transfer_rsp_guard()
 
         skip_when_missing = {
             _DOCK_PREPROCESSING:    not has_ecg,
@@ -1089,6 +1106,60 @@ class MainWindow(QMainWindow):
             if skip_when_missing.get(name, False):
                 continue
             refresh_fn()
+
+    def _arm_transfer_rsp_guard(self) -> None:
+        """Install one-shot visibility guards on the Transfer docks.
+
+        Triggered from _on_dataset_loaded when the loaded recording has
+        no respiration channel. If anything makes either dock visible
+        afterwards (perspective restore, programmatic call), the guard
+        closes it again and pops an explanatory QMessageBox.
+        """
+        for name in (_DOCK_TRANSFER, _DOCK_TRANSFER_PROFILE):
+            dock = self.docks[name]
+            slot = getattr(self, f"_rsp_guard_{name}", None)
+            if slot is not None:
+                # Already armed for this dock, don't duplicate.
+                continue
+
+            def make_slot(_dock=dock, _name=name):
+                def _slot(visible: bool) -> None:
+                    if not visible:
+                        return
+                    # Force closed and explain. Block signals briefly so
+                    # toggleView(False) doesn't bounce through here.
+                    _dock.blockSignals(True)
+                    try:
+                        _dock.toggleView(False)
+                    finally:
+                        _dock.blockSignals(False)
+                    QMessageBox.warning(
+                        self,
+                        "Transfer analysis unavailable",
+                        "Cannot open the Transfer view.\n\n"
+                        "This analysis estimates how the breathing signal "
+                        "drives heart-rate variability, so it needs a "
+                        "respiration channel in the recording. The "
+                        "currently loaded file has none.",
+                    )
+                return _slot
+
+            slot = make_slot()
+            dock.visibilityChanged.connect(slot)
+            setattr(self, f"_rsp_guard_{name}", slot)
+
+    def _disarm_transfer_rsp_guard(self) -> None:
+        """Drop any guards installed by _arm_transfer_rsp_guard."""
+        for name in (_DOCK_TRANSFER, _DOCK_TRANSFER_PROFILE):
+            dock = self.docks[name]
+            slot = getattr(self, f"_rsp_guard_{name}", None)
+            if slot is None:
+                continue
+            try:
+                dock.visibilityChanged.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+            setattr(self, f"_rsp_guard_{name}", None)
 
     # ------------------------------------------------------------------
     # Plot helpers, unchanged semantics, now write into dock-hosted layouts

@@ -109,6 +109,8 @@ class ParametersPlotWidget(QWidget):
         self.csvfile: Path | None = None
         self.psd_csvfile: Path | None = None
         self.profile_csvfile: Path | None = None
+        self.transfer_csvfile: Path | None = None
+        self.transfer_profile_csvfile: Path | None = None
         self.workspace: dict | None = None
 
     def display_parameters(self, dataset, workspace):
@@ -119,6 +121,12 @@ class ParametersPlotWidget(QWidget):
         self.psd_csvfile = Path(output_dir) / f"{dataset.basename}_psd.csv"
         self.profile_csvfile = (
             Path(output_dir) / f"{dataset.basename}_profiles.csv"
+        )
+        self.transfer_csvfile = (
+            Path(output_dir) / f"{dataset.basename}_transfer.csv"
+        )
+        self.transfer_profile_csvfile = (
+            Path(output_dir) / f"{dataset.basename}_transfer_profile.csv"
         )
         self.setFocus()
 
@@ -199,14 +207,29 @@ class ParametersPlotWidget(QWidget):
             self._save_profile_csv()
         except Exception as exc:                  # pragma: no cover
             logger.warning(f"Profile CSV export failed: {exc}")
-            
+        try:
+            self._save_transfer_csv()
+        except Exception as exc:                  # pragma: no cover
+            logger.warning(f"Transfer CSV export failed: {exc}")
+        try:
+            self._save_transfer_profile_csv()
+        except Exception as exc:                  # pragma: no cover
+            logger.warning(f"Transfer profile CSV export failed: {exc}")
+
         # Compose the same summary message the user sees in the log and the
-        # message box, so the log file and the dialog stay in sync.  Writing
-        # three CSVs in one click, so list them explicitly - that way the
-        # user can paste the dialog text straight into a downstream script.
+        # message box, so the log file and the dialog stay in sync. The
+        # exporter writes up to five CSVs in one click, so list them
+        # explicitly - that way the user can paste the dialog text
+        # straight into a downstream script.
         export_dir = self._resolve_export_dir()
         files_written = []
-        for path in (self.csvfile, self.psd_csvfile, self.profile_csvfile):
+        for path in (
+            self.csvfile,
+            self.psd_csvfile,
+            self.profile_csvfile,
+            self.transfer_csvfile,
+            self.transfer_profile_csvfile,
+        ):
             if path is not None and path.exists():
                 files_written.append(path.name)
         summary = (
@@ -602,3 +625,206 @@ class ParametersPlotWidget(QWidget):
             item = self.table_widget.horizontalHeaderItem(col)
             headers.append(item.text() if item is not None else f"Column {col + 1}")
         return headers
+
+    # ------------------------------------------------------------------
+    # Transfer CSV companions
+    # ------------------------------------------------------------------
+
+    def _save_transfer_csv(self) -> None:
+        """Write ``{basename}_transfer.csv`` - one row per active epoch.
+
+        Columns per band: ``<band>_modulus``, ``<band>_phase_wrapped``,
+        ``<band>_phase_unwrapped``, ``<band>_weighted_coherence``,
+        ``<band>_n_points``, ``<band>_n_coherent`` - the coherence-gated
+        band-summary fields produced by
+        :class:`spectHR.analysis.transfer.BandTransfer`.
+
+        FullRange is skipped (a 0.02 - 0.5 Hz integration is a
+        near-duplicate of the underlying curve). Smoothing /
+        min_coherence / f_max follow the TransferAnalysis Settings tab.
+        """
+        if self.transfer_csvfile is None or self.workspace is None:
+            return
+        from spectHR.analysis.transfer import compute_transfer
+        from spectUI.workSpace import (
+            display_bands_from_workspace,
+            transfer_settings_from_workspace,
+        )
+
+        cfg = transfer_settings_from_workspace(self.workspace)
+        bands_dict = display_bands_from_workspace(self.workspace) or {}
+        band_edges = {
+            name: (float(spec["low"]), float(spec["high"]))
+            for name, spec in bands_dict.items()
+            if name != "FullRange" and "low" in spec and "high" in spec
+        }
+        if not band_edges:
+            logger.info("Transfer CSV: no bands configured; skipping.")
+            return
+        try:
+            rsp_ts = self.dataset["rsp"].timeseries
+        except (KeyError, AttributeError, TypeError):
+            logger.info("Transfer CSV: no respiration channel; skipping.")
+            return
+
+        subject = getattr(self.dataset, "basename", "")
+        band_fields = (
+            "modulus", "phase_wrapped", "phase_unwrapped",
+            "weighted_coherence", "n_points", "n_coherent",
+        )
+        rows: list[dict] = []
+        for label, _ep in self._iter_active_epochs():
+            row: dict[str, object] = {
+                "Subject": subject, "epoch": label, "method": "",
+                "smooth": bool(cfg["smooth"]),
+                "min_coherence": float(cfg["min_coherence"]),
+                "f_max": float(cfg["f_max"]),
+            }
+            for name in band_edges:
+                for f in band_fields:
+                    row[f"{name}_{f}"] = None
+            try:
+                hrv = getattr(self.dataset, "hrv", None)
+                if hrv is None:
+                    raise RuntimeError("dataset has no .hrv series")
+                view = hrv[label]
+                result = compute_transfer(
+                    view, rsp_ts,
+                    bands=band_edges,
+                    min_coherence=float(cfg["min_coherence"]),
+                    smooth=bool(cfg["smooth"]),
+                    f_max=float(cfg["f_max"]),
+                )
+                row["method"] = result.method or ""
+                for name, bt in (result.band_results or {}).items():
+                    row[f"{name}_modulus"]            = bt.modulus
+                    row[f"{name}_phase_wrapped"]      = bt.phase
+                    row[f"{name}_phase_unwrapped"]    = bt.phase_unwrapped
+                    row[f"{name}_weighted_coherence"] = bt.weighted_coherence
+                    row[f"{name}_n_points"]           = int(bt.n_points)
+                    row[f"{name}_n_coherent"]         = int(bt.n_coherent)
+            except Exception as exc:
+                logger.warning(f"Transfer CSV: epoch {label!r} failed: {exc}")
+            rows.append(row)
+
+        header_set: list[str] = [
+            "Subject", "epoch", "method",
+            "smooth", "min_coherence", "f_max",
+        ]
+        for row in rows:
+            for key in row:
+                if key not in header_set:
+                    header_set.append(key)
+
+        with self.transfer_csvfile.open(
+            "w", newline="", encoding="utf-8"
+        ) as f:
+            w = csv.writer(f)
+            w.writerow(header_set)
+            for row in rows:
+                w.writerow(
+                    [self._format_cell(row.get(key)) for key in header_set]
+                )
+
+    def _save_transfer_profile_csv(self) -> None:
+        """Write ``{basename}_transfer_profile.csv`` - per epoch, per window.
+
+        One row per active epoch. Columns: ``timestamps`` (window
+        centres in seconds) plus per band ``<band>_modulus``,
+        ``<band>_phase``, ``<band>_phase_unwrapped``,
+        ``<band>_weighted_coherence``, ``<band>_n_coherent`` - all
+        comma-separated arrays of length equal to ``timestamps``.
+        """
+        if self.transfer_profile_csvfile is None or self.workspace is None:
+            return
+        from spectHR.analysis.transfer import compute_transfer_profile
+        from spectUI.workSpace import (
+            display_bands_from_workspace,
+            transfer_settings_from_workspace,
+        )
+
+        cfg = transfer_settings_from_workspace(self.workspace)
+        bands_dict = display_bands_from_workspace(self.workspace) or {}
+        band_edges = {
+            name: (float(spec["low"]), float(spec["high"]))
+            for name, spec in bands_dict.items()
+            if name != "FullRange" and "low" in spec and "high" in spec
+        }
+        if not band_edges:
+            logger.info("Transfer-profile CSV: no bands configured; skipping.")
+            return
+        try:
+            rsp_ts = self.dataset["rsp"].timeseries
+        except (KeyError, AttributeError, TypeError):
+            logger.info(
+                "Transfer-profile CSV: no respiration channel; skipping."
+            )
+            return
+
+        subject = getattr(self.dataset, "basename", "")
+        band_fields = (
+            "modulus", "phase", "phase_unwrapped",
+            "weighted_coherence", "n_coherent",
+        )
+        rows: list[dict] = []
+        for label, _ep in self._iter_active_epochs():
+            row: dict[str, object] = {
+                "Subject": subject, "epoch": label,
+                "window_s": float(cfg["window_s"]),
+                "step_s":   float(cfg["step_s"]),
+                "smooth":   bool(cfg["smooth"]),
+                "min_coherence": float(cfg["min_coherence"]),
+                "f_max":    float(cfg["f_max"]),
+                "method":   "",
+                "timestamps": "",
+            }
+            for name in band_edges:
+                for f in band_fields:
+                    row[f"{name}_{f}"] = ""
+            try:
+                hrv = getattr(self.dataset, "hrv", None)
+                if hrv is None:
+                    raise RuntimeError("dataset has no .hrv series")
+                view = hrv[label]
+                result = compute_transfer_profile(
+                    view, rsp_ts,
+                    bands=band_edges,
+                    window_s=float(cfg["window_s"]),
+                    step_s=float(cfg["step_s"]),
+                    min_coherence=float(cfg["min_coherence"]),
+                    f_max=float(cfg["f_max"]),
+                    smooth=bool(cfg["smooth"]),
+                )
+                row["method"] = result.method or ""
+                row["timestamps"] = self._format_list(result.timestamps)
+                for b, name in enumerate(result.band_names):
+                    row[f"{name}_modulus"]            = self._format_list(result.modulus[b])
+                    row[f"{name}_phase"]              = self._format_list(result.phase[b])
+                    row[f"{name}_phase_unwrapped"]    = self._format_list(result.phase_unwrapped[b])
+                    row[f"{name}_weighted_coherence"] = self._format_list(result.weighted_coherence[b])
+                    row[f"{name}_n_coherent"]         = self._format_list(result.n_coherent[b])
+            except Exception as exc:
+                logger.warning(
+                    f"Transfer-profile CSV: epoch {label!r} failed: {exc}"
+                )
+            rows.append(row)
+
+        header_set: list[str] = [
+            "Subject", "epoch", "window_s", "step_s",
+            "smooth", "min_coherence", "f_max",
+            "method", "timestamps",
+        ]
+        for row in rows:
+            for key in row:
+                if key not in header_set:
+                    header_set.append(key)
+
+        with self.transfer_profile_csvfile.open(
+            "w", newline="", encoding="utf-8"
+        ) as f:
+            w = csv.writer(f)
+            w.writerow(header_set)
+            for row in rows:
+                w.writerow(
+                    [self._format_cell(row.get(key)) for key in header_set]
+                )

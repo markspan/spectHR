@@ -410,7 +410,7 @@ class _BandMultiSelectWidget(QListWidget):
         # Tick-boxes carry the state; row selection would just confuse
         # the visual signal of which bands are picked.
         self.setSelectionMode(QAbstractItemView.NoSelection)
-        self.setMinimumHeight(110)
+        self.setMinimumHeight(55)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         selected_set = set(selected or [])
         for name in universe:
@@ -564,9 +564,55 @@ class ParametersEditorDialog(QDialog):
         layout.setSpacing(4)
 
         # Render each item in iteration order: scalars become a label+widget
-        # row, dicts become nested group boxes. Order is preserved exactly.
-        for key, value in data.items():
+        # row, dicts become nested group boxes. Pairs listed in
+        # ``_HORIZONTAL_PAIRS`` are emitted side-by-side as one row.
+        consumed: set[str] = set()
+        items = list(data.items())
+        for idx, (key, value) in enumerate(items):
+            if key in consumed:
+                continue
             path = "{}.{}".format(prefix, key)
+
+            # Horizontal grouping: when (prefix, key) is the head of a
+            # configured group AND every follower exists in ``data`` and
+            # is a plain scalar (not band-list / adaptive dict / nested
+            # dict), render the whole group on one QHBoxLayout row.
+            group_followers = self._HORIZONTAL_GROUPS.get((prefix, key))
+            if (
+                group_followers is not None
+                and not isinstance(value, dict)
+                and all(k in data and not isinstance(data[k], dict)
+                        for k in group_followers)
+            ):
+                # Reject if any member is band-list or adaptive (those
+                # carry custom widgets that don't share a row cleanly).
+                member_keys = [key] + list(group_followers)
+                member_paths = [f"{prefix}.{k}" for k in member_keys]
+                if not any(
+                    self._is_band_list_path(mp)
+                    or self._is_adaptive_bands_path(mp)
+                    for mp in member_paths
+                ):
+                    row = QHBoxLayout()
+                    for i, mk in enumerate(member_keys):
+                        mp = member_paths[i]
+                        mv = value if mk == key else data[mk]
+                        w  = self._make_widget(mk, mv, path=mp)
+                        self._widgets[mp] = (w, mv)
+                        label_txt = self._LABEL_ALIASES.get(mp, _label(mk))
+                        lbl = QLabel(label_txt + ":")
+                        if i == 0:
+                            lbl.setMinimumWidth(160)
+                        else:
+                            lbl.setMinimumWidth(60)
+                        lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                        if i > 0:
+                            row.addSpacing(12)
+                        row.addWidget(lbl)
+                        row.addWidget(w, 1)
+                    layout.addLayout(row)
+                    consumed.update(group_followers)
+                    continue
 
             if self._is_adaptive_bands_path(path):
                 # adaptive_bands is a dict, so it must be intercepted
@@ -609,7 +655,8 @@ class ParametersEditorDialog(QDialog):
                 self._widgets[path] = (widget, value)
 
                 row = QHBoxLayout()
-                label = QLabel(_label(key) + ":")
+                label_txt = self._LABEL_ALIASES.get(path, _label(key))
+                label = QLabel(label_txt + ":")
                 label.setMinimumWidth(160)
                 label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 row.addWidget(label)
@@ -659,6 +706,44 @@ class ParametersEditorDialog(QDialog):
     _BAND_LIST_PATHS: frozenset[str] = frozenset({
         "Profiles.bands",
     })
+
+    # Groups of leaf keys to render on a single horizontal row in their
+    # parent section. The lookup is ``(section_prefix, first_key) ->
+    # [next_keys...]``. All keys must be scalars (not band-list or
+    # adaptive-dict) and present in the section. Used to compress
+    # natural sets of related parameters into one row.
+    _HORIZONTAL_GROUPS: dict[tuple[str, str], list[str]] = {
+        # Transfer
+        ("TransferAnalysis", "f_min"):                  ["f_max"],
+        ("TransferAnalysis", "window (sec)"):           ["step (sec)"],
+        ("TransferAnalysis", "smooth"):                 [
+            "show_coherence_threshold", "coherence_mask_alpha",
+        ],
+        # Profiles
+        ("Profiles", "window (sec)"):                   ["step (sec)"],
+        ("Profiles", "smooth_breath_freq"):             ["smooth_for_display"],
+        # Spectrogram
+        ("Spectrogram", "window (sec)"):                ["step (sec)"],
+        ("Spectrogram", "show_respiration_overlay"):    ["colormap"],
+        # PSD - CARSPAN
+        ("FrequencyAnalysis.carspan", "freq_resolution"):    ["signal"],
+        ("FrequencyAnalysis.carspan", "window"):             ["plot_units"],
+        ("FrequencyAnalysis.carspan", "smooth_for_display"): ["dc_removal"],
+        # PSD - Welch
+        ("FrequencyAnalysis.welch", "fs"):     ["nperseg", "noverlap", "nfft"],
+        ("FrequencyAnalysis.welch", "window"): ["units"],
+        # PSD - Lomb-Scargle (all three on one line)
+        ("FrequencyAnalysis.lombscargle", "nfreqs"): ["fmin_floor", "units"],
+    }
+
+    # Per-path display-label overrides. Workspace key stays untouched
+    # (so the saved JSON keeps "units"); only the editor label is
+    # remapped. Useful when the editor reads better with a different
+    # phrasing than the underlying field name.
+    _LABEL_ALIASES: dict[str, str] = {
+        "FrequencyAnalysis.welch.units":       "plot units",
+        "FrequencyAnalysis.lombscargle.units": "plot units",
+    }
 
     # Path whose value is the adaptive-bands dict. Rendered by
     # ``_AdaptiveBandWidget`` (checkbox + half-width fields per band),
