@@ -25,7 +25,6 @@ import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from spectHR.Tools.Logger import logger
@@ -35,7 +34,6 @@ from spectHR.analysis.transfer import (
 )
 from spectUI.common import (
     PlotExportMixin,
-    YZoomMixin,
     Y_TOP_FLOOR,
     build_epoch_grid,
     wire_y_zoom_shortcuts,
@@ -267,7 +265,7 @@ class _SingleTransferProfilePlot(QWidget):
 # ---------------------------------------------------------------------------
 
 
-class TransferProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
+class TransferProfilePlotWidget(PlotExportMixin, QWidget):
     """Grid of time-resolved transfer-profile tiles, one per active epoch.
 
     Initial y-axes are linked across epochs: every tile starts with the
@@ -343,10 +341,10 @@ class TransferProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         # Ctrl+Shift+P for _save_all_plots.
         wire_y_zoom_shortcuts(self)
 
-    # YZoomMixin's _set_y_top would slam every tile to the same y_top.
-    # Instead, find the tile under the mouse cursor and zoom it alone.
-    # If the cursor is outside the grid, nothing happens (the user
-    # probably meant a different widget's shortcut).
+    # Per-tile zoom: find the subplot under the mouse cursor and
+    # rescale it alone. If the cursor is outside the grid, nothing
+    # happens (the user probably meant a different widget's shortcut).
+    # wire_y_zoom_shortcuts(self) below connects Up / Down to these.
     def _tile_under_cursor(self) -> "_SingleTransferProfilePlot | None":
         """Return the subplot whose canvas / frame is under the mouse."""
         from PySide6.QtGui import QCursor

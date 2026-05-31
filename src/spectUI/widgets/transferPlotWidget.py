@@ -28,7 +28,6 @@ import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from spectHR.Tools.Logger import logger
