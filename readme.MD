@@ -1149,7 +1149,7 @@ Three CARSPAN-faithful band summaries are computed per band $[f_l, f_h]$ on the 
 
 <div align="center">
 
-$$'\bar M = \frac{1}{N_\text{coh}} \sum_{k \in [f_l, f_h] \,\wedge\, |C(f_k)|^2 \ge \text{min\_coh}} |H(f_k)|'$$
+$$\bar M = \frac{1}{N_\text{coh}} \sum_{k \in [f_l, f_h] \,\wedge\, |C(f_k)|^2 \ge \text{min\_coh}} |H(f_k)|$$
 
 $$\bar \varphi = \frac{1}{N_\text{coh}} \sum_{k \in [f_l, f_h] \,\wedge\, |C(f_k)|^2 \ge \text{min\_coh}} \angle H(f_k)$$
 
