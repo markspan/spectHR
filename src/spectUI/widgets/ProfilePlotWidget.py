@@ -27,19 +27,22 @@ Design
 
 from __future__ import annotations
 
-import re
-import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
 from spectHR.Tools.Logger import logger
 from spectHR.analysis.psd._config import PsdMethod
-from spectUI._plot_smoothing import smooth3
-from spectUI._plot_zoom import YZoomMixin, Y_TOP_FLOOR
-from spectUI._plot_export import PlotExportMixin, sanitize_filename
+from spectHR.analysis._smoothing import smooth3
+from spectUI.common import (
+    PlotExportMixin,
+    YZoomMixin,
+    Y_TOP_FLOOR,
+    build_epoch_grid,
+    wire_y_zoom_shortcuts,
+)
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -54,9 +57,11 @@ from PySide6.QtWidgets import (
 )
 
 from spectHR.analysis.profile import compute_band_power_profile
-from spectUI.workSpace import psd_method_from_workspace, display_bands_from_workspace
-
-warnings.filterwarnings("ignore")
+from spectUI.workSpace import (
+    display_bands_from_workspace,
+    profile_settings_from_workspace,
+    psd_method_from_workspace,
+)
 
 
 # Y-axis zoom step and floor - identical contract to PSDPlotWidget so
@@ -65,39 +70,6 @@ warnings.filterwarnings("ignore")
 
 # File formats produced when the user saves the plots via Shift+Ctrl+P.
 # Export formats, filename sanitiser, and export dir live in _plot_export.
-
-
-def _profile_settings_from_workspace(
-    workspace: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Return ``workspace["Profiles"]`` with sensible defaults.
-
-    ``bands`` defaults to ``[]``; ``window (sec)`` and ``step (sec)``
-    default to the CARSPAN manual typical values of 30 s and 5 s;
-    ``smooth_for_display`` defaults to ``False`` (the Delphi-faithful
-    behaviour - the reference profile view plots the raw band-power-per-
-    window line). Flip to ``True`` in Profile Settings for a softer curve.
-
-    The canonical workspace keys are ``"window (sec)"`` / ``"step (sec)"``.
-    The old snake_case spellings ``"window_s"`` / ``"step_s"`` are still
-    accepted as a fallback so pre-migration workspace files don't break.
-    """
-    if workspace is None:
-        return {
-            "window_s": 30.0, "step_s": 5.0, "bands": [],
-            "smooth_for_display": False,
-        }
-    profs = workspace.get("Profiles", {}) or {}
-    window_s = profs.get("window (sec)", profs.get("window_s", 30.0))
-    step_s   = profs.get("step (sec)",   profs.get("step_s",   5.0))
-    return {
-        "window_s": float(window_s),
-        "step_s":   float(step_s),
-        "bands":    list(profs.get("bands", []) or []),
-        "smooth_for_display": bool(profs.get("smooth_for_display", False)),
-    }
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -111,14 +83,14 @@ class _ProfilePlotData:
 
     label: str
     timestamps: np.ndarray            # shape (n_windows,)
-    band_names: List[str]             # length n_bands
+    band_names: list[str]             # length n_bands
     band_power: np.ndarray            # shape (n_bands, n_windows)
     unit: str
     method: str
     window_s: float
     step_s: float
-    error: Optional[str] = None
-    resp_freqs: Optional[np.ndarray] = None    # shape (n_windows,), NaN when unavailable
+    error: str | None = None
+    resp_freqs: np.ndarray | None = None    # shape (n_windows,), NaN when unavailable
 
 
 def _fetch_profile(
@@ -127,7 +99,7 @@ def _fetch_profile(
     *,
     window_s: float,
     step_s: float,
-    psd_method: Optional[PsdMethod] = None,
+    psd_method: PsdMethod | None = None,
     adaptive_source: str = "respiration_channel",
     smooth_breath_freq: bool = False,
     smooth: bool = False,
@@ -219,7 +191,7 @@ _AUTOSCALE_PERCENTILE: float = 97.0
 _AUTOSCALE_HEADROOM:   float = 1.20
 
 
-def _y_max(data: _ProfilePlotData, bands_to_plot: List[str]) -> float:
+def _y_max(data: _ProfilePlotData, bands_to_plot: list[str]) -> float:
     """Robust y-max estimate across the plotted bands (for shared y-limit).
 
     Returns the *97th-percentile* band-power value (across every
@@ -265,11 +237,11 @@ class _SingleProfilePlot(QWidget):
         self,
         data: _ProfilePlotData,
         y_top: float,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         *,
-        bands: Optional[Dict[str, dict]] = None,
-        bands_to_plot: Optional[List[str]] = None,
-        adaptive_names: Optional[frozenset] = None,
+        bands: dict[str, dict] | None = None,
+        bands_to_plot: list[str] | None = None,
+        adaptive_names: frozenset | None = None,
     ) -> None:
         super().__init__(parent)
         # Same white-figure / white-widget combo as PSDPlotWidget so the
@@ -301,7 +273,7 @@ class _SingleProfilePlot(QWidget):
         # will be the second axes in the figure. Expose it so the
         # container widget can link y-limits across all subplots.
         fig_axes = self.canvas.figure.axes
-        self.ax_rf: Optional[Axes] = fig_axes[1] if len(fig_axes) > 1 else None
+        self.ax_rf: Axes | None = fig_axes[1] if len(fig_axes) > 1 else None
 
         self.canvas.draw()
 
@@ -332,16 +304,16 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
     def __init__(
         self,
         series_list: List,
-        labels: List[str],
-        parent: Optional[QWidget] = None,
+        labels: list[str],
+        parent: QWidget | None = None,
         *,
-        workspace: Optional[Dict[str, Any]] = None,
+        workspace: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(parent)
 
         # ---- workspace-driven configuration ---------------------------
         bands_dict = display_bands_from_workspace(workspace)
-        prof_cfg = _profile_settings_from_workspace(workspace)
+        prof_cfg = profile_settings_from_workspace(workspace)
         window_s: float = prof_cfg["window_s"]
         step_s:   float = prof_cfg["step_s"]
         smooth:   bool  = prof_cfg["smooth_for_display"]
@@ -354,7 +326,7 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         )
         # Bands the user picked in Profile Settings, filtered against
         # the live universe so stale names from a band rename are dropped.
-        bands_to_plot: List[str] = [
+        bands_to_plot: list[str] = [
             name for name in prof_cfg["bands"] if name in bands_dict
         ]
         # When an adaptive band is active it takes over the plot: only that
@@ -373,12 +345,12 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         # Build the PsdMethod from the workspace and pass it explicitly so
         # adaptive band settings (Profiles.adaptive_bands) are always
         # reflected in the computation.
-        prof_psd_method: Optional[PsdMethod] = (
+        prof_psd_method: PsdMethod | None = (
             psd_method_from_workspace(workspace) if workspace is not None else None
         )
 
         # ---- compute one profile per series ---------------------------
-        plots: List[_ProfilePlotData] = [
+        plots: list[_ProfilePlotData] = [
             _fetch_profile(
                 series, label,
                 window_s=window_s, step_s=step_s, smooth=smooth,
@@ -403,7 +375,7 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         # Global resp-freq range - shared across all epoch subplots so
         # the breathing-frequency right axis is directly comparable
         # between epochs (same motivation as the shared left y-limit).
-        all_rf: List[float] = []
+        all_rf: list[float] = []
         for p in plots:
             if p.resp_freqs is not None:
                 finite = p.resp_freqs[np.isfinite(p.resp_freqs)]
@@ -412,64 +384,35 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
             rf_min = float(np.min(all_rf))
             rf_max = float(np.max(all_rf))
             rf_pad = max((rf_max - rf_min) * 0.20, 0.01)
-            self._rf_ylim: Optional[tuple] = (rf_min - rf_pad, rf_max + rf_pad)
+            self._rf_ylim: tuple | None = (rf_min - rf_pad, rf_max + rf_pad)
         else:
             self._rf_ylim = None
 
         # Remember inputs for keyboard handlers and save-all path.
-        self._labels: List[str] = list(labels)
-        self._series_list: List = list(series_list)
-        self._workspace: Optional[Dict[str, Any]] = workspace
-        self._bands_dict: Dict[str, dict] = bands_dict
-        self._bands_to_plot: List[str] = bands_to_plot
-        self._subplots: List[_SingleProfilePlot] = []
+        self._labels: list[str] = list(labels)
+        self._series_list: list = list(series_list)
+        self._workspace: dict[str, Any] | None = workspace
+        self._bands_dict: dict[str, dict] = bands_dict
+        self._bands_to_plot: list[str] = bands_to_plot
         self._y_top: float = max(float(y_top), Y_TOP_FLOOR)
 
-        # ---- scroll area + 2-column grid ------------------------------
-        self.setStyleSheet("background-color: white;")
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("background-color: white;")
-        container = QWidget()
-        container.setStyleSheet("background-color: white;")
-        container_layout = QGridLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(5)
-
-        for idx, data in enumerate(plots):
-            subplot = _SingleProfilePlot(
+        # Per-tile factory captures shared breathing-freq y-range so
+        # the right axis is identical across all epoch panels.
+        def _make_tile(data):
+            tile = _SingleProfilePlot(
                 data, y_top,
                 bands=bands_dict, bands_to_plot=bands_to_plot,
                 adaptive_names=adaptive_names,
             )
-            # Apply the shared breathing-freq y-range so the right axis
-            # is identical across all epoch panels.
-            if self._rf_ylim is not None and subplot.ax_rf is not None:
-                subplot.ax_rf.set_ylim(*self._rf_ylim)
-                subplot.canvas.draw_idle()
-            self._subplots.append(subplot)
-            row, col = divmod(idx, 2)
-            container_layout.addWidget(subplot, row, col)
+            if self._rf_ylim is not None and tile.ax_rf is not None:
+                tile.ax_rf.set_ylim(*self._rf_ylim)
+                tile.canvas.draw_idle()
+            return tile
 
-        scroll_area.setWidget(container)
-        layout = QVBoxLayout(self)
-        layout.addWidget(scroll_area)
-        self.setLayout(layout)
-
-        # ---- keyboard interaction (same shortcuts as PSDPlotWidget) ---
-        self.setFocusPolicy(Qt.StrongFocus)
-
-        zoom_in = QShortcut(QKeySequence(Qt.Key_Up), self)
-        zoom_in.setContext(Qt.WidgetWithChildrenShortcut)
-        zoom_in.activated.connect(self._zoom_in)
-
-        zoom_out = QShortcut(QKeySequence(Qt.Key_Down), self)
-        zoom_out.setContext(Qt.WidgetWithChildrenShortcut)
-        zoom_out.activated.connect(self._zoom_out)
-
-        save_all = QShortcut(QKeySequence("Shift+Ctrl+P"), self)
-        save_all.setContext(Qt.WidgetWithChildrenShortcut)
-        save_all.activated.connect(self._save_all_plots)
+        self._subplots: list[_SingleProfilePlot] = build_epoch_grid(
+            self, plots, _make_tile,
+        )
+        wire_y_zoom_shortcuts(self)
 
 
     # ------------------------------------------------------------------
@@ -481,10 +424,10 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         ax: Axes,
         data: _ProfilePlotData,
         *,
-        bands: Optional[Dict[str, dict]] = None,
-        bands_to_plot: Optional[List[str]] = None,
-        adaptive_names: Optional[frozenset] = None,
-        resp_freqs: Optional[np.ndarray] = None,
+        bands: dict[str, dict] | None = None,
+        bands_to_plot: list[str] | None = None,
+        adaptive_names: frozenset | None = None,
+        resp_freqs: np.ndarray | None = None,
     ) -> Axes:
         """Draw one epoch profile: filled traces for each chosen band.
 

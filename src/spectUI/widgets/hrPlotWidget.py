@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional, Tuple
+
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +20,12 @@ from PySide6.QtWidgets import (
 
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
-from spectUI._uitools import OverviewWindow, make_nav_button, style_axis_clean
+from spectUI.common import (
+    OverviewWindow,
+    make_nav_button,
+    style_axis_clean,
+    swap_canvas,
+)
 
 # ======================================================================
 # HRPlotWidget (UI + plotting)
@@ -49,7 +54,7 @@ class HRPlotWidget(QWidget):
     # --------------------------------------------------------------
     # Construction
     # --------------------------------------------------------------
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
         # Matplotlib figure and canvas
@@ -57,19 +62,19 @@ class HRPlotWidget(QWidget):
         self.canvas: FigureCanvas = FigureCanvas(self.hrfig)
 
         # Plot axes
-        self.ax_heartrate: Optional[Axes] = None
-        self.ax_overview: Optional[Axes] = None
-        self._ax_br_twin: Optional[Axes] = None  # breathing overlay axis (twinx)
+        self.ax_heartrate: Axes | None = None
+        self.ax_overview: Axes | None = None
+        self._ax_br_twin: Axes | None = None  # breathing overlay axis (twinx)
 
         # State
-        self.data: Optional[PhysioData] = None
-        self.overview_window: Optional[OverviewWindow] = None
+        self.data: PhysioData | None = None
+        self.overview_window: OverviewWindow | None = None
         self.rtop_ctrl = None  # not used in this widget; present for next/prev guards
 
         # Mpl event ids
-        self._mpl_cid_press: Optional[int] = None
-        self._mpl_cid_move: Optional[int] = None
-        self._mpl_cid_release: Optional[int] = None
+        self._mpl_cid_press: int | None = None
+        self._mpl_cid_move: int | None = None
+        self._mpl_cid_release: int | None = None
 
         # R-top color mapping
         self.RTopColors = {
@@ -219,7 +224,7 @@ class HRPlotWidget(QWidget):
         return any(name.startswith("RSP") for name in self.data.timeseries.keys())
 
     @property
-    def breathing_series(self) -> Optional[TimeSeries]:
+    def breathing_series(self) -> TimeSeries | None:
         """
         Return the first breathing TimeSeries if present, otherwise None.
         """
@@ -262,9 +267,9 @@ class HRPlotWidget(QWidget):
     def hrPlot(
         self,
         data: PhysioData,
-        fig: Optional[Figure] = None,
-        x_min: Optional[float] = None,
-        x_max: Optional[float] = None,
+        fig: Figure | None = None,
+        x_min: float | None = None,
+        x_max: float | None = None,
     ) -> Figure:
         """
         Initialize and display the pre-processing plot for a PhysioData object.
@@ -349,28 +354,20 @@ class HRPlotWidget(QWidget):
             self._create_figure_and_axes()
 
     def _setup_matplotlib_canvas(self) -> None:
-        """
-        Attach the Matplotlib Figure to the Qt canvas and insert into layout.
-        """
+        """Attach the Matplotlib Figure to the Qt canvas and insert into layout."""
         # Hide toolbar/header for embedded use
         self.hrfig.canvas.toolbar_visible = False  # type: ignore[attr-defined]
         self.hrfig.canvas.header_visible = False  # type: ignore[attr-defined]
         self.hrfig.tight_layout()
 
-        # Rebuild Qt canvas. The old canvas must be hidden BEFORE
-        # setParent(None), otherwise Qt promotes a previously-visible
-        # widget to a top-level window the moment it loses its parent,
-        # which surfaces as an orphaned IBI plot in its own window when
-        # the IBI dock is the active tab during the swap. deleteLater
-        # frees the C++ side on the next event-loop turn.
-        old_canvas = self.canvas
-        old_canvas.hide()
-        old_canvas.setParent(None)
-        old_canvas.deleteLater()
-
-        self.canvas = FigureCanvas(self.hrfig)
-        # Insert new canvas at index 0: at the top
-        self.layout().insertWidget(0, self.canvas)  # type: ignore[arg-type]
+        # Replace the previous canvas at the top of the layout. The
+        # orphan-window rationale lives in swap_canvas.
+        self.canvas = swap_canvas(
+            self.layout(),   # type: ignore[arg-type]
+            self.canvas,
+            self.hrfig,
+            index=0,
+        )
 
     # ==============================================================
     # Matplotlib event wiring
@@ -554,7 +551,7 @@ class HRPlotWidget(QWidget):
         self.data.view.x_max = float(x_max)
         self.redraw()
 
-    def _constrained_window(self, x_min: float, x_max: float) -> Tuple[float, float]:
+    def _constrained_window(self, x_min: float, x_max: float) -> tuple[float, float]:
         """
         Clamp the window [x_min, x_max] to the heartrate data range.
         """

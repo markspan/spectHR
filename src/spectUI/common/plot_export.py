@@ -5,26 +5,24 @@
 Provides
 --------
 sanitize_filename(name)
-    Strip filesystem-unsafe characters from a string.  Moved here from
-    the per-widget local functions so both widgets share one copy.
+    Strip filesystem-unsafe characters from a string.
 
 PlotExportMixin
     Mixin that adds Shift+Ctrl+P figure export to any ``QWidget`` subclass
     that exposes:
 
-    * ``self._export_context`` (class attr, str)  -- e.g. ``"PSD"`` or
-                                                     ``"Profile"``; used
-                                                     in log messages, the
-                                                     summary dialog, and
-                                                     as the fallback filename
-                                                     prefix when no dataset
-                                                     name is available.
-    * ``self._labels``         -- list[str] of epoch / subplot titles
-    * ``self._subplots``       -- list of subplot objects with ``.canvas``
-    * ``self._series_list``    -- list of series objects (for dataset name)
-    * ``self._workspace``      -- workspace dict or None
+    * ``self._export_context`` (class attr, str) -- e.g. ``"PSD"`` or
+                                                    ``"Profile"``; used in
+                                                    log messages, the summary
+                                                    dialog, and as the
+                                                    fallback filename prefix
+                                                    when no dataset name is
+                                                    available.
+    * ``self._labels``         -- list[str] of epoch / subplot titles.
+    * ``self._subplots``       -- list of subplot objects with ``.canvas``.
+    * ``self._series_list``    -- list of series objects (for dataset name).
+    * ``self._workspace``      -- workspace dict or None.
 """
-
 from __future__ import annotations
 
 import re
@@ -32,7 +30,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from spectHR.Tools.Logger import logger
-from spectUI._uitools import show_export_summary
+from spectUI.common.uitools import show_export_summary
 from spectUI.workSpace import get_export_dir
 
 _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')

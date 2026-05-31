@@ -683,6 +683,7 @@ def compute_transfer_profile(
     step_s: float,
     min_coherence: float = 0.5,
     f_max: float = 0.5,
+    smooth: bool = True,
     taper: str = "carspan_index",
     alpha_taper: float = 0.10,
 ) -> "TransferProfileResult":
@@ -776,7 +777,7 @@ def compute_transfer_profile(
                 rsp_timeseries,
                 bands=bands,
                 min_coherence=min_coherence,
-                smooth=True,        # CARSPAN profile path: WindowSize=3
+                smooth=smooth,      # CARSPAN profile default WindowSize=3; toggleable from UI
                 f_max=f_max,
                 taper=taper,
                 alpha_taper=alpha_taper,

@@ -1,62 +1,24 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-spectUI.PrepPlotWidget
-======================
-Interactive ECG pre-processing and annotation widget for the spectHR/spectUI ecosystem.
+Interactive ECG pre-processing and annotation widget.
 
-This module provides a Qt widget that embeds a Matplotlib figure for:
-- ECG signal inspection
-- Manual R-peak editing (drag/add/remove) via `LineHandler`
-- Optional breathing signal overlay (default) using a twinned y-axis (twinx)
-- Epoch visualization as horizontal interval arrows above the ECG axis
-- Overview axis with a draggable window rectangle for fast navigation
+Embeds a Matplotlib figure with: ECG signal inspection, manual R-peak
+editing via LineHandler, optional breathing overlay on a twinned
+y-axis, epoch ranges drawn as horizontal interval arrows above the
+ECG axis, and a draggable window rectangle on a small overview axis.
 
-Key design principles
----------------------
-- The widget is a visualization/controller layer: it does not own the underlying data.
-- All time coordinates are in dataset time (seconds).
-- Breathing, when available, is rendered on a twin y-axis on the same subplot as ECG.
-  This keeps the ECG and breathing aligned in x while allowing independent y scaling.
-- Epochs are rendered in axis coordinates (y in axes fraction; x in data units) so that:
-    * arrows remain anchored to time,
-    * labels remain visible when zooming/panning,
-    * clip_on=False allows arrows above the plot area.
-- Overlapping epochs are stacked into lanes.
-
-Expected PhysioData interface (contract)
-----------------------------------------
-A `PhysioData` instance is expected to provide:
-
-- data["ecg"].timeseries : TimeSeries
-    * `.times`: 1D float array (seconds)
-    * `.values`: 1D float array (signal units)
-- data.timeseries : Dict[str, TimeSeries]
-    * Optional breathing signals exist and are identified by name.startswith("RSP")
-      (the first matching series is used)
-- data.hrv : Optional[CardioSeries]
-    * R-peak times and labels; used for editing/visualization
-- data.epochs : Dict[str, Epoch-like]
-    Each epoch object must provide:
-    * `active: bool`
-    * `start: float` (seconds)
-    * `end: float` (seconds)
-    Optionally:
-    * `is_valid: bool` (if present, epochs with is_valid=False are ignored)
-- data.view : ViewState
-    This widget will attach `data.view` if not present.
-
-Notes
------
-- This file is intended as a drop-in module for spectUI and therefore depends on
-  your existing `LineHandler` and spectHR data model.
+The widget is a view layer, it does not own the underlying data.
+All time coordinates are in dataset time (seconds). Overlapping
+epochs are stacked into lanes. The PhysioData contract this widget
+expects is documented as a comment near :meth:`PrepPlotWidget.prepPlot`.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -77,8 +39,13 @@ from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
 from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
-from spectUI.LineHandler import LineHandler
-from spectUI._uitools import OverviewWindow, make_nav_button, style_axis_clean
+from spectUI.common import (
+    LineHandler,
+    OverviewWindow,
+    make_nav_button,
+    style_axis_clean,
+    swap_canvas,
+)
 
 # ======================================================================
 # Type aliases
@@ -107,8 +74,8 @@ class AxisYState:
     """
 
     auto: bool = True
-    ymin: Optional[float] = None
-    ymax: Optional[float] = None
+    ymin: float | None = None
+    ymax: float | None = None
 
 
 @dataclass
@@ -130,10 +97,10 @@ class ViewState:
 
     x_min: TimeSeconds
     x_max: TimeSeconds
-    drag_mode: Optional[str] = None
-    initial_xmin: Optional[TimeSeconds] = None
-    initial_xmax: Optional[TimeSeconds] = None
-    y: Dict[str, AxisYState] = field(
+    drag_mode: str | None = None
+    initial_xmin: TimeSeconds | None = None
+    initial_xmax: TimeSeconds | None = None
+    y: dict[str, AxisYState] = field(
         default_factory=lambda: {
             "br": AxisYState(),
         }
@@ -156,7 +123,7 @@ class ViewState:
 def draw_interval_arrows(
     *,
     ax: Axes,
-    intervals: Iterable[Tuple[EpochName, TimeSeconds, TimeSeconds]],
+    intervals: Iterable[tuple[EpochName, TimeSeconds, TimeSeconds]],
     base_y: float = 1.04,
     lane_step: float = 0.03,
     color: str = "green",
@@ -196,7 +163,7 @@ def draw_interval_arrows(
         return
 
     # lane_ends holds the last end-time assigned per lane (in data units)
-    lane_ends: List[TimeSeconds] = []
+    lane_ends: list[TimeSeconds] = []
     for name, x0, x1 in intervals_sorted:
         # Find first lane that does not overlap
         lane_idx = None
@@ -339,7 +306,7 @@ class RTopController:
         self.rtops.labels = self.rtops.labels[mask]
         self.rtops.classify_ibi()  # labels must reflect the merged interval
 
-    def next_non_normal(self, after_time: float) -> Optional[float]:
+    def next_non_normal(self, after_time: float) -> float | None:
         """
         First non-'N' R-top strictly after `after_time`.
         """
@@ -348,7 +315,7 @@ class RTopController:
             return None
         return float(self.rtops.times[mask][0])
 
-    def prev_non_normal(self, before_time: float) -> Optional[float]:
+    def prev_non_normal(self, before_time: float) -> float | None:
         """
         Last non-'N' R-top strictly before `before_time`.
         """
@@ -394,7 +361,7 @@ class PrepPlotWidget(QWidget):
     Operates on a PhysioData instance as described in the module docstring.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         """
         Initialize the widget UI and set up state containers.
         """
@@ -405,26 +372,26 @@ class PrepPlotWidget(QWidget):
         self.canvas: FigureCanvas = FigureCanvas(self.fig)
 
         # Plot axes
-        self.ax_ecg: Optional[Axes] = None
-        self.ax_overview: Optional[Axes] = None
-        self.ax_br: Optional[Axes] = None
-        self._ax_br_twin: Optional[Axes] = None  # breathing overlay axis (twinx)
+        self.ax_ecg: Axes | None = None
+        self.ax_overview: Axes | None = None
+        self.ax_br: Axes | None = None
+        self._ax_br_twin: Axes | None = None  # breathing overlay axis (twinx)
 
         # Hovered axis for key interactions
-        self._hovered_ax: Optional[Axes] = None
+        self._hovered_ax: Axes | None = None
 
         # State
-        self.data: Optional[PhysioData] = None
-        self.rtop_ctrl: Optional[RTopController] = None
-        self.overview_window: Optional[OverviewWindow] = None
-        self.line_handler: Optional[LineHandler] = None
+        self.data: PhysioData | None = None
+        self.rtop_ctrl: RTopController | None = None
+        self.overview_window: OverviewWindow | None = None
+        self.line_handler: LineHandler | None = None
         self.edit_mode: str = "Drag"
 
         # Matplotlib event ids
-        self._mpl_cid_press: Optional[int] = None
-        self._mpl_cid_move: Optional[int] = None
-        self._mpl_cid_release: Optional[int] = None
-        self._mpl_cid_key_press: Optional[int] = None
+        self._mpl_cid_press: int | None = None
+        self._mpl_cid_move: int | None = None
+        self._mpl_cid_release: int | None = None
+        self._mpl_cid_key_press: int | None = None
 
         # R-top color mapping
         self.RTopColors = {
@@ -470,7 +437,7 @@ class PrepPlotWidget(QWidget):
         return self.data["ecg"].timeseries
 
     @property
-    def breathing_series(self) -> Optional[TimeSeries]:
+    def breathing_series(self) -> TimeSeries | None:
         """
         Return the first breathing TimeSeries if present, otherwise None.
 
@@ -478,7 +445,7 @@ class PrepPlotWidget(QWidget):
 
         Returns
         -------
-        Optional[TimeSeries]
+        TimeSeries | None
         """
         assert self.data is not None
         for name, ts in self.data.timeseries.items():
@@ -538,12 +505,30 @@ class PrepPlotWidget(QWidget):
         if self.line_handler is not None:
             self.line_handler.update_mode(mode)
 
+    # ------------------------------------------------------------------
+    # PhysioData contract this widget expects
+    #
+    #   data["ecg"].timeseries : TimeSeries
+    #       .times   1D float seconds; .values 1D float signal units.
+    #   data.timeseries : dict[str, TimeSeries]
+    #       Optional breathing series, identified by name.startswith("RSP"),
+    #       the first match wins.
+    #   data.hrv : CardioSeries | None
+    #       R-peak times and labels, drives the edit / visualization layer.
+    #   data.epochs : dict[str, Epoch-like]
+    #       Each entry exposes active: bool, start: float, end: float
+    #       (seconds). Optional is_valid: bool, when False the epoch is
+    #       skipped.
+    #   data.view : ViewState
+    #       Created here on first call when missing.
+    # ------------------------------------------------------------------
+
     def prepPlot(
         self,
         data: PhysioData,
-        fig: Optional[Figure] = None,
-        x_min: Optional[float] = None,
-        x_max: Optional[float] = None,
+        fig: Figure | None = None,
+        x_min: float | None = None,
+        x_max: float | None = None,
     ) -> Figure:
         """
         Initialize and display the pre-processing plot for a PhysioData object.
@@ -659,24 +644,17 @@ class PrepPlotWidget(QWidget):
         except Exception:
             pass
 
-        # Rebuild Qt canvas. Hide and deleteLater the old canvas
-        # BEFORE detaching it, otherwise Qt promotes the formerly-
-        # parented widget to a top-level window the moment it loses
-        # its parent, which surfaces as an orphan plot in its own
-        # window when this dock is the active tab during the swap.
-        old_canvas = self.canvas
-        old_canvas.hide()
-        old_canvas.setParent(None)
-        old_canvas.deleteLater()
-
-        self.canvas = FigureCanvas(self.fig)
-
+        # Replace the previous canvas at index 1 (after the mode
+        # selector). The orphan-window rationale lives in swap_canvas.
+        self.canvas = swap_canvas(
+            self.layout(),   # type: ignore[arg-type]
+            self.canvas,
+            self.fig,
+            index=1,
+        )
         # Required for key events
         self.canvas.setFocusPolicy(Qt.StrongFocus)
         self.canvas.setFocus()
-
-        # Replace canvas in layout (index 1: after mode selector)
-        self.layout().insertWidget(1, self.canvas)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------------
     # Matplotlib event wiring
@@ -914,7 +892,7 @@ class PrepPlotWidget(QWidget):
         ax = self.ax_ecg
         x_view_min, x_view_max = self.data.view.x_min, self.data.view.x_max
 
-        visible: List[Tuple[EpochName, TimeSeconds, TimeSeconds]] = []
+        visible: list[tuple[EpochName, TimeSeconds, TimeSeconds]] = []
         for name, ep in self.data.epochs.items():
             if not getattr(ep, "active", False):
                 continue
@@ -1077,7 +1055,7 @@ class PrepPlotWidget(QWidget):
         self.data.view.x_max = float(x_max)
         self.redraw()
 
-    def _constrained_window(self, x_min: float, x_max: float) -> Tuple[float, float]:
+    def _constrained_window(self, x_min: float, x_max: float) -> tuple[float, float]:
         """Clamp window to ECG time range."""
         ecg = self.ecg_series
         global_min = float(np.min(ecg.times))
@@ -1169,7 +1147,7 @@ class PrepPlotWidget(QWidget):
     # Event handlers (overview drag & add-mode)
     # ------------------------------------------------------------------
 
-    def _axis_key(self, ax: Axes) -> Optional[str]:
+    def _axis_key(self, ax: Axes) -> str | None:
         """Map an Axes to a ViewState ``y`` key, or None for untracked axes.
 
         Returns ``"br"`` for the breathing twin-axis (y-zoom is supported).
@@ -1209,7 +1187,7 @@ class PrepPlotWidget(QWidget):
         ax.autoscale(enable=False, axis="y")
         ax.set_ylim(ymin, ymax)
 
-    def _active_y_axis(self, event) -> Optional[Axes]:
+    def _active_y_axis(self, event) -> Axes | None:
         """
         Decide which y-axis should receive y-scaling key events.
 

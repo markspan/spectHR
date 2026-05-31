@@ -142,7 +142,7 @@ def loadEVT(physiodata, filename: Path) -> None:
         # Lazy import keeps ``spectHR`` headless-safe - the dialog lives
         # in ``spectUI`` and only this branch (a .evt file with multiple
         # non-RTop codes) reaches it.
-        from spectUI.EventCodeWindow import EventCodeWindow
+        from spectUI.widgets.EventCodeWindow import EventCodeWindow
 
         window = EventCodeWindow(
             other_codes,

@@ -128,6 +128,7 @@ _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("PSD Settings",         ("FrequencyAnalysis",)),
     ("Profile Settings",     ("Profiles",)),
     ("Spectrogram Settings", ("Spectrogram",)),
+    ("Transfer Settings",    ("TransferAnalysis",)),
 )
 
 # Known enumeration choices for specific leaf keys
@@ -168,6 +169,10 @@ _ENUM_CHOICES: dict[str, list[str]] = {
         "coolwarm",
         "turbo",
     ],
+    # Transfer phase-axis convention. Wrapped is easier to read for
+    # structure inside (-pi, pi]; unwrapped accumulates 2 pi jumps and
+    # is mainly useful for reading off a constant delay.
+    "TransferAnalysis.phase_view": ["wrapped", "unwrapped"],
 }
 
 
@@ -889,13 +894,52 @@ class ParametersEditorDialog(QDialog):
                     raw = user_data if user_data is not None else widget.currentText()
                 else:
                     raw = widget.text()
-                coerced = self._coerce(raw, original)
 
-            # Walk the dotted path and set the leaf
+                # Coerce to the type of the original value so floats
+                # stay floats and ints stay ints. None and empty
+                # strings round-trip back to None.
+                if isinstance(original, bool):
+                    s = str(raw).strip().lower()
+                    coerced = s in ("true", "1", "yes", "on")
+                elif isinstance(original, int) and not isinstance(original, bool):
+                    try:
+                        coerced = int(str(raw).strip())
+                    except (TypeError, ValueError):
+                        try:
+                            coerced = int(float(str(raw).strip()))
+                        except (TypeError, ValueError):
+                            coerced = original
+                elif isinstance(original, float):
+                    try:
+                        coerced = float(str(raw).strip())
+                    except (TypeError, ValueError):
+                        coerced = original
+                elif original is None:
+                    s = str(raw).strip()
+                    if s == "" or s.lower() == "none":
+                        coerced = None
+                    else:
+                        try:
+                            coerced = int(s)
+                        except ValueError:
+                            try:
+                                coerced = float(s)
+                            except ValueError:
+                                coerced = s
+                else:
+                    coerced = str(raw)
+
+            # Walk the dotted path and set the leaf in the deep copy.
             keys = path.split(".")
             node = result
             for k in keys[:-1]:
+                if not isinstance(node, dict):
+                    node = None
+                    break
+                if k not in node or not isinstance(node[k], dict):
+                    node[k] = {}
                 node = node[k]
-            node[keys[-1]] = coerced
+            if isinstance(node, dict):
+                node[keys[-1]] = coerced
 
         return result

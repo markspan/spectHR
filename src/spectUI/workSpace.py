@@ -184,6 +184,47 @@ _DEFAULT_WORKSPACE = {
         "colormap": "RdYlBu_r",
     },
     # ------------------------------------------------------------------
+    # Transfer function (Respiration -> HR)
+    # ------------------------------------------------------------------
+    # Bode-plot view of compute_transfer / compute_transfer_profile in
+    # spectHR.analysis.transfer. Per epoch: a 3-row stacked tile with
+    # modulus, phase and coherence sharing the frequency x-axis.
+    # Profile (sliding-window): the same 3-row stack with band-summary
+    # statistics on the time x-axis.
+    "TransferAnalysis": {
+        "window (sec)": 30.0,
+        "step (sec)":    5.0,
+        # Squared-coherence threshold used by the band integrators
+        # (Caluculate_ModulusSum / Caluculate_PhaseSum) and by the
+        # phase mask in the per-epoch plot. CARSPAN default 0.5.
+        "min_coherence":  0.5,
+        # Frequency-axis range for the per-epoch Bode plots (Hz). f_max
+        # also caps the native DFT grid - everything above it is dropped
+        # before the transfer formula. 0.5 covers everything
+        # physiologically interesting for adult HRV.
+        "f_min":          0.0,
+        "f_max":          0.5,
+        # 3-point triangular smoother on the auto- and cross-spectra
+        # before computing transfer / coherence. Without it the
+        # single-block periodogram makes coherence identically 1 at
+        # every bin (uninformative). CARSPAN profile path always
+        # smooths; the per-epoch path historically did not. Default
+        # True so the coherence panel reads correctly.
+        "smooth":         True,
+        # "wrapped"   keeps phase in (-pi, pi], easier to read structure.
+        # "unwrapped" cumulates 2 pi jumps, useful for delay estimation.
+        "phase_view":     "wrapped",
+        # Horizontal coherence threshold line on the bottom panel of
+        # the per-epoch tile. Useful as a visual cue for which bins
+        # the band integrators are looking at.
+        "show_coherence_threshold": True,
+        "coherence_threshold_level": 0.5,
+        # Alpha applied to phase points below the coherence threshold,
+        # so the user can see where phase is being read off noise.
+        # 0.0 fully hides them, 1.0 shows them solid.
+        "coherence_mask_alpha":     0.20,
+    },
+    # ------------------------------------------------------------------
     # Respiration analysis
     # ------------------------------------------------------------------
     # ``RespirationSeries.from_timeseries`` derives its peak-detection
@@ -270,7 +311,7 @@ def display_bands_from_workspace(workspace: "Dict[str, Any] | None") -> Dict[str
     """Return the raw bands dict from the workspace for plot rendering.
 
     The plotting helpers (``_band_bounds``, ``_draw_band_fill``, etc.) work
-    on this raw ``{name: {low, high, color, alpha, …}}`` form. A separate
+    on this raw ``{name: {low, high, color, alpha, ...}}`` form. A separate
     :class:`PsdMethod` is built from the same source for the compute path.
     """
     if workspace is None:
@@ -278,6 +319,142 @@ def display_bands_from_workspace(workspace: "Dict[str, Any] | None") -> Dict[str
     return dict(
         (workspace.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
     )
+
+
+def psd_ci_alpha(workspace: "Dict[str, Any] | None") -> float:
+    """Read ``FrequencyAnalysis.confidence_interval_alpha``, default 0.05."""
+    if workspace is None:
+        return 0.05
+    fa = workspace.get("FrequencyAnalysis", {}) or {}
+    return float(fa.get("confidence_interval_alpha", 0.05))
+
+
+def profile_settings_from_workspace(
+    workspace: "Dict[str, Any] | None",
+) -> Dict[str, Any]:
+    """Return ``workspace["Profiles"]`` flattened with defaults applied.
+
+    ``window (sec)`` / ``step (sec)`` are the canonical key names; the
+    legacy ``window_s`` / ``step_s`` spellings are still accepted as a
+    fallback so older workspace files don't break.
+
+    Returned keys: ``window_s``, ``step_s``, ``bands``,
+    ``smooth_for_display``.
+    """
+    if workspace is None:
+        return {
+            "window_s":           30.0,
+            "step_s":              5.0,
+            "bands":               [],
+            "smooth_for_display": False,
+        }
+    profs = workspace.get("Profiles", {}) or {}
+    return {
+        "window_s": float(
+            profs.get("window (sec)", profs.get("window_s", 30.0))
+        ),
+        "step_s": float(
+            profs.get("step (sec)", profs.get("step_s", 5.0))
+        ),
+        "bands": list(profs.get("bands", []) or []),
+        "smooth_for_display": bool(profs.get("smooth_for_display", False)),
+    }
+
+
+def spectrogram_settings_from_workspace(
+    workspace: "Dict[str, Any] | None",
+) -> Dict[str, Any]:
+    """Return ``workspace["Spectrogram"]`` flattened with defaults applied.
+
+    Reads from two workspace chapters: ``Spectrogram`` for window /
+    step / overlay / colormap, and ``Profiles`` for ``adaptive_source``
+    so the spectrogram and profile views agree on how the per-window
+    breathing frequency is derived.
+
+    Returned keys: ``window_s``, ``step_s``, ``show_respiration_overlay``,
+    ``colormap``, ``adaptive_source``.
+    """
+    default_colormap = "RdYlBu_r"
+    if workspace is None:
+        return {
+            "window_s":                  30.0,
+            "step_s":                     5.0,
+            "show_respiration_overlay":  True,
+            "colormap":                  default_colormap,
+            "adaptive_source":           "respiration_channel",
+        }
+    spec  = workspace.get("Spectrogram", {}) or {}
+    profs = workspace.get("Profiles",    {}) or {}
+    return {
+        "window_s": float(
+            spec.get("window (sec)", spec.get("window_s", 30.0))
+        ),
+        "step_s": float(
+            spec.get("step (sec)", spec.get("step_s", 5.0))
+        ),
+        "show_respiration_overlay": bool(
+            spec.get("show_respiration_overlay", True)
+        ),
+        "colormap": str(spec.get("colormap", default_colormap)),
+        "adaptive_source": str(
+            profs.get("adaptive_source", "respiration_channel")
+        ),
+    }
+
+
+def transfer_settings_from_workspace(
+    workspace: "Dict[str, Any] | None",
+) -> Dict[str, Any]:
+    """Return ``workspace["TransferAnalysis"]`` flattened with defaults applied.
+
+    Returned keys: ``window_s``, ``step_s``, ``min_coherence``,
+    ``f_max``, ``phase_view``, ``show_coherence_threshold``,
+    ``coherence_threshold_level``, ``coherence_mask_alpha``.
+
+    The Bode-plot widgets read this dict directly, the band edges they
+    feed to :func:`spectHR.analysis.transfer.compute_transfer` are
+    pulled separately from ``FrequencyAnalysis.bands`` via
+    :func:`display_bands_from_workspace`.
+    """
+    defaults = {
+        "window_s":                  30.0,
+        "step_s":                     5.0,
+        "min_coherence":              0.5,
+        "f_min":                     0.0,
+        "f_max":                     0.5,
+        "smooth":                    True,
+        "phase_view":                "wrapped",
+        "show_coherence_threshold":  True,
+        "coherence_threshold_level": 0.5,
+        "coherence_mask_alpha":      0.20,
+    }
+    if workspace is None:
+        return defaults
+    cfg = workspace.get("TransferAnalysis", {}) or {}
+    return {
+        "window_s": float(
+            cfg.get("window (sec)", cfg.get("window_s", defaults["window_s"]))
+        ),
+        "step_s": float(
+            cfg.get("step (sec)", cfg.get("step_s", defaults["step_s"]))
+        ),
+        "min_coherence": float(
+            cfg.get("min_coherence", defaults["min_coherence"])
+        ),
+        "f_min": float(cfg.get("f_min", defaults["f_min"])),
+        "f_max": float(cfg.get("f_max", defaults["f_max"])),
+        "smooth": bool(cfg.get("smooth", defaults["smooth"])),
+        "phase_view": str(cfg.get("phase_view", defaults["phase_view"])),
+        "show_coherence_threshold": bool(
+            cfg.get("show_coherence_threshold", defaults["show_coherence_threshold"])
+        ),
+        "coherence_threshold_level": float(
+            cfg.get("coherence_threshold_level", defaults["coherence_threshold_level"])
+        ),
+        "coherence_mask_alpha": float(
+            cfg.get("coherence_mask_alpha", defaults["coherence_mask_alpha"])
+        ),
+    }
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -464,21 +641,7 @@ def _bands_from_workspace(
     ``Profiles.adaptive_bands``, a dict that maps band name to
     ``{"lower half-width (Hz)": float, "upper half-width (Hz)": float}``.
     Only bands listed there get ``respiration_band=True``; the others
-    keep static edges. This separation matches the user-facing layout
-    (adaptive settings live on the Profile Settings tab, not mixed into
-    the PSD band definitions) and mirrors CARSPAN's behaviour where
-    ``RunProfileSommation`` is the only consumer of
-    ``TAnaBand.RespirationBand``.
-
-    Parameters
-    ----------
-    bands_dict
-        ``workspace["FrequencyAnalysis"]["bands"]``.
-    adaptive_bands
-        ``workspace["Profiles"]["adaptive_bands"]`` - a dict of
-        ``{band_name: {"lower half-width (Hz)": float,
-                       "upper half-width (Hz)": float}}``.
-        ``None`` or ``{}`` means every band is static.
+    keep static edges.
     """
     adaptive = adaptive_bands or {}
     return {
@@ -511,20 +674,9 @@ def _filter_kwargs(cls, raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
-    """Build a :class:`PsdMethod` from a workspace dict.
-
-    The UI calls this once after :func:`LoadWorkspace` and again after
-    every Edit-Parameters save. The returned :class:`PsdMethod` is passed
-    explicitly to every compute call - the series objects carry no UI state.
-    """
+    """Build a :class:`PsdMethod` from a workspace dict."""
     fa = workspace.get("FrequencyAnalysis", {}) or {}
 
-    # The adaptive-bands dict lives on the Profiles tab (see the
-    # ``adaptive_bands`` comment in ``_DEFAULT_WORKSPACE``). It is
-    # propagated down to :class:`BandSpec` here so the compute layer
-    # (``band_power_profile``) sees a unified band table - each adaptive
-    # band carries its own resp_low/resp_high half-widths - without
-    # having to reach into the workspace dict itself.
     profiles_cfg = workspace.get("Profiles", {}) or {}
     adaptive_bands = dict(profiles_cfg.get("adaptive_bands", {}) or {})
 
@@ -545,8 +697,6 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
     carspan_opts = CarspanOptions(**carspan_cfg)
 
     algorithm = str(fa.get("method", "carspan"))
-    # CARSPAN-strict uses the arithmetic-mean-of-rate convention; every
-    # other algorithm uses the simpler T/N harmonic mean.
     mean_convention = "arithmetic" if algorithm == "carspan_strict" else "harmonic"
 
     return PsdMethod(
@@ -591,4 +741,3 @@ def PopulateTree(treewidget, workspace: dict) -> None:
             )
         treewidget.addTopLevelItem(parent)
     treewidget.expandAll()
-

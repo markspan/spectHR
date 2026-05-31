@@ -26,9 +26,8 @@ Design notes
 """
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass, replace
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -49,10 +48,11 @@ from spectHR.Tools.Logger import logger
 from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
 from spectHR.analysis.psd._config import PsdMethod, _DEFAULT_PSD_METHOD
 from spectHR.analysis.psd._engine import PSDEngine
-from spectUI._plot_export import PlotExportMixin
-from spectUI.workSpace import psd_method_from_workspace
-
-warnings.filterwarnings("ignore")
+from spectUI.common import PlotExportMixin, build_epoch_grid
+from spectUI.workSpace import (
+    psd_method_from_workspace,
+    spectrogram_settings_from_workspace,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -61,48 +61,6 @@ warnings.filterwarnings("ignore")
 
 
 _DEFAULT_COLORMAP = "RdYlBu_r"
-
-
-def _spectrogram_settings_from_workspace(
-    workspace: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Return ``workspace["Spectrogram"]`` with sensible defaults.
-
-    ``window (sec)`` and ``step (sec)`` carry the same meaning as on
-    the Profile side, the per-window length in seconds and the slide
-    between consecutive windows. ``show_respiration_overlay`` draws
-    the per-window breathing-frequency trace on top of the heat map
-    when a RespirationSeries is available for the epoch. ``colormap``
-    is the matplotlib colormap name used by ``pcolormesh``.
-
-    ``adaptive_source`` is read from ``workspace["Profiles"]`` (the
-    same key ProfilePlotWidget uses) so the two views always agree on
-    how the per-window breathing frequency is derived:
-    ``"respiration_channel"`` — use the RSP signal, fall back to PSD
-    peak; ``"psd_peak"`` — use the HF spectral peak directly.
-    """
-    if workspace is None:
-        return {
-            "window_s": 30.0,
-            "step_s":   5.0,
-            "show_respiration_overlay": True,
-            "colormap": _DEFAULT_COLORMAP,
-            "adaptive_source": "respiration_channel",
-        }
-    spec  = workspace.get("Spectrogram", {}) or {}
-    profs = workspace.get("Profiles",    {}) or {}
-    window_s = spec.get("window (sec)", spec.get("window_s", 30.0))
-    step_s   = spec.get("step (sec)",   spec.get("step_s",   5.0))
-    return {
-        "window_s": float(window_s),
-        "step_s":   float(step_s),
-        "show_respiration_overlay":
-            bool(spec.get("show_respiration_overlay", True)),
-        "colormap": str(spec.get("colormap", _DEFAULT_COLORMAP)),
-        "adaptive_source": str(
-            profs.get("adaptive_source", "respiration_channel")
-        ),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -122,8 +80,8 @@ class _SpectrogramPlotData:
     method: str
     window_s: float
     step_s: float
-    resp_freqs: Optional[np.ndarray] = None   # (n_windows,), NaN where missing
-    error: Optional[str] = None
+    resp_freqs: np.ndarray | None = None   # (n_windows,), NaN where missing
+    error: str | None = None
 
 
 def _fetch_spectrogram(
@@ -132,7 +90,7 @@ def _fetch_spectrogram(
     *,
     window_s: float,
     step_s: float,
-    psd_method: Optional[PsdMethod] = None,
+    psd_method: PsdMethod | None = None,
     adaptive_source: str = "respiration_channel",
 ) -> _SpectrogramPlotData:
     """Compute the spectrogram grid for one cardio series, never raises.
@@ -214,7 +172,7 @@ def _fetch_spectrogram(
                 resp_band_high = band.high
                 break
 
-        common_freqs: Optional[np.ndarray] = None
+        common_freqs: np.ndarray | None = None
         psd_cache: dict = {}
         method_label = ""
         unit = ""
@@ -289,7 +247,7 @@ def _fetch_spectrogram(
             dtype=np.float64,
         )
 
-        resp_freqs: Optional[np.ndarray] = (
+        resp_freqs: np.ndarray | None = (
             resp_freqs_arr if np.any(np.isfinite(resp_freqs_arr)) else None
         )
 
@@ -320,7 +278,7 @@ class _SingleSpectrogramPlot(QWidget):
     def __init__(
         self,
         data: _SpectrogramPlotData,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         *,
         show_respiration_overlay: bool = True,
         colormap: str = _DEFAULT_COLORMAP,
@@ -372,26 +330,26 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
     def __init__(
         self,
         series_list: List,
-        labels: List[str],
-        parent: Optional[QWidget] = None,
+        labels: list[str],
+        parent: QWidget | None = None,
         *,
-        workspace: Optional[Dict[str, Any]] = None,
+        workspace: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(parent)
 
-        cfg = _spectrogram_settings_from_workspace(workspace)
+        cfg = spectrogram_settings_from_workspace(workspace)
         window_s:        float = cfg["window_s"]
         step_s:          float = cfg["step_s"]
         show_resp:       bool  = cfg["show_respiration_overlay"]
         colormap:        str   = cfg["colormap"]
         adaptive_source: str   = cfg["adaptive_source"]
 
-        psd_method: Optional[PsdMethod] = (
+        psd_method: PsdMethod | None = (
             psd_method_from_workspace(workspace) if workspace is not None else None
         )
 
         # ---- compute one spectrogram per series -----------------------
-        plots: List[_SpectrogramPlotData] = [
+        plots: list[_SpectrogramPlotData] = [
             _fetch_spectrogram(
                 series, label,
                 window_s=window_s, step_s=step_s,
@@ -401,41 +359,21 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
             for series, label in zip(series_list, labels)
         ]
 
-        self._labels: List[str] = list(labels)
-        self._workspace: Optional[Dict[str, Any]] = workspace
-        self._subplots: List[_SingleSpectrogramPlot] = []
+        self._labels: list[str] = list(labels)
+        self._series_list: list = list(series_list)
+        self._workspace: dict[str, Any] | None = workspace
 
-        # ---- scroll area + 2-column grid ------------------------------
-        self.setStyleSheet("background-color: white;")
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("background-color: white;")
-        container = QWidget()
-        container.setStyleSheet("background-color: white;")
-        container_layout = QGridLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(5)
-
-        for idx, data in enumerate(plots):
-            tile = _SingleSpectrogramPlot(
+        # Standard 2-column scrollable grid + focus + Shift+Ctrl+P
+        # shortcut. No Up / Down zoom: the y-axis carries frequency,
+        # not band power.
+        self._subplots: list[_SingleSpectrogramPlot] = build_epoch_grid(
+            self, plots,
+            lambda data: _SingleSpectrogramPlot(
                 data,
                 show_respiration_overlay=show_resp,
                 colormap=colormap,
-            )
-            self._subplots.append(tile)
-            row, col = divmod(idx, 2)
-            container_layout.addWidget(tile, row, col)
-
-        scroll_area.setWidget(container)
-        layout = QVBoxLayout(self)
-        layout.addWidget(scroll_area)
-        self.setLayout(layout)
-
-        # ---- shortcuts -----------------------------------------------
-        self.setFocusPolicy(Qt.StrongFocus)
-        save_all = QShortcut(QKeySequence("Shift+Ctrl+P"), self)
-        save_all.setContext(Qt.WidgetWithChildrenShortcut)
-        save_all.activated.connect(self._save_all_plots)
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Pure plotting backend

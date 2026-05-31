@@ -17,11 +17,9 @@ Design
 
 from __future__ import annotations
 
-import re
-import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -30,10 +28,19 @@ from spectHR.analysis.psd._config import PsdMethod
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
-from spectUI.workSpace import psd_method_from_workspace, display_bands_from_workspace
-from spectUI._plot_smoothing import smooth3
-from spectUI._plot_zoom import YZoomMixin, Y_TOP_FLOOR
-from spectUI._plot_export import PlotExportMixin, sanitize_filename
+from spectUI.workSpace import (
+    display_bands_from_workspace,
+    psd_ci_alpha,
+    psd_method_from_workspace,
+)
+from spectHR.analysis._smoothing import smooth3
+from spectUI.common import (
+    PlotExportMixin,
+    YZoomMixin,
+    Y_TOP_FLOOR,
+    build_epoch_grid,
+    wire_y_zoom_shortcuts,
+)
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -47,8 +54,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-
-warnings.filterwarnings("ignore")
 
 # Y-axis scaling ignores frequencies below this cutoff so VLF peaks
 # (typically dominated by slow drift) don't squash the LF/HF detail.
@@ -64,14 +69,6 @@ Y_SCALE_F_MIN: float = 0.08
 # Export formats, filename sanitiser, and export dir live in _plot_export.
 
 
-def _ci_alpha_from_workspace(workspace: Optional[Dict[str, Any]]) -> float:
-    """Read ``confidence_interval_alpha`` from the workspace, default 0.05."""
-    if workspace is None:
-        return 0.05
-    fa = workspace.get("FrequencyAnalysis", {}) or {}
-    return float(fa.get("confidence_interval_alpha", 0.05))
-
-
 # ---------------------------------------------------------------------------
 # Pre-computed plot data
 # ---------------------------------------------------------------------------
@@ -84,17 +81,15 @@ class _PlotData:
     label: str
     freqs: np.ndarray
     power: np.ndarray
-    ci_lower: Optional[np.ndarray]
-    ci_upper: Optional[np.ndarray]
+    ci_lower: np.ndarray | None
+    ci_upper: np.ndarray | None
     unit: str
     method: str
-    band_powers: Dict[str, float]
-    error: Optional[str] = None  # set if PSD could not be computed
+    band_powers: dict[str, float]
+    error: str | None = None  # set if PSD could not be computed
 
 
-
-
-def _wants_smoothing(series, psd_method: Optional[PsdMethod], method_name: str) -> bool:
+def _wants_smoothing(series, psd_method: PsdMethod | None, method_name: str) -> bool:
     """Decide whether to apply the 3-MA to a CARSPAN spectrum.
 
     Only the CARSPAN methods carry a ``smooth_for_display`` setting
@@ -111,7 +106,7 @@ def _wants_smoothing(series, psd_method: Optional[PsdMethod], method_name: str) 
 
 
 def _fetch(
-    series, label: str, psd_method: Optional[PsdMethod] = None
+    series, label: str, psd_method: PsdMethod | None = None
 ) -> _PlotData:
     """Compute PSD and band powers for one series - never raises.
 
@@ -194,8 +189,7 @@ def _strip_per_hz(unit: str) -> str:
     return stripped
 
 
-
-def _band_bounds(bands: dict) -> Tuple[float, float, float, float]:
+def _band_bounds(bands: dict) -> tuple[float, float, float, float]:
     """
     Return ``(x_min, x_max, scale_min, scale_max)`` for display and scaling.
 
@@ -258,9 +252,9 @@ class _SinglePSDPlot(QWidget):
         x_min: float,
         x_max: float,
         y_top: float,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         *,
-        bands: Optional[Dict[str, dict]] = None,
+        bands: dict[str, dict] | None = None,
         ci_alpha: float = 0.05,
     ) -> None:
         super().__init__(parent)
@@ -316,24 +310,24 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
     def __init__(
         self,
         series_list: List,
-        labels: List[str],
-        parent: Optional[QWidget] = None,
+        labels: list[str],
+        parent: QWidget | None = None,
         *,
-        workspace: Optional[Dict[str, Any]] = None,
+        workspace: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(parent)
 
         # Extract the PsdMethod from the workspace and pass it explicitly
         # to every compute call - the series objects carry no UI state.
         bands_dict = display_bands_from_workspace(workspace)
-        ci_alpha = _ci_alpha_from_workspace(workspace)
+        ci_alpha = psd_ci_alpha(workspace)
         x_min, x_max, scale_min, scale_max = _band_bounds(bands_dict)
-        psd_method: Optional[PsdMethod] = (
+        psd_method: PsdMethod | None = (
             psd_method_from_workspace(workspace) if workspace is not None else None
         )
 
         # One call to the PSD backends per series; compute y-max before drawing.
-        plots: List[_PlotData] = [
+        plots: list[_PlotData] = [
             _fetch(series, label, psd_method=psd_method)
             for series, label in zip(series_list, labels)
         ]
@@ -342,71 +336,24 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
 
         # Remember the inputs so the keyboard handlers can build filenames
         # and rescale the linked y-axes after construction.
-        self._labels: List[str] = list(labels)
-        self._series_list: List = list(series_list)
-        self._workspace: Optional[Dict[str, Any]] = workspace
-        self._bands_dict: Dict[str, dict] = bands_dict
+        self._labels: list[str] = list(labels)
+        self._series_list: list = list(series_list)
+        self._workspace: dict[str, Any] | None = workspace
+        self._bands_dict: dict[str, dict] = bands_dict
         self._ci_alpha: float = ci_alpha
-        self._subplots: List[_SinglePSDPlot] = []
         self._y_top: float = max(float(y_top), Y_TOP_FLOOR)
 
-        # Build the scroll area + grid container. Both get a white
-        # background so the 5-pixel gaps between subplots and the
-        # scroll-area margins don't show through as system grey. Setting
-        # the stylesheet on this widget alone propagates to its
-        # descendants, but we set it on each level explicitly to avoid
-        # any platform-specific quirks where stylesheet inheritance is
-        # broken by a non-default palette on a child widget.
-        self.setStyleSheet("background-color: white;")
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("background-color: white;")
-        container = QWidget()
-        container.setStyleSheet("background-color: white;")
-        container_layout = QGridLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(5)
-
-        for idx, data in enumerate(plots):
-            subplot = _SinglePSDPlot(
+        # Standard scrollable 2-column grid + focus + Shift+Ctrl+P
+        # save shortcut. Up / Down arrows are added separately because
+        # only the y-zoom-capable widgets need them.
+        self._subplots: list[_SinglePSDPlot] = build_epoch_grid(
+            self, plots,
+            lambda data: _SinglePSDPlot(
                 data, x_min, x_max, y_top,
                 bands=bands_dict, ci_alpha=ci_alpha,
-            )
-            self._subplots.append(subplot)
-            row, col = divmod(idx, 2)
-            container_layout.addWidget(subplot, row, col)
-
-        scroll_area.setWidget(container)
-        layout = QVBoxLayout(self)
-        layout.addWidget(scroll_area)
-        self.setLayout(layout)
-
-        # Accept keyboard focus so the widget participates in the focus
-        # chain (the QShortcut registrations below need that to be true).
-        self.setFocusPolicy(Qt.StrongFocus)
-
-        # Up / Down arrows go through QShortcut rather than keyPressEvent
-        # because the inner QScrollArea consumes arrow keys for scrolling
-        # before they can bubble up.  ``WidgetWithChildrenShortcut`` lets
-        # the shortcut fire whenever focus is anywhere inside this widget.
-        zoom_in = QShortcut(QKeySequence(Qt.Key_Up), self)
-        zoom_in.setContext(Qt.WidgetWithChildrenShortcut)
-        zoom_in.activated.connect(self._zoom_in)
-
-        zoom_out = QShortcut(QKeySequence(Qt.Key_Down), self)
-        zoom_out.setContext(Qt.WidgetWithChildrenShortcut)
-        zoom_out.activated.connect(self._zoom_out)
-
-        # Ctrl+P, save every subplot as print-ready vector files
-        # (PDF + SVG) into the configured export directory.  The bare
-        # PrintScreen key is intentionally NOT used: every major desktop
-        # (Windows clipboard capture, GNOME / KDE screenshot tools,
-        # macOS where the key barely exists) consumes that key before Qt
-        # receives it, so QShortcut never fires.  Ctrl+P is the universal
-        # "Print" gesture and is reliable cross-platform.
-        save_all = QShortcut(QKeySequence("Shift+Ctrl+P"), self)
-        save_all.setContext(Qt.WidgetWithChildrenShortcut)
-        save_all.activated.connect(self._save_all_plots)
+            ),
+        )
+        wire_y_zoom_shortcuts(self)
 
     # _zoom_in / _zoom_out / _set_y_top inherited from YZoomMixin
 
@@ -424,7 +371,7 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         x_min: float,
         x_max: float,
         *,
-        bands: Optional[Dict[str, dict]] = None,
+        bands: dict[str, dict] | None = None,
         ci_alpha: float = 0.05,
         logscale: bool = False,
     ) -> Axes:
@@ -522,7 +469,7 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         return ax
 
 
-def _band_draw_extents(bands: dict) -> Dict[str, Tuple[float, float]]:
+def _band_draw_extents(bands: dict) -> dict[str, tuple[float, float]]:
     """
     Return ``{name: (draw_low, draw_high)}`` extending fills to neighbour midpoints.
 
@@ -536,7 +483,7 @@ def _band_draw_extents(bands: dict) -> Dict[str, Tuple[float, float]]:
         ((n, s) for n, s in bands.items() if n != "FullRange"),
         key=lambda kv: kv[1]["low"],
     )
-    extents: Dict[str, Tuple[float, float]] = {}
+    extents: dict[str, tuple[float, float]] = {}
     for i, (name, spec) in enumerate(items):
         draw_low = spec["low"]
         draw_high = spec["high"]

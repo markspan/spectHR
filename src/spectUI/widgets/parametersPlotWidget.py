@@ -42,7 +42,7 @@ from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 from spectHR.analysis.profile import compute_band_power_profile
-from spectUI._uitools import show_export_summary
+from spectUI.common import show_export_summary
 from spectUI.workSpace import get_export_dir, psd_method_from_workspace
 
 

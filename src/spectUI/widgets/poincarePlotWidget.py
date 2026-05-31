@@ -42,7 +42,7 @@ class PoincarePlotWidget(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
 
         self.dataset: PhysioData | None = None
-        self.scatter_handles: dict[str, any] = {}
+        self.scatter_handles: dict[str, Any] = {}
         self.ellipse_handles: dict[str, Ellipse] = {}
         self.epoch_checkboxes: dict[str, QCheckBox] = {}
         self.cursor = None

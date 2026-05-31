@@ -5,8 +5,9 @@ spectHR main window, dock-based variant.
 
 Layout is built on PySide6-QtAds. Every former tab is now a CDockWidget
 that can be dragged, floated, retabbed or moved to a second monitor.
-Chrome (menubar, statusbar, QActions) is loaded from resources/form.ui
-so menu authoring stays in Designer.
+The menubar, status bar and QActions are constructed directly in
+_build_menubar / _wire_view_menu; the older form.ui loader has been
+retired.
 """
 from __future__ import annotations
 
@@ -17,6 +18,10 @@ import sys
 import webbrowser
 from pathlib import Path
 
+import numpy as np
+import qtawesome as qta
+from platformdirs import user_config_path, user_documents_path
+
 # Force Matplotlib to use the Qt backend inside a PySide6 app (macOS-safe).
 os.environ.setdefault("MPLBACKEND", "QtAgg")
 import matplotlib
@@ -24,9 +29,8 @@ import matplotlib
 matplotlib.use("QtAgg", force=True)
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QByteArray, QFile, QSettings, Qt
+from PySide6.QtCore import QByteArray, QSettings, QSize, Qt
 from PySide6.QtGui import QAction, QFont, QTextCursor
-from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -36,6 +40,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QPlainTextEdit,
     QScrollArea,
+    QStyle,
+    QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -70,7 +76,6 @@ _SETTINGS_PERSPS      = "Perspectives"
 
 def _settings_path() -> Path:
     """Absolute path to the INI file, parent dir created on demand."""
-    from platformdirs import user_config_path
     config_dir = Path(user_config_path("spectHR", appauthor=False))
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "spectHR.ini"
@@ -117,9 +122,11 @@ _DOCK_PREPROCESSING = "dock.preprocessing"
 _DOCK_IBI           = "dock.ibi"
 _DOCK_POINCARE      = "dock.poincare"
 _DOCK_EPOCHS        = "dock.epochs"
-_DOCK_PSD           = "dock.psd"
-_DOCK_SPECTROGRAM   = "dock.spectrogram"
-_DOCK_PROFILES      = "dock.profiles"
+_DOCK_PSD               = "dock.psd"
+_DOCK_SPECTROGRAM       = "dock.spectrogram"
+_DOCK_TRANSFER          = "dock.transfer"
+_DOCK_TRANSFER_PROFILE  = "dock.transferprofile"
+_DOCK_PROFILES          = "dock.profiles"
 _DOCK_PARAMETERS    = "dock.parameters"
 _DOCK_LOG           = "dock.log"
 
@@ -168,22 +175,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         logging.getLogger("matplotlib.font_manager").disabled = True
 
-        # ---- chrome from form.ui (menubar, statusbar, actions) ------
-        base_dir = Path(__file__).parent
-        ui_path = base_dir / "resources" / "form.ui"
-        ui_file = QFile(ui_path)
-        if not ui_file.open(QFile.ReadOnly):
-            logger.error("Cannot open UI file: %s", ui_file.errorString())
-            sys.exit(-1)
-        loader = QUiLoader()
-        self.ui = loader.load(ui_file)
-        ui_file.close()
-
-        # Reparent menubar and statusbar onto self. Actions stay
-        # accessible via self.ui.actionXxx because they remain children
-        # of self.ui in the Qt object tree.
-        self.setMenuBar(self.ui.menuBar())
-        self.setStatusBar(self.ui.statusBar())
+        # Touching statusBar() once forces QMainWindow to create one,
+        # so QAction.setStatusTip messages have somewhere to land.
+        self.statusBar()
 
         self.setWindowTitle(f"spectHR (v{__version__}) - ECG / HRV Analysis")
         self.resize(1920, 1080)
@@ -196,8 +190,6 @@ class MainWindow(QMainWindow):
         self._refresh_fns: dict[str, callable] = {}
 
         # ---- workspace ----------------------------------------------
-        from platformdirs import user_documents_path
-
         self.workspace_file = user_documents_path() / "DefaultWorkSpace.json"
         self.workspace = spQt.LoadWorkspace(self.workspace_file)
 
@@ -212,8 +204,8 @@ class MainWindow(QMainWindow):
         self.dock_manager = QtAds.CDockManager(self)
 
         self._build_docks()
-        self._wire_menus()
-        self._wire_actions()
+        self._build_menubar()
+        self._wire_view_menu()
 
         # Capture built-in perspectives before any saved user state is
         # restored, so the user always has a way back from a bad drag.
@@ -247,7 +239,7 @@ class MainWindow(QMainWindow):
         self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
         self.tree_widget.itemSelectionChanged.connect(self.on_file_selection)
 
-        tree_dock = self._new_dock(_DOCK_TREE, "Workspace", self.tree_widget)
+        tree_dock = self._make_dock(_DOCK_TREE, "Workspace", self.tree_widget)
         self.dock_manager.addDockWidget(QtAds.LeftDockWidgetArea, tree_dock)
         self.tree_dock = tree_dock
 
@@ -262,8 +254,10 @@ class MainWindow(QMainWindow):
         # widget is rebuilt on every refresh, so we hold the layout,
         # not the widget.
         self.psd_scroll,        self.psd_layout        = self._make_scrollable_host()
-        self.spectrogram_scroll, self.spectrogram_layout = self._make_scrollable_host()
-        self.profile_scroll,    self.profile_layout    = self._make_scrollable_host()
+        self.spectrogram_scroll,      self.spectrogram_layout      = self._make_scrollable_host()
+        self.transfer_scroll,         self.transfer_layout         = self._make_scrollable_host()
+        self.transfer_profile_scroll, self.transfer_profile_layout = self._make_scrollable_host()
+        self.profile_scroll,          self.profile_layout          = self._make_scrollable_host()
 
         # ---- log dock content ---------------------------------------
         self.log_view = QPlainTextEdit()
@@ -277,7 +271,7 @@ class MainWindow(QMainWindow):
 
         # ---- centre tab group ---------------------------------------
         # First dock seeds the centre area, the rest are tabified into it.
-        prep_dock = self._new_dock(
+        prep_dock = self._make_dock(
             _DOCK_PREPROCESSING, "Preprocessing", self.prep_plot_widget,
         )
         first_area = self.dock_manager.addDockWidget(
@@ -285,7 +279,7 @@ class MainWindow(QMainWindow):
         )
 
         def _tab(name: str, title: str, widget: QWidget) -> QtAds.CDockWidget:
-            dock = self._new_dock(name, title, widget)
+            dock = self._make_dock(name, title, widget)
             self.dock_manager.addDockWidget(
                 QtAds.CenterDockWidgetArea, dock, first_area,
             )
@@ -295,26 +289,30 @@ class MainWindow(QMainWindow):
         poincare_dock    = _tab(_DOCK_POINCARE,    "Poincare",    self.poincare_plot_widget)
         epochs_dock      = _tab(_DOCK_EPOCHS,      "Epochs",      self.epoch_plot_widget)
         psd_dock         = _tab(_DOCK_PSD,         "PSD",         self.psd_scroll)
-        spectrogram_dock = _tab(_DOCK_SPECTROGRAM, "Spectrogram", self.spectrogram_scroll)
-        profiles_dock    = _tab(_DOCK_PROFILES,    "Profiles",    self.profile_scroll)
+        spectrogram_dock      = _tab(_DOCK_SPECTROGRAM,      "Spectrogram",      self.spectrogram_scroll)
+        transfer_dock         = _tab(_DOCK_TRANSFER,         "Transfer",         self.transfer_scroll)
+        transfer_profile_dock = _tab(_DOCK_TRANSFER_PROFILE, "Transfer profile", self.transfer_profile_scroll)
+        profiles_dock         = _tab(_DOCK_PROFILES,         "Profiles",         self.profile_scroll)
         params_dock      = _tab(_DOCK_PARAMETERS,  "Parameters",  self.parameters_plot_widget)
 
         # ---- log dock -----------------------------------------------
-        log_dock = self._new_dock(_DOCK_LOG, "Log", self.log_view)
+        log_dock = self._make_dock(_DOCK_LOG, "Log", self.log_view)
         self.dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, log_dock)
         log_dock.toggleView(False)  # hidden by default
 
         self.docks: dict[str, QtAds.CDockWidget] = {
-            _DOCK_TREE:          tree_dock,
-            _DOCK_PREPROCESSING: prep_dock,
-            _DOCK_IBI:           ibi_dock,
-            _DOCK_POINCARE:      poincare_dock,
-            _DOCK_EPOCHS:        epochs_dock,
-            _DOCK_PSD:           psd_dock,
-            _DOCK_SPECTROGRAM:   spectrogram_dock,
-            _DOCK_PROFILES:      profiles_dock,
-            _DOCK_PARAMETERS:    params_dock,
-            _DOCK_LOG:           log_dock,
+            _DOCK_TREE:             tree_dock,
+            _DOCK_PREPROCESSING:    prep_dock,
+            _DOCK_IBI:              ibi_dock,
+            _DOCK_POINCARE:         poincare_dock,
+            _DOCK_EPOCHS:           epochs_dock,
+            _DOCK_PSD:              psd_dock,
+            _DOCK_SPECTROGRAM:      spectrogram_dock,
+            _DOCK_TRANSFER:         transfer_dock,
+            _DOCK_TRANSFER_PROFILE: transfer_profile_dock,
+            _DOCK_PROFILES:         profiles_dock,
+            _DOCK_PARAMETERS:       params_dock,
+            _DOCK_LOG:              log_dock,
         }
 
         # ---- refresh wiring -----------------------------------------
@@ -323,14 +321,16 @@ class MainWindow(QMainWindow):
         # unconditionally so peak edits, epoch toggles and parameter
         # changes always show up next time the dock is brought forward.
         self._refresh_fns = {
-            _DOCK_PREPROCESSING: self._refresh_preprocessing,
-            _DOCK_IBI:           self._refresh_ibi,
-            _DOCK_POINCARE:      self._refresh_poincare,
-            _DOCK_EPOCHS:        self._refresh_epochs,
-            _DOCK_PSD:           self._refresh_psd,
-            _DOCK_SPECTROGRAM:   self._refresh_spectrogram,
-            _DOCK_PROFILES:      self._refresh_profile,
-            _DOCK_PARAMETERS:    self._refresh_parameters,
+            _DOCK_PREPROCESSING:    self._refresh_preprocessing,
+            _DOCK_IBI:              self._refresh_ibi,
+            _DOCK_POINCARE:         self._refresh_poincare,
+            _DOCK_EPOCHS:           self._refresh_epochs,
+            _DOCK_PSD:              self._refresh_psd,
+            _DOCK_SPECTROGRAM:      self._refresh_spectrogram,
+            _DOCK_TRANSFER:         self._refresh_transfer,
+            _DOCK_TRANSFER_PROFILE: self._refresh_transfer_profile,
+            _DOCK_PROFILES:         self._refresh_profile,
+            _DOCK_PARAMETERS:       self._refresh_parameters,
         }
 
         for name, refresh_fn in self._refresh_fns.items():
@@ -341,14 +341,18 @@ class MainWindow(QMainWindow):
                 lambda visible, n=name: self._on_dock_visible(n, visible),
             )
 
-    def _new_dock(
+    def _make_dock(
         self,
         object_name: str,
         title: str,
         widget: QWidget,
     ) -> QtAds.CDockWidget:
-        """Create a CDockWidget with stable object name and embedded widget."""
-        dock = QtAds.CDockWidget(title)
+        """Create a CDockWidget with stable object name and embedded widget.
+
+        Uses the dock-manager-aware constructor introduced in QtAds 4.x;
+        the bare ``CDockWidget(title)`` form was deprecated upstream.
+        """
+        dock = QtAds.CDockWidget(self.dock_manager, title)
         dock.setObjectName(object_name)
         dock.setWidget(widget)
         return dock
@@ -373,55 +377,124 @@ class MainWindow(QMainWindow):
     # Menu and action wiring
     # ------------------------------------------------------------------
 
-    def _wire_actions(self) -> None:
-        """Connect QActions defined in form.ui to their slots."""
-        self.ui.actionAdd_Epoch.triggered.connect(self.add_epoch)
-        self.ui.actionAdd_Epoch.setStatusTip("Add a new epoch spanning the full recording")
-        self.ui.actionAdd_Epoch.setToolTip("Add a new epoch spanning the full recording")
-        self.ui.actionAdd_Epoch.setShortcut("Ctrl+N")
+    def _build_menubar(self) -> None:
+        """
+        Build the WorkSpace, Edits and Help menus and their actions,
+        and a matching icon+text toolbar.
 
-        self.ui.actionOpen_Workspace.triggered.connect(self.OpenWorkSpace)
-        self.ui.actionOpen_Workspace.setShortcut("Ctrl+O")
-        self.ui.actionOpen_Workspace.setStatusTip("Open a workspace file")
-        self.ui.actionOpen_Workspace.setToolTip("Open a workspace file")
+        Each action is created once and reused by both surfaces, so the
+        toolbar buttons and the menu entries fire the same slot and the
+        keyboard shortcut belongs to a single QAction.
 
-        self.ui.actionEdit_Workspace.triggered.connect(self.EditWorkSpace)
-        self.ui.actionEdit_Workspace.setShortcut("Ctrl+E")
-        self.ui.actionEdit_Workspace.setStatusTip("Edit workspace directories")
-        self.ui.actionEdit_Workspace.setToolTip("Edit workspace directories")
+        The View menu is added in :meth:`_wire_view_menu`, slotted just
+        before Help via :attr:`_help_menu` so the established WorkSpace,
+        Edits, View, Help order is preserved. View intentionally has no
+        toolbar mirror, the dock toggle actions already live in the View
+        menu and the docks themselves carry tab strips.
+        """
+        # ---- WorkSpace menu actions ----------------------------------
+        # Material Design Icons (mdi6) for the sharper, more angular
+        # silhouette. FontAwesome Sharp is a Pro family and is not in
+        # qtawesome's bundled fonts; mdi6 is the closest free analogue.
+        act_open = QAction(qta.icon("mdi6.folder-open"), "Open Workspace", self)
+        act_open.setShortcut("Ctrl+O")
+        act_open.setStatusTip("Open a workspace file")
+        act_open.setToolTip("Open a workspace file")
+        act_open.triggered.connect(self.OpenWorkSpace)
 
-        self.ui.actionSettings.triggered.connect(self.EditParameters)
-        self.ui.actionSettings.setStatusTip("Edit parameters")
-        self.ui.actionSettings.setToolTip("Edit parameters")
+        act_edit_ws = QAction(qta.icon("mdi6.file-tree"), "Edit Workspace", self)
+        act_edit_ws.setShortcut("Ctrl+E")
+        act_edit_ws.setStatusTip("Edit workspace directories")
+        act_edit_ws.setToolTip("Edit workspace directories")
+        act_edit_ws.triggered.connect(self.EditWorkSpace)
 
-        self.ui.actionSave_Workspace.triggered.connect(self.SaveWorkSpace)
-        self.ui.actionSave_Workspace.setShortcut("Ctrl+S")
-        self.ui.actionSave_Workspace.setStatusTip("Save the current workspace")
-        self.ui.actionSave_Workspace.setToolTip("Save the current workspace")
+        act_save_ws = QAction(qta.icon("mdi6.content-save"), "Save Workspace", self)
+        act_save_ws.setShortcut("Ctrl+S")
+        act_save_ws.setStatusTip("Save the current workspace")
+        act_save_ws.setToolTip("Save the current workspace")
+        act_save_ws.triggered.connect(self.SaveWorkSpace)
 
-        self.ui.actionDocumentation.triggered.connect(
+        act_settings = QAction(qta.icon("mdi6.cog"), "Settings", self)
+        act_settings.setShortcut("Ctrl+Shift+S")
+        act_settings.setStatusTip("Edit parameters")
+        act_settings.setToolTip("Edit parameters")
+        act_settings.triggered.connect(self.EditParameters)
+
+        # ---- Edits menu actions --------------------------------------
+        act_add_epoch = QAction(qta.icon("mdi6.plus"), "Add Epoch", self)
+        act_add_epoch.setShortcut("Ctrl+N")
+        act_add_epoch.setStatusTip("Add a new epoch spanning the full recording")
+        act_add_epoch.setToolTip("Add a new epoch spanning the full recording")
+        act_add_epoch.triggered.connect(self.add_epoch)
+
+        # ---- Help menu actions ---------------------------------------
+        act_docs = QAction(qta.icon("mdi6.book-open-page-variant"), "Documentation", self)
+        act_docs.setShortcut("Ctrl+D")
+        act_docs.setStatusTip("Open the spectHR documentation")
+        act_docs.setToolTip("Open the spectHR documentation")
+        act_docs.triggered.connect(
             lambda: webbrowser.open(
                 "https://github.com/markspan/spectHR/blob/V2/readme.MD"
             )
         )
-        self.ui.actionDocumentation.setShortcut("Ctrl+D")
-        self.ui.actionDocumentation.setStatusTip("Open the spectHR documentation")
-        self.ui.actionDocumentation.setToolTip("Open the spectHR documentation")
 
-    def _wire_menus(self) -> None:
+        # ---- assemble menubar ----------------------------------------
+        menubar = self.menuBar()
+
+        ws_menu = menubar.addMenu("WorkSpace")
+        ws_menu.addAction(act_open)
+        ws_menu.addSeparator()
+        ws_menu.addAction(act_edit_ws)
+        ws_menu.addAction(act_save_ws)
+        ws_menu.addSeparator()
+        ws_menu.addAction(act_settings)
+
+        edits_menu = menubar.addMenu("Edits")
+        edits_menu.addAction(act_add_epoch)
+
+        # Help anchors the right end of the strip; _wire_view_menu
+        # uses self._help_menu as the insertion point for View.
+        self._help_menu = menubar.addMenu("Help")
+        self._help_menu.addAction(act_docs)
+
+        # ---- assemble toolbar ---------------------------------------
+        # Icon+text style, grouped to mirror the menubar layout. The
+        # objectName is on the QSettings on-disk contract because
+        # QMainWindow.saveState includes toolbar positions, do not
+        # change once shipped.
+        toolbar = QToolBar("Main", self)
+        toolbar.setObjectName("toolbar.main")
+        toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        # 2.0x the platform-default toolbar metric, rounded. Using
+        # PM_ToolBarIconSize keeps the bump proportional across
+        # platforms instead of pinning a hard pixel count. The enum
+        # lives on the QStyle class in PySide6, not on style instances.
+        base = self.style().pixelMetric(QStyle.PixelMetric.PM_ToolBarIconSize)
+        bumped = max(int(round(base * 2.0)), base + 1)
+        toolbar.setIconSize(QSize(bumped, bumped))
+        toolbar.addAction(act_open)
+        toolbar.addAction(act_edit_ws)
+        toolbar.addAction(act_save_ws)
+        toolbar.addSeparator()
+        toolbar.addAction(act_settings)
+        toolbar.addSeparator()
+        toolbar.addAction(act_add_epoch)
+        toolbar.addSeparator()
+        toolbar.addAction(act_docs)
+        self.addToolBar(Qt.TopToolBarArea, toolbar)
+        self._main_toolbar = toolbar
+
+    def _wire_view_menu(self) -> None:
         """
         Build the View menu at runtime.
 
         One toggle action per dock, plus a Layout submenu for
-        perspectives. Built in code so a new dock or perspective is a
-        Python edit, not a menu-XML edit.
+        perspectives. Inserted just before Help so the established
+        WorkSpace, Edits, View, Help order reads naturally.
         """
         menubar = self.menuBar()
-        # Slot the View menu in just before Help so the established
-        # WorkSpace, Edits, View, Help order reads naturally.
         view_menu = QMenu("View", self)
-        help_action = self.ui.menuHelp.menuAction()
-        menubar.insertMenu(help_action, view_menu)
+        menubar.insertMenu(self._help_menu.menuAction(), view_menu)
         self.view_menu = view_menu
 
         for name in (
@@ -432,6 +505,8 @@ class MainWindow(QMainWindow):
             _DOCK_EPOCHS,
             _DOCK_PSD,
             _DOCK_SPECTROGRAM,
+            _DOCK_TRANSFER,
+            _DOCK_TRANSFER_PROFILE,
             _DOCK_PROFILES,
             _DOCK_PARAMETERS,
             _DOCK_LOG,
@@ -539,7 +614,7 @@ class MainWindow(QMainWindow):
         # Re-dock every floating panel before saving state.  Floating dock
         # containers are independent top-level windows; if we save state while
         # they are still floating the INI records them that way, and on the next
-        # launch ADS tries to recreate the floating windows — but the C++ objects
+        # launch ADS tries to recreate the floating windows, but the C++ objects
         # are gone, causing a RuntimeError in visibilityChanged callbacks.
         # Re-docking first means the saved state is always fully embedded, so
         # restart is clean regardless of what the user left floating.
@@ -633,6 +708,12 @@ class MainWindow(QMainWindow):
     def _refresh_spectrogram(self) -> None:
         self.show_spectrogram_plot(self.dataset)
 
+    def _refresh_transfer(self) -> None:
+        self.show_transfer_plot(self.dataset)
+
+    def _refresh_transfer_profile(self) -> None:
+        self.show_transfer_profile_plot(self.dataset)
+
     def _refresh_profile(self) -> None:
         self.show_profile_plot(self.dataset)
 
@@ -692,12 +773,14 @@ class MainWindow(QMainWindow):
                 logger.warning(f"Could not save workspace after parameter edit: {e}")
 
             if self.dataset is not None:
-                # PSD, Spectrogram and Profiles depend directly on
-                # what was edited (bands, window, step, PSD method),
-                # refresh them now. The other docks recompute the
-                # next time the user brings them forward.
+                # PSD, Spectrogram, Transfer (+ profile), and Profiles
+                # depend directly on what was edited (bands, window,
+                # step, PSD method, coherence threshold, etc.), refresh
+                # them now. Other docks recompute on next show.
                 self.show_psd_plot(self.dataset)
                 self.show_spectrogram_plot(self.dataset)
+                self.show_transfer_plot(self.dataset)
+                self.show_transfer_profile_plot(self.dataset)
                 self.show_profile_plot(self.dataset)
 
     # ------------------------------------------------------------------
@@ -750,8 +833,6 @@ class MainWindow(QMainWindow):
             min_peak_distance_ms=min_peak_distance_ms,
             classify=False,
         )
-
-        import numpy as np
 
         cs.times = np.array([np.nan])
         cs.labels = np.array(["TL"])
@@ -978,15 +1059,34 @@ class MainWindow(QMainWindow):
         Eagerly refresh every content dock, matching the original
         on_file_selection. Subsequent dock switches refresh on their
         own via _on_dock_visible.
+
+        Docks whose underlying data isn't available on this dataset are
+        closed (Preprocessing without ECG, Transfer + Transfer-profile
+        without a respiration channel). The View-menu entry stays
+        enabled so the user can re-open them - on re-open the widget
+        renders its own "No respiration channel" placeholder.
         """
         # Preprocessing dock visibility follows ECG availability.
         has_ecg = bool(getattr(self.dataset, "has_ecg", False))
         self.docks[_DOCK_PREPROCESSING].toggleView(has_ecg)
 
+        # Transfer-family docks follow respiration availability.
+        rsp_map = getattr(self.dataset, "rsp_map", None) or {}
+        has_rsp = bool(rsp_map)
+        if not has_rsp:
+            self.docks[_DOCK_TRANSFER].toggleView(False)
+            self.docks[_DOCK_TRANSFER_PROFILE].toggleView(False)
+
+        skip_when_missing = {
+            _DOCK_PREPROCESSING:    not has_ecg,
+            _DOCK_TRANSFER:         not has_rsp,
+            _DOCK_TRANSFER_PROFILE: not has_rsp,
+        }
         for name, refresh_fn in self._refresh_fns.items():
-            # Skip Preprocessing when the dataset has no ECG, the dock
-            # is hidden and there is nothing useful to draw.
-            if name == _DOCK_PREPROCESSING and not has_ecg:
+            # Skip refresh on docks whose data isn't on this dataset.
+            # The dock is already hidden; the placeholder will render
+            # only if/when the user toggles it back on.
+            if skip_when_missing.get(name, False):
                 continue
             refresh_fn()
 
@@ -1061,6 +1161,18 @@ class MainWindow(QMainWindow):
             lambda v, l, w: spQt.SpectrogramPlotWidget(v, l, workspace=w),
         )
 
+    def show_transfer_plot(self, dataset) -> None:
+        self._swap_in_epoch_plot(
+            self.transfer_layout, dataset,
+            lambda v, l, w: spQt.TransferPlotWidget(v, l, workspace=w),
+        )
+
+    def show_transfer_profile_plot(self, dataset) -> None:
+        self._swap_in_epoch_plot(
+            self.transfer_profile_layout, dataset,
+            lambda v, l, w: spQt.TransferProfilePlotWidget(v, l, workspace=w),
+        )
+
     def show_profile_plot(self, dataset) -> None:
         self._swap_in_epoch_plot(
             self.profile_layout, dataset,
@@ -1087,6 +1199,8 @@ class MainWindow(QMainWindow):
         elif hasattr(self.dataset, "hrv") and self.dataset.hrv is not None:
             start_time = self.dataset.hrv.times[0]
             end_time = self.dataset.hrv.times[-1]
+        else:
+            return
         self.dataset.epochs[epoch_label] = Epoch(
             active=True, start=start_time, end=end_time
         )

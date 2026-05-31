@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -16,7 +16,7 @@ from spectHR.Tools.Logger import logger
 
 class EpochPlotWidget(QWidget):
     """
-    Gantt-style editor for dataset.epochs (Dict[str, Epoch]).
+    Gantt-style editor for dataset.epochs (dict[str, Epoch]).
 
     Each epoch draws one horizontal bar:
         active=True   -> shown
@@ -48,7 +48,7 @@ class EpochPlotWidget(QWidget):
     def plotEpochs(self, dataset):
         """
         Render all active epochs in dataset.epochs.
-        dataset.epochs : Dict[str, Epoch]
+        dataset.epochs : dict[str, Epoch]
         """
         self.dataset = dataset
         self.rectangles.clear()
