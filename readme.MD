@@ -1141,7 +1141,7 @@ $$|C(f)|^2 = \frac{|S_{xy}(f)|^2}{S_{xx}(f) \cdot S_{yy}(f)}$$
 
 </div>
 
-Phase is kept twice: the wrapped form $\angle H(f) \in (-\pi, \pi]$ for visual structure and a separately unwrapped copy where 2$\pi$ jumps are removed via the CARSPAN counter (`UnwrapPhase`, threshold $\pi$, step $2\pi$). The Settings dropdown switches between them in the plot; both go to the CSV.
+Phase is kept twice: the wrapped form $\angle H(f) \in (-\pi, \pi]$ for visual structure and a separately unwrapped copy where 2$`\pi`$ jumps are removed via the CARSPAN counter (`UnwrapPhase`, threshold $\pi$, step $2\pi$). The Settings dropdown switches between them in the plot; both go to the CSV.
 
 #### Band integrators
 
