@@ -278,6 +278,12 @@ Configure it under **WorkSpace → Edit Parameters → Profile Settings** (see [
 
 Each profile dot is plotted at the **centre of the window that produced it**, not at the window's left edge. So the first dot for a 30 s window lands at `t = 15 s` within the epoch; the apparent "gap" at the left of each plot is the half-window that the first window's centre is offset from `t = 0`.
 
+
+#### Alternative: Spectrogram
+
+An alternative to the profiles plot is the 'spectrogram', where the x-axis is time in the epoch, the y-axis is the frequency, and the z-axis (color) depicts the power in that frequency, at that timepoint.
+
+![spectHR](images/SpectrogramWindow.png)
 ---
 
 ### Step 7, Examine respiration -> HR coupling (Transfer tab)
