@@ -1186,6 +1186,15 @@ class MainWindow(QMainWindow):
         if data is not None:
             self.poincare_plot_widget.poincarePlot(data)
 
+    def _clear_layout(self, layout) -> None:
+        """Remove all widgets from *layout*, deleting them immediately."""
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+
     def _swap_in_epoch_plot(self, layout, dataset, factory) -> None:
         """
         Replace the contents of ``layout`` with a freshly-built plot widget.
@@ -1233,12 +1242,18 @@ class MainWindow(QMainWindow):
         )
 
     def show_transfer_plot(self, dataset) -> None:
+        if not getattr(dataset, "rsp_map", None):
+            self._clear_layout(self.transfer_layout)
+            return
         self._swap_in_epoch_plot(
             self.transfer_layout, dataset,
             lambda v, l, w: spQt.TransferPlotWidget(v, l, workspace=w),
         )
 
     def show_transfer_profile_plot(self, dataset) -> None:
+        if not getattr(dataset, "rsp_map", None):
+            self._clear_layout(self.transfer_profile_layout)
+            return
         self._swap_in_epoch_plot(
             self.transfer_profile_layout, dataset,
             lambda v, l, w: spQt.TransferProfilePlotWidget(v, l, workspace=w),
