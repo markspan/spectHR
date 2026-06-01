@@ -19,7 +19,7 @@ def load_pkl(physiodata, filename: str, **kwargs: Any) -> None:
     hrv_map, band_map, active_band, rsp_map, phases, and all other fields
     that were present when the pickle was saved.
     """
-    logger.info(f"Loading PhysioData from pickle: {filename}")
+    logger.debug(f"Loading PhysioData from pickle: {filename}")
     with open(filename, "rb") as f:
         loaded = pickle.load(f)
     physiodata.__dict__.update(loaded.__dict__)

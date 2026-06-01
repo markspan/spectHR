@@ -1,13 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""
-start_stop.py – Standard ``start <name>`` / ``stop <name>`` epoch builder.
-
-Originally lived inside ``PhysioData._normalize_times_and_build_epochs``.
-Extracted into its own module so the parsing rules are easy to find,
-easy to test in isolation, and don't bury the time-normalisation logic
-in PhysioData.
-"""
+"""Standard ``start <name>`` / ``stop <name>`` epoch builder."""
 
 from __future__ import annotations
 
@@ -36,15 +29,10 @@ def build_epochs_from_markers(
     * One synthetic ``"experiment"`` epoch always exists and spans
       ``[bounds_start, bounds_end]``.
 
-    Time normalisation
-    ------------------
-    Marker timestamps are shifted by ``-earliest`` so they align with the
-    already-normalised TimeSeries clocks.
-
     Parameters
     ----------
     events : mapping of name → EventSeries
-        The marker streams collected by the loader (``physiodata.events``).
+        The marker streams from ``physiodata.events``.
     earliest : float
         Reference time (s) that maps to ``0.0`` after normalisation.
     bounds_start, bounds_end : float

@@ -277,6 +277,7 @@ class _SingleTransferPlot(QWidget):
                 transform=ax.transAxes, color="gray",
             )
             ax.set_axis_off()
+            self.ax = ax  # required by YZoomMixin even on error tiles
             self.canvas.draw()
             return
 

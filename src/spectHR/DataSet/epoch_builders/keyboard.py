@@ -100,10 +100,8 @@ def build_keyboard_epoch_events(physiodata) -> EventSeries | None:
     Returns
     -------
     EventSeries | None
-        The synthesised marker stream, or ``None`` when nothing was done.
-        The return value is mainly useful for tests and diagnostics - the
-        caller normally ignores it because the side-effect on
-        ``physiodata.events`` is what drives later epoch parsing.
+        The synthesised marker stream added to ``physiodata.events``,
+        or ``None`` when the function was a no-op.
     """
     if _has_existing_epoch_markers(physiodata.events):
         return None

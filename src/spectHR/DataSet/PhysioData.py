@@ -126,6 +126,60 @@ class PhysioData:
             f"Normalized time range: {bounds_start:.3f}–{bounds_end:.3f} s."
         )
 
+        # Polarity detection is deferred to here so it can use a real
+        # epoch as the analysis segment rather than a blind middle-third.
+        self._fix_ecg_polarity()
+
+    def _fix_ecg_polarity(self) -> None:
+        """Detect and correct ECG polarity for all ECG series not already handled.
+
+        Runs after epochs are built so a task-specific epoch can be used
+        as the analysis segment. The first non-``"experiment"`` active epoch
+        is preferred; if none exists, falls back to the middle third.
+
+        Series whose ``_polarity_fixed`` flag is True are skipped;
+        the flag is set here after detection so re-entrant calls are safe.
+        """
+        from spectHR.Tools.ECGProcessing import detect_ecg_polarity
+
+        segment = None
+        for name, epoch in self.epochs.items():
+            if name != "experiment" and epoch.active:
+                segment = epoch
+                break
+
+        for ts_name, ts in self.timeseries.items():
+            if not ts_name.lower().startswith("ecg"):
+                continue
+            if ts._polarity_fixed:
+                continue
+
+            try:
+                polarity = detect_ecg_polarity(
+                    ts.times, ts.values, segment=segment
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ECG polarity detection failed for %s: %s", ts_name, exc
+                )
+                continue
+
+            if polarity == "inverted":
+                ts.flip()
+                logger.info(
+                    "ECG polarity: %s detected as inverted → flipped "
+                    "(segment: %s)",
+                    ts_name,
+                    segment if segment is not None else "middle third",
+                )
+            else:
+                logger.info(
+                    "ECG polarity: %s detected as normal (segment: %s)",
+                    ts_name,
+                    segment if segment is not None else "middle third",
+                )
+            ts._polarity_fixed = True
+
     # ------------------------------------------------------------ #
     # Dataset access                                                #
     # ------------------------------------------------------------ #
@@ -203,7 +257,7 @@ class PhysioData:
         rows: list[dict[str, float]] = []
 
         for label, ep in self.epochs.items():
-            if getattr(ep, "active", False):
+            if ep.active:
                 labels_list.append(label)
                 view = hrv.view(ep.start, ep.end)
                 rows.append({name: float(fn(view)) for name, fn in get_metrics().items()})
@@ -219,8 +273,7 @@ class PhysioData:
         for i, d in enumerate(rows):
             for k, v in d.items():
                 j = col_idx.get(k)
-                if j is not None:
-                    values[i, j] = float(v)
+                values[i, j] = float(v)
 
         return np.asarray(labels_list, dtype=object), cols, values
 
@@ -261,31 +314,20 @@ class PhysioData:
         ------------------------------
         window_length : int
             Centered rolling window size in beats (default 51).
-            Loaded from workspace["CardioParameters"]["IbiClassification"]
-            ["window_length"].
         n_std : float
             Threshold width in standard deviations (default 4.0).
         max_ibi_sec : float
-            Absolute ceiling; intervals longer than this are labeled "TL"
-            and excluded from all statistics (default 2.0 s).
+            Absolute IBI ceiling; longer intervals are labelled "TL"
+            and excluded from statistics (default 2.0 s).
 
         Respiration segmentation
         ------------------------
         respiration_per_epoch : bool
-            When True, run :meth:`RespirationSeries.from_timeseries` once
-            per active epoch and concatenate the results, rather than
-            once over the whole recording. The peak-detection prominence
-            in ``from_timeseries`` is data-driven from the signal's MAD,
-            so running it per epoch lets the threshold adapt to each
-            epoch's typical breath amplitude - useful when rest and task
-            periods have substantially different breathing depth or
-            baseline noise. The default ``experiment`` epoch is skipped
-            when it still covers the full recording (a no-op fall-back
-            so the flag stays safe before task epochs are defined).
-            Loaded from ``workspace["RespirationAnalysis"]["per_epoch"]``.
+            When ``True``, run respiration segmentation once per active
+            epoch and concatenate; lets the prominence threshold adapt
+            to each epoch's typical breathing depth. See
+            :meth:`_respiration_per_epoch` for details.
 
-        All parameters default to the same values as classify_ibi() so
-        that calling preprocess_ecg() without arguments is safe.
         """
         if not self.band_map:
             logger.info("No band_map defined - skipping ECG preprocessing.")
@@ -325,19 +367,13 @@ class PhysioData:
                 cs._stream = band
                 self.hrv_map[band] = cs
             elif getattr(cs, "rtops_locked", False):
-                # R-peak times came from an authoritative source (e.g. CARSPAN
-                # .evt) - keep them as-is.  The ECG was still filtered above
-                # for display, but no re-detection runs over the epochs.
+                # R-peak times are locked (loaded from a .evt file) - keep
+                # them as-is. The ECG was still filtered above for display.
                 logger.info(
                     f"Band '{band}': R-peak times locked, skipping re-detection."
                 )
-                # Classification must still run so that IBI labels (N, TL, S, L,
-                # etc.) are populated from the EVT R-top times.  Without this,
-                # all beats remain at the default "N" label set in __init__,
-                # causing metrics that exclude artefact intervals (TL, SL, …)
-                # to use incorrect data - and the user would need to make a
-                # dummy edit in the preprocessing UI to trigger classify_ibi()
-                # indirectly via RTopController.
+                # Still classify so IBI labels are set from the locked R-top
+                # times; without this, all beats stay at the default "N".
                 if classify and cs.times.size > 0:
                     cs.classify_ibi(
                         window_length=window_length,
@@ -401,20 +437,15 @@ class PhysioData:
     def _respiration_per_epoch(self, rsp_ts) -> "RespirationSeries":
         """Run respiration segmentation once per epoch and concatenate.
 
-        See :meth:`preprocess_ecg` (``respiration_per_epoch=True``) for
-        why we'd want this: the prominence threshold in
-        :meth:`RespirationSeries.from_timeseries` is data-driven from
-        the signal's own MAD/sigma, so processing per epoch lets it
-        adapt to each epoch's breathing amplitude rather than averaging
-        rest and task into one global threshold.
+        Run :meth:`RespirationSeries.from_timeseries` on each active,
+        valid epoch separately, then concatenate the results. This lets
+        the MAD-based prominence threshold adapt to each epoch's typical
+        breathing depth rather than using one global estimate.
 
-        The default ``experiment`` epoch is skipped when its bounds still
-        match the full rsp time series (the placeholder that loaders
-        seed before the user defines task epochs); otherwise every
-        ``active`` and ``is_valid`` epoch contributes its detected
-        INH/EXH phases. If no usable epochs remain, falls back to the
-        whole-signal segmentation so the call is never a no-op when the
-        user explicitly asked for per-epoch mode.
+        The ``"experiment"`` epoch is skipped when it spans the full
+        recording (the loader placeholder before task epochs are defined).
+        If no usable task epochs remain, falls back to whole-signal
+        segmentation so the call is never a no-op.
         """
         if rsp_ts.times.size < 5 or not getattr(self, "epochs", None):
             return RespirationSeries.from_timeseries(rsp_ts)
@@ -424,9 +455,9 @@ class PhysioData:
         starts_all, ends_all, labels_all = [], [], []
 
         for name, epoch in self.epochs.items():
-            if not getattr(epoch, "active", True):
+            if not epoch.active:
                 continue
-            if hasattr(epoch, "is_valid") and not epoch.is_valid:
+            if not epoch.is_valid:
                 continue
 
             ep_start = float(epoch.start)

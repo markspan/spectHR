@@ -106,7 +106,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 ## What is spectHR?
 
-![spectHR](images/MainWindow.PNG)
+![spectHR](images/MainWindow.png)
 
 **spectHR** is a free, open-source desktop application for Heart Rate Variability (HRV) analysis. It is built for researchers and students who want to move from a raw electrocardiogram (ECG) to interpretable HRV metrics without writing any code, and without trusting a black box.
 
@@ -124,7 +124,7 @@ A note on the two-branch picture: both branches can be simultaneously active or 
 
 ### Mental effort, not stress
 
-The CARSPAN tradition, which spectHR inherits, utilizes the constructs *mental effort* and *mental workload* rather than *stress*. Mental effort is defined as the resources invested in response to task demands - a construct that can be experimentally manipulated and whose physiological cost can be measured independently of the subjective experience of strain.
+The CARSPAN tradition, which spectHR inherits, uses the constructs *mental effort* and *mental workload* rather than *stress*. Mental effort is defined as the resources invested in response to task demands - a construct that can be experimentally manipulated and whose physiological cost can be measured independently of the subjective experience of strain.
 
 Mulder [(1980)](#ref-mulder1980) showed that task performance suppresses HRV, particularly in the mid-frequency band (~0.10 Hz) that reflects baroreceptor-driven blood pressure oscillations. Mulder [(1989)](#ref-mulder1989) formalised the framework: the suppression reflects invested effort, not task difficulty. A person who disengages from a hard task shows little HRV change; one working hard at an easy task shows a marked decrease ([Mulder, 1992](#ref-mulder1992)). The pattern generalises across driving ([de Waard, 1996](#ref-dewaard1996); [Mulder et al., 2004](#ref-mulder2004)), aviation ([De Rivecourt et al., 2008](#ref-derivecourt2008)), clinical work ([Peabody et al., 2023](#ref-peabody2023)), and driving simulation studies ([Arutyunova et al., 2024](#ref-arutyunova2024)).
 
@@ -132,7 +132,15 @@ HRV does not measure perceived stress. It measures a physiological state: the co
 
 ### Frequency bands
 
-spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder, 1988](#ref-mulder1988)), following the CARSPAN convention. Band boundaries are **user-configurable** to accommodate different research traditions.
+spectHR follows the CARSPAN band convention. Band boundaries are **user-configurable**.
+
+| Band | Default range | Reflects |
+|------|--------------|------|
+| VLF | 0.02–0.06 Hz | Slow regulatory processes |
+| LF | 0.07–0.14 Hz | Baroreceptor reflex, mixed sympathetic/parasympathetic |
+| HF | 0.15–0.40 Hz | Respiratory sinus arrhythmia, parasympathetic tone |
+
+See [Mulder (1989)](#ref-mulder1989) and [Mulder (1988)](#ref-mulder1988) for background.
 
 ### Practical considerations
 
@@ -143,6 +151,8 @@ spectHR computes power in three bands ([Mulder, 1989](#ref-mulder1989); [Mulder,
 **Normalisation.** Absolute spectral power in ms² scales with mean IBI squared, increasing at lower heart rates. The CARSPAN mMI² normalisation corrects for this automatically. For the Welch method the output unit is configurable: the default is **mMI²** (normalised, heart-rate-independent) but can be switched to **ms²** (raw IBI power, not normalised) via the `"units"` key in *Edit Parameters*. Whether to normalise HRV for mean heart rate is genuinely unresolved ([de Geus et al., 2019](#ref-degeus2019)), and no single recommendation fits all research questions.
 
 <details>
+<summary>mMI²/Hz vs ms²/Hz: which unit to use?</summary>
+
 The two choices show the same frequencies (the rhythms of heart rate variability), but measured differently.
 ms²/Hz is the direct view. You take the sequence of beat-to-beat intervals in milliseconds, and ask how its variance is spread across frequencies. At any given frequency, this value tells you how much millisecond-squared variability sits there, per unit of frequency bandwidth. Integrate the curve over a band (for example HF, 0.15 to 0.40 Hz) and the result is band power in ms². That number is intuitive in absolute terms: an HF power of 1000 ms² means the HF rhythm contributes about √1000 ≈ 32 ms of variation to the IBI signal.
 The catch is that ms²/Hz depends strongly on mean heart rate. Someone with a slow resting heart (mean IBI 1200 ms) has more absolute room to fluctuate in milliseconds than someone with a fast heart (mean IBI 600 ms), even when both modulate their heart rate by the same proportion. So comparing absolute ms² between subjects, or between rest and exercise within one subject, is muddied by baseline differences in heart rate.
@@ -219,6 +229,7 @@ Once the peaks look correct, switch to the **IBI Series tab** to see heart rate 
 HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. You can also add epochs manually via **Actions → Add Epoch** and trim them by dragging their edges. Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
 
 ![Epochs](images/EpochsWindow.png)
+
 ---
 
 ### Step 4, Explore autonomic dynamics (Poincaré tab)
@@ -240,9 +251,9 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 ### Step 5, Examine frequency-domain HRV (PSD tab)
 
-![spectHR](images/PSDWindow.PNG)
+![spectHR](images/PSDWindow.png)
 
-The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded (usefull defaults in brackets):
+The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded (default ranges in brackets):
 
 - **FullRange (0.02–0.65 Hz)**, the total HRV spectrum.
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes.
@@ -263,17 +274,7 @@ Each subplot is one epoch; each filled, semi-transparent trace is one band. The 
 
 How the curve is computed: a fixed window of length `window_s` slides along the epoch in steps of `step_s`, and the active PSD method (CARSPAN-strict by default) is recomputed on the R-peaks inside each window. The band-power integration that produces one dot of the trace is the **same `band_powers()` call** used in the PSD tab, just applied per-window; flipping the PSD method in *Edit Parameters* therefore affects the Profiles tab the same way it affects the PSD tab.
 
-Configure it under **WorkSpace → Edit Parameters → Profile Settings**:
-
-| Setting | Default | What it does |
-|---|---|---|
-| `bands` | `["LF", "HF"]` | Tick-box list of band names to plot. Must match band names defined under PSD Settings; stale names from a band rename are dropped automatically. Ignored when an adaptive band is active - the adaptive band is shown alone. |
-| `window_s` | 30 s | Length of the sliding window, in seconds. [CARSPAN manual](#ref-carspan-manual) recommends `window_s ≥ 3 · 1/f_l_min` for reliable estimates of the lowest band (i.e. ≥ 50 s for an LF lower edge of 0.06 Hz). |
-| `step_s` | 5 s | Step between successive windows. Must be strictly smaller than `window_s` (otherwise the windows don't overlap). |
-| `smooth_for_display` | `false` | Apply the same 3-point moving-average smoother used by the PSD plot, along each band's time series. **Off by default**. |
-| `adaptive_band` | *(none)* | Selects one band to act as the **adaptive band** whose edges follow the per-window breathing frequency rather than fixed Hz limits. When set, that band is the only one plotted and the right y-axis shows the breathing frequency trace. |
-| `adaptive_source` | `respiration channel` | Where the per-window breathing frequency comes from. `respiration channel` uses the mean cycle period from the accelerometer-derived respiration signal (CARSPAN-faithful). `psd peak` finds the spectral peak inside the band's `resp_low`–`resp_high` search range instead, which works even without a dedicated respiration signal. |
-| `smooth breath frequency` | `false` | Apply a 3-point moving average to the sequence of per-window breathing frequencies before they are used to set the adaptive band edges. Smoothing removes single-window jumps. |
+Configure it under **WorkSpace → Edit Parameters → Profile Settings** (see [Spectral profiles](#spectral-profiles) for the full parameter table).
 
 Each profile dot is plotted at the **centre of the window that produced it**, not at the window's left edge. So the first dot for a 30 s window lands at `t = 15 s` within the epoch; the apparent "gap" at the left of each plot is the half-window that the first window's centre is offset from `t = 0`.
 
@@ -616,7 +617,7 @@ $$\text{SD2} = \sqrt{2 \cdot \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \mathrm{V
 
 **Ellipse area** $= \pi \cdot \text{SD1} \cdot \text{SD2}$, total HRV.
 
-**Important:** SD1 and SD2 are fully determined by RMSSD and SDNN and therefore carry no additional statistical information ([van Roon et al., 2025](#ref-vanroon2025)). Including all four in a statistical model introduces redundancy.
+See the note in Step 4 above: SD1 and SD2 add no statistical information beyond RMSSD and SDNN ([van Roon et al., 2025](#ref-vanroon2025)).
 
 ---
 
@@ -686,7 +687,7 @@ CARSPAN takes a different approach. Instead of resampling the IBI series onto a 
 
 spectHR has **one CARSPAN compute function** (`compute_carspan_psd`) with **two presets** of its `CarspanOptions` dataclass, exposed in the workspace as `method: "carspan"` (configurable) and `method: "carspan_strict"` (manual-faithful):
 
-- **`carspan_strict`** is the preset bundle returned by `carspan_strict_options()`. Locks every setting the [CARSPAN manual](#ref-carspan-manual) leaves implicit, including `signal: "ibi_amplitude"` which switches the DFT to the IBI-amplitude formula of Eq. 3.21 of the [CARSPAN manual](#ref-carspan-manual). Reproduces the manual's epoch #2 reference (`example1.EVT`, p. 121) within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
+- **`carspan_strict`** is the preset bundle returned by `carspan_strict_options()`. Locks every setting the [CARSPAN manual](#ref-carspan-manual) leaves implicit, including `signal: "ibi_amplitude"` which switches the DFT to the IBI-amplitude formula of Eq. 3.21 of the [CARSPAN manual](#ref-carspan-manual). Reproduces the manual's reference epoch within ~2 % on every band. Use this when you want to compare against published CARSPAN values.
 - **`carspan`** is the configurable variant. By default it's the unit-impulse SOC of Eq. 3.19, with the window, amplitude correction, reference-grid DC subtraction, and skip-first-event all exposed as separate workspace fields. Use this when you want to explore the effect of any of those settings.
 
 Because both come from the same function, *every* setting `carspan_strict` uses is reachable from the configurable side too. The strict preset is exactly:
@@ -744,7 +745,7 @@ where $x_i$ is the arithmetic-mean-subtracted IBI in ms, $t_i$ the local IBI dur
 
 The two views describe the *same physical signal* and would integrate to the same total energy under continuous-signal idealisations. In the discrete sampled implementation they produce different magnitudes (per-bin scaling differs by ~ $\overline{\text{IBI}}^2$ ). The strict path is the one whose discrete output matches the manual's tabulated reference values.
 
-**Which one matches the manual?** The strict path: verified against epoch #2 of `example1.EVT` ([CARSPAN manual](#ref-carspan-manual) p. 121) to within ~2 % on every band, ~0.03 % on LF.
+**Which one matches the manual?** The strict path: verified against the manual's reference epoch to within ~2 % on every band, ~0.03 % on LF.
 
 Internally, both variants run through the same `compute_carspan_psd` function in `CarspanPSD.py`; the `signal` field of `CarspanOptions` (`"events"` vs `"ibi_amplitude"`) selects the algorithm. The `carspan_strict_options()` helper builds the preset that locks in the manual-faithful choices for the IBI-amplitude path.
 
@@ -799,7 +800,7 @@ Two things to know:
 1. **`signal: "ibi_amplitude"`** is the switch that selects the manual-faithful algorithm ([CARSPAN manual](#ref-carspan-manual) Eq. 3.21). On this branch the other strict-bundle fields (`amplitude_correction`, `skip_first_event`, `dc_removal`, `dc_grid`) are **ignored** by the compute layer (the manual fixes their values), so they don't need to appear in the Edit Parameters dialog.
 2. **`window: "5% cosine bell"`** matches `TaperPercent := 5` (5 % cosine taper per side). The default of `"10% cosine bell"` is 10 % per side, which leaves ~3–5 % more energy on the table and is the single largest source of disagreement with strict if you only flip `signal`.
 
-Verified on epoch #2 of `example1.EVT`: setting `signal: "ibi_amplitude"` + `window: "5% cosine bell"` on the configurable `carspan` path reproduces `carspan_strict` to within ~1 % on every band (and the [CARSPAN manual](#ref-carspan-manual) reference to within ~1 %, actually closer than strict on some bands because the residuals from the two sub-percent effects partially cancel).
+Setting `signal: "ibi_amplitude"` + `window: "5% cosine bell"` on the configurable `carspan` path reproduces `carspan_strict` to within ~1 % on every band.
 
 Two small residuals remain between `carspan + signal=ibi_amplitude` and pure `carspan_strict`:
 
@@ -855,7 +856,7 @@ The mixin's `PsdMethod.mean_convention` is `"arithmetic"` for `carspan_strict` a
 
 #### Reference-grid DC removal (configurable mode only)
 
-The CARSPAN `SOC` branch for unit impulses (`IsRPDataCol=True`) does one extra trick the manual doesn't flag: before squaring, it subtracts the DFT of a perfectly periodic impulse train at the mean rate. At $f = 0$ both DFTs equal 1, so their difference is exactly zero and DC is removed. Beyond DC, the subtraction also cancels the spectral leakage that a mean-rate impulse train would otherwise contribute to the VLF region. For an approximately regular rhythm the correction is small at LF and HF but dominant at VLF.
+The configurable unit-impulse branch does one extra trick the manual doesn't flag: before squaring, it subtracts the DFT of a perfectly periodic impulse train at the mean rate. At $f = 0$ both DFTs equal 1, so their difference is exactly zero and DC is removed. Beyond DC, the subtraction also cancels the spectral leakage that a mean-rate impulse train would otherwise contribute to the VLF region. For an approximately regular rhythm the correction is small at LF and HF but dominant at VLF.
 
 In spectHR this is `FrequencyAnalysis.carspan.dc_removal` (also editable in *Edit Parameters*), only applicable to the configurable `carspan` variant. It defaults to `false` to preserve historical behaviour; turn it on when you need the VLF cleanup while retaining a custom window or the variance-correct amplitude. The IBI-amplitude `carspan_strict` path does **not** use this mechanism; its mean-subtraction step does the DC removal at the signal level (manual Eq. 3.21).
 
@@ -865,9 +866,9 @@ The grid runs from $f_1 = 1/T$ to $f_{k_\text{max}} = \lceil f_\text{max} \cdot 
 
 #### Display grid and smoothing
 
-The compute layer always returns the **un-smoothed** resampled spectrum (CARSPAN's `PDSin_BCK`); the 3-point moving-average smoother lives in the plot widget (`spectUI.PSDPlotWidget._fetch`), applied only when the active CARSPAN method has `smooth_for_display = True`. This split lets the *same* `series.psd()` call drive both the on-screen curve and the band-power integration, without `smooth=True/False` bookkeeping at the compute level.
+The compute layer always returns the **un-smoothed** resampled spectrum; the 3-point moving-average smoother lives in the plot widget (`spectUI.PSDPlotWidget._fetch`), applied only when the active CARSPAN method has `smooth_for_display = True`. This split lets the *same* `series.psd()` call drive both the on-screen curve and the band-power integration, without `smooth=True/False` bookkeeping at the compute level.
 
-**Compute layer (`series.psd()`, `compute_carspan_psd`).** Native spectrum → bin-averaged onto the `freq_resolution` display grid (`Resample`, default 0.01 Hz). That's it: no MA. This mirrors CARSPAN's `PDSin_BCK`, the array the manual reads when computing band powers (§3.2):
+**Compute layer (`series.psd()`, `compute_carspan_psd`).** Native spectrum → bin-averaged onto the `freq_resolution` display grid (`Resample`, default 0.01 Hz). That's it: no MA. This mirrors the un-smoothed spectrum the manual integrates for band powers (§3.2):
 
 > *"No smoothing of the spectra is carried out on the spectra before computing the spectral band values"*
 
@@ -957,7 +958,7 @@ Configure profiles under **WorkSpace → Edit Parameters → Profile Settings**:
 <details>
 <summary>Algorithm detail</summary>
 
-The implementation is `CardioMetricsMixin.band_power_profile`, following CARSPAN's `RunProfileSommation` (`T_AnaFunctions.pas` 2888–3056).
+The implementation is `CardioMetricsMixin.band_power_profile`.
 
 **spectHR extension: multiple PSD back-ends.** CARSPAN supports profiles only for the SOC spectral path. spectHR runs the same sliding-window scheme for all four methods (Welch, Lomb-Scargle, CARSPAN, and CARSPAN-strict), dispatching through the same `band_powers()` call used by the PSD tab. The active PSD method in *Edit Parameters → PSD Settings* applies immediately to profiles.
 
@@ -1002,7 +1003,7 @@ A window with fewer than four R-peaks cannot yield a reliable PSD (CARSPAN's min
 
 #### Step 2: Per-window PSD (§3.3.4, no 0.01 Hz interpolation)
 
-The manual (§3.3.5) explicitly states that the fixed 0.01 Hz frequency-grid interpolation applied for single-epoch spectral functions is *not* applied for profiles. spectHR follows this: the per-window PSD is computed by `_psd_for_band_power` on the R-peaks inside each window without resampling beyond what the chosen back-end itself performs. For `carspan_strict` this is the SOC → auto-spectrum pipeline producing CARSPAN's `PDSin_BCK` (the backup copy the manual integrates, §3.2): *"No smoothing is carried out before computing the spectral band values."* For Welch and Lomb-Scargle the standard IBI-based spectrum is used.
+The manual (§3.3.5) explicitly states that the fixed 0.01 Hz frequency-grid interpolation applied for single-epoch spectral functions is *not* applied for profiles. spectHR follows this: the per-window PSD is computed by `_psd_for_band_power` on the R-peaks inside each window without resampling beyond what the chosen back-end itself performs. For `carspan_strict` this is the standard SOC → auto-spectrum pipeline without display smoothing: *"No smoothing is carried out before computing the spectral band values."* For Welch and Lomb-Scargle the standard IBI-based spectrum is used.
 
 #### Step 3: Band-power integration
 
@@ -1018,7 +1019,7 @@ CARSPAN takes a fixed $\Delta f = 0.01\,\text{Hz}$ and identifies in-band bins b
 
 #### Adaptive bands
 
-CARSPAN's `TAnaBand.RespirationBand` flag enables one band to track the breathing frequency. spectHR exposes this through the `adaptive_band` setting and extends it with a configurable frequency source and optional smoothing.
+CARSPAN supports one band that tracks the breathing frequency per window. spectHR exposes this through the `adaptive_band` setting and extends it with a configurable frequency source and optional smoothing.
 
 A static band uses its configured $[f_l, f_h]$ unchanged for every window. An **adaptive** band re-centres on the per-window breathing frequency $f_b^{(i)}$; two per-band parameters, `resp_low` ($\Delta f_\text{lo}$) and `resp_high` ($\Delta f_\text{hi}$), define the half-widths around that centre:
 
@@ -1030,7 +1031,7 @@ $$f_\text{high}^{(i)} = \min\!\bigl(f_{\max}^{(i)},\ f_b^{(i)} + \Delta f_\text{
 
 </div>
 
-where $f_{\max}^{(i)}$ is the top of that window's PSD grid. The 0.01 Hz floor and $f_{\max}$ cap are direct ports of `GetRespirationMinBandValue` / `GetRespirationMaxBandValue` (`T_AnaFunctions.pas` 2837–2884). If the clamps invert the band ($f_\text{high} \le f_\text{low}$), that window is NaN.
+where $f_{\max}^{(i)}$ is the top of that window's PSD grid. A 0.01 Hz floor and an $f_{\max}$ cap are applied; if the clamps invert the band ($f_\text{high} \le f_\text{low}$), that window is NaN.
 
 **Breathing-frequency sources** (`adaptive_source`):
 
@@ -1042,7 +1043,7 @@ $$f_b = \frac{1}{\bar{c}}, \qquad \bar{c} = \frac{1}{M}\sum_{j=1}^{M}(e_{j+1} - 
 
 </div>
 
-This mirrors CARSPAN's $1/\texttt{LProfile.MeanIn}$ (`T_AnaFunctions.pas` 2944–2952). When fewer than two phases fall within the window, or when no respiration channel is loaded, the window falls back to `psd_peak` (a warning is logged once).
+When fewer than two phases fall within the window, or when no respiration channel is loaded, the window falls back to `psd_peak` (a warning is logged once).
 
 *`psd_peak`* (no respiration channel required; also the automatic per-window fallback). The breathing frequency is taken as the largest spectral peak inside the band's static search range:
 
@@ -1078,7 +1079,7 @@ with asymmetric boundary weights $\tilde{f}_b[0] = \tfrac{3}{8}f_b[0] + \tfrac{5
 
 ### Transfer functions
 
-The PSD, Profiles and Spectrogram views describe heart-rate variability **on its own**. The Transfer view describes how HRV is **driven by breathing**: a frequency-by-frequency answer to "how much of the heart-rate fluctuation at $f$ is linearly predictable from the breathing signal at $f$, and what is the gain and the phase delay of that prediction?". The implementation is `spectHR.analysis.transfer.compute_transfer` (single-block, one Bode plot per epoch) and `compute_transfer_profile` (sliding-window, one time series per band). Both are faithful ports of CARSPAN's `RunTransfer` (`T_AnaFunctions.pas` 2493--2610) with one deliberate change documented below.
+The PSD, Profiles and Spectrogram views describe heart-rate variability **on its own**. The Transfer view describes how HRV is **driven by breathing**: a frequency-by-frequency answer to "how much of the heart-rate fluctuation at $f$ is linearly predictable from the breathing signal at $f$, and what is the gain and the phase delay of that prediction?". The implementation is `spectHR.analysis.transfer.compute_transfer` (single-block, one Bode plot per epoch) and `compute_transfer_profile` (sliding-window, one time series per band). Both follow CARSPAN's transfer-function algorithm with one deliberate change documented below.
 
 #### Reading the plots
 
@@ -1127,7 +1128,7 @@ $$|C(f)|^2 = \frac{|S_{xy}(f)|^2}{S_{xx}(f) \cdot S_{yy}(f)}$$
 
 </div>
 
-is algebraically identically $1$ at every frequency when the two spectra come from a single un-averaged periodogram. There is no actual statistical content. To get coherence values that mean anything, the cross- and auto-spectra must be averaged in some way before the ratio is taken. CARSPAN handles this by applying a 3-point triangular smoother (`WindowSize=3` in `AutoSpectrum` and `CrossSpectrum`) **only on the profile branch** (`FViewProgressAnalysis.Tag <> 0`); the single-epoch view passes `WindowSize=0` and would render a flat `coherence=1` panel that's only useful as a sanity check. spectHR exposes the smoother as a single `smooth` Settings toggle defaulting to **true** on both paths, so the per-epoch Bode plot is informative out of the box. Set `smooth=false` to reproduce the CARSPAN-strict numbers.
+is algebraically identically $1$ at every frequency when the two spectra come from a single un-averaged periodogram. There is no actual statistical content. To get coherence values that mean anything, the cross- and auto-spectra must be averaged in some way before the ratio is taken. CARSPAN applies a 3-point triangular smoother on the profile branch only; the single-epoch view uses no smoothing and would render a flat `coherence=1` panel that's only useful as a sanity check. spectHR exposes the smoother as a single `smooth` Settings toggle defaulting to **true** on both paths, so the per-epoch Bode plot is informative out of the box. Set `smooth=false` to reproduce the CARSPAN-strict numbers.
 
 #### Transfer function, modulus, phase, coherence
 
@@ -1145,7 +1146,7 @@ Phase is kept twice: the wrapped form $\angle H(f) \in (-\pi, \pi]$ for visual s
 
 #### Band integrators
 
-Three CARSPAN-faithful band summaries are computed per band $[f_l, f_h]$ on the spectra above. Band indices follow the manual's $\lfloor f / \Delta f \rceil - 1$ rounding so they match `Caluculate_ModulusSum`'s edge-bin convention. For each band:
+Three band summaries are computed per band $[f_l, f_h]$ on the spectra above, using the manual's $\lfloor f / \Delta f \rceil - 1$ edge-bin rounding. For each band:
 
 <div align="center">
 
@@ -1165,7 +1166,7 @@ $`\bar C = \frac{\sum_{f_l \le f_k \le f_h} |C(f_k)|^2 \cdot S_{xx}(f_k)}{\sum_{
 
 </div>
 
-where $`c_{\min}`$ is the `min_coherence` setting. Three names, three CARSPAN routines: `Caluculate_ModulusSum`, `Caluculate_PhaseSum`, `Caluculate_WeightedCoherenceSum`. Modulus and phase are gated by `min_coherence` (only bins whose coherence clears the threshold contribute); weighted coherence is power-weighted by the respiration spectrum and uses every in-band bin. `n_points` is the total number of in-band bins; `n_coherent` is how many of them cleared the gate. All four numbers go to `{basename}_transfer.csv`.
+where $`c_{\min}`$ is the `min_coherence` setting. Modulus and phase are gated by `min_coherence` (only bins whose coherence clears the threshold contribute); weighted coherence is power-weighted by the respiration spectrum and uses every in-band bin. `n_points` is the total number of in-band bins; `n_coherent` is how many of them cleared the gate. All four numbers go to `{basename}_transfer.csv`.
 
 #### Profile path
 
@@ -1173,7 +1174,7 @@ where $`c_{\min}`$ is the `min_coherence` setting. Three names, three CARSPAN ro
 
 #### What survives, what changes
 
-A line-by-line comparison with `T_AnaFunctions.pas`: all the per-bin formulas (taper, DFT, auto / cross spectrum scaling, $|H|$, $\angle H$, $|C|^2$, `UnwrapPhase`), the three band integrators, and the bin-index rounding match exactly. Smoothing is the one knob the user can flip: on by default in spectHR (both paths), originally off in CARSPAN on the single-block path. The CSV's `smooth` column records which setting produced each row.
+All per-bin formulas (taper, DFT, auto / cross spectrum scaling, $|H|$, $\angle H$, $|C|^2$, phase unwrapping), the three band integrators, and the bin-index rounding match CARSPAN's algorithm exactly. Smoothing is the one knob the user can flip: on by default in spectHR (both paths), originally off in CARSPAN on the single-block path. The CSV's `smooth` column records which setting produced each row.
 
 </details>
 

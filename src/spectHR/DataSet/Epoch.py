@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence, Tuple
+from typing import Sequence
 import numpy as np
 
 
@@ -138,7 +138,7 @@ class Phase:
     """
 
     active: bool
-    intervals: Sequence[Tuple[float, float]]
+    intervals: Sequence[tuple[float, float]]
 
     @property
     def n_intervals(self) -> int:

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import os
-from typing import Callable, Dict
+from typing import Callable
 from pathlib import Path
 
 LoaderFunc = Callable[..., None]
 
-_EXTENSION_LOADERS: Dict[str, LoaderFunc] = {}
+_EXTENSION_LOADERS: dict[str, LoaderFunc] = {}
 
 
 def register_loader(*exts: str | Path):

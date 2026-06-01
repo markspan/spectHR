@@ -38,21 +38,36 @@ class TimeSeries:
         if self.times.shape[0] != self.values.shape[0]:
             raise ValueError("TimeSeries times and values must have same length.")
 
+        # Set by loaders that handle polarity explicitly (flip=True / flip=False).
+        # PhysioData._fix_ecg_polarity() skips any ECG series where this is True.
+        self._polarity_fixed: bool = False
+
     def detect_ecg_polarity(
         self,
         bandpass: tuple[float, float] = (5.0, 20.0),
         min_peak_distance: float = 0.25,
         return_debug: bool = False,
+        segment=None,
     ) -> str | tuple[str, dict]:
         """Determine whether this ECG signal is correctly oriented or inverted.
 
-        Delegates to :func:`spectHR.Tools.ECGProcessing.detect_ecg_polarity`.
-        See that function for full parameter and return-value documentation.
+        Parameters
+        ----------
+        segment : Epoch-like, (float, float), or None
+            Time range to base the decision on. Accepts an ``Epoch``
+            object (or any object with ``.start`` / ``.end`` attributes)
+            or a ``(start_sec, end_sec)`` tuple. When ``None`` (default)
+            the middle third of the recording is used, which avoids
+            start-up and settling artefacts at both ends.
+
+        See :func:`spectHR.Tools.ECGProcessing.detect_ecg_polarity` for
+        full documentation of the remaining parameters.
         """
         from spectHR.Tools.ECGProcessing import detect_ecg_polarity
         return detect_ecg_polarity(
             self.times,
             self.values,
+            segment=segment,
             bandpass=bandpass,
             min_peak_distance=min_peak_distance,
             return_debug=return_debug,

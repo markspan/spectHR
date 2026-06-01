@@ -9,7 +9,6 @@ import numpy as np
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.DataSet.loaders._loader_utils import is_inverted_ecg
 from spectHR.Tools.Logger import logger
 
 
@@ -25,7 +24,6 @@ _ECG_SCALE = 40.0
 def load_harness_raw_csv(
     physiodata,
     filename: str,
-    flip: str | bool = "auto",
     **kwargs,
 ) -> None:
     """
@@ -104,16 +102,6 @@ def load_harness_raw_csv(
     times = np.arange(ecg.size, dtype=float) * dt
 
     # ------------------------------------------------------------
-    # POLARITY (shared heuristic with polar_csv.py)
-    # ------------------------------------------------------------
-    if flip == "auto":
-        if is_inverted_ecg(ecg):
-            ecg = -ecg
-            logger.debug("Harness ECG: polarity heuristic triggered → flipped")
-    elif flip is True:
-        ecg = -ecg
-
-    # ------------------------------------------------------------
     # MEAN CENTER
     # ------------------------------------------------------------
     ecg = ecg - np.nanmean(ecg)
@@ -137,10 +125,4 @@ def load_harness_raw_csv(
 
     # ------------------------------------------------------------
     # BAND MAP
-    # ------------------------------------------------------------
-    physiodata.band_map = {
-        band_id: {
-            "ecg": ecg_name,
-        }
-    }
-    physiodata.active_band = band_
+    # --------------------------------

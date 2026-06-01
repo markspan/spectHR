@@ -8,46 +8,48 @@ from typing import Any
 import numpy as np
 
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.DataSet.loaders.nff_loader import loadNFF
+from spectHR.DataSet.loaders.nff_loader import load_nff
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
 from spectHR.Tools.Logger import logger
 
 # NOTE: ``EventCodeWindow`` lives in ``spectUI`` (it's a PySide6 dialog).
-# We resolve it lazily inside ``loadEVT`` so that ``import spectHR`` works
+# We resolve it lazily inside ``_load_evt_data`` so that ``import spectHR`` works
 # in headless environments - only the GUI path through .evt files with
 # multiple non-RTop codes needs Qt.
 
 @register_loader(".evt")
 def load_evt(physiodata, filename: str, **kwargs: Any) -> None:
     """
-    Loader for (CARSPAN) evt objects. if nff files are availeable they will also be loaded.
+    Load a CARSPAN .evt file; if a matching .nff ECG file exists, load it too.
     """
-    EVTPath = Path(filename)
-    logger.info(f"Loading EVT: {EVTPath}")
-    loadEVT(physiodata, EVTPath)
+    evt_path = Path(filename)
+    logger.info(f"Loading EVT: {evt_path}")
+    _load_evt_data(physiodata, evt_path)
     physiodata.has_ecg = False
-    
-    NFFPath = EVTPath.with_suffix('.nff')
-    if NFFPath.exists():
-        loadNFF(physiodata,NFFPath)
-        logger.info(f"Loading dataset from CARSPAN nff File: {NFFPath.name}")
+
+    nff_path = evt_path.with_suffix('.nff')
+    if nff_path.exists():
+        load_nff(physiodata, nff_path)
+        logger.info(f"Loaded NFF ECG: {nff_path.name}")
         # Lock R-peak times: the .evt timestamps are authoritative when an
         # accompanying .nff ECG signal exists. Otherwise preprocess_ecg()
         # would re-detect peaks from the ECG and overwrite the .evt times.
         for cs in physiodata.hrv_map.values():
             cs.rtops_locked = True
     else:
-        logger.info(f"No corresponding NFF file found at: {NFFPath}")
+        logger.info(f"No NFF file found at: {nff_path}")
 
 
-def loadEVT(physiodata, filename: Path) -> None:
+def _load_evt_data(physiodata, filename: Path) -> None:
+    """Load R-peak times and epoch markers from a CARSPAN .evt file.
+
+    Opens a GUI code-selector (EventCodeWindow) when the file contains
+    more than two distinct non-RTop event codes so the researcher can
+    identify which codes mark epoch starts and stops.
     """
-    Load HRVdata and epochs from a CARSPAN .evt file into PhysioData.
-    Uses the EventCodeWindow GUI when multiple non-RTop codes exist.
-    """
 
-    logger.info("Loading CARSPAN EVT RTop Data")
+    logger.info(f"Parsing EVT: {filename.name}")
 
     # --------------------------------------------------
     # Read file
@@ -107,17 +109,15 @@ def loadEVT(physiodata, filename: Path) -> None:
     # --------------------------------------------------
     # Create CardioSeries
     # --------------------------------------------------
-    # Ensure band model exists (evt-only files may not have NFF)
-    if not hasattr(physiodata, "band_map") or not physiodata.band_map:
+    # Seed a minimal band model when loading .evt without an accompanying
+    # .xdf. PhysioData always initialises band_map and active_band in
+    # __init__; we only fill them here when still empty (evt-only load).
+    if not physiodata.band_map:
         physiodata.band_map = {"ecg": {"ecg": "ecg"}}
-    if getattr(physiodata, "active_band", None) is None:
+    if physiodata.active_band is None:
         physiodata.active_band = "ecg"
 
     band = physiodata.active_band
-
-    # Ensure HRV store exists
-    if not hasattr(physiodata, "hrv_map") or physiodata.hrv_map is None:
-        physiodata.hrv_map = {}
 
     cs = CardioSeries(rtop_times)
     cs._pd = physiodata
@@ -174,17 +174,11 @@ def loadEVT(physiodata, filename: Path) -> None:
                 "Mismatched start/stop events in EVT file."
             )
 
-    # --------------------------------------------------
-    # CARSPAN epoch-start convention
-    # --------------------------------------------------
-    # The CARSPAN system counts the last heartbeat *before* the Beginperiod
-    # marker (code 21) as the first beat of the epoch - not the first beat
-    # after the marker.  To reproduce CARSPAN's beat counts and IBI statistics
-    # we therefore replace each epoch start time with the timestamp of the last
-    # R-peak that occurred strictly before the original start-marker time.
-    #
-    # If no R-peak precedes a given start marker (e.g. the fallback single-epoch
-    # whose start equals times[0]), the original marker time is kept unchanged.
+    # Epoch-start convention: replace each start-marker time with the
+    # timestamp of the last R-peak strictly before it. This matches the
+    # way CARSPAN counts the preceding beat as the first of an epoch.
+    # If no R-peak precedes a marker (e.g. the fallback single epoch),
+    # the original marker time is kept.
     adjusted_start_times = []
     for st in start_times:
         preceding = rtop_times[rtop_times < st]
@@ -192,7 +186,7 @@ def loadEVT(physiodata, filename: Path) -> None:
             adjusted = float(preceding[-1])
             logger.debug(
                 f"Epoch start adjusted: {st:.3f} s → {adjusted:.3f} s "
-                f"(last R-peak before marker, CARSPAN convention)."
+                f"(last R-peak before marker)"
             )
             adjusted_start_times.append(adjusted)
         else:
@@ -203,7 +197,6 @@ def loadEVT(physiodata, filename: Path) -> None:
     # --------------------------------------------------
     # Register epochs
     # --------------------------------------------------
-    # physiodata.epochs.clear()
     raw_times = np.concatenate((start_times, end_times))
     n = len(start_times)
     raw_labels = (
@@ -212,8 +205,6 @@ def loadEVT(physiodata, filename: Path) -> None:
     )
     
     physiodata.events["TaskSeries"] = EventSeries(raw_times, raw_labels)
-
     logger.info(
-        f"Loaded {len(raw_times)} epoch(s) "
-        f"and {rtop_times.size} RTops"
+        "EVT: loaded %d R-tops and %d epoch(s)", rtop_times.size, len(start_times),
     )

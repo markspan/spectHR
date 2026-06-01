@@ -16,6 +16,56 @@ from spectHR.Tools.Logger import logger
 # ------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Helpers for _compute_RSP_signal
+# ---------------------------------------------------------------------------
+
+def _interp_nans(x: np.ndarray) -> np.ndarray:
+    """Linearly interpolate NaN gaps in a 1-D array; returns zeros if < 2 valid."""
+    if not np.isnan(x).any():
+        return x
+    idx = np.arange(x.size)
+    good = ~np.isnan(x)
+    if good.sum() < 2:
+        return np.zeros_like(x)
+    return np.interp(idx, idx[good], x[good])
+
+
+def _robust_winsorize(x: np.ndarray, z: float) -> np.ndarray:
+    """Clip *x* to median ± z * (1.4826 * MAD); robust to outliers."""
+    med = np.median(x)
+    mad = np.median(np.abs(x - med))
+    sigma = 1.4826 * mad if mad > 0 else np.std(x)
+    if sigma <= 0:
+        return x
+    return np.clip(x, med - z * sigma, med + z * sigma)
+
+
+def _butter_sos(kind: str, cutoff, order: int, fs: float):
+    """Build a SOS Butterworth filter.  *kind* is ``"low"`` or ``"band"``."""
+    from scipy.signal import butter
+    nyq = 0.5 * fs
+    if kind == "low":
+        wn = float(cutoff) / nyq
+        if not (0 < wn < 1):
+            raise ValueError("gravity_cutoff_hz must be between 0 and Nyquist.")
+        return butter(order, wn, btype="low", output="sos")
+    elif kind == "band":
+        lo, hi = float(cutoff[0]) / nyq, float(cutoff[1]) / nyq
+        if not (0 < lo < hi < 1):
+            raise ValueError("rsp_band_hz must be within (0, Nyquist) and low < high.")
+        return butter(order, [lo, hi], btype="bandpass", output="sos")
+    raise ValueError(f"Unsupported filter kind: {kind!r}.")
+
+
+def _sos_filtfilt(sos, x: np.ndarray) -> np.ndarray:
+    """Zero-phase SOS filter; falls back to unfiltered if *x* is too short."""
+    from scipy.signal import sosfiltfilt
+    if x.size < max(3 * (sos.shape[0] * 2 + 1), 15):
+        return x.copy()
+    return sosfiltfilt(sos, x)
+
+
 def _compute_RSP_signal(
     acc: np.ndarray,
     fs: float,
@@ -31,8 +81,7 @@ def _compute_RSP_signal(
     nan_policy: str = "interp",
     # Output scaling
     zscore: bool = True,
-    return_diagnostics: bool = False,
-) -> np.ndarray | tuple[np.ndarray, dict]:
+) -> np.ndarray:
     """
     Extract a respiration surrogate signal from Nx3 chest-belt accelerometer data.
 
@@ -64,15 +113,10 @@ def _compute_RSP_signal(
         "interp" to linearly interpolate NaNs per axis; "raise" to error; "omit" to fill with 0.
     zscore:
         If True, return a standardized signal (mean 0, std 1).
-    return_diagnostics:
-        If True, also return a dict with intermediate info (PC vector, explained variance, etc.).
-
     Returns
     -------
-    rsp:
-        1D numpy array (N,) respiration surrogate.
-    diagnostics (optional):
-        Dict with keys: "pc1", "explained_var", "gravity", "lin_acc", "band3".
+    rsp : np.ndarray, shape (N,)
+        Respiration surrogate signal.
 
     Notes
     -----
@@ -84,60 +128,6 @@ def _compute_RSP_signal(
         raise ValueError(f"`acc` must have shape (N, 3). Got {acc.shape}.")
     if fs <= 0:
         raise ValueError("`fs` must be > 0.")
-
-    # ---------- helpers ----------
-    def _interp_nans(x: np.ndarray) -> np.ndarray:
-        if not np.isnan(x).any():
-            return x
-        n = x.size
-        idx = np.arange(n)
-        good = ~np.isnan(x)
-        if good.sum() < 2:
-            # not enough data to interpolate meaningfully
-            return np.zeros_like(x)
-        return np.interp(idx, idx[good], x[good])
-
-    def _robust_winsorize_axis(x: np.ndarray, z: float) -> np.ndarray:
-        # robust sigma via MAD
-        med = np.median(x)
-        mad = np.median(np.abs(x - med))
-        # 1.4826 * MAD ≈ std for normal
-        sigma = 1.4826 * mad if mad > 0 else np.std(x)
-        if sigma <= 0:
-            return x
-        lo = med - z * sigma
-        hi = med + z * sigma
-        return np.clip(x, lo, hi)
-
-    def _butter_sos(kind: str, cutoff, order: int):
-        from scipy.signal import butter
-
-        nyq = 0.5 * fs
-        if kind == "low":
-            wn = float(cutoff) / nyq
-            if not (0 < wn < 1):
-                raise ValueError("gravity_cutoff_hz must be between 0 and Nyquist.")
-            return butter(order, wn, btype="low", output="sos")
-        elif kind == "band":
-            lo, hi = cutoff
-            lo = float(lo) / nyq
-            hi = float(hi) / nyq
-            if not (0 < lo < hi < 1):
-                raise ValueError(
-                    "rsp_band_hz must be within (0, Nyquist) and low < high."
-                )
-            return butter(order, [lo, hi], btype="bandpass", output="sos")
-        else:
-            raise ValueError("Unsupported filter kind.")
-
-    def _sos_filtfilt(sos, x: np.ndarray) -> np.ndarray:
-        from scipy.signal import sosfiltfilt
-
-        # sosfiltfilt will complain if too short; fail gracefully
-        if x.size < max(3 * (sos.shape[0] * 2 + 1), 15):
-            # fallback: no filtering (or you could do sosfilt)
-            return x.copy()
-        return sosfiltfilt(sos, x)
 
     # ---------- 1) NaNs + winsorize ----------
     acc2 = acc.copy()
@@ -157,15 +147,15 @@ def _compute_RSP_signal(
     if winsorize_z is not None:
         z = float(winsorize_z)
         for k in range(3):
-            acc2[:, k] = _robust_winsorize_axis(acc2[:, k], z)
+            acc2[:, k] = _robust_winsorize(acc2[:, k], z)
 
     # ---------- 2) gravity estimate + removal ----------
-    sos_g = _butter_sos("low", gravity_cutoff_hz, gravity_order)
+    sos_g = _butter_sos("low", gravity_cutoff_hz, gravity_order, fs)
     gravity = np.column_stack([_sos_filtfilt(sos_g, acc2[:, k]) for k in range(3)])
     lin_acc = acc2 - gravity
 
     # ---------- 3) bandpass to respiration band ----------
-    sos_rsp = _butter_sos("band", rsp_band_hz, rsp_order)
+    sos_rsp = _butter_sos("band", rsp_band_hz, rsp_order, fs)
     band3 = np.column_stack([_sos_filtfilt(sos_rsp, lin_acc[:, k]) for k in range(3)])
 
     # ---------- 4) PCA on bandpassed 3D signal ----------
@@ -194,21 +184,7 @@ def _compute_RSP_signal(
         s = np.std(rsp)
         rsp = (rsp - np.mean(rsp)) / (s if s > 0 else 1.0)
 
-    if not return_diagnostics:
-        return rsp
-
-    explained = float(evals[0] / evals.sum()) if evals.sum() > 0 else 0.0
-    diag = {
-        "pc1": pc1,  # 3-vector loadings
-        "explained_var": explained,  # fraction of variance explained by PC1 in band
-        "gravity": gravity,  # Nx3
-        "lin_acc": lin_acc,  # Nx3
-        "band3": band3,  # Nx3
-        "main_axis": main_axis,
-        "rsp_band_hz": rsp_band_hz,
-        "gravity_cutoff_hz": gravity_cutoff_hz,
-    }
-    return rsp, diag
+    return rsp
 
 
 # ------------------------------------------------------------
@@ -300,14 +276,7 @@ def load_xdf(physiodata, filename: str, **kwargs) -> None:
             values = data[:, 0] if data.ndim == 2 else data
             ecg_name = f"ecg{suffix}"
             physiodata.timeseries[ecg_name] = TimeSeries(times, values)
-            polarity = physiodata.timeseries[ecg_name].detect_ecg_polarity()
-            if polarity == "inverted":
-                physiodata.timeseries[ecg_name].flip()
-                logger.info(
-                    f"Loaded ECG → {ecg_name}, detected polarity: {polarity}, corrected polarity"
-                )
-            else:
-                logger.info(f"Loaded ECG → {ecg_name}, detected polarity: {polarity}")
+            logger.info(f"Loaded ECG → {ecg_name} (polarity check deferred to PhysioData)")
             continue
 
         # ------------------------------------------------------------

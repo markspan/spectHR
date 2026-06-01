@@ -248,3 +248,50 @@ When an AI assistant edits this codebase, the rules above apply, plus:
 The README's full reference list is the authoritative version; this
 section just notes the three works whose conventions and tone
 spectHR follows most closely.
+
+### 2.11 Writing files from the AI assistant
+
+**Never use the Write or Edit tool to write Python source files.**
+Both tools write through a Windows-mount path that suffers from
+filesystem-sync latency: the bash sandbox can see a stale, null-byte-
+padded, or truncated version of the file for seconds to minutes after
+the tool reports success. The result is silent truncation, syntax
+errors on the next import, or duplicate blocks.
+
+**Use bash writes instead.** The only safe way to modify a source file
+is through the bash mount path (`/sessions/.../mnt/spectHR/...`):
+
+```python
+# Targeted patch (preferred — only the changed fragment)
+python3 - << 'PYEOF'
+p = '/sessions/.../mnt/spectHR/src/some/module.py'
+src = open(p).read()
+assert src.count(OLD) == 1          # fail fast if the pattern is ambiguous
+open(p, 'w').write(src.replace(OLD, NEW, 1))
+PYEOF
+```
+
+```bash
+# Full rewrite (when the whole file changes)
+cat > /sessions/.../mnt/spectHR/src/some/module.py << 'PYEOF'
+# ... full file content ...
+PYEOF
+echo "wrote $(wc -l < path/to/file) lines"
+```
+
+Rules for every file write:
+
+1. **Read first.** Use `sed -n 'X,Yp'` or `grep -n` to confirm the
+   exact whitespace and text before constructing the replacement.
+2. **Compile after.** Run `python3 -m py_compile <path>` immediately
+   after writing to catch truncation before the next import.
+3. **Check line count and null bytes.**
+   `wc -l <path>` and
+   `python3 -c "assert b'\x00' not in open('<path>','rb').read()"`.
+4. **Assert uniqueness** before a targeted `str.replace` so a pattern
+   match across multiple sites is caught as an error, not silently
+   applied twice.
+
+The Write / Edit tools remain available for Markdown, JSON, YAML, and
+other non-Python assets where truncation is immediately visible and
+does not silently break imports.

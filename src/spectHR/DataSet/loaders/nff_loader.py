@@ -1,23 +1,15 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""CARSPAN ``.nff`` ECG-file loader.
+"""Loader for the ``.nff`` binary ECG format used by CARSPAN.
 
-Reads the little-endian binary ``.nff`` format produced by CARSPAN
-(channel-headers at fixed offsets, sweep-interleaved sample blocks of
-512 int16s per channel) and attaches the ECG channel to a
-:class:`PhysioData` instance as a :class:`TimeSeries`.
+``.nff`` files store channel data as little-endian int16 samples in
+sweep-interleaved blocks. :class:`TNFF` handles the binary layout;
+:func:`load_nff` attaches the ECG channel to a :class:`PhysioData`
+instance as a :class:`TimeSeries`.
 
-The format details (block sizes, header offsets) are not officially
-documented; the implementation here mirrors the reference Pascal
-``T_Nff.pas``.
-
-Originally lived inline inside :mod:`spectHR.DataSet.loaders.evt_loader`
-(``loadNFF`` plus a nested ``TNFF`` class). Split out so the EVT loader
-focuses on EVT parsing and the binary NFF reader can be reused / tested
-in isolation. There is no separate ``register_loader(".nff")`` because
-NFF files are always loaded alongside their companion ``.evt`` -
-:func:`load_evt` calls :func:`loadNFF` directly when a matching ``.nff``
-exists next to the ``.evt``.
+NFF files are always paired with a companion ``.evt`` file.
+:func:`load_nff` is called directly from :func:`load_evt` when a
+matching ``.nff`` exists; it is not a standalone registered loader.
 """
 
 from __future__ import annotations
@@ -32,7 +24,7 @@ from spectHR.Tools.Logger import logger
 
 
 class TNFF:
-    """Reader for one CARSPAN ``.nff`` binary file.
+    """Binary reader for a CARSPAN ``.nff`` file.
 
     Header layout (offsets in 16-bit words / 32-bit ints from the start
     of the 512-byte top header):
@@ -179,21 +171,21 @@ class TNFF:
         return struct.unpack("<" + str(sweep_size) + "h", buf)
 
 
-def loadNFF(physiodata, filename: Path, label: str = "ECG") -> None:
-    """Load channel data and timestamps from a CARSPAN ``.nff`` file and
-    attach it to *physiodata* as ``physiodata.timeseries["ecg"]``.
+def load_nff(physiodata, filename: Path, label: str = "ECG") -> None:
+    """Read the named channel from a ``.nff`` file into *physiodata*.
+
+    Attaches the channel as ``physiodata.timeseries["ecg"]`` and sets
+    ``band_map``, ``active_band``, and ``has_ecg``.
 
     Parameters
     ----------
     physiodata : PhysioData
-        Target dataset.
     filename : Path
-        Path to the NFF file.
     label : str
-        Channel label to load (default ``'ECG'``). Ignored when the
+        Channel label to read (default ``'ECG'``). Ignored when the
         file has exactly one channel.
     """
-    logger.info(f"Loading CARSPAN NFF: {filename.name}")
+    logger.info(f"Loading NFF: {filename.name}")
 
     nff = TNFF()
     nff.open_file(filename)
@@ -219,20 +211,12 @@ def loadNFF(physiodata, filename: Path, label: str = "ECG") -> None:
         f"samples={len(data)}, fs={sample_rate:.2f} Hz"
     )
 
-    # --------------------------------------------------
-    # Attach to PhysioData
-    # --------------------------------------------------
-    if not hasattr(physiodata, "timeseries") or physiodata.timeseries is None:
-        physiodata.timeseries = {}
-
     physiodata.timeseries["ecg"] = TimeSeries(
         timestamps,
         data.astype(float),
     )
 
-    # --------------------------------------------------
-    # Normalize to 1-band model (band id = "ecg")
-    # --------------------------------------------------
+    # Set up the single-band model.
     physiodata.band_map = {"ecg": {"ecg": "ecg"}}
     physiodata.active_band = "ecg"
     physiodata.has_ecg = True

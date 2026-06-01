@@ -15,34 +15,19 @@ if TYPE_CHECKING:
 
 
 class CardioSeries:
-    """
-    Container for R-peak times and per-interval labels.
+    """R-peak timestamps with per-interval classification labels.
 
-    Conceptual model
-    ----------------
-    A CardioSeries owns a sequence of R-peak timestamps (seconds, dataset
-    time base). Inter-beat intervals (IBIs) are derived on demand from those
-    times. It does not compute HRV metrics or PSD; pass a CardioSeries or
-    CardioSeriesView to functions in spectHR.analysis instead.
+    ``times`` : 1D float array of R-peak times in seconds.
+    ``labels`` : 1D object array of the same length; ``labels[i]`` describes
+    the interval from ``times[i]`` to ``times[i+1]``; the last element is a
+    placeholder.
 
-    Data arrays
-    -----------
-    times  : 1D float array of R-peak times in seconds.
-    labels : 1D object array of per-interval labels (same length as times).
-             labels[i] describes the interval between times[i] and times[i+1].
-             The final element is present for alignment but unused.
+    IBIs are derived on demand from ``times`` via the ``ibi`` property.
+    All label assignment goes through :meth:`classify_ibi`; call it after
+    any mutation to ``times``.
 
-    Label lifecycle
-    ---------------
-    All label assignment is the sole responsibility of classify_ibi().
-    The ibi property is a pure computation and never mutates labels.
-    Call classify_ibi() after any mutation to times.
-
-    Relationship to views
-    ---------------------
-    CardioSeries.view() and CardioSeries.__getitem__() return CardioSeriesView
-    objects (defined in CardioSeriesView.py). Use CardioSeriesLike
-    (CardioSeriesProtocol.py) for type annotations where either is acceptable.
+    HRV metrics and PSD are not computed here — pass a ``CardioSeries``
+    or ``CardioSeriesView`` to functions in ``spectHR.analysis``.
     """
 
     def __init__(self, times: np.ndarray) -> None:
@@ -50,9 +35,9 @@ class CardioSeries:
         self.labels = np.full(self.times.shape, "N", dtype=object)
         self._pd: Optional["PhysioData"] = None
         self._stream: Optional[str] = None
-        # When True, preprocess_ecg() must NOT re-detect R-peaks from the ECG
-        # signal - the times are authoritative (e.g. loaded from a CARSPAN
-        # .evt alongside an .nff). The ECG can still be filtered for display.
+        # When True, preprocess_ecg() skips R-peak re-detection; the times
+        # are authoritative (e.g. loaded from a .evt file). The ECG can
+        # still be filtered for display.
         self.rtops_locked: bool = False
 
     # ------------------------------------------------------------------
@@ -81,8 +66,7 @@ class CardioSeries:
         ----------
         ts : ECG time series with ``.times`` and ``.values`` attributes.
         min_peak_distance_ms : float
-            Minimum R-R distance in ms. Beats closer than this cannot
-            be detected (CARSPAN: ``Trefr = 300 ms``).
+            Minimum R-R distance in ms (physiological refractory period).
         window_length : int
             Centered rolling window size passed to :meth:`classify_ibi`.
         n_std : float
@@ -112,15 +96,10 @@ class CardioSeries:
 
     @property
     def ibi(self) -> np.ndarray:
-        """
-        Inter-beat intervals in seconds, with a trailing NaN for alignment.
+        """IBIs in seconds; trailing NaN so ``len(ibi) == len(times)``.
 
-        len(ibi) == len(times).
-        ibi[i] is the interval between times[i] and times[i+1].
-        The final element is always NaN.
-
-        Pure computation - never mutates self.labels.
-        Call classify_ibi() after any mutation to times.
+        ``ibi[i]`` = ``times[i+1] - times[i]``; the last element is NaN.
+        Pure computation — never mutates ``labels``.
         """
         if self.times.size < 2:
             return np.asarray([], dtype=float)
@@ -157,17 +136,11 @@ class CardioSeries:
         ----------
         window_length : int
             Size of the centered rolling window (beats) for local mean/std.
-            Loaded from workspace["CardioParameters"]["IbiClassification"]
-            ["window_length"].
         n_std : float
             Threshold multiplier: mean ± n_std × std defines S/L boundaries.
-            Loaded from workspace["CardioParameters"]["IbiClassification"]
-            ["n_std"].
         max_ibi_sec : float
             Absolute ceiling; IBIs above this are labeled TL before rolling
-            statistics are computed, so artifacts do not distort thresholds.
-            Loaded from workspace["CardioParameters"]["IbiClassification"]
-            ["max_ibi_sec"].
+            statistics are computed, so artefacts do not distort thresholds.
         """
         from spectHR.Tools.IbiClassification import classify_ibi
         classify_ibi(

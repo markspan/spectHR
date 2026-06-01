@@ -9,13 +9,12 @@ import numpy as np
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.DataSet.loaders._loader_utils import is_inverted_ecg
 from spectHR.Tools.Logger import logger
 
 
 @register_loader(".txt")
 def load_polar_raw_csv(
-    physiodata, filename: str, flip: str | bool = "auto", **kwargs
+    physiodata, filename: str, **kwargs
 ) -> None:
     """
     Load raw Polar ECG CSV export.
@@ -52,16 +51,6 @@ def load_polar_raw_csv(
     physiodata.has_ecg = True
 
     # ------------------------------------------------------------
-    # POLARITY (shared heuristic with harness_csv.py)
-    # ------------------------------------------------------------
-    if flip == "auto":
-        if is_inverted_ecg(values):
-            values = -values
-            logger.debug("Polar ECG: polarity heuristic triggered → flipped")
-    elif flip is True:
-        values = -values
-
-    # ------------------------------------------------------------
     # TIMESERIES
     # ------------------------------------------------------------
     # Single implicit band
@@ -85,10 +74,4 @@ def load_polar_raw_csv(
 
     # ------------------------------------------------------------
     # BAND MAP (same structure as XDF)
-    # ------------------------------------------------------------
-    physiodata.band_map = {
-        band_id: {
-            "ecg": ecg_name,
-        }
-    }
-    physiodata.active_band = band_id
+    # ---------------------------------------------
