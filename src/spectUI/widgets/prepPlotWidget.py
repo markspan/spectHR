@@ -730,11 +730,22 @@ class PrepPlotWidget(QWidget):
 
         ecg = self.ecg_series
 
-        # Clear and plot ECG
+        # Clear and plot only the visible ECG segment.
+        # This ensures y-axis autoscaling is based on the currently shown
+        # window, not the full recording.
+        x0, x1 = self.data.view.x_min, self.data.view.x_max
+        mask = (ecg.times >= x0) & (ecg.times <= x1)
+        if np.any(mask):
+            plot_times = ecg.times[mask]
+            plot_values = ecg.values[mask]
+        else:
+            plot_times = ecg.times
+            plot_values = ecg.values
+
         self.ax_ecg.clear()
         self.ax_ecg.plot(
-            ecg.times,
-            ecg.values,
+            plot_times,
+            plot_values,
             color="red",
             linewidth=0.8,
             alpha=1.0,
@@ -813,15 +824,24 @@ class PrepPlotWidget(QWidget):
         )
 
         ax_br = self._ax_br_twin
+        x0, x1 = self.data.view.x_min, self.data.view.x_max
+        mask = (ts.times >= x0) & (ts.times <= x1)
+        if np.any(mask):
+            plot_times = ts.times[mask]
+            plot_values = ts.values[mask]
+        else:
+            plot_times = ts.times
+            plot_values = ts.values
+
         ax_br.plot(
-            ts.times,
-            ts.values,
+            plot_times,
+            plot_values,
             color="green",
             linewidth=1,
             alpha=1.0,
             zorder=1,
         )
-        ax_br.set_xlim(self.data.view.x_min, self.data.view.x_max)
+        ax_br.set_xlim(x0, x1)
 
         # Apply manual y-limits if set
         ystate = self.data.view.y["br"]
