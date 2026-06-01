@@ -282,6 +282,8 @@ Each profile dot is plotted at the **centre of the window that produced it**, no
 
 ### Step 7, Examine respiration -> HR coupling (Transfer tab)
 
+![spectHR](images/TransferWindow.png)
+
 The **Transfer tab** answers a different question from the PSD and Profiles tabs: not *"how much power is there in band X"*, but *"how much of the heart-rate fluctuation at frequency f can be predicted from the breathing signal at that frequency"*. The tab is only enabled when the recording carries a respiration channel; without one, the View-menu entry is greyed out and trying to open it pops a message explaining why.
 
 Each active epoch gets one **Bode tile** with three stacked panels sharing the frequency x-axis:
@@ -289,6 +291,8 @@ Each active epoch gets one **Bode tile** with three stacked panels sharing the f
 - **Modulus** $|H(f)|$, how strongly breathing drives heart-rate variability at frequency $f$. Plotted as a black line with PSD-style under-curve fills coloured by band, and a legend showing the coherence-gated mean $|H|$ per band (the same number the export carries as `<band>_modulus`).
 - **Phase** $\angle H(f)$ in radians, the delay between breathing and the HRV response. Drawn as a dot scatter where bins with coherence $\ge$ `min_coherence` are solid and bins below the gate fade to `coherence_mask_alpha` (default 0.20), so the eye can tell at a glance which dots the band-mean phase actually used. Toggle wrapped / unwrapped in Settings.
 - **Coherence** $|C(f)|^2 \in [0, 1]$, the linear predictability of HRV from breathing at each frequency. A red dashed line at `min_coherence` marks the integrator's cutoff so the visual reference always tracks the statistical gate. When the recording's peak coherence is below 0.2 the y-axis auto-rescales so a weak curve stays visible.
+
+![spectHR](images/TransferProfile.png)
 
 A sibling **Transfer profile tab** shows the same modulus / phase / coherence summaries as time series. Inside each epoch a fixed window slides at a fixed step (same parameters used by the Profiles tab) and the per-band BandTransfer summary (mean modulus, mean phase, weighted coherence) is collected per window. One coloured line per band on a time axis. Tile y-axes are linked to the same modulus scale on first draw; Up / Down arrows then act per tile (the one your mouse hovers over) so you can zoom into a quiet epoch without disturbing the rest.
 
