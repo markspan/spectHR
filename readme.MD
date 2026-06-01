@@ -251,7 +251,7 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 ### Step 5, Examine frequency-domain HRV (PSD tab)
 
-![spectHR](images/PSDWindow.png)
+![spectHR](images/PSDWindow.PNG)
 
 The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded (default ranges in brackets):
 
