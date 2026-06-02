@@ -411,237 +411,143 @@ Per-epoch failures (epoch too short for a window, no PSD method set, etc.) are l
 
 <details>
 
-#### Reading the exported files into R
+#### Reading into R
 
-Two approaches depending on what you need.
-
-**Approach 1 — scalars only (JASP / SPSS / quick R analysis)**
+`hdf5r` is on CRAN — no Bioconductor needed.
 
 ```r
-library(readr)
-df <- read_csv("~/Documents/spectHR/export/P01.csv")
-# Every column is already a plain number. No unpacking needed.
-# Join epochs from multiple subjects with bind_rows() after loading each file.
+install.packages("hdf5r")   # once
+library(hdf5r)
 ```
 
-**Approach 2 — full array data in R via HDF5**
-
-Uses the `hdf5r` package (CRAN). Install once with `install.packages("hdf5r")`.
+**Explore the file**
 
 ```r
-library(hdf5r)    # CRAN
-library(dplyr)
-library(tidyr)
+h5 <- H5File$new("P01.h5", mode = "r")
+h5$ls(recursive = TRUE)   # print full tree: groups, datasets, attributes
+```
+
+**Read all scalar metrics into a data frame**
+
+`h5attributes()` pulls every attribute of a group as a named list in one call.
+All per-epoch scalars — time-domain, Poincaré, band powers, profile summaries,
+transfer summaries, and any future `@hrv_metric` additions — sit on the epoch
+group, so one loop covers everything:
+
+```r
+library(hdf5r); library(dplyr); library(purrr)
+
+specthr_read_scalars <- function(h5path) {
+  h5      <- H5File$new(h5path, mode = "r")
+  epochs  <- names(h5)
+  subject <- h5$attr_open("subject")$read()
+
+  df <- map_dfr(epochs, function(ep) {
+    attrs <- h5attributes(h5[[ep]])   # named list of ALL scalars at once
+    as_tibble(c(Subject = subject, epoch = ep, attrs))
+  })
+
+  h5$close_all()
+  df
+}
+
+T <- specthr_read_scalars("P01.h5")
+T$rmssd           # RMSSD per epoch
+T$lf_power        # LF band power
+T$LF_prof_mean    # LF profile mean
+T$LF_tf_modulus   # LF transfer modulus (when respiration channel present)
+```
+
+**Multi-subject collector**
+
+```r
+h5_files   <- list.files("~/export", pattern = "\\.h5$", full.names = TRUE)
+all_epochs <- map_dfr(h5_files, specthr_read_scalars)
+# Flat table across all subjects — pass straight to lme4, afex, write.csv, …
+```
+
+**Read a full PSD spectrum**
+
+```r
 library(ggplot2)
 
-output_dir <- "~/Documents/spectHR/export"
-subject_id <- "P01"
+h5     <- H5File$new("P01.h5", mode = "r")
+epoch  <- "sitting"
+band_colours <- c(FullRange = "gray40", VLF = "blue", LF = "darkgreen", HF = "red")
 
-h5 <- H5File$new(file.path(output_dir, paste0(subject_id, ".h5")), mode = "r")
+freqs  <- h5[[paste0(epoch, "/psd/freqs")]][]
+power  <- h5[[paste0(epoch, "/psd/power")]][]
+method <- h5[[paste0(epoch, "/psd")]]$attr_open("method")$read()
+unit   <- h5[[paste0(epoch, "/psd")]]$attr_open("unit")$read()
 
-# Colour palette matching spectHR's workspace band colours:
-band_colours <- c(FullRange = "gray40", VLF = "blue",
-                  LF = "darkgreen", HF = "red")
+plot(freqs, power, type = "l",
+     xlab = "Frequency [Hz]", ylab = paste0("PSD [", unit, "/Hz]"),
+     main = paste(epoch, "—", method))
+```
 
-epochs <- names(h5)   # one character string per active epoch
+**Read a band-power profile**
 
-# ---- PSD: reproduce the PSD tab ---------------------------------------
-# Pull the per-band raw PSD slices and stack into a long data frame.
-psd_long <- bind_rows(lapply(epochs, function(ep) {
-  psd_grp <- h5[[paste0(ep, "/psd")]]
-  unit    <- psd_grp$attr_open("unit")$read()
-  method  <- psd_grp$attr_open("method")$read()
-  band_names <- names(psd_grp)   # sub-group per band
-  bind_rows(lapply(band_names, function(band) {
-    bg <- psd_grp[[band]]
-    tibble(
-      epoch  = ep,
-      band   = band,
-      unit   = unit,
-      method = method,
-      freq   = bg[["freqs"]][],
-      power  = bg[["power"]][]
-    )
-  }))
-}))
+```r
+t_rel   <- h5[[paste0(epoch, "/profile/t_rel")]][]
+lf_prof <- h5[[paste0(epoch, "/profile/LF/power")]][]
+lf_mean <- h5[[paste0(epoch, "/profile/LF")]]$attr_open("mean")$read()
+lf_tmax <- h5[[paste0(epoch, "/profile/LF")]]$attr_open("t_max")$read()
 
-ggplot(psd_long |> filter(!is.na(power)),
-       aes(x = freq, y = power, colour = band)) +
-  geom_area(aes(fill = band), alpha = 0.30, position = "identity", colour = NA) +
-  geom_line(linewidth = 0.5) +
-  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
-  scale_colour_manual(values = band_colours) +
-  scale_fill_manual(values = band_colours) +
-  labs(x = "Frequency [Hz]",
-       y = paste0("PSD [", unique(psd_long$unit), "/Hz]"),
-       colour = "Band", fill = "Band") +
-  theme_minimal(base_size = 11)
+plot(t_rel, lf_prof, type = "l", col = "darkgreen",
+     xlab = "Time within epoch [s]", ylab = "LF power [mMI²]")
+abline(v = lf_tmax, lty = 2, col = "red")
+```
 
-# ---- Profile: reproduce the Profiles tab ------------------------------
-profile_long <- bind_rows(lapply(epochs, function(ep) {
-  pg      <- h5[[paste0(ep, "/profile")]]
-  t_rel   <- pg[["t_rel"]][]
-  unit    <- pg$attr_open("unit")$read()
-  method  <- pg$attr_open("method")$read()
-  band_names <- setdiff(names(pg), c("timestamps", "t_rel", "resp_freqs"))
-  bind_rows(lapply(band_names, function(band) {
-    tibble(
-      epoch  = ep,
-      band   = band,
-      unit   = unit,
-      method = method,
-      time_s = t_rel,
-      power  = pg[[band]][["power"]][]
-    )
-  }))
-}))
+**Read the transfer function (Bode plot)**
 
-ggplot(profile_long |> filter(!is.na(power)),
-       aes(x = time_s, y = power, colour = band)) +
-  geom_line(linewidth = 0.6, alpha = 0.85) +
-  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
+```r
+tg      <- h5[[paste0(epoch, "/transfer")]]
+tf_f    <- tg[["freqs"]][]
+tf_mod  <- tg[["modulus"]][]
+tf_ph   <- tg[["phase_wrapped"]][]
+tf_coh  <- tg[["coherence"]][]
+min_coh <- tg$attr_open("min_coherence")$read()
+
+par(mfrow = c(3, 1), mar = c(3, 4, 1, 1))
+plot(tf_f, tf_mod, type = "l", ylab = "|H(f)|")
+plot(tf_f, tf_ph, type = "n", ylab = "Phase [rad]")
+  points(tf_f[tf_coh >= min_coh], tf_ph[tf_coh >= min_coh], pch = 16, cex = 0.6)
+  points(tf_f[tf_coh <  min_coh], tf_ph[tf_coh <  min_coh], pch = 16, cex = 0.6,
+         col = adjustcolor("black", alpha.f = 0.2))
+  abline(h = 0, lty = 2, col = "grey60")
+plot(tf_f, tf_coh, type = "l", ylab = "|C(f)|²", ylim = c(0, 1))
+  abline(h = min_coh, lty = 2, col = "red")
+```
+
+**Read a sliding-window transfer profile**
+
+```r
+tpg   <- h5[[paste0(epoch, "/transfer_profile")]]
+ts    <- tpg[["timestamps"]][]
+bands <- setdiff(names(tpg), "timestamps")
+
+tp_long <- map_dfr(bands, \(b) tibble(
+  band      = b,
+  time_s    = ts,
+  modulus   = tpg[[b]][["modulus"]][],
+  coherence = tpg[[b]][["weighted_coherence"]][]
+))
+
+ggplot(tp_long, aes(x = time_s, y = modulus, colour = band)) +
+  geom_line(linewidth = 0.6) +
   scale_colour_manual(values = band_colours, drop = FALSE) +
-  labs(title  = paste(subject_id, "- band-power profiles"),
-       x      = "Time within epoch [s]",
-       y      = paste0("Band power [", unique(profile_long$unit), "]"),
-       colour = "Band") +
-  theme_minimal(base_size = 11)
-
-# ---- Transfer: Bode plot ----------------------------------------------
-# Only present when the recording has a respiration channel.
-has_transfer <- function(ep) "transfer" %in% names(h5[[ep]])
-
-transfer_long <- bind_rows(lapply(epochs[sapply(epochs, has_transfer)], function(ep) {
-  tg     <- h5[[paste0(ep, "/transfer")]]
-  method <- tg$attr_open("method")$read()
-  min_c  <- tg$attr_open("min_coherence")$read()
-  band_names <- setdiff(
-    names(tg),
-    c("freqs","modulus","phase_wrapped","phase_unwrapped","coherence")
-  )
-  bind_rows(lapply(band_names, function(band) {
-    bg <- tg[[band]]
-    tibble(
-      epoch      = ep,
-      band       = band,
-      method     = method,
-      min_coh    = min_c,
-      freq       = bg[["freqs"]][],
-      modulus    = bg[["modulus_raw"]][],
-      phase_w    = bg[["phase_wrapped_raw"]][],
-      phase_u    = bg[["phase_unwrapped_raw"]][],
-      coherence  = bg[["coherence_raw"]][]
-    )
-  }))
-}))
-
-min_coh <- unique(transfer_long$min_coh)[1]
-
-# Modulus
-ggplot(transfer_long |> filter(!is.na(modulus)),
-       aes(x = freq, y = modulus, colour = band)) +
-  geom_area(aes(fill = band), alpha = 0.25, position = "identity", colour = NA) +
-  geom_line(linewidth = 0.5) +
-  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
-  scale_colour_manual(values = band_colours) +
-  scale_fill_manual(values = band_colours) +
-  labs(title = paste(subject_id, "- transfer |H(f)|"),
-       x = "Frequency [Hz]", y = "|H(f)|") +
-  theme_minimal(base_size = 11)
-
-# Phase (gated by coherence)
-ggplot(transfer_long |> filter(!is.na(phase_w)),
-       aes(x = freq, y = phase_w, colour = band,
-           alpha = ifelse(coherence >= min_coh, 1, 0.20))) +
-  geom_point(size = 0.8, shape = 16) +
-  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey60") +
-  facet_wrap(~ epoch, ncol = 2) +
-  scale_colour_manual(values = band_colours) +
-  scale_alpha_identity() +
-  labs(x = "Frequency [Hz]", y = "Phase [rad]") +
-  theme_minimal(base_size = 11)
-
-# ---- Transfer profile: time-series per band --------------------------
-tp_long <- bind_rows(lapply(epochs[sapply(epochs, has_transfer)], function(ep) {
-  tpg  <- h5[[paste0(ep, "/transfer_profile")]]
-  ts   <- tpg[["timestamps"]][]
-  band_names <- setdiff(names(tpg), "timestamps")
-  bind_rows(lapply(band_names, function(band) {
-    bg <- tpg[[band]]
-    tibble(
-      epoch     = ep,
-      band      = band,
-      time_s    = ts,
-      modulus   = bg[["modulus"]][],
-      coherence = bg[["weighted_coherence"]][]
-    )
-  }))
-}))
-
-ggplot(tp_long |> filter(!is.na(modulus)),
-       aes(x = time_s, y = modulus, colour = band)) +
-  geom_line(linewidth = 0.6, alpha = 0.85) +
-  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
-  scale_colour_manual(values = band_colours, drop = FALSE) +
-  labs(title  = paste(subject_id, "- transfer profile (modulus)"),
-       x      = "Time within epoch [s]", y = "Band-mean |H|") +
-  theme_minimal(base_size = 11)
+  labs(x = "Time within epoch [s]", y = "Band-mean |H|",
+       title = paste(epoch, "— transfer profile"))
 
 h5$close_all()
 ```
 
-**Reading scalar attributes from HDF5**
+**Notes**
 
-All scalars — time-domain metrics, Poincaré metrics, band powers, profile summaries, transfer summaries, and any future `@hrv_metric` additions — are stored as HDF5 attributes, not as datasets. You can read them without touching any array:
-
-```r
-ep <- epochs[1]
-eg <- h5[[ep]]
-
-# Time-domain and Poincaré metrics (same as the CSV columns)
-cat("RMSSD:",        eg$attr_open("rmssd")$read(),        "\n")
-cat("SD1:",          eg$attr_open("sd1")$read(),          "\n")
-cat("LF power:",     eg$attr_open("lf_power")$read(),     "\n")
-cat("LF/HF ratio:",  eg$attr_open("lf_hf_ratio")$read(),  "\n")
-
-# Profile summaries
-cat("LF profile mean:", eg$attr_open("LF_prof_mean")$read(), "\n")
-cat("HF profile t_max:", eg$attr_open("HF_prof_t_max")$read(), "\n")
-
-# Transfer band summaries (when respiration channel is present)
-cat("LF transfer modulus:", eg$attr_open("LF_tf_modulus")$read(), "\n")
-
-# Sub-group attributes (settings / per-band details)
-pg <- h5[[paste0(ep, "/profile/LF")]]
-cat("LF profile std:", pg$attr_open("std")$read(), "\n")
-
-bg <- h5[[paste0(ep, "/transfer/LF")]]
-cat("LF n_coherent:", bg$attr_open("n_coherent")$read(), "\n")
-```
-
-These are the same values that appear in the scalar CSV — the HDF5 is the single source of truth and the CSV is derived from it.
-
-**Collecting scalars across subjects**
-
-Because all scalars sit on the epoch group, building a multi-subject data frame for R or Python requires only attribute reads — no array loading:
-
-```r
-# Collect all epoch-level scalars from multiple HDF5 files into one data frame
-library(hdf5r); library(purrr); library(dplyr)
-
-h5_files <- list.files("~/export", pattern = "\\.h5$", full.names = TRUE)
-
-all_epochs <- map_dfr(h5_files, function(path) {
-  h5  <- H5File$new(path, mode = "r")
-  sub <- h5$attr_open("subject")$read()
-  map_dfr(names(h5), function(ep) {
-    eg    <- h5[[ep]]
-    attrs <- h5attributes(eg)           # returns a named list of all attrs
-    as_tibble(c(Subject = sub, epoch = ep, attrs))
-  })
-})
-# all_epochs is now a plain rectangular data frame ready for lm(), ANOVA, etc.
-```
+- `h5[[path]][]` — the trailing `[]` loads the data into R; without it you hold a dataset reference.
+- `h5attributes(grp)` returns a named list; `as_tibble()` converts it to a one-row tibble. NaN attributes survive as `NaN`.
+- Guard against recordings without a respiration channel: `"transfer" %in% names(h5[[epoch]])`.
+- Always call `h5$close_all()` when finished; not closing causes a warning on script exit.
 
 **Reading with Python / h5py**
 
