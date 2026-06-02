@@ -23,8 +23,10 @@ from spectUI.workSpace import (
     LoadWorkspace,
     PopulateTree,
     SaveWorkspace,
+    WorkspaceConfig,
     display_bands_from_workspace,
     psd_method_from_workspace,
+    resolved_profile_bands,
 )
 
 __all__ = [
@@ -49,4 +51,6 @@ __all__ = [
     "TransferProfilePlotWidget",
     "display_bands_from_workspace",
     "psd_method_from_workspace",
+    "resolved_profile_bands",
+    "WorkspaceConfig",
 ]

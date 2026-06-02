@@ -577,7 +577,7 @@ class ParametersEditorDialog(QDialog):
             # configured group AND every follower exists in ``data`` and
             # is a plain scalar (not band-list / adaptive dict / nested
             # dict), render the whole group on one QHBoxLayout row.
-            group_followers = self._HORIZONTAL_GROUPS.get((prefix, key))
+            group_followers = self._HORIZONTAL_GROUPS.get(path)
             if (
                 group_followers is not None
                 and not isinstance(value, dict)
@@ -707,33 +707,34 @@ class ParametersEditorDialog(QDialog):
         "Profiles.bands",
     })
 
-    # Groups of leaf keys to render on a single horizontal row in their
-    # parent section. The lookup is ``(section_prefix, first_key) ->
-    # [next_keys...]``. All keys must be scalars (not band-list or
-    # adaptive-dict) and present in the section. Used to compress
-    # natural sets of related parameters into one row.
-    _HORIZONTAL_GROUPS: dict[tuple[str, str], list[str]] = {
+    # Groups of leaf keys to render on a single horizontal row.
+    # Key: full dotted path of the *first* key in the group (matching the
+    # ``path`` variable already in scope inside ``_make_group``).
+    # Value: list of sibling key names that follow on the same row.
+    # All members must be scalars in the same section; dicts, band-lists,
+    # and adaptive-band widgets are never grouped horizontally.
+    _HORIZONTAL_GROUPS: dict[str, list[str]] = {
         # Transfer
-        ("TransferAnalysis", "f_min"):                  ["f_max"],
-        ("TransferAnalysis", "window (sec)"):           ["step (sec)"],
-        ("TransferAnalysis", "smooth"):                 [
+        "TransferAnalysis.f_min":                  ["f_max"],
+        "TransferAnalysis.window (sec)":           ["step (sec)"],
+        "TransferAnalysis.smooth":                 [
             "show_coherence_threshold", "coherence_mask_alpha",
         ],
         # Profiles
-        ("Profiles", "window (sec)"):                   ["step (sec)"],
-        ("Profiles", "smooth_breath_freq"):             ["smooth_for_display"],
+        "Profiles.window (sec)":                   ["step (sec)"],
+        "Profiles.smooth_breath_freq":             ["smooth_for_display"],
         # Spectrogram
-        ("Spectrogram", "window (sec)"):                ["step (sec)"],
-        ("Spectrogram", "show_respiration_overlay"):    ["colormap"],
+        "Spectrogram.window (sec)":                ["step (sec)"],
+        "Spectrogram.show_respiration_overlay":    ["colormap"],
         # PSD - CARSPAN
-        ("FrequencyAnalysis.carspan", "freq_resolution"):    ["signal"],
-        ("FrequencyAnalysis.carspan", "window"):             ["plot_units"],
-        ("FrequencyAnalysis.carspan", "smooth_for_display"): ["dc_removal"],
+        "FrequencyAnalysis.carspan.freq_resolution":    ["signal"],
+        "FrequencyAnalysis.carspan.window":             ["plot_units"],
+        "FrequencyAnalysis.carspan.smooth_for_display": ["dc_removal"],
         # PSD - Welch
-        ("FrequencyAnalysis.welch", "fs"):     ["nperseg", "noverlap", "nfft"],
-        ("FrequencyAnalysis.welch", "window"): ["units"],
+        "FrequencyAnalysis.welch.fs":     ["nperseg", "noverlap", "nfft"],
+        "FrequencyAnalysis.welch.window": ["units"],
         # PSD - Lomb-Scargle (all three on one line)
-        ("FrequencyAnalysis.lombscargle", "nfreqs"): ["fmin_floor", "units"],
+        "FrequencyAnalysis.lombscargle.nfreqs": ["fmin_floor", "units"],
     }
 
     # Per-path display-label overrides. Workspace key stays untouched

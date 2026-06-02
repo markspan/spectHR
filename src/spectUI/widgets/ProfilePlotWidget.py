@@ -60,6 +60,7 @@ from spectHR.analysis.profile import compute_band_power_profile
 from spectUI.workSpace import (
     display_bands_from_workspace,
     profile_settings_from_workspace,
+    resolved_profile_bands,
     psd_method_from_workspace,
 )
 
@@ -303,7 +304,7 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
 
     def __init__(
         self,
-        series_list: List,
+        series_list: list,
         labels: list[str],
         parent: QWidget | None = None,
         *,
@@ -314,33 +315,25 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         # ---- workspace-driven configuration ---------------------------
         bands_dict = display_bands_from_workspace(workspace)
         prof_cfg = profile_settings_from_workspace(workspace)
-        window_s: float = prof_cfg["window_s"]
-        step_s:   float = prof_cfg["step_s"]
-        smooth:   bool  = prof_cfg["smooth_for_display"]
-        profs_raw = (workspace or {}).get("Profiles", {}) or {}
-        adaptive_source: str = str(
-            profs_raw.get("adaptive_source", "respiration_channel")
-        )
-        smooth_breath_freq: bool = bool(
-            profs_raw.get("smooth_breath_freq", False)
-        )
-        # Bands the user picked in Profile Settings, filtered against
-        # the live universe so stale names from a band rename are dropped.
-        bands_to_plot: list[str] = [
-            name for name in prof_cfg["bands"] if name in bands_dict
-        ]
-        # When an adaptive band is active it takes over the plot: only that
-        # band is shown (the static band list is greyed-out in the dialog for
-        # exactly this reason). Silently fall back to the static list if the
-        # adaptive band name is not in the live band universe (stale workspace).
-        adaptive_bands_cfg: dict = profs_raw.get("adaptive_bands", {}) or {}
-        if adaptive_bands_cfg:
-            adaptive_name = next(iter(adaptive_bands_cfg), None)
-            if adaptive_name and adaptive_name in bands_dict:
-                bands_to_plot = [adaptive_name]
-        # Names of adaptively-tracked bands - forwarded to plot_on_axis so
+        window_s:          float = prof_cfg["window_s"]
+        step_s:            float = prof_cfg["step_s"]
+        smooth:            bool  = prof_cfg["smooth_for_display"]
+        adaptive_source:   str   = prof_cfg["adaptive_source"]
+        smooth_breath_freq: bool = prof_cfg["smooth_breath_freq"]
+
+        # Band selection: adaptive band overrides static list; falls back
+        # to all configured bands when the static selection is empty.
+        # resolved_profile_bands is the single source of truth shared with
+        # the CSV exporter so plot and file always show the same bands.
+        bands_to_plot, adaptive_band_name = resolved_profile_bands(workspace)
+        # Filter against the live band universe so stale names are dropped.
+        bands_to_plot = [b for b in bands_to_plot if b in bands_dict]
+
+        # Names of adaptively-tracked bands — forwarded to plot_on_axis so
         # legend entries for those bands get an "(adaptive)" suffix.
-        adaptive_names: frozenset = frozenset(adaptive_bands_cfg.keys())
+        adaptive_names: frozenset = (
+            frozenset({adaptive_band_name}) if adaptive_band_name else frozenset()
+        )
 
         # Build the PsdMethod from the workspace and pass it explicitly so
         # adaptive band settings (Profiles.adaptive_bands) are always

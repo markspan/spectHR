@@ -259,19 +259,14 @@ class PhysioData:
         Returns three empty containers when no active epochs exist or no
         active HRV series is loaded.
         """
-        import inspect
+        from spectHR.analysis.psd._engine import PSDEngine
+        from spectHR.analysis.psd._band_power import band_power_rectangular
 
         hrv = self.hrv
         if hrv is None:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
 
-        # Pre-compute which metrics accept psd_method so we don't call
-        # inspect.signature on every row × metric.
-        metrics = get_metrics()
-        accepts_psd = {
-            name: "psd_method" in inspect.signature(fn).parameters
-            for name, fn in metrics.items()
-        }
+        metrics = get_metrics()   # time-domain only — no inspect needed
 
         labels_list: list = []
         rows: list[dict[str, float]] = []
@@ -281,14 +276,39 @@ class PhysioData:
                 labels_list.append(label)
                 view = hrv.view(ep.start, ep.end)
                 row: dict[str, float] = {}
+
+                # ---- time-domain metrics --------------------------------
                 for name, fn in metrics.items():
                     try:
-                        if accepts_psd[name]:
-                            row[name] = float(fn(view, psd_method=psd_method))
-                        else:
-                            row[name] = float(fn(view))
+                        row[name] = float(fn(view))
                     except Exception:
                         row[name] = float("nan")
+
+                # ---- frequency-domain: one PSD, all configured bands ----
+                # Computing from psd_method.bands means the table reflects
+                # any workspace band configuration, not just the four
+                # hardcoded CARSPAN defaults.
+                if psd_method is not None:
+                    try:
+                        psd_res = PSDEngine(view).for_band_power(psd_method)
+                        for band_name, band_spec in psd_method.bands.items():
+                            col = f"{band_name.lower()}_power"
+                            row[col] = band_power_rectangular(
+                                psd_res.freqs, psd_res.power,
+                                band_spec.low, band_spec.high,
+                            )
+                        # LF/HF ratio — only when both standard bands exist
+                        lf = row.get("lf_power")
+                        hf = row.get("hf_power")
+                        if (
+                            lf is not None and hf is not None
+                            and np.isfinite(lf) and np.isfinite(hf)
+                            and hf != 0.0
+                        ):
+                            row["lf_hf_ratio"] = lf / hf
+                    except Exception:
+                        pass   # band columns stay absent → NaN in matrix
+
                 rows.append(row)
 
         if not rows:

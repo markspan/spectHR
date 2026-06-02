@@ -40,10 +40,14 @@ METRIC_ORDER = [
 ]
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._engine import PSDEngine
-from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 from spectHR.analysis.profile import compute_band_power_profile
 from spectUI.common import show_export_summary
-from spectUI.workSpace import get_export_dir, psd_method_from_workspace
+from spectUI.workSpace import (
+    get_export_dir,
+    psd_method_from_workspace,
+    profile_settings_from_workspace,
+    resolved_profile_bands,
+)
 
 
 class ParametersPlotWidget(QWidget):
@@ -116,19 +120,14 @@ class ParametersPlotWidget(QWidget):
     def display_parameters(self, dataset, workspace):
         self.dataset = dataset
         self.workspace = workspace
-        output_dir = workspace["Directories"]["OutputDirectory"]
-        self.csvfile = Path(output_dir) / f"{dataset.basename}.csv"
-        self.psd_csvfile = Path(output_dir) / f"{dataset.basename}_psd.csv"
-        self.profile_csvfile = (
-            Path(output_dir) / f"{dataset.basename}_profiles.csv"
-        )
-        self.transfer_csvfile = (
-            Path(output_dir) / f"{dataset.basename}_transfer.csv"
-        )
-        self.transfer_profile_csvfile = (
-            Path(output_dir) / f"{dataset.basename}_transfer_profile.csv"
-        )
         self.setFocus()
+
+        output_dir = get_export_dir(workspace, context="Parameters")
+        self.csvfile              = output_dir / f"{dataset.basename}.csv"
+        self.psd_csvfile          = output_dir / f"{dataset.basename}_psd.csv"
+        self.profile_csvfile      = output_dir / f"{dataset.basename}_profiles.csv"
+        self.transfer_csvfile     = output_dir / f"{dataset.basename}_transfer.csv"
+        self.transfer_profile_csvfile = output_dir / f"{dataset.basename}_transfer_profile.csv"
 
         psd_method = psd_method_from_workspace(workspace)
         labels, cols, values = self.dataset.hrv_epoch_table(psd_method=psd_method)
@@ -341,11 +340,7 @@ class ParametersPlotWidget(QWidget):
                 # straight off the same arrays. Costs one PSD per epoch
                 # instead of two (one for the unit / spectrum + one
                 # implicitly inside ``band_powers``).
-                psd_method_here = (
-                    psd_method_from_workspace(self.workspace)
-                    if self.workspace is not None
-                    else _DEFAULT_PSD_METHOD
-                )
+                psd_method_here = psd_method_from_workspace(self.workspace)
                 psd_res = PSDEngine(view).compute(psd_method_here, with_ci=False)
                 freqs = np.asarray(psd_res.freqs)
                 power = np.asarray(psd_res.power)
@@ -438,36 +433,15 @@ class ParametersPlotWidget(QWidget):
             )
             return
 
-        # ---- workspace settings - mirror ProfilePlotWidget.__init__ ----
-        profs = self.workspace.get("Profiles", {}) or {}
-        window_s = float(profs.get("window (sec)", profs.get("window_s", 30.0)))
-        step_s   = float(profs.get("step (sec)",   profs.get("step_s",   5.0)))
-        adaptive_source: str = str(
-            profs.get("adaptive_source", "respiration_channel")
-        )
-        smooth_breath_freq: bool = bool(profs.get("smooth_breath_freq", False))
+        # ---- workspace settings — use the same accessors as the plot widget ----
+        prof_cfg = profile_settings_from_workspace(self.workspace)
+        window_s:           float = prof_cfg["window_s"]
+        step_s:             float = prof_cfg["step_s"]
+        adaptive_source:    str   = prof_cfg["adaptive_source"]
+        smooth_breath_freq: bool  = prof_cfg["smooth_breath_freq"]
 
-        # Band universe (for filtering stale names)
-        all_bands_dict: dict = (
-            (self.workspace.get("FrequencyAnalysis", {}) or {})
-            .get("bands", {}) or {}
-        )
-
-        # Determine which bands to export - same logic as the plot widget:
-        # adaptive band overrides the static selection when one is chosen.
-        adaptive_bands_cfg: dict = profs.get("adaptive_bands", {}) or {}
-        adaptive_band_name: str | None = next(iter(adaptive_bands_cfg), None)
-        if (
-            adaptive_band_name
-            and adaptive_band_name in all_bands_dict
-        ):
-            emit_bands: list[str] = [adaptive_band_name]
-        else:
-            adaptive_band_name = None
-            static_selection: list[str] = list(profs.get("bands", []) or [])
-            emit_bands = [n for n in static_selection if n in all_bands_dict]
-            if not emit_bands:
-                emit_bands = list(all_bands_dict.keys())
+        # Band selection: single source of truth shared with ProfilePlotWidget.
+        emit_bands, adaptive_band_name = resolved_profile_bands(self.workspace)
 
         # PSD method carries adaptive BandSpec flags + half-widths.
         prof_psd_method = psd_method_from_workspace(self.workspace)

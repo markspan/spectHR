@@ -310,7 +310,7 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
 
     def __init__(
         self,
-        series_list: List,
+        series_list: list,
         labels: list[str],
         parent: QWidget | None = None,
         *,

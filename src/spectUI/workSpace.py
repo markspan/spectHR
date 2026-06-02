@@ -342,14 +342,18 @@ def profile_settings_from_workspace(
     fallback so older workspace files don't break.
 
     Returned keys: ``window_s``, ``step_s``, ``bands``,
-    ``smooth_for_display``.
+    ``smooth_for_display``, ``adaptive_source``, ``smooth_breath_freq``,
+    ``adaptive_bands``.
     """
     if workspace is None:
         return {
-            "window_s":           30.0,
-            "step_s":              5.0,
-            "bands":               [],
-            "smooth_for_display": False,
+            "window_s":            30.0,
+            "step_s":               5.0,
+            "bands":                [],
+            "smooth_for_display":  False,
+            "adaptive_source":     "respiration_channel",
+            "smooth_breath_freq":  False,
+            "adaptive_bands":      {},
         }
     profs = workspace.get("Profiles", {}) or {}
     return {
@@ -360,8 +364,54 @@ def profile_settings_from_workspace(
             profs.get("step (sec)", profs.get("step_s", 5.0))
         ),
         "bands": list(profs.get("bands", []) or []),
-        "smooth_for_display": bool(profs.get("smooth_for_display", False)),
+        "smooth_for_display":  bool(profs.get("smooth_for_display", False)),
+        "adaptive_source":     str(profs.get("adaptive_source", "respiration_channel")),
+        "smooth_breath_freq":  bool(profs.get("smooth_breath_freq", False)),
+        "adaptive_bands":      dict(profs.get("adaptive_bands", {}) or {}),
     }
+
+
+def resolved_profile_bands(
+    workspace: "Dict[str, Any] | None",
+) -> "tuple[list[str], str | None]":
+    """Return ``(effective_bands, adaptive_band_name)`` for profile display/export.
+
+    Centralises the band-selection rule used by both ``ProfilePlotWidget``
+    and the profile CSV exporter so they always show the same bands:
+
+    * If an adaptive band is configured **and** that band exists in the
+      workspace's ``FrequencyAnalysis.bands`` → return ``[adaptive_name]``
+      and ``adaptive_name``.
+    * Otherwise return the user-selected static list filtered against the
+      live band universe, with a fallback to *all* bands when nothing is
+      selected.  ``adaptive_band_name`` is ``None``.
+
+    Parameters
+    ----------
+    workspace
+        Full workspace dict (or ``None``).
+
+    Returns
+    -------
+    effective_bands : list[str]
+        Band names in workspace display order.
+    adaptive_band_name : str or None
+        Name of the active adaptive band, or ``None``.
+    """
+    cfg = profile_settings_from_workspace(workspace)
+    fa  = (workspace or {}).get("FrequencyAnalysis", {}) or {}
+    all_bands = list((fa.get("bands", {}) or {}).keys())
+
+    adaptive_bands = cfg["adaptive_bands"]
+    adaptive_name  = next(iter(adaptive_bands), None)
+    if adaptive_name and adaptive_name in all_bands:
+        return [adaptive_name], adaptive_name
+
+    static = [n for n in cfg["bands"] if n in all_bands]
+    # Fall back to all configured bands when the static selection is empty
+    # (nothing ticked in Profile Settings) so neither the plot nor the CSV
+    # silently shows nothing.
+    return (static or all_bands), None
 
 
 def spectrogram_settings_from_workspace(
@@ -467,7 +517,84 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def LoadWorkspace(json_file=None) -> dict:
+class WorkspaceConfig(dict):
+    """Typed wrapper around the workspace dict.
+
+    Subclasses :class:`dict` so all existing ``workspace["Section"]`` and
+    ``workspace.get(...)`` call sites continue to work without modification.
+    The typed properties below eliminate bare string-key access in new code
+    and make the available sections discoverable via auto-complete.
+
+    Construct from any plain dict::
+
+        ws = WorkspaceConfig(LoadWorkspace("myworkspace.json"))
+
+    or let :func:`LoadWorkspace` return one directly.
+    """
+
+    # ------------------------------------------------------------------
+    # Section properties — each returns the raw sub-dict (or {} on miss)
+    # ------------------------------------------------------------------
+
+    @property
+    def directories(self) -> dict:
+        """``workspace["Directories"]`` with empty-dict guard."""
+        return self.get("Directories", {}) or {}
+
+    @property
+    def frequency_analysis(self) -> dict:
+        """``workspace["FrequencyAnalysis"]`` with empty-dict guard."""
+        return self.get("FrequencyAnalysis", {}) or {}
+
+    @property
+    def profiles(self) -> dict:
+        """``workspace["Profiles"]`` with empty-dict guard."""
+        return self.get("Profiles", {}) or {}
+
+    @property
+    def spectrogram(self) -> dict:
+        """``workspace["Spectrogram"]`` with empty-dict guard."""
+        return self.get("Spectrogram", {}) or {}
+
+    @property
+    def transfer_analysis(self) -> dict:
+        """``workspace["TransferAnalysis"]`` with empty-dict guard."""
+        return self.get("TransferAnalysis", {}) or {}
+
+    @property
+    def cardiо_parameters(self) -> dict:
+        """``workspace["CardioParameters"]`` with empty-dict guard."""
+        return self.get("CardioParameters", {}) or {}
+
+    @property
+    def respiration_analysis(self) -> dict:
+        """``workspace["RespirationAnalysis"]`` with empty-dict guard."""
+        return self.get("RespirationAnalysis", {}) or {}
+
+    # ------------------------------------------------------------------
+    # Convenience path properties
+    # ------------------------------------------------------------------
+
+    @property
+    def output_directory(self) -> "Path":
+        """Configured output directory as a :class:`~pathlib.Path`."""
+        raw = self.directories.get("OutputDirectory")
+        return Path(raw) if raw else DEFAULT_EXPORT_DIR
+
+    @property
+    def data_directory(self) -> "Path":
+        """Configured data directory as a :class:`~pathlib.Path`."""
+        raw = self.directories.get("DataDirectory")
+        return Path(raw) if raw else Path(".")
+
+    @property
+    def cache_directory(self) -> "Path":
+        """Configured cache directory as a :class:`~pathlib.Path`."""
+        raw = self.directories.get("CacheDirectory")
+        return Path(raw) if raw else Path(".")
+
+
+def LoadWorkspace(json_file=None) -> "WorkspaceConfig":
     """Load the workspace JSON, create the file from defaults if missing.
 
     Side effects are intentionally minimal: this function only reads /
@@ -505,7 +632,7 @@ def LoadWorkspace(json_file=None) -> dict:
     _migrate_respiration_band_to_profiles(workspace)
     _migrate_window_keys(workspace)
     _ensure_dirs(workspace)
-    return workspace
+    return WorkspaceConfig(workspace)
 
 
 def _migrate_respiration_band_to_profiles(workspace: dict) -> None:

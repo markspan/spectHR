@@ -23,7 +23,7 @@ Design notes
 """
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
 import numpy as np
 
@@ -150,7 +150,7 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
 
     def __init__(
         self,
-        series_list: List,
+        series_list: list,
         labels: list[str],
         parent: QWidget | None = None,
         *,

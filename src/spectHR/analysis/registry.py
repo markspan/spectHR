@@ -19,13 +19,23 @@ _REGISTRY: Dict[str, Callable] = {}
 
 
 def hrv_metric(func: Callable) -> Callable:
-    """Register *func* as an HRV metric.
+    """Register *func* as a time-domain HRV metric.
 
-    The decorated function must accept a single positional argument - a
-    ``CardioSeriesLike`` - and return a value coercible to ``float``.
+    The decorated function must accept a single positional argument — a
+    ``CardioSeriesLike`` — and return a value coercible to ``float``.
+    Frequency-domain (band-power) metrics are **not** registered here;
+    they are computed dynamically inside ``hrv_epoch_table`` from the
+    configured :class:`~spectHR.analysis.psd._config.PsdMethod`.
 
     Registration happens at import time; importing ``spectHR.analysis``
     before the first metric call is enough to populate the registry.
+
+    Raises
+    ------
+    ValueError
+        If a metric with the same name is already registered, to prevent
+        silent overwrites when two modules define a function with the
+        same ``__name__``.
 
     Example
     -------
@@ -34,8 +44,13 @@ def hrv_metric(func: Callable) -> Callable:
     ... def my_metric(series) -> float:
     ...     return float(series.ibi.mean())
     """
-    _REGISTRY[func.__name__] = func
-    func._is_hrv_metric = True
+    name = func.__name__
+    if name in _REGISTRY:
+        raise ValueError(
+            f"HRV metric '{name}' is already registered. "
+            "Rename the function or remove the duplicate @hrv_metric decorator."
+        )
+    _REGISTRY[name] = func
     return func
 
 

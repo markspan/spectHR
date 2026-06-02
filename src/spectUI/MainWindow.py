@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
 )
 
 import spectUI as spQt
+from spectUI.workSpace import WorkspaceConfig
 from spectHR._version import __version__
 from spectHR.DataSet.Epoch import Epoch
 from spectHR.DataSet.PhysioData import PhysioData
@@ -187,13 +188,17 @@ class MainWindow(QMainWindow):
         # ---- application state --------------------------------------
         self.dataset: PhysioData | None = None
         self.savename: Path | None = None
+        # Set to True whenever peaks, epochs, or parameters are mutated
+        # so the pkl is only written to disk when there is actually
+        # something new to persist.
+        self._dirty: bool = False
 
         # Refresh registry, dock objectName -> refresh fn.
         self._refresh_fns: dict[str, callable] = {}
 
         # ---- workspace ----------------------------------------------
         self.workspace_file = user_documents_path() / "DefaultWorkSpace.json"
-        self.workspace = spQt.LoadWorkspace(self.workspace_file)
+        self.workspace: WorkspaceConfig = spQt.LoadWorkspace(self.workspace_file)
 
         # ---- dock layout --------------------------------------------
         # CDockManager installs itself as the QMainWindow central widget.
@@ -670,17 +675,21 @@ class MainWindow(QMainWindow):
         made in other docks (epoch resizing, peak edits, parameter
         changes).
         """
+        # When an editing dock becomes invisible the user may have mutated
+        # peaks or epochs; mark dirty so the next visible dock triggers a save.
         if not visible:
+            if name in (_DOCK_PREPROCESSING, _DOCK_EPOCHS):
+                self._dirty = True
             return
         if self.dataset is None:
             return
         refresh_fn = self._refresh_fns.get(name)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            # Persist current state before recomputing, the old
-            # on_tab_changed did the same on every tab switch.
-            if self.savename is not None:
+            # Persist only when something actually changed.
+            if self._dirty and self.savename is not None:
                 self.dataset.save(self.savename)
+                self._dirty = False
             if refresh_fn is not None:
                 refresh_fn()
             # Floating content docks piggy-back on every visibility
@@ -775,7 +784,7 @@ class MainWindow(QMainWindow):
         """
         dialog = spQt.ParametersEditorDialog(self.workspace, parent=self)
         if dialog.exec_() == QDialog.Accepted:
-            self.workspace = dialog.get_parameters(self.workspace)
+            self.workspace = WorkspaceConfig(dialog.get_parameters(self.workspace))
 
             try:
                 spQt.SaveWorkspace(self.workspace, self.workspace_file)
@@ -789,7 +798,8 @@ class MainWindow(QMainWindow):
                 # them now. Other docks recompute on next show.
                 self.show_psd_plot(self.dataset)
                 self.show_spectrogram_plot(self.dataset)
-                self.show_spectrogram3d_plot(self.dataset)
+                if not self.docks[_DOCK_SPECTROGRAM_3D].isClosed():
+                    self.show_spectrogram3d_plot(self.dataset)
                 self.show_transfer_plot(self.dataset)
                 self.show_transfer_profile_plot(self.dataset)
                 self.show_profile_plot(self.dataset)
@@ -868,6 +878,7 @@ class MainWindow(QMainWindow):
 
         QApplication.restoreOverrideCursor()
         self.dataset.save(self.savename)
+        self._dirty = False
         self.show_preprocessing_plot(self.dataset)
 
     def reload(self, item):
@@ -888,6 +899,7 @@ class MainWindow(QMainWindow):
             respiration_per_epoch=self._respiration_per_epoch(),
         )
         self.dataset.save(self.savename)
+        self._dirty = False
         self.show_preprocessing_plot(self.dataset)
 
     def _respiration_per_epoch(self) -> bool:
@@ -1108,6 +1120,9 @@ class MainWindow(QMainWindow):
             _DOCK_PREPROCESSING:    not has_ecg,
             _DOCK_TRANSFER:         not has_rsp,
             _DOCK_TRANSFER_PROFILE: not has_rsp,
+            # 3-D spectrogram is the most expensive widget; skip it when
+            # the dock is closed and let visibilityChanged handle it lazily.
+            _DOCK_SPECTROGRAM_3D:   self.docks[_DOCK_SPECTROGRAM_3D].isClosed(),
         }
         for name, refresh_fn in self._refresh_fns.items():
             # Skip refresh on docks whose data isn't on this dataset.
@@ -1312,6 +1327,7 @@ class MainWindow(QMainWindow):
         self.dataset.epochs[epoch_label] = Epoch(
             active=True, start=start_time, end=end_time
         )
+        self._dirty = True
         self.epoch_plot_widget.plotEpochs(self.dataset)
 
 
