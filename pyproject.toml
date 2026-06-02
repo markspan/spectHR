@@ -23,6 +23,7 @@ dependencies = [
     "pyxdf",
     "mplcursors",
     "pyside6-qtads",
+    "h5py>=3.0",
 ]
  
 [project.optional-dependencies]

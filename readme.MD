@@ -188,7 +188,7 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | **Profiles** | Track each band's power as it evolves over time within an epoch |
 | **Transfer** | Bode plot of how the breathing rhythm drives HRV: modulus, phase, and coherence over frequency for each epoch |
 | **Transfer profile** | Sliding-window time course of the same modulus / phase / coherence summaries per band |
-| **Parameters** | See all HRV metrics in a table and export five CSVs (time-domain, PSD, profile summaries, transfer band summaries, transfer-profile time series) |
+| **Parameters** | See all HRV metrics in a table and export two files: a scalar CSV (all summaries, opens in JASP / SPSS) and an HDF5 file (full spectra, profile and transfer time series) |
 
 ---
 
@@ -322,315 +322,348 @@ Shift+Ctrl+P exports every Transfer (and Transfer-profile) tile as PNG + PDF to 
 
 The **Parameters tab** shows a table with one row per epoch:
 
-- **Time-domain:** count, mean, median, min, max, std, RMSSD, SDNN, SDSD
+- **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
-- **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio, in **mMI²** by default; Welch can be switched to **ms²** via *Edit Parameters*
+- **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default)
 
-Click **Save** to export. Up to five CSV files are written to the configured **Output** folder (see [Configuring the analysis](#configuring-the-analysis)). All are one-row-per-epoch and use `epoch` as the natural join key, so they merge as standard data frames in R, JASP, or SPSS. The four spectral / transfer files also carry **raw-array columns** alongside the scalar summaries; those columns hold comma-separated numbers inside a single cell. Each such cell is quoted on write (RFC 4180), so any compliant CSV reader treats it as a single field, and downstream code unpacks the list with one `strsplit` (R) or `split` (Python) call.
+Click **Save** to export **two files** to the configured Output folder:
 
-| File | Per-row contents |
+| File | What it contains |
 | --- | --- |
-| `{basename}.csv` | The table shown on screen, time-domain + Poincaré + integrated band powers. Scalars only. |
-| `{basename}_psd.csv` | Per band: scalar `<band>_power` plus the raw spectrum slice as two equal-length lists, `<band>_freqs` (Hz) and `<band>_psd_raw` (PSD values in mMI²/Hz by default). |
-| `{basename}_profiles.csv` | A shared `profile_timestamps` list (epoch-relative window-centre seconds) and, per band: the five summary statistics (`<band>_mean / _std / _min / _max / _t_max`) plus the raw band-power-per-window list `<band>_profile_raw`. |
-| `{basename}_transfer.csv` | The settings used (`smooth`, `min_coherence`, `f_max`, `freq_resolution`) and, per band — **scalar summaries**: `<band>_modulus`, `<band>_phase_wrapped`, `<band>_phase_unwrapped`, `<band>_weighted_coherence`, `<band>_n_points`, `<band>_n_coherent`; **raw spectral slices** (comma-separated lists, same length within a band): `<band>_freqs` (Hz), `<band>_modulus_raw` (|H(f)|), `<band>_phase_wrapped_raw` (rad), `<band>_phase_unwrapped_raw` (rad), `<band>_coherence_raw` (squared coherence). FullRange is skipped (a 0.02 -- 0.5 Hz integration is a near-duplicate of the underlying curve). Written only when the recording has a respiration channel. |
-| `{basename}_transfer_profile.csv` | The sliding-window settings (`window_s`, `step_s`, `smooth`, `min_coherence`, `f_max`), a shared `timestamps` list (epoch-relative window-centre seconds), and per band the five time series (`<band>_modulus`, `<band>_phase`, `<band>_phase_unwrapped`, `<band>_weighted_coherence`, `<band>_n_coherent`) as comma-separated arrays of length equal to `timestamps`. Written only when the recording has a respiration channel. |
+| `{basename}.csv` | One row per epoch, every cell a plain scalar. Opens directly in JASP, SPSS, R, or any spreadsheet. Contains time-domain + Poincaré + integrated band powers + spectral-profile summary statistics + transfer-function band summaries (when a respiration channel is available). |
+| `{basename}.h5` | HDF5 file with one group per epoch holding the full array data: complete PSD spectra, per-window profile time series, full Bode curves, and sliding-window transfer-function profiles. |
 
-The bands you see in `_psd.csv` and `_profiles.csv` are exactly the bands defined under *Edit Parameters → PSD Settings → Bands*, in display order. The profile compute reuses the same band definitions as the PSD compute, so the two files describe the same partition of the spectrum.
+#### Why two files?
 
-Conventions inside the raw cells:
+JASP and SPSS are statistical tools built around flat tables: one row per observation, one column per variable, every cell a plain number. They have no concept of a variable-length array inside a cell — a 50-point frequency spectrum simply cannot be represented. The CSV covers everything those tools need.
 
-- Separator: `,` (comma), the same character the CSV uses between fields. Python's `csv.writer` quotes any field that contains commas, so the file stays a valid RFC 4180 CSV and every standard reader (Python `csv`, pandas `read_csv`, R `read.csv`, JASP, SPSS) parses the list cells as a single field.
-- Number format: six significant digits via `g`, so both very small VLF powers (`1.23e-05`) and large peaks (`3.10e+04`) stay readable without overpadding either.
-- Missing values: NaN windows / NaN PSD bins become empty positions inside the list (`...,1.23,,4.56,...`). R's `as.numeric(strsplit(cell, ",")[[1]])` and `pandas.to_numeric` both turn those into `NA` / `NaN` of their own accord.
-- Lengths: within one row, `<band>_freqs` and `<band>_psd_raw` are equal length (the PSD band slice); `profile_timestamps` and every `<band>_profile_raw` are equal length (`n_windows`); in `_transfer.csv`, `<band>_freqs`, `<band>_modulus_raw`, `<band>_phase_wrapped_raw`, `<band>_phase_unwrapped_raw`, and `<band>_coherence_raw` are all equal length (the transfer band slice); in `_transfer_profile.csv`, `timestamps` and every per-band array are equal length (`n_windows`).
-- `t_max` is the **epoch-relative** time of the band-power peak (seconds from the epoch's first R-peak), so it matches the x-axis of the Profiles plot.
+R and Python users who want the full spectral arrays load the HDF5 file. The two files are designed to complement each other, not to overlap: join them on `epoch` (or just use the HDF5 for everything in R).
 
-A typical `{basename}_psd.csv` (one row per epoch; truncated cells shown as `…`, the actual cells are wrapped in double quotes so the inner commas are not treated as field delimiters):
+#### Contents of `{basename}.csv`
 
-```csv
-Subject,epoch,method,unit,FullRange_power,FullRange_freqs,FullRange_psd_raw,VLF_power,VLF_freqs,VLF_psd_raw,LF_power,LF_freqs,LF_psd_raw,HF_power,HF_freqs,HF_psd_raw
-P01,sitting,carspan_strict,mMI²,1107.57,"0.02,0.03,…,0.49","3.98e4,2.17e4,…,1.53e3",657.29,"0.02,0.03,0.04,0.05,0.06","3.98e4,2.17e4,2.42e4,2.38e4,1.72e4",247.78,"0.07,…,0.14","1.52e4,…,1.76e3",113.75,"0.15,…,0.4","700,…,3.30e3"
+| Column group | Columns |
+| --- | --- |
+| **Identity** | `Subject`, `epoch` |
+| **Time-domain HRV** | `count`, `mean`, `median`, `min`, `max`, `rmssd`, `sdnn`, `sdsd`, … |
+| **Poincaré** | `sd1`, `sd2`, `sd_ratio`, `ellipse_area` |
+| **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default) |
+| **Profile summaries** | `{band}_prof_mean/std/min/max/t_max` per band; `prof_method`, `prof_unit`, `prof_window_s`, `prof_step_s`, `prof_n_windows` |
+| **Transfer summaries** | `{band}_tf_modulus`, `_tf_phase_w`, `_tf_phase_u`, `_tf_coherence`, `_tf_n_points`, `_tf_n_coherent` per band; `tf_method`, `tf_freq_resolution`, `tf_smooth`, `tf_min_coherence`; written only when a respiration channel is present |
+
+`t_max` is the epoch-relative time of the band-power peak in seconds, matching the x-axis of the Profiles plot.
+
+#### Contents of `{basename}.h5`
+
+The HDF5 file uses one top-level group per epoch. Inside each epoch group, **every scalar from the CSV is stored as an HDF5 attribute on the epoch group itself**, and four sub-groups hold the full array data. This means the HDF5 is the single source of truth: the scalar CSV is entirely derived from it, and any new `@hrv_metric` that is added automatically appears as an epoch-group attribute with no extra code.
+
+```
+/{epoch}/
+  attrs: subject,
+         rmssd, sdnn, sdsd, mean, median, count, min, max,   ← time-domain
+         sd1, sd2, sd_ratio, ellipse_area,                    ← Poincaré
+         {band}_power, lf_hf_ratio,                           ← band powers
+         {band}_prof_mean/std/min/max/t_max,                  ← profile summaries
+         prof_method, prof_unit, prof_window_s, prof_step_s,
+         prof_n_windows [, prof_adaptive_band, prof_adaptive_source],
+         {band}_tf_modulus/_tf_phase_w/_tf_phase_u/           ← transfer summaries
+           _tf_coherence/_tf_n_points/_tf_n_coherent,         (present only when
+         tf_method, tf_freq_resolution, tf_smooth,             respiration channel
+         tf_min_coherence                                      available)
+         … plus any future @hrv_metric columns automatically
+
+  /psd/
+    attrs: method, unit, psd_unit, freq_resolution
+    datasets: freqs [N_f], power [N_f]
+    /{band}/
+      attrs: low, high, integrated_power, unit
+      datasets: freqs [N_b], power [N_b]
+
+  /profile/
+    attrs: method, unit, window_s, step_s, n_windows,
+           adaptive_band, adaptive_source
+    datasets: timestamps [N_w], t_rel [N_w]
+    /resp_freqs [N_w]          (present only when breathing freq was estimated)
+    /{band}/
+      attrs: mean, std, min, max, t_max
+      datasets: power [N_w]
+
+  /transfer/                   (present only when recording has a respiration channel)
+    attrs: method, freq_resolution, smooth, min_coherence, f_max
+    datasets: freqs [N_f], modulus [N_f], phase_wrapped [N_f],
+              phase_unwrapped [N_f], coherence [N_f]
+    /{band}/
+      attrs: low, high, modulus, phase_wrapped, phase_unwrapped,
+             weighted_coherence, n_points, n_coherent
+      datasets: freqs [N_b], modulus_raw [N_b], phase_wrapped_raw [N_b],
+                phase_unwrapped_raw [N_b], coherence_raw [N_b]
+
+  /transfer_profile/           (present only when recording has a respiration channel)
+    attrs: method, window_s, step_s, smooth, min_coherence, f_max, n_windows
+    datasets: timestamps [N_w]
+    /{band}/
+      datasets: modulus [N_w], phase [N_w], phase_unwrapped [N_w],
+                weighted_coherence [N_w], n_coherent [N_w]
 ```
 
-And a typical `{basename}_profiles.csv` (truncated to LF / HF for readability; VLF and FullRange have the same six columns):
+All datasets are `float64` (gzip-compressed, level 4); `n_coherent` is `int32`. Array lengths: `N_f` = full frequency grid; `N_b` = frequency bins inside the band's `[low, high]` range; `N_w` = number of sliding windows.
 
-```csv
-Subject,epoch,method,unit,window_sec,step_sec,n_windows,profile_timestamps,LF_mean,LF_std,LF_min,LF_max,LF_t_max,LF_profile_raw,HF_mean,HF_std,HF_min,HF_max,HF_t_max,HF_profile_raw
-P01,sitting,carspan_strict,mMI²,30.0,5.0,29,"15,20,25,…,155",183.64,151.41,15.83,1158.49,75.0,"52.1,79.4,…,212.6",160.21,89.42,12.10,610.34,80.0,"55.4,110.2,…,380.8"
-P01,standing,carspan_strict,mMI²,30.0,5.0,29,"15,20,25,…,155",268.43,554.07,9.27,3975.02,30.0,…,142.18,210.66,4.55,1382.61,55.0,…
-```
-
-Per-epoch failures (epoch too short for a profile window, no PSD method set, etc.) are logged and leave that epoch's per-band cells empty, so a single bad epoch never blocks the export of the rest.
+Per-epoch failures (epoch too short for a window, no PSD method set, etc.) are logged and that epoch's sub-groups are left empty rather than crashing the export.
 
 <details>
 
-#### Reading the exported CSVs into R
+#### Reading the exported files into R
 
-A complete walk-through that reproduces the Profile plot in **ggplot2** (with **dplyr** for the list-column unpacking) sits below. Drop it into an R script and adjust the `subject_id` / `output_dir` constants. The same `unpack_listcol` helper works for the `_psd.csv` file, so the snippet at the bottom shows the PSD spectrum equivalent.
+Two approaches depending on what you need.
+
+**Approach 1 — scalars only (JASP / SPSS / quick R analysis)**
 
 ```r
-# spectHR companion-CSV reader + plotter
-# --------------------------------------
-# Loads {basename}_profiles.csv (and optionally _psd.csv), turns the
-# comma-separated raw-array columns into long-format tibbles, and
-# draws a profile plot that resembles spectHR's Profiles tab.
+library(readr)
+df <- read_csv("~/Documents/spectHR/export/P01.csv")
+# Every column is already a plain number. No unpacking needed.
+# Join epochs from multiple subjects with bind_rows() after loading each file.
+```
 
-library(readr)     # read_csv
-library(dplyr)     # mutate / filter / select / bind_rows
-library(tidyr)     # unnest_longer
-library(stringr)   # str_split
+**Approach 2 — full array data in R via HDF5**
+
+Uses the `hdf5r` package (CRAN). Install once with `install.packages("hdf5r")`.
+
+```r
+library(hdf5r)    # CRAN
+library(dplyr)
+library(tidyr)
 library(ggplot2)
-library(scales)    # comma()
 
-output_dir <- "~/Documents/spectHR/export"     # the workspace OutputDirectory
-subject_id <- "P01"                            # {basename} of the recording
+output_dir <- "~/Documents/spectHR/export"
+subject_id <- "P01"
 
-profiles_path <- file.path(output_dir, paste0(subject_id, "_profiles.csv"))
-psd_path      <- file.path(output_dir, paste0(subject_id, "_psd.csv"))
+h5 <- H5File$new(file.path(output_dir, paste0(subject_id, ".h5")), mode = "r")
 
-# ---- helper: unpack one ',-separated list cell into a numeric vector ----
-# Empty positions ("...,1.23,,4.56,...") become NA, which matches the
-# convention spectHR uses for NaN windows / NaN PSD bins.
-parse_listcol <- function(cell) {
-  if (is.na(cell) || cell == "") return(numeric(0))
-  as.numeric(str_split(cell, ",", simplify = TRUE)[1, ])
-}
+# Colour palette matching spectHR's workspace band colours:
+band_colours <- c(FullRange = "gray40", VLF = "blue",
+                  LF = "darkgreen", HF = "red")
 
-# ---- read profiles & long-pivot --------------------------------------
-profiles_wide <- read_csv(profiles_path, show_col_types = FALSE)
+epochs <- names(h5)   # one character string per active epoch
 
-# Bands present in the file = every column suffixed _profile_raw.
-band_names <- profiles_wide |>
-  names() |>
-  (\(n) n[endsWith(n, "_profile_raw")])() |>
-  sub("_profile_raw$", "", x = _)
-
-# Stack one (epoch, band, t, power) row per window so ggplot can facet
-# and colour by band naturally.
-profiles_long <- bind_rows(lapply(band_names, function(band) {
-  profiles_wide |>
-    rowwise() |>
-    mutate(
-      time_s = list(parse_listcol(profile_timestamps)),
-      power  = list(parse_listcol(.data[[paste0(band, "_profile_raw")]])),
+# ---- PSD: reproduce the PSD tab ---------------------------------------
+# Pull the per-band raw PSD slices and stack into a long data frame.
+psd_long <- bind_rows(lapply(epochs, function(ep) {
+  psd_grp <- h5[[paste0(ep, "/psd")]]
+  unit    <- psd_grp$attr_open("unit")$read()
+  method  <- psd_grp$attr_open("method")$read()
+  band_names <- names(psd_grp)   # sub-group per band
+  bind_rows(lapply(band_names, function(band) {
+    bg <- psd_grp[[band]]
+    tibble(
+      epoch  = ep,
       band   = band,
-    ) |>
-    ungroup() |>
-    select(Subject, epoch, band, unit, time_s, power) |>
-    tidyr::unnest_longer(c(time_s, power))
-}))
-
-# ---- ggplot: reproduce the Profiles tab ------------------------------
-# Same colour palette spectHR uses (workspace bands.<band>.color):
-band_colours <- c(
-  "FullRange" = "gray40",
-  "VLF"       = "blue",
-  "LF"        = "darkgreen",
-  "HF"        = "red"
-)
-
-ggplot(
-  profiles_long |> filter(!is.na(power)),
-  aes(x = time_s, y = power, colour = band)
-) +
-  geom_line(linewidth = 0.6, alpha = 0.85) +
-  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
-  scale_colour_manual(values = band_colours, drop = FALSE) +
-  scale_y_continuous(labels = scales::comma) +
-  labs(
-    title    = paste(subject_id, "- band-power profiles"),
-    subtitle = paste("PSD method:", unique(profiles_wide$method)),
-    x        = "Time within epoch (s)",
-    y        = paste0("Band power [", unique(profiles_wide$unit), "]"),
-    colour   = "Band"
-  ) +
-  theme_minimal(base_size = 11) +
-  theme(
-    legend.position = "bottom",
-    strip.background = element_rect(fill = "grey95", colour = NA),
-    panel.grid.minor = element_blank()
-  )
-
-# ---- bonus: same idea for {basename}_psd.csv -------------------------
-# Each row carries paired <band>_freqs / <band>_psd_raw cells, so we
-# stack them per band and plot one PSD curve per epoch.
-psd_wide <- read_csv(psd_path, show_col_types = FALSE)
-psd_bands <- psd_wide |>
-  names() |>
-  (\(n) n[endsWith(n, "_freqs")])() |>
-  sub("_freqs$", "", x = _)
-
-psd_long <- bind_rows(lapply(psd_bands, function(band) {
-  psd_wide |>
-    rowwise() |>
-    mutate(
-      freq  = list(parse_listcol(.data[[paste0(band, "_freqs")]])),
-      power = list(parse_listcol(.data[[paste0(band, "_psd_raw")]])),
-      band  = band,
-    ) |>
-    ungroup() |>
-    select(Subject, epoch, band, unit, freq, power) |>
-    tidyr::unnest_longer(c(freq, power))
+      unit   = unit,
+      method = method,
+      freq   = bg[["freqs"]][],
+      power  = bg[["power"]][]
+    )
+  }))
 }))
 
 ggplot(psd_long |> filter(!is.na(power)),
        aes(x = freq, y = power, colour = band)) +
-  geom_area(aes(fill = band), alpha = 0.30, position = "identity",
-            colour = NA) +
+  geom_area(aes(fill = band), alpha = 0.30, position = "identity", colour = NA) +
   geom_line(linewidth = 0.5) +
   facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
   scale_colour_manual(values = band_colours) +
   scale_fill_manual(values = band_colours) +
-  labs(
-    x = "Frequency [Hz]",
-    y = paste0("PSD [", unique(psd_wide$unit), "/Hz]"),
-    colour = "Band", fill = "Band"
-  ) +
+  labs(x = "Frequency [Hz]",
+       y = paste0("PSD [", unique(psd_long$unit), "/Hz]"),
+       colour = "Band", fill = "Band") +
   theme_minimal(base_size = 11)
-```
 
-The pattern is the same for any of the raw-array columns: pull the cell, hand it to `parse_listcol`, and pair it with the matching `_freqs` / `profile_timestamps` column inside a `rowwise()` `mutate`. The `unnest_longer` step then flattens the per-row vectors into a tidy frame that ggplot understands directly.
+# ---- Profile: reproduce the Profiles tab ------------------------------
+profile_long <- bind_rows(lapply(epochs, function(ep) {
+  pg      <- h5[[paste0(ep, "/profile")]]
+  t_rel   <- pg[["t_rel"]][]
+  unit    <- pg$attr_open("unit")$read()
+  method  <- pg$attr_open("method")$read()
+  band_names <- setdiff(names(pg), c("timestamps", "t_rel", "resp_freqs"))
+  bind_rows(lapply(band_names, function(band) {
+    tibble(
+      epoch  = ep,
+      band   = band,
+      unit   = unit,
+      method = method,
+      time_s = t_rel,
+      power  = pg[[band]][["power"]][]
+    )
+  }))
+}))
 
-```r
-# ---- {basename}_transfer.csv — Bode plot per epoch -------------------
-# Each row carries paired <band>_freqs / <band>_modulus_raw /
-# <band>_phase_wrapped_raw / <band>_phase_unwrapped_raw /
-# <band>_coherence_raw columns.  Unpack them the same way as PSD above.
+ggplot(profile_long |> filter(!is.na(power)),
+       aes(x = time_s, y = power, colour = band)) +
+  geom_line(linewidth = 0.6, alpha = 0.85) +
+  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
+  scale_colour_manual(values = band_colours, drop = FALSE) +
+  labs(title  = paste(subject_id, "- band-power profiles"),
+       x      = "Time within epoch [s]",
+       y      = paste0("Band power [", unique(profile_long$unit), "]"),
+       colour = "Band") +
+  theme_minimal(base_size = 11)
 
-transfer_path <- file.path(output_dir, paste0(subject_id, "_transfer.csv"))
-transfer_wide <- read_csv(transfer_path, show_col_types = FALSE)
+# ---- Transfer: Bode plot ----------------------------------------------
+# Only present when the recording has a respiration channel.
+has_transfer <- function(ep) "transfer" %in% names(h5[[ep]])
 
-# Discover which bands are present (any band with a _freqs column).
-tf_bands <- transfer_wide |>
-  names() |>
-  (\(n) n[endsWith(n, "_freqs")])() |>
-  sub("_freqs$", "", x = _)
+transfer_long <- bind_rows(lapply(epochs[sapply(epochs, has_transfer)], function(ep) {
+  tg     <- h5[[paste0(ep, "/transfer")]]
+  method <- tg$attr_open("method")$read()
+  min_c  <- tg$attr_open("min_coherence")$read()
+  band_names <- setdiff(
+    names(tg),
+    c("freqs","modulus","phase_wrapped","phase_unwrapped","coherence")
+  )
+  bind_rows(lapply(band_names, function(band) {
+    bg <- tg[[band]]
+    tibble(
+      epoch      = ep,
+      band       = band,
+      method     = method,
+      min_coh    = min_c,
+      freq       = bg[["freqs"]][],
+      modulus    = bg[["modulus_raw"]][],
+      phase_w    = bg[["phase_wrapped_raw"]][],
+      phase_u    = bg[["phase_unwrapped_raw"]][],
+      coherence  = bg[["coherence_raw"]][]
+    )
+  }))
+}))
 
-# Helper: unpack one epoch-band row into (freq, modulus, phase_w,
-# phase_u, coherence) — five parallel vectors of equal length.
-unpack_transfer_band <- function(df, band) {
-  df |>
-    rowwise() |>
-    mutate(
-      freq      = list(parse_listcol(.data[[paste0(band, "_freqs")]])),
-      modulus   = list(parse_listcol(.data[[paste0(band, "_modulus_raw")]])),
-      phase_w   = list(parse_listcol(.data[[paste0(band, "_phase_wrapped_raw")]])),
-      phase_u   = list(parse_listcol(.data[[paste0(band, "_phase_unwrapped_raw")]])),
-      coherence = list(parse_listcol(.data[[paste0(band, "_coherence_raw")]])),
-      band      = band,
-    ) |>
-    ungroup() |>
-    select(Subject, epoch, band, freq, modulus, phase_w, phase_u, coherence) |>
-    tidyr::unnest_longer(c(freq, modulus, phase_w, phase_u, coherence))
-}
+min_coh <- unique(transfer_long$min_coh)[1]
 
-transfer_long <- bind_rows(lapply(tf_bands, \(b) unpack_transfer_band(transfer_wide, b)))
-
-# Pull min_coherence from the first data row (same for all rows).
-min_coh <- transfer_wide$min_coherence[[1]]
-
-# ---- Bode plot: modulus panel ----------------------------------------
-ggplot(
-  transfer_long |> filter(!is.na(modulus)),
-  aes(x = freq, y = modulus, colour = band)
-) +
+# Modulus
+ggplot(transfer_long |> filter(!is.na(modulus)),
+       aes(x = freq, y = modulus, colour = band)) +
   geom_area(aes(fill = band), alpha = 0.25, position = "identity", colour = NA) +
   geom_line(linewidth = 0.5) +
   facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
   scale_colour_manual(values = band_colours) +
   scale_fill_manual(values = band_colours) +
-  labs(
-    title  = paste(subject_id, "- transfer modulus |H(f)|"),
-    x      = "Frequency [Hz]",
-    y      = "|H(f)|",
-    colour = "Band", fill = "Band"
-  ) +
+  labs(title = paste(subject_id, "- transfer |H(f)|"),
+       x = "Frequency [Hz]", y = "|H(f)|") +
   theme_minimal(base_size = 11)
 
-# ---- Phase scatter: solid dots above min_coherence, faded below ------
-# Transfer CSV stores coherence per bin so we can reproduce the
-# visual gating the Transfer tab applies.
-ggplot(
-  transfer_long |> filter(!is.na(phase_w)),
-  aes(x = freq, y = phase_w,
-      colour = band,
-      alpha  = ifelse(coherence >= min_coh, 1, 0.20))
-) +
+# Phase (gated by coherence)
+ggplot(transfer_long |> filter(!is.na(phase_w)),
+       aes(x = freq, y = phase_w, colour = band,
+           alpha = ifelse(coherence >= min_coh, 1, 0.20))) +
   geom_point(size = 0.8, shape = 16) +
-  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey60", linewidth = 0.4) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey60") +
   facet_wrap(~ epoch, ncol = 2) +
   scale_colour_manual(values = band_colours) +
   scale_alpha_identity() +
-  labs(
-    title  = paste(subject_id, "- transfer phase (wrapped)"),
-    x      = "Frequency [Hz]",
-    y      = "Phase [rad]",
-    colour = "Band"
-  ) +
+  labs(x = "Frequency [Hz]", y = "Phase [rad]") +
   theme_minimal(base_size = 11)
 
-# ---- Coherence panel -------------------------------------------------
-ggplot(
-  transfer_long |> filter(!is.na(coherence)),
-  aes(x = freq, y = coherence, colour = band)
-) +
-  geom_line(linewidth = 0.5) +
-  geom_hline(yintercept = min_coh, linetype = "dashed",
-             colour = "red", linewidth = 0.5) +
-  facet_wrap(~ epoch, ncol = 2) +
-  scale_colour_manual(values = band_colours) +
-  coord_cartesian(ylim = c(0, 1)) +
-  labs(
-    title  = paste(subject_id, "- squared coherence |C(f)|²"),
-    x      = "Frequency [Hz]",
-    y      = "|C(f)|²",
-    colour = "Band"
-  ) +
-  theme_minimal(base_size = 11)
-
-# ---- {basename}_transfer_profile.csv — sliding-window time series ----
-# Each per-band column (_modulus, _phase, _phase_unwrapped,
-# _weighted_coherence, _n_coherent) is a comma-separated array of
-# length equal to `timestamps`.  Use the same parse_listcol helper.
-
-tp_path <- file.path(output_dir, paste0(subject_id, "_transfer_profile.csv"))
-tp_wide <- read_csv(tp_path, show_col_types = FALSE)
-
-tp_bands <- tp_wide |>
-  names() |>
-  (\(n) n[endsWith(n, "_modulus")])() |>
-  sub("_modulus$", "", x = _)
-
-tp_long <- bind_rows(lapply(tp_bands, function(band) {
-  tp_wide |>
-    rowwise() |>
-    mutate(
-      time_s    = list(parse_listcol(timestamps)),
-      modulus   = list(parse_listcol(.data[[paste0(band, "_modulus")]])),
-      phase     = list(parse_listcol(.data[[paste0(band, "_phase")]])),
-      coherence = list(parse_listcol(.data[[paste0(band, "_weighted_coherence")]])),
+# ---- Transfer profile: time-series per band --------------------------
+tp_long <- bind_rows(lapply(epochs[sapply(epochs, has_transfer)], function(ep) {
+  tpg  <- h5[[paste0(ep, "/transfer_profile")]]
+  ts   <- tpg[["timestamps"]][]
+  band_names <- setdiff(names(tpg), "timestamps")
+  bind_rows(lapply(band_names, function(band) {
+    bg <- tpg[[band]]
+    tibble(
+      epoch     = ep,
       band      = band,
-    ) |>
-    ungroup() |>
-    select(Subject, epoch, band, time_s, modulus, phase, coherence) |>
-    tidyr::unnest_longer(c(time_s, modulus, phase, coherence))
+      time_s    = ts,
+      modulus   = bg[["modulus"]][],
+      coherence = bg[["weighted_coherence"]][]
+    )
+  }))
 }))
 
-ggplot(
-  tp_long |> filter(!is.na(modulus)),
-  aes(x = time_s, y = modulus, colour = band)
-) +
+ggplot(tp_long |> filter(!is.na(modulus)),
+       aes(x = time_s, y = modulus, colour = band)) +
   geom_line(linewidth = 0.6, alpha = 0.85) +
   facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
   scale_colour_manual(values = band_colours, drop = FALSE) +
-  labs(
-    title  = paste(subject_id, "- transfer-function profile (modulus)"),
-    x      = "Time within epoch [s]",
-    y      = "Band-mean |H|",
-    colour = "Band"
-  ) +
+  labs(title  = paste(subject_id, "- transfer profile (modulus)"),
+       x      = "Time within epoch [s]", y = "Band-mean |H|") +
   theme_minimal(base_size = 11)
+
+h5$close_all()
+```
+
+**Reading scalar attributes from HDF5**
+
+All scalars — time-domain metrics, Poincaré metrics, band powers, profile summaries, transfer summaries, and any future `@hrv_metric` additions — are stored as HDF5 attributes, not as datasets. You can read them without touching any array:
+
+```r
+ep <- epochs[1]
+eg <- h5[[ep]]
+
+# Time-domain and Poincaré metrics (same as the CSV columns)
+cat("RMSSD:",        eg$attr_open("rmssd")$read(),        "\n")
+cat("SD1:",          eg$attr_open("sd1")$read(),          "\n")
+cat("LF power:",     eg$attr_open("lf_power")$read(),     "\n")
+cat("LF/HF ratio:",  eg$attr_open("lf_hf_ratio")$read(),  "\n")
+
+# Profile summaries
+cat("LF profile mean:", eg$attr_open("LF_prof_mean")$read(), "\n")
+cat("HF profile t_max:", eg$attr_open("HF_prof_t_max")$read(), "\n")
+
+# Transfer band summaries (when respiration channel is present)
+cat("LF transfer modulus:", eg$attr_open("LF_tf_modulus")$read(), "\n")
+
+# Sub-group attributes (settings / per-band details)
+pg <- h5[[paste0(ep, "/profile/LF")]]
+cat("LF profile std:", pg$attr_open("std")$read(), "\n")
+
+bg <- h5[[paste0(ep, "/transfer/LF")]]
+cat("LF n_coherent:", bg$attr_open("n_coherent")$read(), "\n")
+```
+
+These are the same values that appear in the scalar CSV — the HDF5 is the single source of truth and the CSV is derived from it.
+
+**Collecting scalars across subjects**
+
+Because all scalars sit on the epoch group, building a multi-subject data frame for R or Python requires only attribute reads — no array loading:
+
+```r
+# Collect all epoch-level scalars from multiple HDF5 files into one data frame
+library(hdf5r); library(purrr); library(dplyr)
+
+h5_files <- list.files("~/export", pattern = "\\.h5$", full.names = TRUE)
+
+all_epochs <- map_dfr(h5_files, function(path) {
+  h5  <- H5File$new(path, mode = "r")
+  sub <- h5$attr_open("subject")$read()
+  map_dfr(names(h5), function(ep) {
+    eg    <- h5[[ep]]
+    attrs <- h5attributes(eg)           # returns a named list of all attrs
+    as_tibble(c(Subject = sub, epoch = ep, attrs))
+  })
+})
+# all_epochs is now a plain rectangular data frame ready for lm(), ANOVA, etc.
+```
+
+**Reading with Python / h5py**
+
+```python
+import h5py, numpy as np
+
+with h5py.File("P01.h5", "r") as f:
+    for epoch in f:
+        psd = f[epoch]["psd"]
+        freqs = psd["freqs"][:]
+        power = psd["power"][:]
+        method = psd.attrs["method"]
+
+        prof = f[epoch]["profile"]
+        t_rel = prof["t_rel"][:]
+        lf_power = prof["LF"]["power"][:]
+
+        if "transfer" in f[epoch]:
+            tf = f[epoch]["transfer"]
+            tf_freqs = tf["freqs"][:]
+            tf_mod   = tf["modulus"][:]
+            lf_tf_mod_mean = tf["LF"].attrs["modulus"]   # scalar
 ```
 
 ---
@@ -1388,7 +1421,20 @@ Download `spectHR-macOS-vX.Y.Z.zip` from the [Releases](https://github.com/marks
 
 spectHR is written in pure Python. The analysis library (`src/spectHR/`) and the GUI (`src/spectUI/`) are kept separate so the library can be used independently in scripts.
 
-New HRV metrics can be added by decorating a standalone function with `@hrv_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/`. It will appear in the Parameters table and CSV export automatically, with no changes to `CardioSeries` or any other class.
+New HRV metrics can be added by decorating a standalone function with `@hrv_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/`. The function receives a `CardioSeriesLike` and returns a `float`. No other changes are needed: the metric automatically appears in the **Parameters table**, the **scalar CSV** (`{basename}.csv`), and as an **attribute on the epoch group in the HDF5 file** (`{basename}.h5`). The `@hrv_metric` decorator raises `ValueError` at import time if a name collision is detected, so duplicate registrations are caught immediately.
+
+```python
+from spectHR.analysis.registry import hrv_metric
+
+@hrv_metric
+def sample_entropy(series) -> float:
+    """Sample entropy of the cleaned IBI series."""
+    import antropy as ant
+    ibi = series.ibi[np.isfinite(series.ibi)]
+    return float(ant.sample_entropy(ibi)) if ibi.size > 10 else float("nan")
+```
+
+After adding this file, `sample_entropy` appears as a column in the table widget, a column in `{basename}.csv`, and as `/{epoch}/.attrs["sample_entropy"]` in the HDF5 file — in all three places without any further code.
 
 New file formats can be added by registering a loader function with `@register_loader(".ext")` in `src/spectHR/DataSet/loaders/`.
 
