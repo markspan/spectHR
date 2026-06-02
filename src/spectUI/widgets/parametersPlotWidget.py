@@ -606,17 +606,29 @@ class ParametersPlotWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _save_transfer_csv(self) -> None:
-        """Write ``{basename}_transfer.csv`` - one row per active epoch.
+        """Write ``{basename}_transfer.csv`` — one row per active epoch.
 
-        Columns per band: ``<band>_modulus``, ``<band>_phase_wrapped``,
-        ``<band>_phase_unwrapped``, ``<band>_weighted_coherence``,
-        ``<band>_n_points``, ``<band>_n_coherent`` - the coherence-gated
-        band-summary fields produced by
-        :class:`spectHR.analysis.transfer.BandTransfer`.
+        **Band-summary scalars** (per band, from
+        :class:`~spectHR.analysis.transfer.BandTransfer`):
 
-        FullRange is skipped (a 0.02 - 0.5 Hz integration is a
-        near-duplicate of the underlying curve). Smoothing /
-        min_coherence / f_max follow the TransferAnalysis Settings tab.
+        * ``<band>_modulus`` — coherence-gated mean |H(f)| over the band.
+        * ``<band>_phase_wrapped`` / ``<band>_phase_unwrapped`` — mean phase.
+        * ``<band>_weighted_coherence`` — power-weighted mean coherence.
+        * ``<band>_n_points`` / ``<band>_n_coherent`` — frequency bin counts.
+
+        **Raw spectral arrays** (per band, comma-separated lists of equal
+        length — same convention as ``{basename}_psd.csv``):
+
+        * ``<band>_freqs`` — frequency bins (Hz) inside ``[low, high]``.
+        * ``<band>_modulus_raw`` — |H(f)| at those bins.
+        * ``<band>_phase_wrapped_raw`` — wrapped phase (rad) at those bins.
+        * ``<band>_phase_unwrapped_raw`` — unwrapped phase (rad).
+        * ``<band>_coherence_raw`` — squared coherence at those bins.
+
+        Plus one shared scalar: ``freq_resolution`` (Hz).
+
+        FullRange is skipped. Smoothing / min_coherence / f_max follow the
+        TransferAnalysis Settings tab.
         """
         if self.transfer_csvfile is None or self.workspace is None:
             return
@@ -643,21 +655,31 @@ class ParametersPlotWidget(QWidget):
             return
 
         subject = getattr(self.dataset, "basename", "")
-        band_fields = (
+        # Scalar summary fields per band (from BandTransfer)
+        band_scalar_fields = (
             "modulus", "phase_wrapped", "phase_unwrapped",
             "weighted_coherence", "n_points", "n_coherent",
         )
+        # Raw spectral array fields per band
+        band_raw_fields = (
+            "freqs", "modulus_raw", "phase_wrapped_raw",
+            "phase_unwrapped_raw", "coherence_raw",
+        )
+
         rows: list[dict] = []
         for label, _ep in self._iter_active_epochs():
             row: dict[str, object] = {
                 "Subject": subject, "epoch": label, "method": "",
+                "freq_resolution": None,
                 "smooth": bool(cfg["smooth"]),
                 "min_coherence": float(cfg["min_coherence"]),
                 "f_max": float(cfg["f_max"]),
             }
             for name in band_edges:
-                for f in band_fields:
+                for f in band_scalar_fields:
                     row[f"{name}_{f}"] = None
+                for f in band_raw_fields:
+                    row[f"{name}_{f}"] = ""
             try:
                 hrv = getattr(self.dataset, "hrv", None)
                 if hrv is None:
@@ -671,6 +693,15 @@ class ParametersPlotWidget(QWidget):
                     f_max=float(cfg["f_max"]),
                 )
                 row["method"] = result.method or ""
+                row["freq_resolution"] = float(result.freq_resolution)
+
+                freqs    = np.asarray(result.freqs)
+                modulus  = np.asarray(result.modulus)
+                phase_w  = np.asarray(result.phase_wrapped)
+                phase_u  = np.asarray(result.phase_unwrapped)
+                coh      = np.asarray(result.coherence)
+
+                # Band-summary scalars
                 for name, bt in (result.band_results or {}).items():
                     row[f"{name}_modulus"]            = bt.modulus
                     row[f"{name}_phase_wrapped"]      = bt.phase
@@ -678,12 +709,24 @@ class ParametersPlotWidget(QWidget):
                     row[f"{name}_weighted_coherence"] = bt.weighted_coherence
                     row[f"{name}_n_points"]           = int(bt.n_points)
                     row[f"{name}_n_coherent"]         = int(bt.n_coherent)
+
+                # Raw spectral slices per band — same pattern as PSD CSV
+                for name, (low, high) in band_edges.items():
+                    mask = (freqs >= low) & (freqs <= high)
+                    if not np.any(mask):
+                        continue
+                    row[f"{name}_freqs"]              = self._format_list(freqs[mask])
+                    row[f"{name}_modulus_raw"]        = self._format_list(modulus[mask])
+                    row[f"{name}_phase_wrapped_raw"]  = self._format_list(phase_w[mask])
+                    row[f"{name}_phase_unwrapped_raw"]= self._format_list(phase_u[mask])
+                    row[f"{name}_coherence_raw"]      = self._format_list(coh[mask])
+
             except Exception as exc:
                 logger.warning(f"Transfer CSV: epoch {label!r} failed: {exc}")
             rows.append(row)
 
         header_set: list[str] = [
-            "Subject", "epoch", "method",
+            "Subject", "epoch", "method", "freq_resolution",
             "smooth", "min_coherence", "f_max",
         ]
         for row in rows:

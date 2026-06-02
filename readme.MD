@@ -333,7 +333,7 @@ Click **Save** to export. Up to five CSV files are written to the configured **O
 | `{basename}.csv` | The table shown on screen, time-domain + Poincaré + integrated band powers. Scalars only. |
 | `{basename}_psd.csv` | Per band: scalar `<band>_power` plus the raw spectrum slice as two equal-length lists, `<band>_freqs` (Hz) and `<band>_psd_raw` (PSD values in mMI²/Hz by default). |
 | `{basename}_profiles.csv` | A shared `profile_timestamps` list (epoch-relative window-centre seconds) and, per band: the five summary statistics (`<band>_mean / _std / _min / _max / _t_max`) plus the raw band-power-per-window list `<band>_profile_raw`. |
-| `{basename}_transfer.csv` | The settings used (`smooth`, `min_coherence`, `f_max`) and, per band: `<band>_modulus`, `<band>_phase_wrapped`, `<band>_phase_unwrapped`, `<band>_weighted_coherence`, `<band>_n_points`, `<band>_n_coherent`. Scalars only; FullRange is skipped (a 0.02 -- 0.5 Hz integration is a near-duplicate of the underlying curve). Written only when the recording has a respiration channel. |
+| `{basename}_transfer.csv` | The settings used (`smooth`, `min_coherence`, `f_max`, `freq_resolution`) and, per band — **scalar summaries**: `<band>_modulus`, `<band>_phase_wrapped`, `<band>_phase_unwrapped`, `<band>_weighted_coherence`, `<band>_n_points`, `<band>_n_coherent`; **raw spectral slices** (comma-separated lists, same length within a band): `<band>_freqs` (Hz), `<band>_modulus_raw` (|H(f)|), `<band>_phase_wrapped_raw` (rad), `<band>_phase_unwrapped_raw` (rad), `<band>_coherence_raw` (squared coherence). FullRange is skipped (a 0.02 -- 0.5 Hz integration is a near-duplicate of the underlying curve). Written only when the recording has a respiration channel. |
 | `{basename}_transfer_profile.csv` | The sliding-window settings (`window_s`, `step_s`, `smooth`, `min_coherence`, `f_max`), a shared `timestamps` list (epoch-relative window-centre seconds), and per band the five time series (`<band>_modulus`, `<band>_phase`, `<band>_phase_unwrapped`, `<band>_weighted_coherence`, `<band>_n_coherent`) as comma-separated arrays of length equal to `timestamps`. Written only when the recording has a respiration channel. |
 
 The bands you see in `_psd.csv` and `_profiles.csv` are exactly the bands defined under *Edit Parameters → PSD Settings → Bands*, in display order. The profile compute reuses the same band definitions as the PSD compute, so the two files describe the same partition of the spectrum.
@@ -343,7 +343,7 @@ Conventions inside the raw cells:
 - Separator: `,` (comma), the same character the CSV uses between fields. Python's `csv.writer` quotes any field that contains commas, so the file stays a valid RFC 4180 CSV and every standard reader (Python `csv`, pandas `read_csv`, R `read.csv`, JASP, SPSS) parses the list cells as a single field.
 - Number format: six significant digits via `g`, so both very small VLF powers (`1.23e-05`) and large peaks (`3.10e+04`) stay readable without overpadding either.
 - Missing values: NaN windows / NaN PSD bins become empty positions inside the list (`...,1.23,,4.56,...`). R's `as.numeric(strsplit(cell, ",")[[1]])` and `pandas.to_numeric` both turn those into `NA` / `NaN` of their own accord.
-- Lengths: within one row, `<band>_freqs` and `<band>_psd_raw` are equal length (the band slice); `profile_timestamps` and every `<band>_profile_raw` are equal length (`n_windows`).
+- Lengths: within one row, `<band>_freqs` and `<band>_psd_raw` are equal length (the PSD band slice); `profile_timestamps` and every `<band>_profile_raw` are equal length (`n_windows`); in `_transfer.csv`, `<band>_freqs`, `<band>_modulus_raw`, `<band>_phase_wrapped_raw`, `<band>_phase_unwrapped_raw`, and `<band>_coherence_raw` are all equal length (the transfer band slice); in `_transfer_profile.csv`, `timestamps` and every per-band array are equal length (`n_windows`).
 - `t_max` is the **epoch-relative** time of the band-power peak (seconds from the epoch's first R-peak), so it matches the x-axis of the Profiles plot.
 
 A typical `{basename}_psd.csv` (one row per epoch; truncated cells shown as `…`, the actual cells are wrapped in double quotes so the inner commas are not treated as field delimiters):
@@ -491,6 +491,147 @@ ggplot(psd_long |> filter(!is.na(power)),
 ```
 
 The pattern is the same for any of the raw-array columns: pull the cell, hand it to `parse_listcol`, and pair it with the matching `_freqs` / `profile_timestamps` column inside a `rowwise()` `mutate`. The `unnest_longer` step then flattens the per-row vectors into a tidy frame that ggplot understands directly.
+
+```r
+# ---- {basename}_transfer.csv — Bode plot per epoch -------------------
+# Each row carries paired <band>_freqs / <band>_modulus_raw /
+# <band>_phase_wrapped_raw / <band>_phase_unwrapped_raw /
+# <band>_coherence_raw columns.  Unpack them the same way as PSD above.
+
+transfer_path <- file.path(output_dir, paste0(subject_id, "_transfer.csv"))
+transfer_wide <- read_csv(transfer_path, show_col_types = FALSE)
+
+# Discover which bands are present (any band with a _freqs column).
+tf_bands <- transfer_wide |>
+  names() |>
+  (\(n) n[endsWith(n, "_freqs")])() |>
+  sub("_freqs$", "", x = _)
+
+# Helper: unpack one epoch-band row into (freq, modulus, phase_w,
+# phase_u, coherence) — five parallel vectors of equal length.
+unpack_transfer_band <- function(df, band) {
+  df |>
+    rowwise() |>
+    mutate(
+      freq      = list(parse_listcol(.data[[paste0(band, "_freqs")]])),
+      modulus   = list(parse_listcol(.data[[paste0(band, "_modulus_raw")]])),
+      phase_w   = list(parse_listcol(.data[[paste0(band, "_phase_wrapped_raw")]])),
+      phase_u   = list(parse_listcol(.data[[paste0(band, "_phase_unwrapped_raw")]])),
+      coherence = list(parse_listcol(.data[[paste0(band, "_coherence_raw")]])),
+      band      = band,
+    ) |>
+    ungroup() |>
+    select(Subject, epoch, band, freq, modulus, phase_w, phase_u, coherence) |>
+    tidyr::unnest_longer(c(freq, modulus, phase_w, phase_u, coherence))
+}
+
+transfer_long <- bind_rows(lapply(tf_bands, \(b) unpack_transfer_band(transfer_wide, b)))
+
+# Pull min_coherence from the first data row (same for all rows).
+min_coh <- transfer_wide$min_coherence[[1]]
+
+# ---- Bode plot: modulus panel ----------------------------------------
+ggplot(
+  transfer_long |> filter(!is.na(modulus)),
+  aes(x = freq, y = modulus, colour = band)
+) +
+  geom_area(aes(fill = band), alpha = 0.25, position = "identity", colour = NA) +
+  geom_line(linewidth = 0.5) +
+  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
+  scale_colour_manual(values = band_colours) +
+  scale_fill_manual(values = band_colours) +
+  labs(
+    title  = paste(subject_id, "- transfer modulus |H(f)|"),
+    x      = "Frequency [Hz]",
+    y      = "|H(f)|",
+    colour = "Band", fill = "Band"
+  ) +
+  theme_minimal(base_size = 11)
+
+# ---- Phase scatter: solid dots above min_coherence, faded below ------
+# Transfer CSV stores coherence per bin so we can reproduce the
+# visual gating the Transfer tab applies.
+ggplot(
+  transfer_long |> filter(!is.na(phase_w)),
+  aes(x = freq, y = phase_w,
+      colour = band,
+      alpha  = ifelse(coherence >= min_coh, 1, 0.20))
+) +
+  geom_point(size = 0.8, shape = 16) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey60", linewidth = 0.4) +
+  facet_wrap(~ epoch, ncol = 2) +
+  scale_colour_manual(values = band_colours) +
+  scale_alpha_identity() +
+  labs(
+    title  = paste(subject_id, "- transfer phase (wrapped)"),
+    x      = "Frequency [Hz]",
+    y      = "Phase [rad]",
+    colour = "Band"
+  ) +
+  theme_minimal(base_size = 11)
+
+# ---- Coherence panel -------------------------------------------------
+ggplot(
+  transfer_long |> filter(!is.na(coherence)),
+  aes(x = freq, y = coherence, colour = band)
+) +
+  geom_line(linewidth = 0.5) +
+  geom_hline(yintercept = min_coh, linetype = "dashed",
+             colour = "red", linewidth = 0.5) +
+  facet_wrap(~ epoch, ncol = 2) +
+  scale_colour_manual(values = band_colours) +
+  coord_cartesian(ylim = c(0, 1)) +
+  labs(
+    title  = paste(subject_id, "- squared coherence |C(f)|²"),
+    x      = "Frequency [Hz]",
+    y      = "|C(f)|²",
+    colour = "Band"
+  ) +
+  theme_minimal(base_size = 11)
+
+# ---- {basename}_transfer_profile.csv — sliding-window time series ----
+# Each per-band column (_modulus, _phase, _phase_unwrapped,
+# _weighted_coherence, _n_coherent) is a comma-separated array of
+# length equal to `timestamps`.  Use the same parse_listcol helper.
+
+tp_path <- file.path(output_dir, paste0(subject_id, "_transfer_profile.csv"))
+tp_wide <- read_csv(tp_path, show_col_types = FALSE)
+
+tp_bands <- tp_wide |>
+  names() |>
+  (\(n) n[endsWith(n, "_modulus")])() |>
+  sub("_modulus$", "", x = _)
+
+tp_long <- bind_rows(lapply(tp_bands, function(band) {
+  tp_wide |>
+    rowwise() |>
+    mutate(
+      time_s    = list(parse_listcol(timestamps)),
+      modulus   = list(parse_listcol(.data[[paste0(band, "_modulus")]])),
+      phase     = list(parse_listcol(.data[[paste0(band, "_phase")]])),
+      coherence = list(parse_listcol(.data[[paste0(band, "_weighted_coherence")]])),
+      band      = band,
+    ) |>
+    ungroup() |>
+    select(Subject, epoch, band, time_s, modulus, phase, coherence) |>
+    tidyr::unnest_longer(c(time_s, modulus, phase, coherence))
+}))
+
+ggplot(
+  tp_long |> filter(!is.na(modulus)),
+  aes(x = time_s, y = modulus, colour = band)
+) +
+  geom_line(linewidth = 0.6, alpha = 0.85) +
+  facet_wrap(~ epoch, scales = "free_y", ncol = 2) +
+  scale_colour_manual(values = band_colours, drop = FALSE) +
+  labs(
+    title  = paste(subject_id, "- transfer-function profile (modulus)"),
+    x      = "Time within epoch [s]",
+    y      = "Band-mean |H|",
+    colour = "Band"
+  ) +
+  theme_minimal(base_size = 11)
+```
 
 ---
 </details>
