@@ -1,28 +1,33 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-spectUI.widgets, the QWidget subclasses presented in the main window.
+spectUI.widgets — the QWidget subclasses presented in the main window.
 
-Ten plot widgets, one per dock in the centre area,
+Ten plot widgets, one per dock in the centre area:
 
     PrepPlotWidget              ECG preprocessing view with R-peak editor.
     HRPlotWidget                IBI / heart-rate timeseries.
     EpochPlotWidget             Gantt-style epoch editor.
-    PoincarePlotWidget          Poincare scatter per epoch.
+    PoincarePlotWidget          Poincaré scatter per epoch.
     PSDPlotWidget               Per-epoch PSD grid.
-    SpectrogramPlotWidget       Per-epoch time-frequency heatmap.
+    SpectrogramPlotWidget       Per-epoch time-frequency heat map (2-D).
+    Spectrogram3DPlotWidget     Per-epoch time-frequency surface (3-D).
     ProfilePlotWidget           Sliding-window band-power profiles.
-    TransferPlotWidget          Per-epoch Bode plot, respiration -> HR.
+    TransferPlotWidget          Per-epoch Bode plot, respiration → HR.
     TransferProfilePlotWidget   Time-resolved transfer-band statistics.
     ParametersPlotWidget        Numerical HRV parameters table.
 
-Plus two dialogs that the workspace editor relies on,
+Both spectrogram widgets share the same compute layer
+(``_spectrogram_compute``) and read from the same ``Spectrogram``
+workspace chapter, so they always show identical underlying data.
+
+Plus two dialogs that the workspace editor relies on:
 
     DirectorySelectorDialog  Directories chapter editor.
     ParametersEditorDialog   Generic per-section parameters editor.
 
 And one modal that ``spectHR.DataSet.loaders.evt_loader`` uses lazily
-to disambiguate non-RTop event codes,
+to disambiguate non-RTop event codes:
 
     EventCodeWindow.
 
@@ -44,6 +49,7 @@ from spectUI.widgets.parametersPlotWidget import ParametersPlotWidget
 from spectUI.widgets.poincarePlotWidget import PoincarePlotWidget
 from spectUI.widgets.prepPlotWidget import PrepPlotWidget
 from spectUI.widgets.spectrogramPlotWidget import SpectrogramPlotWidget
+from spectUI.widgets.spectrogram3dPlotWidget import Spectrogram3DPlotWidget
 from spectUI.widgets.transferPlotWidget import TransferPlotWidget
 from spectUI.widgets.transferProfilePlotWidget import TransferProfilePlotWidget
 
@@ -58,6 +64,7 @@ __all__ = [
     "PrepPlotWidget",
     "PSDPlotWidget",
     "ProfilePlotWidget",
+    "Spectrogram3DPlotWidget",
     "SpectrogramPlotWidget",
     "TransferPlotWidget",
     "TransferProfilePlotWidget",

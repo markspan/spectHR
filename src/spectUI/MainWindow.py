@@ -125,6 +125,7 @@ _DOCK_POINCARE      = "dock.poincare"
 _DOCK_EPOCHS        = "dock.epochs"
 _DOCK_PSD               = "dock.psd"
 _DOCK_SPECTROGRAM       = "dock.spectrogram"
+_DOCK_SPECTROGRAM_3D    = "dock.spectrogram3d"   # 3-D surface companion
 _DOCK_TRANSFER          = "dock.transfer"
 _DOCK_TRANSFER_PROFILE  = "dock.transferprofile"
 _DOCK_PROFILES          = "dock.profiles"
@@ -256,6 +257,7 @@ class MainWindow(QMainWindow):
         # not the widget.
         self.psd_scroll,        self.psd_layout        = self._make_scrollable_host()
         self.spectrogram_scroll,      self.spectrogram_layout      = self._make_scrollable_host()
+        self.spectrogram3d_scroll,    self.spectrogram3d_layout    = self._make_scrollable_host()
         self.transfer_scroll,         self.transfer_layout         = self._make_scrollable_host()
         self.transfer_profile_scroll, self.transfer_profile_layout = self._make_scrollable_host()
         self.profile_scroll,          self.profile_layout          = self._make_scrollable_host()
@@ -291,6 +293,7 @@ class MainWindow(QMainWindow):
         epochs_dock      = _tab(_DOCK_EPOCHS,      "Epochs",      self.epoch_plot_widget)
         psd_dock         = _tab(_DOCK_PSD,         "PSD",         self.psd_scroll)
         spectrogram_dock      = _tab(_DOCK_SPECTROGRAM,      "Spectrogram",      self.spectrogram_scroll)
+        spectrogram3d_dock    = _tab(_DOCK_SPECTROGRAM_3D,   "Spectrogram 3D",   self.spectrogram3d_scroll)
         transfer_dock         = _tab(_DOCK_TRANSFER,         "Transfer",         self.transfer_scroll)
         transfer_profile_dock = _tab(_DOCK_TRANSFER_PROFILE, "Transfer profile", self.transfer_profile_scroll)
         profiles_dock         = _tab(_DOCK_PROFILES,         "Profiles",         self.profile_scroll)
@@ -309,6 +312,7 @@ class MainWindow(QMainWindow):
             _DOCK_EPOCHS:           epochs_dock,
             _DOCK_PSD:              psd_dock,
             _DOCK_SPECTROGRAM:      spectrogram_dock,
+            _DOCK_SPECTROGRAM_3D:   spectrogram3d_dock,
             _DOCK_TRANSFER:         transfer_dock,
             _DOCK_TRANSFER_PROFILE: transfer_profile_dock,
             _DOCK_PROFILES:         profiles_dock,
@@ -328,6 +332,7 @@ class MainWindow(QMainWindow):
             _DOCK_EPOCHS:           self._refresh_epochs,
             _DOCK_PSD:              self._refresh_psd,
             _DOCK_SPECTROGRAM:      self._refresh_spectrogram,
+            _DOCK_SPECTROGRAM_3D:   self._refresh_spectrogram3d,
             _DOCK_TRANSFER:         self._refresh_transfer,
             _DOCK_TRANSFER_PROFILE: self._refresh_transfer_profile,
             _DOCK_PROFILES:         self._refresh_profile,
@@ -506,6 +511,7 @@ class MainWindow(QMainWindow):
             _DOCK_EPOCHS,
             _DOCK_PSD,
             _DOCK_SPECTROGRAM,
+            _DOCK_SPECTROGRAM_3D,
             _DOCK_TRANSFER,
             _DOCK_TRANSFER_PROFILE,
             _DOCK_PROFILES,
@@ -709,6 +715,9 @@ class MainWindow(QMainWindow):
     def _refresh_spectrogram(self) -> None:
         self.show_spectrogram_plot(self.dataset)
 
+    def _refresh_spectrogram3d(self) -> None:
+        self.show_spectrogram3d_plot(self.dataset)
+
     def _refresh_transfer(self) -> None:
         self.show_transfer_plot(self.dataset)
 
@@ -778,8 +787,12 @@ class MainWindow(QMainWindow):
                 # depend directly on what was edited (bands, window,
                 # step, PSD method, coherence threshold, etc.), refresh
                 # them now. Other docks recompute on next show.
+                show_2d, show_3d = self._apply_spectrogram_view()
                 self.show_psd_plot(self.dataset)
-                self.show_spectrogram_plot(self.dataset)
+                if show_2d:
+                    self.show_spectrogram_plot(self.dataset)
+                if show_3d:
+                    self.show_spectrogram3d_plot(self.dataset)
                 self.show_transfer_plot(self.dataset)
                 self.show_transfer_profile_plot(self.dataset)
                 self.show_profile_plot(self.dataset)
@@ -1094,10 +1107,14 @@ class MainWindow(QMainWindow):
         else:
             self._disarm_transfer_rsp_guard()
 
+        show_2d, show_3d = self._apply_spectrogram_view()
+
         skip_when_missing = {
             _DOCK_PREPROCESSING:    not has_ecg,
             _DOCK_TRANSFER:         not has_rsp,
             _DOCK_TRANSFER_PROFILE: not has_rsp,
+            _DOCK_SPECTROGRAM:      not show_2d,
+            _DOCK_SPECTROGRAM_3D:   not show_3d,
         }
         for name, refresh_fn in self._refresh_fns.items():
             # Skip refresh on docks whose data isn't on this dataset.
@@ -1106,6 +1123,20 @@ class MainWindow(QMainWindow):
             if skip_when_missing.get(name, False):
                 continue
             refresh_fn()
+
+    def _apply_spectrogram_view(self) -> tuple[bool, bool]:
+        """Show/hide the two spectrogram docks per the workspace 'view' setting.
+
+        Returns (show_2d, show_3d) so callers can skip the corresponding
+        refresh when a dock is hidden.
+        """
+        from spectUI.workSpace import spectrogram_settings_from_workspace
+        spec_view = spectrogram_settings_from_workspace(self.workspace).get("view", "2D")
+        show_2d = spec_view in ("2D", "BOTH")
+        show_3d = spec_view in ("3D", "BOTH")
+        self.docks[_DOCK_SPECTROGRAM].toggleView(show_2d)
+        self.docks[_DOCK_SPECTROGRAM_3D].toggleView(show_3d)
+        return show_2d, show_3d
 
     def _arm_transfer_rsp_guard(self) -> None:
         """Install one-shot visibility guards on the Transfer docks.
@@ -1239,6 +1270,18 @@ class MainWindow(QMainWindow):
         self._swap_in_epoch_plot(
             self.spectrogram_layout, dataset,
             lambda v, l, w: spQt.SpectrogramPlotWidget(v, l, workspace=w),
+        )
+
+    def show_spectrogram3d_plot(self, dataset) -> None:
+        """Refresh the Spectrogram 3D dock with a new surface grid.
+
+        Calls the same ``_swap_in_epoch_plot`` helper used by every
+        other plot dock, building one ``Spectrogram3DPlotWidget`` from
+        the current active-epoch views and the current workspace.
+        """
+        self._swap_in_epoch_plot(
+            self.spectrogram3d_layout, dataset,
+            lambda v, l, w: spQt.Spectrogram3DPlotWidget(v, l, workspace=w),
         )
 
     def show_transfer_plot(self, dataset) -> None:

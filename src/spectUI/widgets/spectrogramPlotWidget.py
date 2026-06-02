@@ -1,307 +1,120 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-Spectrogram plotting widget, sibling of ProfilePlotWidget.
+2-D spectrogram plotting widget.
 
-Where ProfilePlotWidget shows the time course of a small set of
-named band powers, SpectrogramPlotWidget shows the full PSD as a
-time-frequency heat map. The sliding window is the same idea, but
-every per-window PSD is kept as a column of the spectrogram grid
-rather than collapsed into band integrals.
+Renders the per-epoch sliding-window PSD as a ``pcolormesh`` heat map:
+x-axis time, y-axis frequency, colour-encoded power.
+
+This module is now a thin rendering shell over the shared compute layer
+in ``_spectrogram_compute``.  All sliding-window PSD calculation lives
+there so neither this module nor :mod:`spectrogram3dPlotWidget` duplicates
+any computation code.
 
 Design notes
 ------------
-- Mirrors ProfilePlotWidget's container shape (one tile per epoch,
-  shared 2-column grid, Shift+Ctrl+P export).
-- The y-axis is frequency in Hz, so the band-power Up/Down zoom
-  used by Profile / PSD does not apply. The mixin used here is
-  PlotExportMixin only, not YZoomMixin.
-- Compute is a dedicated sliding-window PSD pass on the cardio
-  series, configured via workspace["Spectrogram"] (window, step,
-  optional respiration overlay).
-- The PSD method (Welch / Lomb-Scargle / CARSPAN / strict) comes
-  from FrequencyAnalysis, the same way ProfilePlotWidget reads it,
-  so switching the analysis method from Settings updates every
-  spectral view consistently.
+- Mirrors ``ProfilePlotWidget``'s container shape: one tile per epoch,
+  2-column scrollable grid, ``Shift+Ctrl+P`` export.
+- Uses only ``PlotExportMixin``, not ``YZoomMixin``: the y-axis carries
+  frequency, not a zoomed power scale.
+- The static ``plot_on_axis`` method contains the entire matplotlib
+  drawing logic.  It is called by the tile sub-widget and can also be
+  called directly from tests or notebooks without any Qt context.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, List
 
 import numpy as np
 
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QGridLayout,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from spectHR.Tools.Logger import logger
-from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
-from spectHR.analysis.psd._config import PsdMethod, _DEFAULT_PSD_METHOD
-from spectHR.analysis.psd._engine import PSDEngine
+from spectHR.analysis.psd._config import PsdMethod
 from spectUI.common import PlotExportMixin, build_epoch_grid
+from spectUI.widgets._spectrogram_compute import (
+    SpectrogramData,
+    epoch_relative_times,
+    fetch_spectrogram,
+    normalise_grid,
+)
 from spectUI.workSpace import (
     psd_method_from_workspace,
     spectrogram_settings_from_workspace,
 )
 
 
-# ---------------------------------------------------------------------------
-# Workspace helpers
-# ---------------------------------------------------------------------------
-
-
+# Default colormap shared with the 3-D widget so both views look
+# consistent without extra configuration.  Users can override this
+# per-workspace via ``Spectrogram.colormap``.
 _DEFAULT_COLORMAP = "RdYlBu_r"
 
 
 # ---------------------------------------------------------------------------
-# Pre-computed plot data
+# Single-tile sub-widget
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class _SpectrogramPlotData:
-    """Everything needed to draw one epoch spectrogram tile."""
+class _SingleSpectrogram2DPlot(QWidget):
+    """One matplotlib figure showing a 2-D spectrogram for a single epoch.
 
-    label: str
-    timestamps: np.ndarray              # (n_windows,), window-centre times
-    freqs:      np.ndarray              # (n_freqs,), common frequency grid
-    power_grid: np.ndarray              # (n_freqs, n_windows), per-window PSD
-    unit: str
-    method: str
-    window_s: float
-    step_s: float
-    resp_freqs: np.ndarray | None = None   # (n_windows,), NaN where missing
-    error: str | None = None
+    Constructed once per epoch by :class:`SpectrogramPlotWidget`.
+    The figure is drawn immediately in ``__init__`` and never redrawn;
+    re-drawing requires the parent container to rebuild the whole grid.
 
-
-def _fetch_spectrogram(
-    series,
-    label: str,
-    *,
-    window_s: float,
-    step_s: float,
-    psd_method: PsdMethod | None = None,
-    adaptive_source: str = "respiration_channel",
-) -> _SpectrogramPlotData:
-    """Compute the spectrogram grid for one cardio series, never raises.
-
-    Failures (epoch too short, all-NaN PSDs, no PSD method) come back
-    as a ``_SpectrogramPlotData`` with ``error`` populated and empty
-    arrays, so the renderer can draw a placeholder tile instead of
-    leaving an empty slot in the grid.
-
-    Per-window PSDs are computed with the supplied ``psd_method``,
-    the same method the band-power profile and PSD widgets use, so
-    settings flow through uniformly.
-
-    The per-window breathing frequency follows the same two-stage
-    strategy as ``compute_band_power_profile`` in ``profile.py``,
-    controlled by ``adaptive_source``:
-
-    * ``"respiration_channel"`` — Stage 1: derive the mean breath
-      frequency from the RSP signal via ``mean_breath_frequency_hz``.
-      Stage 2 (PSD peak) is used as a fallback when the RSP channel
-      is absent or yields no usable phases for a window.
-    * ``"psd_peak"`` — Stage 1 is skipped entirely; the HF spectral
-      peak is used for every window, matching the profile's behaviour
-      when that source is selected in Profile Settings.
-
-    This keeps the spectrogram's breathing-frequency overlay consistent
-    with the profile view regardless of which source the user chose.
+    Parameters
+    ----------
+    data : SpectrogramData
+        Pre-computed spectrogram data from :func:`fetch_spectrogram`.
+    parent : QWidget or None
+        Optional Qt parent.
+    show_respiration_overlay : bool
+        Draw the per-window breathing-frequency trace when available.
+    colormap : str
+        Matplotlib colormap name for the ``pcolormesh`` call.
     """
-    empty = _SpectrogramPlotData(
-        label=label,
-        timestamps=np.array([]),
-        freqs=np.array([]),
-        power_grid=np.empty((0, 0)),
-        unit="",
-        method="",
-        window_s=window_s,
-        step_s=step_s,
-    )
-
-    try:
-        method = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
-        # The CARSPAN profile path skips the resample-to-display-grid
-        # step so the native frequency resolution survives, same trick
-        # ProfilePlotWidget uses.
-        per_window_method = replace(
-            method,
-            carspan=replace(method.carspan, resample_to_display_grid=False),
-        )
-
-        if series.times.size == 0:
-            return replace(empty, error="Empty series")
-        t0       = float(series.times[0])
-        duration = float(series.times[-1]) - t0
-        if duration < window_s:
-            return replace(empty, error="Epoch shorter than window")
-
-        n_windows = int((duration - window_s) / step_s) + 1
-        if n_windows < 1:
-            return replace(empty, error="No window fits")
-
-        # --- respiration setup (mirrors profile.py) -------------------
-        # Locate the RSP series once before the window loop.
-        rsp_series = None
-        pd = getattr(series, "_pd", None)
-        if pd is not None:
-            rsp_map = getattr(pd, "rsp_map", None) or {}
-            rsp_series = next(iter(rsp_map.values()), None)
-
-        # PSD-peak fallback: find the respiratory / HF band range.
-        # Use the first respiration-tracked band if one is configured,
-        # otherwise fall back to the standard HF range (0.15–0.40 Hz).
-        _RESP_LOW_DEFAULT  = 0.15
-        _RESP_HIGH_DEFAULT = 0.40
-        resp_band_low  = _RESP_LOW_DEFAULT
-        resp_band_high = _RESP_HIGH_DEFAULT
-        for _, band in method.bands.items():
-            if band.respiration_band:
-                resp_band_low  = band.low
-                resp_band_high = band.high
-                break
-
-        common_freqs: np.ndarray | None = None
-        psd_cache: dict = {}
-        method_label = ""
-        unit = ""
-        resp_freqs_arr = np.full(n_windows, np.nan, dtype=np.float64)
-
-        for i in range(n_windows):
-            win_start = t0 + i * step_s
-            win_end   = win_start + window_s
-            win_view  = series.view(win_start, win_end)
-            if win_view.times.size < 4:
-                continue
-            try:
-                psd_result = PSDEngine(win_view).for_band_power(per_window_method)
-            except Exception as inner_exc:
-                logger.debug(
-                    "Spectrogram window %d skipped, %s", i, inner_exc,
-                )
-                continue
-            psd_cache[i] = psd_result
-            if common_freqs is None and psd_result.freqs.size:
-                common_freqs = psd_result.freqs.copy()
-                method_label = psd_result.method or ""
-                unit = psd_result.unit or ""
-
-            # Stage 1: RSP channel → mean_breath_frequency_hz.
-            # Skipped when adaptive_source == "psd_peak", mirroring
-            # profile.py's behaviour exactly.
-            if adaptive_source == "respiration_channel" and rsp_series is not None:
-                try:
-                    rsp_view = rsp_series.view(win_start, win_end)
-                    rf = mean_breath_frequency_hz(rsp_view)
-                    if rf is not None:
-                        resp_freqs_arr[i] = float(rf)
-                except Exception as exc:
-                    logger.debug(
-                        "Spectrogram resp-freq window %d RSP failed, %s",
-                        i, exc,
-                    )
-
-            # Stage 2: PSD-peak (always runs when adaptive_source == "psd_peak";
-            # runs as fallback when adaptive_source == "respiration_channel" but
-            # Stage 1 yielded nothing for this window).
-            if not np.isfinite(resp_freqs_arr[i]) and psd_result.freqs.size:
-                mask = (
-                    (psd_result.freqs >= resp_band_low)
-                    & (psd_result.freqs <= resp_band_high)
-                )
-                if mask.any():
-                    peak_idx = int(np.argmax(psd_result.power[mask]))
-                    resp_freqs_arr[i] = float(psd_result.freqs[mask][peak_idx])
-
-        if common_freqs is None or common_freqs.size == 0:
-            return replace(empty, error="No spectra computed")
-
-        n_freqs = common_freqs.size
-        grid = np.full((n_freqs, n_windows), np.nan, dtype=np.float64)
-        for i, psd_result in psd_cache.items():
-            if psd_result.freqs.size == 0:
-                continue
-            if np.array_equal(psd_result.freqs, common_freqs):
-                grid[:, i] = psd_result.power
-            else:
-                # Different bin grid (e.g. shorter window at the tail),
-                # interpolate to the common grid; extrapolation -> NaN.
-                grid[:, i] = np.interp(
-                    common_freqs, psd_result.freqs, psd_result.power,
-                    left=np.nan, right=np.nan,
-                )
-
-        timestamps = np.array(
-            [t0 + i * step_s + window_s / 2.0 for i in range(n_windows)],
-            dtype=np.float64,
-        )
-
-        resp_freqs: np.ndarray | None = (
-            resp_freqs_arr if np.any(np.isfinite(resp_freqs_arr)) else None
-        )
-
-        return _SpectrogramPlotData(
-            label=label,
-            timestamps=timestamps,
-            freqs=common_freqs,
-            power_grid=grid,
-            unit=unit,
-            method=method_label,
-            window_s=window_s,
-            step_s=step_s,
-            resp_freqs=resp_freqs,
-        )
-
-    except Exception as exc:
-        return replace(empty, error=f"Spectrogram failed: {exc}")
-
-
-# ---------------------------------------------------------------------------
-# Single-tile subwidget
-# ---------------------------------------------------------------------------
-
-
-class _SingleSpectrogramPlot(QWidget):
-    """One matplotlib figure showing a single epoch spectrogram."""
 
     def __init__(
         self,
-        data: _SpectrogramPlotData,
+        data: SpectrogramData,
         parent: QWidget | None = None,
         *,
         show_respiration_overlay: bool = True,
         colormap: str = _DEFAULT_COLORMAP,
     ) -> None:
         super().__init__(parent)
-        self.canvas: FigureCanvas = FigureCanvas(
-            Figure(figsize=(5, 4), facecolor="white")
-        )
-        self.ax: Axes = self.canvas.figure.add_subplot(111)
+
+        # The figure is sized to (5, 4) inches at screen DPI.  The
+        # FigureCanvas fills horizontal space because the parent grid
+        # has Expanding horizontal size policy.
+        figure  = Figure(figsize=(5, 4), facecolor="white")
+        self.canvas: FigureCanvas = FigureCanvas(figure)
+        self.ax: Axes = figure.add_subplot(111)
         self.ax.set_facecolor("white")
         self.setStyleSheet("background-color: white;")
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.canvas)
         self.setLayout(layout)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
+        # Delegate all drawing to the pure static method so it can be
+        # exercised without a Qt event loop in tests.
         SpectrogramPlotWidget.plot_on_axis(
             self.ax, data,
             show_respiration_overlay=show_respiration_overlay,
             colormap=colormap,
         )
-        self.ax.set_title(f"{data.label}")
+        # Epoch label as the tile title.  The method label (carspan /
+        # welch / …) is written inside the axes by plot_on_axis itself.
+        self.ax.set_title(data.label)
         self.canvas.draw()
 
 
@@ -311,20 +124,28 @@ class _SingleSpectrogramPlot(QWidget):
 
 
 class SpectrogramPlotWidget(PlotExportMixin, QWidget):
-    """Grid of spectrogram plots, one per epoch.
+    """Grid of 2-D spectrogram tiles, one per active epoch.
+
+    Replacing the inner plot widget on every :meth:`show_spectrogram_plot`
+    call is handled by the ``MainWindow._swap_in_epoch_plot`` helper, not
+    here.  This widget is purely stateless after construction.
 
     Parameters
     ----------
-    series_list
-        CardioSeriesView (or compatible) objects with ``.times`` and
-        ``.view(t_start, t_end)``.
-    labels
-        Per-epoch plot titles.
-    workspace
-        Used to read ``Spectrogram`` settings, the PSD method via
-        ``FrequencyAnalysis``, and the export directory.
+    series_list : list
+        ``CardioSeriesView`` objects, one per active epoch.  Must expose
+        ``.times`` and ``.view(t_start, t_end)``.
+    labels : list of str
+        Per-epoch tile titles.  Length must match ``series_list``.
+    parent : QWidget or None
+        Optional Qt parent.
+    workspace : dict or None
+        Workspace configuration dict.  Used to read the ``Spectrogram``
+        chapter (window, step, colormap, respiration overlay) and the
+        ``FrequencyAnalysis`` chapter (PSD method).
     """
 
+    # Used by PlotExportMixin to build the export filename prefix.
     _export_context = "Spectrogram"
 
     def __init__(
@@ -337,6 +158,7 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
     ) -> None:
         super().__init__(parent)
 
+        # ---- read workspace configuration ----------------------------
         cfg = spectrogram_settings_from_workspace(workspace)
         window_s:        float = cfg["window_s"]
         step_s:          float = cfg["step_s"]
@@ -348,27 +170,28 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
             psd_method_from_workspace(workspace) if workspace is not None else None
         )
 
-        # ---- compute one spectrogram per series -----------------------
-        plots: list[_SpectrogramPlotData] = [
-            _fetch_spectrogram(
+        # ---- compute one SpectrogramData per epoch -------------------
+        # All PSD work happens here, in the shared compute layer.
+        # The rendering sub-widgets below receive only the pre-computed
+        # data objects and never touch the engine directly.
+        plots: list[SpectrogramData] = [
+            fetch_spectrogram(
                 series, label,
-                window_s=window_s, step_s=step_s,
+                window_s=window_s,
+                step_s=step_s,
                 psd_method=psd_method,
                 adaptive_source=adaptive_source,
             )
             for series, label in zip(series_list, labels)
         ]
 
-        self._labels: list[str] = list(labels)
-        self._series_list: list = list(series_list)
-        self._workspace: dict[str, Any] | None = workspace
-
-        # Standard 2-column scrollable grid + focus + Shift+Ctrl+P
-        # shortcut. No Up / Down zoom: the y-axis carries frequency,
-        # not band power.
-        self._subplots: list[_SingleSpectrogramPlot] = build_epoch_grid(
+        # ---- build the 2-column scrollable tile grid -----------------
+        # build_epoch_grid handles the QScrollArea / QGridLayout
+        # boilerplate and returns the list of tile sub-widgets so
+        # PlotExportMixin can iterate them for Shift+Ctrl+P.
+        self._subplots: list[_SingleSpectrogram2DPlot] = build_epoch_grid(
             self, plots,
-            lambda data: _SingleSpectrogramPlot(
+            lambda data: _SingleSpectrogram2DPlot(
                 data,
                 show_respiration_overlay=show_resp,
                 colormap=colormap,
@@ -376,38 +199,55 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
         )
 
     # ------------------------------------------------------------------
-    # Pure plotting backend
+    # Static drawing backend
     # ------------------------------------------------------------------
 
     @staticmethod
     def plot_on_axis(
         ax: Axes,
-        data: _SpectrogramPlotData,
+        data: SpectrogramData,
         *,
         show_respiration_overlay: bool = True,
         colormap: str = _DEFAULT_COLORMAP,
     ) -> Axes:
-        """Draw a time-frequency spectrogram for one epoch.
+        """Draw a 2-D time-frequency spectrogram on *ax*.
 
-        X-axis, time within the epoch (seconds, window-centre origin).
-        Y-axis, frequency (Hz).
-        Colour, per-window PSD power, normalised to [0, 1] across the
-        epoch via the named matplotlib colormap (default ``RdYlBu_r``,
-        blue at the minimum, red at the maximum). The colour scale is
-        epoch-local so weak epochs still show the shape of their
+        This is a pure function: it draws on ``ax`` and returns it.  No
+        Qt objects are touched, so it can be called from tests, notebooks,
+        or any other matplotlib context.
+
+        The colour scale is epoch-local (normalised across the full grid)
+        so epochs with low absolute power still reveal the shape of their
         spectral distribution.
 
-        When ``show_respiration_overlay`` is True and the data carry
-        a per-window respiration trace, a dashed green line is drawn
-        on top with a small legend.
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axes to draw on.  Will be modified in place.
+        data : SpectrogramData
+            Pre-computed epoch spectrogram from :func:`fetch_spectrogram`.
+        show_respiration_overlay : bool
+            When ``True`` and ``data.resp_freqs`` is not ``None``, draw
+            the per-window breathing-frequency trace as a dashed green
+            line.
+        colormap : str
+            Matplotlib colormap name.  Any name accepted by
+            ``plt.get_cmap`` is valid.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The same ``ax`` that was passed in.
         """
+        # ---- guard: empty or failed data -----------------------------
         if (
             data.power_grid.size == 0
             or data.freqs.size == 0
             or data.timestamps.size == 0
         ):
             ax.text(
-                0.5, 0.5, data.error or "No spectrogram data",
+                0.5, 0.5,
+                data.error or "No spectrogram data",
                 ha="center", va="center",
                 transform=ax.transAxes, color="gray",
             )
@@ -416,23 +256,18 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
         finite = data.power_grid[np.isfinite(data.power_grid)]
         if finite.size < 2:
             ax.text(
-                0.5, 0.5, "Insufficient spectrogram data",
+                0.5, 0.5,
+                "Insufficient spectrogram data (fewer than 2 finite cells)",
                 ha="center", va="center",
                 transform=ax.transAxes, color="gray",
             )
             return ax
 
-        p_min = float(np.nanmin(finite))
-        p_max = float(np.nanmax(finite))
-        if p_max <= p_min:
-            p_max = p_min + 1.0
-        norm_grid = (data.power_grid - p_min) / (p_max - p_min)
+        # ---- normalise and compute epoch-relative time ---------------
+        norm_grid = normalise_grid(data.power_grid)
+        t_rel     = epoch_relative_times(data)
 
-        # Epoch-relative time. Window centres in the data are absolute;
-        # subtract the first window's left edge so the axis starts at 0.
-        t0    = float(data.timestamps[0]) - data.window_s / 2.0
-        t_rel = data.timestamps - t0
-
+        # ---- main heat map -------------------------------------------
         pcm = ax.pcolormesh(
             t_rel, data.freqs, norm_grid,
             cmap=colormap, vmin=0.0, vmax=1.0,
@@ -441,9 +276,13 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
 
         ax.set_xlabel("Time within epoch [s]")
         ax.set_ylabel("Frequency [Hz]")
-        ax.set_xlim(data.window_s / 2.0, float(t_rel[-1]) + data.step_s * 0.5)
+        ax.set_xlim(
+            data.window_s / 2.0,
+            float(t_rel[-1]) + data.step_s * 0.5,
+        )
         ax.set_ylim(float(data.freqs[0]), float(data.freqs[-1]))
 
+        # ---- respiration overlay (optional) --------------------------
         if show_respiration_overlay and data.resp_freqs is not None:
             rf = np.asarray(data.resp_freqs).ravel()
             if rf.size == data.timestamps.size and np.any(np.isfinite(rf)):
@@ -455,20 +294,24 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
                 )
                 ax.legend(loc="upper right", fontsize=7, framealpha=0.75)
 
+        # ---- cosmetic spine cleanup ----------------------------------
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
+        # ---- method label (small, left-anchored subtitle) -----------
         if data.method:
             method_label = data.method.replace("_", " ").capitalize()
             ax.set_title(
-                f"{method_label}",
+                method_label,
                 fontsize=8, loc="left", color="dimgray",
             )
 
-        # Colourbar in an inset axes so matplotlib does not resize
-        # or y-share the main axes when adding it.
+        # ---- colourbar in an inset axes ------------------------------
+        # Placing the colourbar in an inset_axes prevents matplotlib
+        # from shrinking the main axes or creating a y-linked twin when
+        # it is added to the figure.
         unit_str = f" [{data.unit}]" if data.unit else ""
-        cax = ax.inset_axes([1.03, 0.0, 0.04, 1.0])
+        cax  = ax.inset_axes([1.03, 0.0, 0.04, 1.0])
         cbar = ax.figure.colorbar(pcm, cax=cax)
         cbar.set_label(f"Power{unit_str}", fontsize=7)
         cbar.set_ticks([0.0, 0.5, 1.0])
