@@ -182,11 +182,6 @@ _DEFAULT_WORKSPACE = {
         # colormap name works at the renderer level; the Settings
         # dialog dropdown lists the most useful subset.
         "colormap": "RdYlBu_r",
-        # Which spectrogram dock(s) to show.
-        #   "2D"   — heat-map only   (Spectrogram dock)
-        #   "3D"   — surface only    (Spectrogram 3D dock)
-        #   "both" — both docks visible simultaneously
-        "view": "2D",
     },
     # ------------------------------------------------------------------
     # Transfer function (Respiration -> HR)
@@ -380,7 +375,7 @@ def spectrogram_settings_from_workspace(
     breathing frequency is derived.
 
     Returned keys: ``window_s``, ``step_s``, ``show_respiration_overlay``,
-    ``colormap``, ``adaptive_source``, ``view``.
+    ``colormap``, ``adaptive_source``.
     """
     default_colormap = "RdYlBu_r"
     if workspace is None:
@@ -390,13 +385,9 @@ def spectrogram_settings_from_workspace(
             "show_respiration_overlay":  True,
             "colormap":                  default_colormap,
             "adaptive_source":           "respiration_channel",
-            "view":                      "2D",
         }
     spec  = workspace.get("Spectrogram", {}) or {}
     profs = workspace.get("Profiles",    {}) or {}
-    raw_view = str(spec.get("view", "2D")).strip().upper()
-    if raw_view not in {"2D", "3D", "BOTH"}:
-        raw_view = "2D"
     return {
         "window_s": float(
             spec.get("window (sec)", spec.get("window_s", 30.0))
@@ -411,7 +402,6 @@ def spectrogram_settings_from_workspace(
         "adaptive_source": str(
             profs.get("adaptive_source", "respiration_channel")
         ),
-        "view": raw_view,
     }
 
 

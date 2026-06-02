@@ -155,8 +155,6 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     "FrequencyAnalysis.carspan.plot_units": ["mMI²/Hz", "ms²/Hz"],
     "FrequencyAnalysis.welch.units": ["mMI²", "ms²"],
     "FrequencyAnalysis.lombscargle.units": ["mMI²", "ms²"],
-    # Spectrogram view mode: 2-D heat map, 3-D surface, or both docks.
-    "Spectrogram.view": ["2D", "3D", "both"],
     # Spectrogram tile colormap. Diverging and sequential maps that
     # read well at the small tile sizes the Spectrogram dock uses.
     "Spectrogram.colormap": [
