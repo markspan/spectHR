@@ -130,7 +130,8 @@ class ParametersPlotWidget(QWidget):
         )
         self.setFocus()
 
-        labels, cols, values = self.dataset.hrv_epoch_table()
+        psd_method = psd_method_from_workspace(workspace)
+        labels, cols, values = self.dataset.hrv_epoch_table(psd_method=psd_method)
 
         # Re-order columns: known metrics first (METRIC_ORDER), then extras
         # alphabetically. hrv_epoch_table returns cols sorted; presentation

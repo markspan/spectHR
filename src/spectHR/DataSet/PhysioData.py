@@ -230,12 +230,22 @@ class PhysioData:
 
     def hrv_epoch_table(
         self,
+        psd_method=None,
     ) -> "tuple[np.ndarray, list[str], np.ndarray]":
         """Compute all HRV metrics for every active epoch.
 
         Iterates over ``self.epochs``, computes each metric on the active
         ``CardioSeries`` (``self.hrv``) restricted to that epoch's bounds,
         and assembles the results into a rectangular matrix.
+
+        Parameters
+        ----------
+        psd_method : PsdMethod or None
+            Workspace-configured PSD method.  Passed to any registered
+            metric that accepts a ``psd_method`` keyword argument (i.e.
+            the frequency-domain metrics) so the table values match what
+            the PSD plot displays.  When ``None`` the frequency metrics
+            fall back to their own default.
 
         Returns
         -------
@@ -249,9 +259,19 @@ class PhysioData:
         Returns three empty containers when no active epochs exist or no
         active HRV series is loaded.
         """
+        import inspect
+
         hrv = self.hrv
         if hrv is None:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
+
+        # Pre-compute which metrics accept psd_method so we don't call
+        # inspect.signature on every row × metric.
+        metrics = get_metrics()
+        accepts_psd = {
+            name: "psd_method" in inspect.signature(fn).parameters
+            for name, fn in metrics.items()
+        }
 
         labels_list: list = []
         rows: list[dict[str, float]] = []
@@ -260,7 +280,16 @@ class PhysioData:
             if ep.active:
                 labels_list.append(label)
                 view = hrv.view(ep.start, ep.end)
-                rows.append({name: float(fn(view)) for name, fn in get_metrics().items()})
+                row: dict[str, float] = {}
+                for name, fn in metrics.items():
+                    try:
+                        if accepts_psd[name]:
+                            row[name] = float(fn(view, psd_method=psd_method))
+                        else:
+                            row[name] = float(fn(view))
+                    except Exception:
+                        row[name] = float("nan")
+                rows.append(row)
 
         if not rows:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)

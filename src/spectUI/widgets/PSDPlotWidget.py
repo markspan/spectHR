@@ -24,10 +24,9 @@ from typing import Any
 import numpy as np
 
 from spectHR.Tools.Logger import logger
-from spectHR.analysis.psd._config import PsdMethod
+from spectHR.analysis.psd._config import PsdMethod, _DEFAULT_PSD_METHOD
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.psd._band_power import band_power_rectangular
-from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 from spectUI.workSpace import (
     display_bands_from_workspace,
     psd_ci_alpha,
@@ -136,9 +135,11 @@ def _fetch(
         )
 
     try:
-        bp_result = PSDEngine(series).for_band_power(method)
+        # Re-use the spectrum already computed above — band power is just
+        # a rectangular integration of the same freqs/power arrays, so a
+        # second PSDEngine call is unnecessary.
         band_powers = {
-            name: band_power_rectangular(bp_result.freqs, bp_result.power, band.low, band.high)
+            name: band_power_rectangular(result.freqs, result.power, band.low, band.high)
             for name, band in method.bands.items()
         }
     except Exception as e:

@@ -18,15 +18,15 @@ from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 
 
-def _band_power(series, band_name: str) -> float:
-    """Integrate one named band from the default PSD method.
+def _band_power(series, band_name: str, psd_method=None) -> float:
+    """Integrate one named band using *psd_method* (or the default if None).
 
-    Uses _DEFAULT_PSD_METHOD because frequency-domain metrics in the
-    epoch table are always computed without a caller-supplied PsdMethod.
-    The UI passes psd_method explicitly when it wants a different method;
-    the metric registry does not.
+    The *psd_method* argument lets callers supply the workspace-configured
+    method so the values here match what the PSD plot displays.  When
+    ``None`` the module-level ``_DEFAULT_PSD_METHOD`` is used as a
+    safe fallback (e.g. when called without a workspace, from tests).
     """
-    method = _DEFAULT_PSD_METHOD
+    method = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
     if band_name not in method.bands:
         raise KeyError(f"Unknown band '{band_name}'.")
     band = method.bands[band_name]
@@ -35,47 +35,47 @@ def _band_power(series, band_name: str) -> float:
 
 
 @hrv_metric
-def fullrange_power(series) -> float:
-    """Power across the FullRange band (mMI^2)."""
+def fullrange_power(series, psd_method=None) -> float:
+    """Power across the FullRange band."""
     try:
-        return float(_band_power(series, "FullRange"))
+        return float(_band_power(series, "FullRange", psd_method))
     except (KeyError, AttributeError, ValueError):
         return np.nan
 
 
 @hrv_metric
-def vlf_power(series) -> float:
-    """Power in the very-low-frequency band (mMI^2)."""
+def vlf_power(series, psd_method=None) -> float:
+    """Power in the very-low-frequency band."""
     try:
-        return float(_band_power(series, "VLF"))
+        return float(_band_power(series, "VLF", psd_method))
     except (KeyError, AttributeError, ValueError):
         return np.nan
 
 
 @hrv_metric
-def lf_power(series) -> float:
-    """Power in the low-frequency band (mMI^2)."""
+def lf_power(series, psd_method=None) -> float:
+    """Power in the low-frequency band."""
     try:
-        return float(_band_power(series, "LF"))
+        return float(_band_power(series, "LF", psd_method))
     except (KeyError, AttributeError, ValueError):
         return np.nan
 
 
 @hrv_metric
-def hf_power(series) -> float:
-    """Power in the high-frequency band (mMI^2)."""
+def hf_power(series, psd_method=None) -> float:
+    """Power in the high-frequency band."""
     try:
-        return float(_band_power(series, "HF"))
+        return float(_band_power(series, "HF", psd_method))
     except (KeyError, AttributeError, ValueError):
         return np.nan
 
 
 @hrv_metric
-def lf_hf_ratio(series) -> float:
+def lf_hf_ratio(series, psd_method=None) -> float:
     """LF/HF ratio."""
     try:
-        lf = _band_power(series, "LF")
-        hf = _band_power(series, "HF")
+        lf = _band_power(series, "LF", psd_method)
+        hf = _band_power(series, "HF", psd_method)
         if hf == 0.0:
             return np.nan
         return float(lf / hf)
