@@ -354,7 +354,7 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 
 #### Contents of `{basename}.h5`
 
-The HDF5 file uses one top-level group per epoch. Inside each epoch group, **every scalar from the CSV is stored as an HDF5 attribute on the epoch group itself**, and four sub-groups hold the full array data. This means the HDF5 is the single source of truth: the scalar CSV is entirely derived from it, and any new `@hrv_metric` that is added automatically appears as an epoch-group attribute with no extra code.
+The HDF5 file uses one top-level group per epoch. Inside each epoch group, **every scalar from the CSV is stored as an HDF5 attribute on the epoch group itself**, and four sub-groups hold the full array data. This means the scalar CSV is entirely derived from it, and any new `@hrv_metric` that is added automatically appears as an epoch-group attribute.
 
 ```
 /{epoch}/
