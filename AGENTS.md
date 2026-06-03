@@ -127,9 +127,13 @@ That sentence is the project's first principle. Practical consequences:
 
 ### 2.6 Extension points
 
-* **HRV metrics**: decorate a method on `CardioSeries` with
-  `@hrv_metric`. It is auto-discovered, added to
-  `metric_table()`, exported in the Parameters table and CSV.
+* **Epoch metrics**: decorate a standalone function with
+  `@epoch_metric` (in `spectHR.analysis`). It takes one argument — a
+  `CardioSeriesLike` or the per-epoch `EpochContext` — and returns a
+  single scalar (one CSV column, never more). It is auto-discovered by
+  `PhysioData.epoched_parameters_table()` and exported in the
+  Parameters table, CSV, and HDF5. This covers time-domain HRV, the
+  standard band powers, and the beat-by-beat BP/RESP parameters.
 * **File loaders**: write a function with signature
   `loader(physiodata, filename, **kwargs) -> None` and decorate it
   with `@register_loader(".ext")`. The decorator wires it into the

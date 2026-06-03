@@ -120,7 +120,7 @@ METRIC_ORDER = [
 # ---------------------------------------------------------------------------
 #
 # Tooltips shown when hovering a column header.  Time-domain HRV metrics fall
-# back automatically to their ``@hrv_metric`` docstring (see
+# back automatically to their ``@epoch_metric`` docstring (see
 # ``_tooltip_for_column``); the entries below cover the identifier columns,
 # the beat-by-beat BP/RESP parameters and the export-only settings columns.
 # Frequency / profile / transfer columns are described by pattern below.
@@ -331,7 +331,7 @@ class ParametersPlotWidget(QWidget):
 
         # Inject the epoched_parameters_table scalars (RMSSD, SDNN, band
         # powers, Poincaré metrics, BP/RESP parameters, and any future
-        # @hrv_metric additions) into every epoch's "scalars" dict so they
+        # @epoch_metric additions) into every epoch's "scalars" dict so they
         # travel to the HDF5 file as well as the CSV.  self.data rows skip
         # "Subject" (col 0) and "epoch" (col 1); the remaining columns come
         # from epoched_parameters_table, which is already complete.
@@ -719,7 +719,7 @@ class ParametersPlotWidget(QWidget):
                 # Covers time-domain metrics (RMSSD, SDNN, …), Poincaré
                 # metrics (SD1, SD2, …), integrated band powers, profile
                 # summaries, transfer summaries, and any future
-                # @hrv_metric additions — automatically, with no extra
+                # @epoch_metric additions — automatically, with no extra
                 # code needed here.
                 for col, val in ed.get("scalars", {}).items():
                     try:
@@ -832,7 +832,7 @@ class ParametersPlotWidget(QWidget):
 
         1. An explicit entry in :data:`_COLUMN_HELP_STATIC` (identifier,
            BP/RESP and settings columns).
-        2. The docstring of the registered ``@hrv_metric`` of the same name
+        2. The docstring of the registered ``@epoch_metric`` of the same name
            (time-domain HRV metrics).
         3. A pattern match for the generated frequency / profile / transfer
            columns (``{band}_power``, ``{band}_prof_{stat}``,
@@ -880,7 +880,7 @@ class ParametersPlotWidget(QWidget):
         skipped; every remaining value is coerced to a native Python
         float / int / str so h5py can store it as an HDF5 attribute.
 
-        Any new metric added via ``@hrv_metric`` automatically appears
+        Any new metric added via ``@epoch_metric`` automatically appears
         here because it flows through ``epoched_parameters_table`` → ``self.data``
         → this method → the HDF5 epoch group attributes.
         """

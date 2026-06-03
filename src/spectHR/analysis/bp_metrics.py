@@ -54,6 +54,8 @@ from typing import Optional
 
 import numpy as np
 
+from spectHR.analysis.registry import epoch_metric
+
 # CARSPAN IsFlatLine constants (T_EventFile.pas).
 _FLATLINE_WINDOW_S = 0.300   # Twin  - 300 ms analysis window
 _FLATLINE_STEP_S = 0.010     # Tstep - 10 ms slide step
@@ -354,6 +356,67 @@ def resp_epoch_metrics(
         "resp_mvo": _nanmean(beats["mvo"]),
         "resp_svo": _nanmean(beats["svo"]),
     }
+
+
+# ---------------------------------------------------------------------------
+# Registered single-valued epoch metrics
+# ---------------------------------------------------------------------------
+#
+# Each metric reads the per-beat parameter dict cached on the
+# :class:`~spectHR.analysis.epoch_context.EpochContext` (so the underlying
+# ``bp_beat_parameters`` / ``resp_beat_parameters`` pass runs at most once per
+# epoch) and returns the epoch ``nanmean`` of one parameter.  When the
+# corresponding waveform channel is absent the context yields ``None`` and the
+# metric reports ``NaN``.  The column name is the function name.
+
+def _bp_metric(ctx, key: str) -> float:
+    beats = getattr(ctx, "bp_beats", None)
+    if not beats:
+        return float("nan")
+    return _nanmean(beats[key])
+
+
+def _resp_metric(ctx, key: str) -> float:
+    beats = getattr(ctx, "resp_beats", None)
+    if not beats:
+        return float("nan")
+    return _nanmean(beats[key])
+
+
+@epoch_metric
+def bp_sbp(ctx) -> float:
+    """Systolic blood pressure, epoch mean of the per-beat maxima (CARSPAN)."""
+    return _bp_metric(ctx, "sbp")
+
+
+@epoch_metric
+def bp_dbp(ctx) -> float:
+    """Diastolic blood pressure, epoch mean of the per-beat foot minima (CARSPAN)."""
+    return _bp_metric(ctx, "dbp")
+
+
+@epoch_metric
+def bp_pp(ctx) -> float:
+    """Pulse pressure (SBP - DBP), epoch mean over beats (CARSPAN)."""
+    return _bp_metric(ctx, "pp")
+
+
+@epoch_metric
+def bp_map(ctx) -> float:
+    """Mean arterial pressure, epoch mean of the waveform integral mean (CARSPAN)."""
+    return _bp_metric(ctx, "map")
+
+
+@epoch_metric
+def resp_mvo(ctx) -> float:
+    """Mean respiratory volume per cardiac interval, epoch mean (CARSPAN)."""
+    return _resp_metric(ctx, "mvo")
+
+
+@epoch_metric
+def resp_svo(ctx) -> float:
+    """Sample respiratory volume at each R-peak, epoch mean (CARSPAN)."""
+    return _resp_metric(ctx, "svo")
 
 
 # ---------------------------------------------------------------------------

@@ -178,15 +178,13 @@ class HRPlotWidget(TimelinePlotWidget):
         hr = np.full_like(ibi, np.nan)
         hr[valid] = 60.0 / ibi[valid]
 
-        # X-coordinates: midpoint of the IBI when valid (the standard
-        # location for an HR estimate), the R-peak time itself when
-        # not. The invalid x doesn't get drawn (its y is NaN), but we
-        # keep it finite so neighbouring segments can still autoscale
-        # cleanly.
-        hr_times = times.copy()
-        hr_times[valid] = times[valid] + ibi[valid] / 2.0
-
-        return TimeSeries(hr_times, hr)
+        # X-coordinates: the R-peak time itself. ``ibi[i] = times[i+1] -
+        # times[i]`` is the interval *opening* at R-peak ``i``, so its HR
+        # value sits exactly on that R-top - the same absolute time axis the
+        # Preprocessing and Blood-pressure timelines use, so the three views
+        # line up beat-for-beat. (The final beat has no forward interval, so
+        # its HR is NaN and simply isn't drawn.)
+        return TimeSeries(times, hr)
 
     @property
     def heartrate_series(self) -> TimeSeries:

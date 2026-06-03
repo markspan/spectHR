@@ -4,7 +4,7 @@
 """
 Time-domain HRV metrics.
 
-Every function here is a standalone callable decorated with ``@hrv_metric``,
+Every function here is a standalone callable decorated with ``@epoch_metric``,
 which registers it in ``spectHR.analysis.registry._REGISTRY``.
 
 Each function accepts a single ``CardioSeriesLike`` argument (anything that
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from spectHR.analysis.registry import hrv_metric
+from spectHR.analysis.registry import epoch_metric
 from spectHR.analysis.ibi_helpers import (
     ibi_clean_ms,
     successive_diffs_ms,
@@ -31,41 +31,41 @@ from spectHR.analysis.ibi_helpers import (
 # Magnitude-based statistics
 # ---------------------------------------------------------------------------
 
-@hrv_metric
+@epoch_metric
 def count(series) -> float:
     """Total number of valid inter-beat intervals."""
     return float(ibi_clean_ms(series).size)
 
 
-@hrv_metric
+@epoch_metric
 def mean(series) -> float:
     """Mean IBI (ms)."""
     ibi_ms = ibi_clean_ms(series)
     return float(np.mean(ibi_ms)) if ibi_ms.size else np.nan
 
 
-@hrv_metric
+@epoch_metric
 def median(series) -> float:
     """Median IBI (ms)."""
     ibi_ms = ibi_clean_ms(series)
     return float(np.median(ibi_ms)) if ibi_ms.size else np.nan
 
 
-@hrv_metric
+@epoch_metric
 def min(series) -> float:
     """Minimum IBI (ms)."""
     ibi_ms = ibi_clean_ms(series)
     return float(np.min(ibi_ms)) if ibi_ms.size else np.nan
 
 
-@hrv_metric
+@epoch_metric
 def max(series) -> float:
     """Maximum IBI (ms)."""
     ibi_ms = ibi_clean_ms(series)
     return float(np.max(ibi_ms)) if ibi_ms.size else np.nan
 
 
-@hrv_metric
+@epoch_metric
 def stationarity(series) -> float:
     """Correlation of IBI vs. time - drift indicator."""
     ibi_ms = ibi_clean_ms(series)
@@ -80,21 +80,21 @@ def stationarity(series) -> float:
 # Variability
 # ---------------------------------------------------------------------------
 
-@hrv_metric
+@epoch_metric
 def rmssd(series) -> float:
     """Root mean square of successive differences (ms). Gap-safe."""
     d = successive_diffs_ms(series)
     return float(np.sqrt(np.mean(d * d))) if d.size else np.nan
 
 
-@hrv_metric
+@epoch_metric
 def sdnn(series) -> float:
     """Standard deviation of all valid IBIs (ms)."""
     ibi_ms = ibi_clean_ms(series)
     return float(np.std(ibi_ms)) if ibi_ms.size else np.nan
 
 
-@hrv_metric
+@epoch_metric
 def sdsd(series) -> float:
     """Standard deviation of successive differences (ms). Gap-safe."""
     d = successive_diffs_ms(series)
@@ -105,14 +105,14 @@ def sdsd(series) -> float:
 # Poincaré
 # ---------------------------------------------------------------------------
 
-@hrv_metric
+@epoch_metric
 def sd1(series) -> float:
     """Poincaré SD1 (minor axis, ms) = std(dIBI) / sqrt(2). Gap-safe."""
     d = successive_diffs_ms(series)
     return float(np.std(d) / np.sqrt(2.0)) if d.size else np.nan
 
 
-@hrv_metric
+@epoch_metric
 def sd2(series) -> float:
     """Poincaré SD2 (major axis, ms) via Brennan's identity:
     ``SD2² = 2·Var(IBI) − 0.5·Var(dIBI)``."""
@@ -124,7 +124,7 @@ def sd2(series) -> float:
     return float(np.sqrt(val)) if val > 0.0 else np.nan
 
 
-@hrv_metric
+@epoch_metric
 def sd_ratio(series) -> float:
     """SD1 / SD2 - short-term vs long-term variability balance.
 
@@ -141,7 +141,7 @@ def sd_ratio(series) -> float:
     return float(s1 / s2)
 
 
-@hrv_metric
+@epoch_metric
 def ellipse_area(series) -> float:
     """Area of the Poincaré ellipse, ``π · SD1 · SD2`` (ms²)."""
     s1 = sd1(series)

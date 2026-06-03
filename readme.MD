@@ -347,14 +347,14 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default)
-- **Blood pressure** (when a BP channel is present): mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`)
+- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`) and mean / sample respiratory volume (`resp_mvo`, `resp_svo`). These columns are always present; the values are blank when the corresponding channel is absent.
 - **Transfer** (when the input channel is present): per-band modulus, phase and weighted coherence
 
 Click **Save** to export **two files** to the configured Output folder:
 
 | File | What it contains |
 | --- | --- |
-| `{basename}.csv` | One row per epoch, every cell a plain scalar. Opens directly in JASP, SPSS, R, or any spreadsheet. Contains time-domain + Poincaré + integrated band powers + spectral-profile summary statistics + transfer-function band summaries (when a respiration channel is available). |
+| `{basename}.csv` | One row per epoch, every cell a plain scalar. Opens directly in JASP, SPSS, R, or any spreadsheet. Contains time-domain + Poincaré + integrated band powers + beat-by-beat blood-pressure / respiration means + spectral-profile summary statistics + transfer-function band summaries (the last written only when a respiration channel is available). |
 | `{basename}.h5` | HDF5 file with one group per epoch holding the full array data: complete PSD spectra, per-window profile time series, full Bode curves, and sliding-window transfer-function profiles. |
 
 #### Why two files?
@@ -371,6 +371,7 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 | **Time-domain HRV** | `count`, `mean`, `median`, `min`, `max`, `rmssd`, `sdnn`, `sdsd`, … |
 | **Poincaré** | `sd1`, `sd2`, `sd_ratio`, `ellipse_area` |
 | **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default) |
+| **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo` (always present; blank when the corresponding channel is absent) |
 | **Profile summaries** | `{band}_prof_mean/std/min/max/t_max` per band; `prof_method`, `prof_unit`, `prof_window_s`, `prof_step_s`, `prof_n_windows` |
 | **Transfer summaries** | `{band}_tf_modulus`, `_tf_phase_w`, `_tf_phase_u`, `_tf_coherence`, `_tf_n_points`, `_tf_n_coherent` per band; `tf_method`, `tf_freq_resolution`, `tf_smooth`, `tf_min_coherence`; written only when a respiration channel is present |
 
@@ -378,7 +379,7 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 
 #### Contents of `{basename}.h5`
 
-The HDF5 file uses one top-level group per epoch. Inside each epoch group, **every scalar from the CSV is stored as an HDF5 attribute on the epoch group itself**, and four sub-groups hold the full array data. This means the scalar CSV is entirely derived from it, and any new `@hrv_metric` that is added automatically appears as an epoch-group attribute.
+The HDF5 file uses one top-level group per epoch. Inside each epoch group, **every scalar from the CSV is stored as an HDF5 attribute on the epoch group itself**, and four sub-groups hold the full array data. This means the scalar CSV is entirely derived from it, and any new `@epoch_metric` that is added automatically appears as an epoch-group attribute.
 
 ```
 /{epoch}/
@@ -386,6 +387,7 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
          rmssd, sdnn, sdsd, mean, median, count, min, max,   ← time-domain
          sd1, sd2, sd_ratio, ellipse_area,                    ← Poincaré
          {band}_power, lf_hf_ratio,                           ← band powers
+         bp_sbp/bp_dbp/bp_pp/bp_map, resp_mvo/resp_svo,        ← BP / respiration
          {band}_prof_mean/std/min/max/t_max,                  ← profile summaries
          prof_method, prof_unit, prof_window_s, prof_step_s,
          prof_n_windows [, prof_adaptive_band, prof_adaptive_source],
@@ -393,7 +395,7 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
            _tf_coherence/_tf_n_points/_tf_n_coherent,         (present only when
          tf_method, tf_freq_resolution, tf_smooth,             respiration channel
          tf_min_coherence                                      available)
-         … plus any future @hrv_metric columns automatically
+         … plus any future @epoch_metric columns automatically
 
   /psd/
     attrs: method, unit, psd_unit, freq_resolution
@@ -455,7 +457,7 @@ h5$ls(recursive = TRUE)   # print full tree: groups, datasets, attributes
 
 `h5attributes()` pulls every attribute of a group as a named list in one call.
 All per-epoch scalars — time-domain, Poincaré, band powers, profile summaries,
-transfer summaries, and any future `@hrv_metric` additions — sit on the epoch
+transfer summaries, and any future `@epoch_metric` additions — sit on the epoch
 group, so one loop covers everything:
 
 ```r
@@ -1372,12 +1374,12 @@ Download `spectHR-macOS-vX.Y.Z.zip` from the [Releases](https://github.com/marks
 
 spectHR is written in pure Python. The analysis library (`src/spectHR/`) and the GUI (`src/spectUI/`) are kept separate so the library can be used independently in scripts.
 
-New HRV metrics can be added by decorating a standalone function with `@hrv_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/`. The function receives a `CardioSeriesLike` and returns a `float`. No other changes are needed: the metric automatically appears in the **Parameters table**, the **scalar CSV** (`{basename}.csv`), and as an **attribute on the epoch group in the HDF5 file** (`{basename}.h5`). The `@hrv_metric` decorator raises `ValueError` at import time if a name collision is detected, so duplicate registrations are caught immediately.
+New metrics can be added by decorating a standalone function with `@epoch_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/`. The function takes one argument and returns a single `float` (one column — a metric may never emit more than one). For a plain IBI metric that argument is a `CardioSeriesLike`; metrics that need extra data (blood pressure, respiration, the PSD) receive the per-epoch `EpochContext`, which exposes the same series interface plus the cached PSD and BP/RESP beats (this is how `lf_power`, `bp_sbp`, `resp_mvo`, … are built). No other changes are needed: the metric automatically appears in the **Parameters table**, the **scalar CSV** (`{basename}.csv`), and as an **attribute on the epoch group in the HDF5 file** (`{basename}.h5`). The `@epoch_metric` decorator raises `ValueError` at import time if a name collision is detected, so duplicate registrations are caught immediately.
 
 ```python
-from spectHR.analysis.registry import hrv_metric
+from spectHR.analysis.registry import epoch_metric
 
-@hrv_metric
+@epoch_metric
 def sample_entropy(series) -> float:
     """Sample entropy of the cleaned IBI series."""
     import antropy as ant

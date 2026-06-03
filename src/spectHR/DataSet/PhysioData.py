@@ -232,20 +232,22 @@ class PhysioData:
         self,
         psd_method=None,
     ) -> "tuple[np.ndarray, list[str], np.ndarray]":
-        """Compute all HRV metrics for every active epoch.
+        """Compute every per-epoch parameter for every active epoch.
 
-        Iterates over ``self.epochs``, computes each metric on the active
-        ``CardioSeries`` (``self.hrv``) restricted to that epoch's bounds,
-        and assembles the results into a rectangular matrix.
+        Iterates over ``self.epochs`` and, for each active epoch, builds an
+        :class:`~spectHR.analysis.epoch_context.EpochContext` over the active
+        ``CardioSeries`` (``self.hrv``) restricted to that epoch's bounds.
+        Each registered ``@epoch_metric`` — time-domain HRV, standard band
+        powers, and beat-by-beat BP / RESP parameters — contributes one scalar
+        column; the results are assembled into a rectangular matrix.
 
         Parameters
         ----------
         psd_method : PsdMethod or None
-            Workspace-configured PSD method.  Passed to any registered
-            metric that accepts a ``psd_method`` keyword argument (i.e.
-            the frequency-domain metrics) so the table values match what
-            the PSD plot displays.  When ``None`` the frequency metrics
-            fall back to their own default.
+            Workspace-configured PSD method.  Carried on the EpochContext and
+            read by the band-power metrics (and the dynamic non-standard-band
+            loop) so the table values match what the PSD plot displays.  When
+            ``None`` the band-power columns are ``NaN``.
 
         Returns
         -------
@@ -259,22 +261,22 @@ class PhysioData:
         Returns three empty containers when no active epochs exist or no
         active HRV series is loaded.
         """
-        from spectHR.analysis.psd._engine import PSDEngine
         from spectHR.analysis.psd._band_power import band_power_rectangular
-        from spectHR.analysis.bp_metrics import (
-            bp_epoch_metrics,
-            resp_epoch_metrics,
-        )
+        from spectHR.analysis.frequency_metrics import STANDARD_BAND_POWER_COLUMNS
+        from spectHR.analysis.epoch_context import EpochContext
 
         hrv = self.hrv
         if hrv is None:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
 
-        metrics = get_metrics()   # time-domain only — no inspect needed
+        # Every registered ``@epoch_metric``: time-domain HRV, the standard band
+        # powers, and the beat-by-beat BP / RESP parameters.  Each is called with
+        # the per-epoch EpochContext and contributes one scalar column.
+        metrics = get_metrics()
 
         # Optional waveform channels for the beat-by-beat CARSPAN parameters.
-        # Both are R-peak-gated, so they share the per-epoch CardioSeries view's
-        # ``.times`` below.  Absent channels simply contribute no columns.
+        # Both are R-peak-gated; the EpochContext gates them on the per-epoch
+        # view's ``.times``.  Absent channels make those metrics report NaN.
         try:
             bp_ts = self["bp"].timeseries
         except (KeyError, AttributeError, TypeError):
@@ -291,53 +293,35 @@ class PhysioData:
             if ep.active:
                 labels_list.append(label)
                 view = hrv.view(ep.start, ep.end)
+                ctx = EpochContext(
+                    view, psd_method=psd_method, bp_ts=bp_ts, rsp_ts=rsp_ts,
+                )
                 row: dict[str, float] = {}
 
-                # ---- time-domain metrics --------------------------------
+                # ---- registered single-valued metrics -------------------
                 for name, fn in metrics.items():
                     try:
-                        row[name] = float(fn(view))
+                        row[name] = float(fn(ctx))
                     except Exception:
                         row[name] = float("nan")
 
-                # ---- beat-by-beat BP / RESP parameters (CARSPAN) --------
-                # Computed on the same R-peaks (``view.times``) that drive the
-                # HRV metrics, so the values line up beat-for-beat.
-                if bp_ts is not None:
-                    try:
-                        row.update(bp_epoch_metrics(bp_ts, view.times))
-                    except Exception:
-                        pass
-                if rsp_ts is not None:
-                    try:
-                        row.update(resp_epoch_metrics(rsp_ts, view.times))
-                    except Exception:
-                        pass
-
-                # ---- frequency-domain: one PSD, all configured bands ----
-                # Computing from psd_method.bands means the table reflects
-                # any workspace band configuration, not just the four
-                # hardcoded CARSPAN defaults.
-                if psd_method is not None:
-                    try:
-                        psd_res = PSDEngine(view).for_band_power(psd_method)
-                        for band_name, band_spec in psd_method.bands.items():
-                            col = f"{band_name.lower()}_power"
+                # ---- hybrid: dynamic band powers for non-standard bands -
+                # The standard bands (FullRange/VLF/LF/HF) are covered by the
+                # decorated metrics above; any extra or renamed band still gets
+                # its ``{name}_power`` column here, reusing the cached PSD.
+                if psd_method is not None and ctx.psd is not None:
+                    psd_res = ctx.psd
+                    for band_name, band_spec in psd_method.bands.items():
+                        col = f"{band_name.lower()}_power"
+                        if col in STANDARD_BAND_POWER_COLUMNS:
+                            continue
+                        try:
                             row[col] = band_power_rectangular(
                                 psd_res.freqs, psd_res.power,
                                 band_spec.low, band_spec.high,
                             )
-                        # LF/HF ratio — only when both standard bands exist
-                        lf = row.get("lf_power")
-                        hf = row.get("hf_power")
-                        if (
-                            lf is not None and hf is not None
-                            and np.isfinite(lf) and np.isfinite(hf)
-                            and hf != 0.0
-                        ):
-                            row["lf_hf_ratio"] = lf / hf
-                    except Exception:
-                        pass   # band columns stay absent → NaN in matrix
+                        except Exception:
+                            pass   # leave absent → NaN in the matrix
 
                 rows.append(row)
 
