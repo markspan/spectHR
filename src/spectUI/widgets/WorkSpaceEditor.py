@@ -124,7 +124,7 @@ _EXCLUDED_SECTIONS = {"Directories"}
 # future workspace additions stay editable even before they're explicitly
 # routed.
 _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration")),
+    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration", "Logging")),
     ("PSD Settings",         ("FrequencyAnalysis",)),
     ("Profile Settings",     ("Profiles",)),
     ("Spectrogram Settings", ("Spectrogram",)),
@@ -177,6 +177,8 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     # systolic / diastolic (baroreflex sensitivity). The output is always
     # IBI/HR.
     "TransferAnalysis.input_signal": ["rsp", "bp_sys", "bp_dia"],
+    # Minimum severity shown in the Log dock / console (most verbose first).
+    "Logging.level": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
 }
 
 

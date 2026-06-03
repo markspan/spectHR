@@ -206,7 +206,7 @@ class TNFF:
         return struct.unpack("<" + str(sweep_size) + "h", buf)
 
 
-def load_nff(physiodata, filename: Path, label: str = "ECG") -> None:
+def load_nff(physiodata, filename: Path) -> None:
     """Read **every** channel from a ``.nff`` file into *physiodata*.
 
     Each channel is attached as ``physiodata.timeseries[key]``, where
@@ -227,10 +227,6 @@ def load_nff(physiodata, filename: Path, label: str = "ECG") -> None:
     ----------
     physiodata : PhysioData
     filename : Path
-    label : str
-        Retained for backwards compatibility with the previous
-        single-channel API; no longer used for channel selection since
-        all channels are now loaded.
     """
     logger.info(f"Loading NFF: {filename.name}")
 

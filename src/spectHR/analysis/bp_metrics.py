@@ -93,6 +93,7 @@ def is_flatline(
     sig_values: np.ndarray,
     idx_b: int,
     idx_e: int,
+    dt: Optional[float] = None,
 ) -> bool:
     """Return True when ``sig_values[idx_b:idx_e]`` looks like a flat line.
 
@@ -100,12 +101,19 @@ def is_flatline(
     in 10 ms steps from *idx_b* toward *idx_e*; the beat is flagged as soon as
     one window has a zero mean or a coefficient of variation below 0.005.  When
     the interval is shorter than the window the test runs once.
+
+    *dt* is the (uniform) sample interval in seconds.  When ``None`` it is
+    derived from ``sig_times`` via :func:`_median_dt`; callers that test many
+    beats of the same signal should compute it once and pass it in, since the
+    median is an O(N log N) scan of the *whole* waveform and is otherwise
+    repeated for every beat.
     """
     n = sig_values.size
     if idx_e <= idx_b or idx_b >= n:
         return True
 
-    dt = _median_dt(sig_times)
+    if dt is None:
+        dt = _median_dt(sig_times)
     if dt is None or dt <= 0:
         return True
 
@@ -183,6 +191,11 @@ def bp_beat_parameters(
 
     idx = _rpeak_sample_indices(bp_times, rpeak_times)
 
+    # Sample interval is uniform across the waveform; compute it once and
+    # reuse for every beat's flat-line test (otherwise is_flatline rescans
+    # the whole bp_times array per beat - the profile hot path).
+    dt = _median_dt(bp_times)
+
     # Diastolic-minimum sample index per beat - reused by the MAP pass.
     dia_idx = np.full(n_beats, -1, dtype=int)
 
@@ -190,7 +203,7 @@ def bp_beat_parameters(
         lo, hi = int(idx[i]), int(idx[i + 1])
         if hi <= lo:
             continue
-        if is_flatline(bp_times, bp_values, lo, hi):
+        if is_flatline(bp_times, bp_values, lo, hi, dt=dt):
             continue
 
         seg = bp_values[lo:hi + 1]          # inclusive, as CARSPAN IdxB..IdxE

@@ -32,6 +32,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
 from matplotlib.ticker import MultipleLocator
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from spectHR.DataSet.PhysioData import PhysioData
@@ -241,6 +242,12 @@ class TimelinePlotWidget(QWidget):
 
     #: Colour of the overview trace; subclasses may override.
     overview_color: str = "green"
+
+    #: Emitted whenever this widget commits a change to the shared view
+    #: window (zoom / pan / goto / overview-drag release). MainWindow uses
+    #: it to redraw the other linked timeline docks so they follow along
+    #: automatically, without the user having to click in their overview.
+    viewChanged = Signal()
 
     # --------------------------------------------------------------
     # Construction
@@ -503,6 +510,7 @@ class TimelinePlotWidget(QWidget):
         self.data.view.x_min = float(x_min)
         self.data.view.x_max = float(x_max)
         self.redraw()
+        self.viewChanged.emit()
 
     def _constrained_window(self, x_min: float, x_max: float) -> tuple[float, float]:
         """Clamp the window [x_min, x_max] to the primary-series data range."""
@@ -639,5 +647,8 @@ class TimelinePlotWidget(QWidget):
         """Finish dragging the overview window."""
         if self.data is None or self.data.view is None:
             return
+        was_dragging = self.data.view.drag_mode is not None
         self.data.view.drag_mode = None
         self.redraw()
+        if was_dragging:
+            self.viewChanged.emit()

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QInputDialog
 from spectHR.DataSet.Epoch import Epoch
 
@@ -22,6 +23,12 @@ class EpochPlotWidget(QWidget):
         active=True   -> shown
         active=False  -> hidden
     """
+
+    # Emitted whenever the user actually mutates an epoch (resize via drag,
+    # rename, or delete). MainWindow connects this to mark the dataset
+    # dirty, so plot caches are invalidated only on a real edit - merely
+    # viewing this dock leaves them intact.
+    dataEdited = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -182,7 +189,11 @@ class EpochPlotWidget(QWidget):
         self.canvas.draw_idle()
 
     def _on_release(self, event):
-        self._drag = None
+        # Only a genuine resize drag (press landed on an epoch edge) counts
+        # as an edit; a bare click that started no drag does not.
+        if self._drag is not None:
+            self._drag = None
+            self.dataEdited.emit()
 
     # ------------------------------------------------------------------
     # Rename/delete epoch via clicking y-label
@@ -206,6 +217,7 @@ class EpochPlotWidget(QWidget):
             if old_name in self.dataset.epochs:
                 del self.dataset.epochs[old_name]
             self.plotEpochs(self.dataset)
+            self.dataEdited.emit()
             return
 
         if new_name in self.dataset.epochs:
@@ -217,3 +229,4 @@ class EpochPlotWidget(QWidget):
         self.dataset.epochs[new_name] = ep
 
         self.plotEpochs(self.dataset)
+        self.dataEdited.emit()

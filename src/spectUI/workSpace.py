@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import copy
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict
@@ -86,6 +87,17 @@ _DEFAULT_WORKSPACE = {
     "Calibration": {
         "bp_scale": 0.125,
         "bp_zero": 0.0,
+    },
+    # ------------------------------------------------------------------
+    # Logging
+    # ------------------------------------------------------------------
+    # Minimum severity a log record must have to be shown (in the Log dock
+    # and on the console). One of DEBUG / INFO / WARNING / ERROR / CRITICAL;
+    # records below the chosen level are dropped. DEBUG is the most verbose,
+    # CRITICAL the quietest. Applied to the "spectHR" logger on start-up and
+    # whenever the workspace is edited or opened.
+    "Logging": {
+        "level": "INFO",
     },
     # ------------------------------------------------------------------
     # Spectral profiles
@@ -380,6 +392,27 @@ def bp_calibration_from_workspace(
     )
 
 
+#: Accepted log-level names, most verbose first. Also the choice list the
+#: workspace editor offers for ``Logging.level``.
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+_DEFAULT_LOG_LEVEL = "INFO"
+
+
+def log_level_from_workspace(workspace: "Dict[str, Any] | None") -> int:
+    """Return the configured minimum log level as a ``logging`` constant.
+
+    Reads ``workspace["Logging"]["level"]`` (one of :data:`LOG_LEVELS`) and
+    maps it to the numeric level (e.g. ``"WARNING" -> logging.WARNING``).
+    Falls back to ``INFO`` when the workspace, section, or name is missing
+    or unrecognised.
+    """
+    name = _DEFAULT_LOG_LEVEL
+    if workspace is not None:
+        log_cfg = workspace.get("Logging", {}) or {}
+        name = str(log_cfg.get("level", _DEFAULT_LOG_LEVEL)).upper()
+    return getattr(logging, name, logging.INFO)
+
+
 def profile_settings_from_workspace(
     workspace: "Dict[str, Any] | None",
 ) -> Dict[str, Any]:
@@ -509,9 +542,8 @@ def transfer_settings_from_workspace(
     """Return ``workspace["TransferAnalysis"]`` flattened with defaults applied.
 
     Returned keys: ``input_signal``, ``window_s``, ``step_s``,
-    ``min_coherence``, ``f_max``, ``phase_view``,
-    ``show_coherence_threshold``, ``coherence_threshold_level``,
-    ``coherence_mask_alpha``.
+    ``min_coherence``, ``f_min``, ``f_max``, ``smooth``, ``phase_view``,
+    ``show_coherence_threshold``, ``coherence_mask_alpha``.
 
     The Bode-plot widgets read this dict directly, the band edges they
     feed to :func:`spectHR.analysis.transfer.compute_transfer` are
@@ -555,42 +587,6 @@ def transfer_settings_from_workspace(
             cfg.get("coherence_mask_alpha", defaults["coherence_mask_alpha"])
         ),
     }
-
-
-def resolve_transfer_input(pd, input_signal: str):
-    """Resolve the transfer-function input TimeSeries for *input_signal*.
-
-    The transfer pipeline drives its input channel from one of the
-    continuous recordings on *pd*: respiration for ``"rsp"`` or the
-    blood-pressure waveform for ``"bp_sys"`` / ``"bp_dia"`` (the per-beat
-    systolic / diastolic values are extracted from the same BP waveform
-    inside :func:`spectHR.analysis.transfer.compute_transfer`).
-
-    Parameters
-    ----------
-    pd : PhysioData
-        The dataset behind the cardio series (``series._pd``).
-    input_signal : str
-        One of ``spectHR.analysis.transfer.INPUT_SIGNALS``.
-
-    Returns
-    -------
-    (timeseries, error) : tuple
-        ``timeseries`` is the resolved continuous TimeSeries (with
-        ``.times`` / ``.values``) and ``error`` is ``None`` on success; on
-        failure ``timeseries`` is ``None`` and ``error`` is a short
-        human-readable reason for the empty tile.
-    """
-    from spectHR.analysis.transfer import INPUT_SIGNAL_RSP
-
-    if input_signal == INPUT_SIGNAL_RSP:
-        key, channel = "rsp", "respiration"
-    else:
-        key, channel = "bp", "blood-pressure"
-    try:
-        return pd[key].timeseries, None
-    except (KeyError, AttributeError):
-        return None, f"No {channel} channel"
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

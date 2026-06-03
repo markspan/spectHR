@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import mplcursors
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.patches import Ellipse
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -33,6 +33,11 @@ class PoincarePlotWidget(QWidget):
     Visibility is controlled by checkboxes and stored directly
     in `dataset.epochs[epoch_name].active`.
     """
+
+    # Emitted when the user toggles an epoch's active state via a checkbox.
+    # MainWindow connects this to mark the dataset dirty so the change is
+    # persisted and dependent plot caches recompute.
+    dataEdited = Signal()
 
     # ------------------------------------------------------------------
     # Construction
@@ -211,6 +216,7 @@ class PoincarePlotWidget(QWidget):
                 self.ellipse_handles[name] = None
 
         self.canvas.draw_idle()
+        self.dataEdited.emit()
 
     def _configure_axes(self) -> None:
         """

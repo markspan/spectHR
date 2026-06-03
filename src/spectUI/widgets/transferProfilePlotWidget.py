@@ -32,6 +32,7 @@ from spectHR.analysis.transfer import (
     TransferProfileResult,
     compute_transfer_profile,
     input_signal_label,
+    resolve_transfer_input,
 )
 from spectUI.common import (
     PlotExportMixin,
@@ -41,7 +42,6 @@ from spectUI.common import (
 )
 from spectUI.workSpace import (
     display_bands_from_workspace,
-    resolve_transfer_input,
     transfer_settings_from_workspace,
 )
 
@@ -444,11 +444,12 @@ class TransferProfilePlotWidget(PlotExportMixin, QWidget):
         ax_mod.set_ylim(bottom=0.0)
         ax_mod.spines["top"].set_visible(False)
         ax_mod.spines["right"].set_visible(False)
-        # Name the input datatype that drove the transfer (respiration vs
-        # blood pressure) as a legend-only entry alongside the per-band lines.
+        # Name the transfer pairing as a legend-only entry. The output is
+        # always the IBI (HR) series; the input datatype (respiration vs
+        # blood pressure) varies, so the legend states what H(f) couples.
         ax_mod.plot(
             [], [], " ",
-            label=f"input: {input_signal_label(data.input_signal)}",
+            label=f"IBI ↔ {input_signal_label(data.input_signal)}",
         )
         ax_mod.legend(loc="upper right", fontsize=7, framealpha=0.75)
 

@@ -72,13 +72,13 @@ from spectHR.analysis.registry import get_metrics
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.profile import compute_band_power_profile
+from spectHR.analysis.transfer import resolve_transfer_input
 from spectUI.common import show_export_summary
 from spectUI.workSpace import (
     display_bands_from_workspace,
     get_export_dir,
     profile_settings_from_workspace,
     psd_method_from_workspace,
-    resolve_transfer_input,
     resolved_profile_bands,
     transfer_settings_from_workspace,
 )

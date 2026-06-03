@@ -1,6 +1,6 @@
 <details open>
 <summary>⚠️ CAUTION</summary>
-This project is a work in progress. Blood pressure analysis is not yet implemented. Breathing signal extraction and visualisation are functional but should be treated as experimental.
+This project is a work in progress. Blood-pressure support (calibration, beat-by-beat SBP/DBP/MAP/PP, and BP→HR baroreflex transfer) and breathing signal extraction are functional but should be treated as experimental.
 </details>
 
 ---
@@ -27,6 +27,7 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 - [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
 - [Step 2, Inspect the IBI timeseries (IBI Series tab)](#step-2-inspect-the-ibi-timeseries-ibi-series-tab)
+- [Blood pressure (Blood Pressure tab)](#blood-pressure-blood-pressure-tab)
 - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
@@ -59,6 +60,10 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 
 <details open>
 <summary><a href="#breathing-signal-extraction"><strong>Breathing Signal Extraction</strong></a></summary>
+</details>
+
+<details open>
+<summary><a href="#blood-pressure"><strong>Blood Pressure</strong></a></summary>
 </details>
 
 <details open>
@@ -111,6 +116,8 @@ This project is a work in progress. Blood pressure analysis is not yet implement
 **spectHR** is a free, open-source desktop application for Heart Rate Variability (HRV) analysis. It is built for researchers and students who want to move from a raw electrocardiogram (ECG) to interpretable HRV metrics without writing any code, and without trusting a black box.
 
 Heart rate variability reflects the fluctuations inter-beat intervals (IBI). These fluctuations are regulated by the autonomic nervous system: higher HRV generally indicates flexible, healthy regulation; lower HRV is associated with stress, disease, or fatigue. By analysing the power in different frequency bands of the IBI series, spectHR lets you separate the parasympathetic (HF) and sympathetic/parasympathetic (LF) contributions to heart rate control in each named epoch of your recording.
+
+When the recording also carries a continuous **blood-pressure** waveform (e.g. a Finapres/Finometer channel in a CARSPAN file), spectHR calibrates it to mmHg, derives beat-by-beat systolic, diastolic, mean and pulse pressure, and can estimate **spectral baroreflex sensitivity** as a blood-pressure → heart-rate transfer function. A respiration channel similarly unlocks the respiration → heart-rate (respiratory sinus arrhythmia) transfer view.
 
 The key principle behind spectHR is that **you have to check data quality**. Every step that could go wrong, R-peak detection, noisy intervals, epoch boundaries, is shown to you visually and can be corrected before any metrics are computed.
 
@@ -176,12 +183,13 @@ In short: use ms²/Hz when you care about the absolute size of the millisecond f
 
 ## The interface at a glance
 
-The window is divided into two areas. On the left is a narrow **file tree** listing all datasets in your configured data folder. On the right is the main **analysis area**, organised into seven tabs:
+The window is divided into two areas. On the left is a narrow **file tree** listing all datasets in your configured data folder. On the right is the main **analysis area**, organised into tabs (those that need a channel the recording lacks — Blood Pressure, Transfer — stay disabled):
 
 | Tab | What you do there |
 |-----|------------------|
 | **Preprocessing** | Verify and correct R-peak detection |
 | **IBI Series** | Review the IBI timeseries |
+| **Blood Pressure** | Review the calibrated blood-pressure waveform (shown only when the recording has a BP channel) |
 | **Poincaré** | Explore beat-to-beat dynamics visually |
 | **Epochs** | Draw and adjust your analysis segments |
 | **PSD** | Read the frequency-domain power spectrum per epoch |
@@ -221,6 +229,14 @@ Right-clicking a file gives you **Reload Raw**, **Invert ECG Polarity**, and **R
 Once the peaks look correct, switch to the **IBI Series tab** to see heart rate over time in beats per minute. If a breathing signal is available it is shown as a faint green overlay.
 
 ![Heart Rate Series](images/IBIWindow.png)
+
+---
+
+### Blood pressure (Blood Pressure tab)
+
+If the recording carries a continuous blood-pressure waveform (for example the BP channel of a CARSPAN `.nff` file), the **Blood Pressure tab** appears and shows that waveform on the same scrollable, zoomable timeline as the ECG and IBI views — pan/zoom is linked, so framing one view re-frames the others. When the BP channel arrives uncalibrated, spectHR converts it from raw A/D counts to **mmHg** using a linear calibration `mmHg = scale · raw + zero`, configurable under **WorkSpace → Edit Parameters → General Settings → Calibration** (`bp_scale`, `bp_zero`; defaults 0.125 / 0 match the worked example in the CARCAL manual for a Finapres/Finometer through a 12-bit converter). If the file's header already carries a per-channel calibration, that is kept and the manual values are ignored.
+
+From the calibrated waveform spectHR derives, per cardiac interval, four beat-by-beat parameters following the CARSPAN algorithm: **SBP** (systolic, the maximum in the interval), **DBP** (diastolic, the minimum preceding the systolic peak), **PP** (pulse pressure, SBP − DBP) and **MAP** (mean arterial pressure, the true integral mean between successive diastolic minima). Beats failing a flat-line / artefact check are dropped. Their per-epoch means are exported in the Parameters tab (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), and the systolic / diastolic series can drive the baroreflex transfer (see [Step 7](#step-7-examine-respiration--hr-coupling-transfer-tab)).
 
 ---
 
@@ -290,7 +306,12 @@ An alternative to the profiles plot is the 'spectrogram', where the x-axis is ti
 
 ![spectHR](images/TransferWindow.png)
 
-The **Transfer tab** answers a different question from the PSD and Profiles tabs: not *"how much power is there in band X"*, but *"how much of the heart-rate fluctuation at frequency f can be predicted from the breathing signal at that frequency"*. The tab is only enabled when the recording carries a respiration channel; without one, the View-menu entry is greyed out and trying to open it pops a message explaining why.
+The **Transfer tab** answers a different question from the PSD and Profiles tabs: not *"how much power is there in band X"*, but *"how much of the heart-rate fluctuation at frequency f can be predicted from an input signal at that frequency, and with what gain and phase delay"*. The **input channel is selectable** (Transfer Settings → `input_signal`):
+
+- **Respiration** (default) — the classic respiration → HR transfer, i.e. respiratory sinus arrhythmia. Needs a respiration channel.
+- **BP systolic** / **BP diastolic** — beat-by-beat blood pressure → HR, i.e. spectral **baroreflex sensitivity**. Needs a blood-pressure channel. The legend names the pairing it computed (e.g. `IBI ↔ BP diastolic`).
+
+The output channel is always the IBI (HR) series. The tab is enabled when the recording carries a respiration channel; without one the View-menu entry is greyed out and trying to open it pops a message explaining why.
 
 Each active epoch gets one **Bode tile** with three stacked panels sharing the frequency x-axis:
 
@@ -306,6 +327,7 @@ Both views share Settings, configurable under **WorkSpace -> Edit Parameters -> 
 
 | Setting | Default | What it does |
 |---|---|---|
+| `input_signal` | `rsp` | Which signal drives the transfer input: `rsp` (respiration → HR, RSA), `bp_sys` or `bp_dia` (blood pressure → HR, baroreflex sensitivity). The output is always the IBI/HR series. |
 | `window (sec)` / `step (sec)` | 30 / 5 | Sliding-window length and step used by the Transfer-profile view. Same sizing rules as the Profiles tab. |
 | `min_coherence` | 0.5 | Squared-coherence gate. In compute, only bins clearing this threshold contribute to band-mean modulus / phase. In the per-epoch plot, the red dashed reference line sits at this value and the phase mask fades bins below it. |
 | `f_min` / `f_max` | 0 / 0.5 Hz | Frequency-axis range for the per-epoch Bode plot. `f_max` also caps the native DFT grid. |
@@ -325,6 +347,8 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default)
+- **Blood pressure** (when a BP channel is present): mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`)
+- **Transfer** (when the input channel is present): per-band modulus, phase and weighted coherence
 
 Click **Save** to export **two files** to the configured Output folder:
 
@@ -583,7 +607,7 @@ All parameters are stored in a JSON workspace file, editable through the applica
 
 **WorkSpace → Edit Parameters** is a tabbed dialog:
 
-- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag).
+- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *Logging* (minimum log level shown in the Log dock / console).
 - **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
 - **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window (sec)`, `step (sec)`), and the optional `smooth_for_display` time-axis smoother.
 
@@ -606,7 +630,7 @@ The plain-text RR-interval export format from the Polar app. See `ExampleData/`.
 
 ### CARSPAN .evt / .nff
 
-CARSPAN event files. If an `.nff` file with the same base name is present, spectHR loads the ECG channel from it. In that case the R-peak timestamps from the `.evt` file are authoritative: the ECG is filtered for display but R-peaks are **not** re-detected from it (the loader sets `rtops_locked` on the resulting `CardioSeries`).
+CARSPAN event files. If an `.nff` file with the same base name is present, spectHR loads **every channel** it contains — ECG, respiration, and blood pressure — keyed by the channel labels in the file header. In that case the R-peak timestamps from the `.evt` file are authoritative: the ECG is filtered for display but R-peaks are **not** re-detected from it (the loader sets `rtops_locked` on the resulting `CardioSeries`). An uncalibrated blood-pressure channel is converted to mmHg using the workspace [Calibration](#configuring-the-analysis) setting (see [Blood Pressure](#blood-pressure)).
 
 ---
 
@@ -690,6 +714,27 @@ CARSPAN automatically corrects detected artefacts by linear interpolation, inser
 ## Breathing Signal Extraction
 
 When a Polar H10 accelerometer stream is present, spectHR derives a respiration surrogate from the 3-axis chest-belt movement data by removing the gravity component, bandpassing to 0.10–0.70 Hz, and applying PCA to extract the dominant axis of motion as a single 1-D signal. The result is z-score normalised and overlaid in green on the ECG and heart rate plots. Inhalation phases are shaded in light blue.
+
+---
+
+## Blood Pressure
+
+When a recording carries a continuous blood-pressure waveform (for example the BP channel of a CARSPAN `.nff` file), spectHR calibrates it, derives beat-by-beat pressures, and makes the systolic / diastolic series available as a baroreflex transfer input.
+
+**Calibration.** A blood-pressure transducer is digitised to dimensionless A/D counts; analysis needs physical units. spectHR applies a linear map `mmHg = bp_scale · raw + bp_zero` (workspace **Calibration** section). The defaults `bp_scale = 0.125`, `bp_zero = 0` reproduce the worked example in the CARCAL manual: a Finapres/Finometer (1.0 V ≙ 100 mmHg) through a 12-bit converter at 1.25 mV/count gives `100 mmHg/V × 0.00125 V/count = 0.125 mmHg/count`, with no offset. If the file header already carries a per-channel calibration, it is honoured and the manual values are skipped (mirroring CARSPAN's "when not already included in the header" rule). A different device (e.g. a 2.0 V Portapres → 200 mmHg), converter resolution, or an inline amplifier would change these numbers; CARSPAN's separate **CARCAL** tool computes them from a recorded square-wave calibration signal.
+
+**Beat-by-beat parameters.** Each cardiac interval `[R_i, R_{i+1}]` yields one value of each, ported from CARSPAN's `T_EventFile` data-column algorithms:
+
+| Parameter | Definition |
+|---|---|
+| **SBP** (systolic) | maximum sample in the interval |
+| **DBP** (diastolic) | minimum sample *before* the systolic peak (the foot of the wave) |
+| **PP** (pulse pressure) | SBP − DBP |
+| **MAP** (mean arterial pressure) | true integral mean of the waveform between two successive diastolic minima (not the `(SBP + 2·DBP)/3` approximation) |
+
+A CARSPAN-faithful flat-line guard (a 300 ms / 10 ms-step sliding window flags beats whose coefficient of variation collapses, i.e. a disconnected or clamped transducer) marks suspect beats `NaN` so per-epoch `nanmean` aggregation ignores them. The per-epoch means are exported as `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`.
+
+**Baroreflex sensitivity.** The systolic or diastolic beat series can be fed to the Transfer view as the input channel (`input_signal = bp_sys` / `bp_dia`), turning the respiration → HR transfer into a blood-pressure → HR estimate — the spectral baroreflex-sensitivity gain in ms/mmHg. See [Transfer functions](#transfer-functions).
 
 ---
 
@@ -1190,7 +1235,7 @@ Settings for both tiles (frequency range, smoothing, gate threshold, threshold-l
 
 #### Inputs
 
-Two aligned signals: the IBI series from the heart and a continuous respiration signal (chest-belt accelerometer, thermistor, or any other 1-D breathing trace). Both are mean-subtracted, tapered with the CARSPAN 5 % index cosine bell (`TaperPercent := 5`), and IBI-amplitude weighted ($A_i = (x_i - \bar x) \cdot t_i$ in ms $\cdot$ s). The respiration signal is linearly interpolated at the R-peak times so the two channels share the same DFT evaluation grid (the cumulative R-peak times $T_i = \sum_{j \le i} t_j$).
+Two aligned signals: the IBI series from the heart (always the output) and a selectable input signal (`input_signal`). For `rsp` the input is a continuous respiration trace (chest-belt accelerometer, thermistor, or any other 1-D breathing signal), linearly interpolated at the R-peak times. For `bp_sys` / `bp_dia` the input is the per-beat systolic / diastolic blood pressure extracted from the BP waveform (the same `CalcDataColBPSYS` / `BPDIA` beat values described under [Blood Pressure](#blood-pressure)), already on the beat grid; internal artefact `NaN`s are bridged before the DFT. Both channels are then mean-subtracted, tapered with the CARSPAN 5 % index cosine bell (`TaperPercent := 5`), and IBI-amplitude weighted ($A_i = (x_i - \bar x) \cdot t_i$ in ms $\cdot$ s) so they share the same DFT evaluation grid (the cumulative R-peak times $T_i = \sum_{j \le i} t_j$). With a blood-pressure input the modulus $|H(f)|$ reads as a baroreflex gain in ms/mmHg rather than ms/V.
 
 The native frequency grid is $f_k = k/T$ from $k = 1$ to $\lfloor f_\text{max} \cdot T \rfloor$, with $T$ the epoch span. The grid excludes DC and goes up to `f_max` (default 0.5 Hz).
 

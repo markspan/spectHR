@@ -12,6 +12,7 @@ retired.
 from __future__ import annotations
 
 import logging
+import json
 import os
 import pickle
 import sys
@@ -135,6 +136,26 @@ _DOCK_PROFILES          = "dock.profiles"
 _DOCK_PARAMETERS    = "dock.parameters"
 _DOCK_LOG           = "dock.log"
 
+# Docks whose widget is *expensive to compute* and depends only on the
+# active epochs + workspace settings (never on the timeline zoom/pan
+# window). These are signature-cached so a tab activation re-displays the
+# existing widget when nothing changed (see ``_refresh_dock``).
+#
+# The cheap docks deliberately left OUT - Preprocessing, IBI / HR series,
+# Blood pressure, Poincare, Epochs - are quick to redraw and (for the
+# three timeline docks) depend on the shared view window, which the cache
+# signature does not track. They always refresh on activation so they
+# pick up zoom/pan changes made in a sibling timeline.
+_CACHED_DOCKS = frozenset({
+    _DOCK_PSD,
+    _DOCK_SPECTROGRAM,
+    _DOCK_SPECTROGRAM_3D,
+    _DOCK_TRANSFER,
+    _DOCK_TRANSFER_PROFILE,
+    _DOCK_PROFILES,
+    _DOCK_PARAMETERS,
+})
+
 
 class _QtLogHandler(logging.Handler):
     """Logging handler that appends records to a QPlainTextEdit widget."""
@@ -195,13 +216,14 @@ class MainWindow(QMainWindow):
         # something new to persist.
         self._dirty: bool = False
 
-        # Cache of the last-computed signature per expensive dock
-        # (Transfer, Transfer profile). The transfer-function profile is
-        # costly to compute, so we rebuild its widget only when the inputs
-        # actually change - see ``_transfer_cache_signature`` and the
-        # signature guard in ``show_transfer_plot`` /
-        # ``show_transfer_profile_plot``. Cleared whenever the dataset is
-        # mutated (peaks / epochs edited -> ``_dirty``).
+        # Cache of the last-rendered signature per content dock, keyed by
+        # dock objectName. A dock is rebuilt only when its inputs (active
+        # epochs + workspace settings) change since it was last rendered -
+        # see ``_plot_cache_signature`` and ``_refresh_dock``. This lets a
+        # tab activation re-display the existing widget instead of
+        # recomputing when nothing changed. Cleared whenever the dataset is
+        # mutated (peaks / epochs edited -> ``_dirty`` save) or the
+        # workspace settings are edited.
         self._plot_sig: dict[str, Any] = {}
 
         # Refresh registry, dock objectName -> refresh fn.
@@ -210,6 +232,11 @@ class MainWindow(QMainWindow):
         # ---- workspace ----------------------------------------------
         self.workspace_file = user_documents_path() / "DefaultWorkSpace.json"
         self.workspace: WorkspaceConfig = spQt.LoadWorkspace(self.workspace_file)
+        # Apply the configured minimum log level (Logging.level) as early as
+        # possible - before the rest of construction logs anything - so the
+        # user's choice governs essentially all run-time output, not just
+        # what happens after the Log dock is built.
+        self._apply_log_level()
 
         # ---- dock layout --------------------------------------------
         # CDockManager installs itself as the QMainWindow central widget.
@@ -269,6 +296,27 @@ class MainWindow(QMainWindow):
         self.epoch_plot_widget      = spQt.EpochPlotWidget()
         self.parameters_plot_widget = spQt.ParametersPlotWidget()
 
+        # Mark the dataset dirty only on a *real* edit in the editing docks
+        # (R-peak add/move/remove, epoch resize/rename/delete), rather than
+        # whenever those docks lose focus. This keeps the plot caches valid
+        # when the user merely views the Preprocessing / Epochs dock.
+        self.prep_plot_widget.dataEdited.connect(self._mark_data_edited)
+        self.epoch_plot_widget.dataEdited.connect(self._mark_data_edited)
+        self.poincare_plot_widget.dataEdited.connect(self._mark_data_edited)
+
+        # The timeline docks (Preprocessing, HR series, Blood pressure)
+        # share one view window via ``data.view``. When the user zooms /
+        # pans / drags the overview in one, mirror it onto the others so
+        # they follow automatically instead of only updating when their
+        # own overview is clicked.
+        self._timeline_widgets = (
+            self.prep_plot_widget,
+            self.hr_plot_widget,
+            self.bp_plot_widget,
+        )
+        for w in self._timeline_widgets:
+            w.viewChanged.connect(self._sync_timeline_views)
+
         # PSD / Profiles live in their own scroll area. The inner plot
         # widget is rebuilt on every refresh, so we hold the layout,
         # not the widget.
@@ -286,6 +334,9 @@ class MainWindow(QMainWindow):
         self.log_view.setFont(font)
         self.log_view.setLineWrapMode(QPlainTextEdit.NoWrap)
         # Route all spectHR log output to the Log dock as well as the console.
+        # The logger's minimum level was already set from the workspace right
+        # after it was loaded (see __init__ top), so the dock only ever
+        # receives records at or above the configured level.
         self._log_handler = _QtLogHandler(self.log_view)
         logging.getLogger("spectHR").addHandler(self._log_handler)
 
@@ -675,59 +726,102 @@ class MainWindow(QMainWindow):
     # Per-dock visibilityChanged dispatch
     # ------------------------------------------------------------------
 
+    def _apply_log_level(self) -> None:
+        """Set the ``spectHR`` logger to the workspace-configured minimum level.
+
+        Reads ``Logging.level`` from the current workspace and applies it to
+        the logger, so records below the chosen severity are dropped before
+        they reach either the console or the Log dock. Called on start-up and
+        whenever the workspace is edited or opened.
+        """
+        level = spQt.log_level_from_workspace(self.workspace)
+        logging.getLogger("spectHR").setLevel(level)
+
+    def _mark_data_edited(self) -> None:
+        """A real edit happened in an editing dock (R-peaks / epochs).
+
+        Fired by the editing widgets' ``dataEdited`` signal. Marks the
+        dataset dirty (so it is persisted on the next dock activation) and
+        drops every cached plot signature so the computed docks recompute
+        from the mutated data. Because this is driven by genuine edits,
+        simply viewing the Preprocessing / Epochs dock no longer
+        invalidates anything.
+        """
+        self._dirty = True
+        self._plot_sig.clear()
+
+    def _sync_timeline_views(self) -> None:
+        """Mirror a committed view-window change onto the other timelines.
+
+        Connected to every timeline widget's ``viewChanged`` signal. The
+        sending widget already redrew itself; here we redraw the *other*
+        currently-visible timeline docks so the shared window stays in
+        sync live. Hidden / closed docks are skipped - they re-read the
+        shared ``data.view`` (and so show the right window) the next time
+        they are brought forward via ``_on_dock_visible``.
+        """
+        source = self.sender()
+        for w in self._timeline_widgets:
+            if w is source or not w.isVisible():
+                continue
+            if getattr(w, "data", None) is None or getattr(w.data, "view", None) is None:
+                continue
+            try:
+                w.redraw()
+            except Exception:
+                logger.debug("timeline view-sync redraw failed", exc_info=True)
+
     def _on_dock_visible(self, name: str, visible: bool) -> None:
         """
-        Refresh the dock whenever it is brought forward.
+        Refresh the dock when it is brought forward, if its inputs changed.
 
-        Matches the old QTabWidget.currentChanged behaviour, persist the
-        dataset, then recompute the plot. Always recompute (no dirty
-        flag), so peak edits, epoch toggles, parameter tweaks and any
-        other side-effects of working in another dock always appear.
+        On activation we persist the dataset (if a real edit marked it
+        dirty) and then ask :meth:`_refresh_dock` to rebuild the dock -
+        which it does only when the dock's cache signature changed, so an
+        unchanged expensive dock re-displays its existing widget instead
+        of recomputing. The cheap docks always refresh (see
+        ``_CACHED_DOCKS``).
 
-        Floating content docks are refreshed too. A floating dock
-        stays visible regardless of which tab is active in the main
-        window, so its own visibilityChanged signal never fires on a
-        centre-tab switch. Without this they go stale after edits
-        made in other docks (epoch resizing, peak edits, parameter
-        changes).
+        Floating content docks are refreshed alongside, because a floating
+        dock stays visible regardless of which centre tab is active and so
+        never fires its own visibilityChanged on a tab switch; without this
+        they would miss edits made elsewhere. They are gated by the same
+        signature, so a floating dock only recomputes when it actually
+        needs to.
         """
-        # When an editing dock becomes invisible the user may have mutated
-        # peaks or epochs; mark dirty so the next visible dock triggers a save.
+        # Dirtiness is now driven by the editing widgets' dataEdited signal
+        # (see _mark_data_edited), so a dock merely losing focus no longer
+        # invalidates anything - viewing the Preprocessing / Epochs dock
+        # without editing keeps every plot cache valid.
         if not visible:
-            if name in (_DOCK_PREPROCESSING, _DOCK_EPOCHS):
-                self._dirty = True
             return
         if self.dataset is None:
             return
-        refresh_fn = self._refresh_fns.get(name)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             # Persist only when something actually changed. A dirty save
-            # means peaks / epochs were mutated, so any cached transfer
-            # plots are now stale: drop their signatures to force a
-            # recompute the next time those docks are shown.
+            # means peaks / epochs were mutated, so every cached plot is
+            # now stale: drop all stored signatures to force a recompute
+            # the next time each dock is shown.
             if self._dirty and self.savename is not None:
                 self.dataset.save(self.savename)
                 self._dirty = False
                 self._plot_sig.clear()
-            if refresh_fn is not None:
-                refresh_fn()
+            # One signature for this activation; _refresh_dock reuses the
+            # already-rendered widget when the dock's signature is
+            # unchanged (no data / settings change since it was built).
+            sig = self._plot_cache_signature(self.dataset)
+            self._refresh_dock(name, sig)
             # Floating content docks piggy-back on every visibility
-            # change so they catch mutations done elsewhere.
+            # change so they catch mutations done elsewhere. The signature
+            # gate in _refresh_dock keeps this cheap - an expensive dock
+            # whose inputs are unchanged is skipped, transfer plots included.
             for other_name, dock in self.docks.items():
                 if other_name == name:
                     continue
-                # The transfer plots are expensive; never piggy-back them.
-                # They recompute only when their own dock is brought
-                # forward (and only if the cache signature changed).
-                if other_name in (_DOCK_TRANSFER, _DOCK_TRANSFER_PROFILE):
-                    continue
-                other_fn = self._refresh_fns.get(other_name)
-                if other_fn is None:
-                    continue
                 if dock.isClosed() or not dock.isFloating():
                     continue
-                other_fn()
+                self._refresh_dock(other_name, sig)
         finally:
             QApplication.restoreOverrideCursor()
 
@@ -779,6 +873,7 @@ class MainWindow(QMainWindow):
         if file_path:
             self.workspace_file = file_path
             self.workspace = spQt.LoadWorkspace(file_path)
+            self._apply_log_level()
             spQt.PopulateTree(self.tree_widget, self.workspace)
 
     def SaveWorkSpace(self):
@@ -807,8 +902,11 @@ class MainWindow(QMainWindow):
 
         1. The updated values are written back into self.workspace.
         2. The workspace JSON file is saved immediately so the changes persist.
-        3. The PSD and Profile docks are refreshed if a dataset is loaded,
-           the other docks are marked dirty so they refresh on next show.
+        3. Because settings changed, every cached plot signature is dropped.
+           The docks that depend directly on the edited parameters (PSD,
+           Spectrogram, 3-D Spectrogram, Transfer, Transfer profile,
+           Profiles) are refreshed now if open; the rest recompute lazily
+           the next time they are brought forward.
         """
         dialog = spQt.ParametersEditorDialog(self.workspace, parent=self)
         if dialog.exec_() == QDialog.Accepted:
@@ -819,23 +917,32 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logger.warning(f"Could not save workspace after parameter edit: {e}")
 
+            # The log level may have been changed in the dialog.
+            self._apply_log_level()
+
             if self.dataset is not None:
-                # PSD, Spectrogram, Transfer (+ profile), and Profiles
-                # depend directly on what was edited (bands, window,
-                # step, PSD method, coherence threshold, etc.), refresh
-                # them now. Other docks recompute on next show.
-                self.show_psd_plot(self.dataset)
-                self.show_spectrogram_plot(self.dataset)
+                # Settings changed -> every cached plot is stale. Clearing
+                # the signatures makes each dock recompute (with the new
+                # settings) the next time it is shown.
+                self._plot_sig.clear()
+                sig = self._plot_cache_signature(self.dataset)
+                # PSD, Spectrogram, and Profiles depend directly on what
+                # was edited (bands, window, step, PSD method, coherence
+                # threshold, etc.); refresh them now via _refresh_dock so
+                # the new signature is stored and they are not recomputed
+                # again on first view. Other docks recompute on next show.
+                self._refresh_dock(_DOCK_PSD, sig)
+                self._refresh_dock(_DOCK_SPECTROGRAM, sig)
                 if not self.docks[_DOCK_SPECTROGRAM_3D].isClosed():
-                    self.show_spectrogram3d_plot(self.dataset)
+                    self._refresh_dock(_DOCK_SPECTROGRAM_3D, sig)
                 # The transfer plots are expensive; only recompute them
                 # if their dock is open. A closed dock recomputes lazily
                 # (with the new settings) the next time it is shown.
                 if not self.docks[_DOCK_TRANSFER].isClosed():
-                    self.show_transfer_plot(self.dataset)
+                    self._refresh_dock(_DOCK_TRANSFER, sig)
                 if not self.docks[_DOCK_TRANSFER_PROFILE].isClosed():
-                    self.show_transfer_profile_plot(self.dataset)
-                self.show_profile_plot(self.dataset)
+                    self._refresh_dock(_DOCK_TRANSFER_PROFILE, sig)
+                self._refresh_dock(_DOCK_PROFILES, sig)
 
     # ------------------------------------------------------------------
     # Workspace tree context menu
@@ -912,6 +1019,9 @@ class MainWindow(QMainWindow):
         QApplication.restoreOverrideCursor()
         self.dataset.save(self.savename)
         self._dirty = False
+        # R-peaks were rebuilt; every computed plot is stale even though the
+        # epochs / settings signature did not change.
+        self._plot_sig.clear()
         self.show_preprocessing_plot(self.dataset)
 
     def reload(self, item):
@@ -933,6 +1043,8 @@ class MainWindow(QMainWindow):
         )
         self.dataset.save(self.savename)
         self._dirty = False
+        # ECG polarity flipped and re-detected; every computed plot is stale.
+        self._plot_sig.clear()
         self.show_preprocessing_plot(self.dataset)
 
     def _respiration_per_epoch(self) -> bool:
@@ -1180,13 +1292,19 @@ class MainWindow(QMainWindow):
             # the dock is closed and let visibilityChanged handle it lazily.
             _DOCK_SPECTROGRAM_3D:   self.docks[_DOCK_SPECTROGRAM_3D].isClosed(),
         }
-        for name, refresh_fn in self._refresh_fns.items():
+        # New dataset -> every cached plot is stale.
+        self._plot_sig.clear()
+        sig = self._plot_cache_signature(self.dataset)
+        for name in self._refresh_fns:
             # Skip refresh on docks whose data isn't on this dataset.
             # The dock is already hidden; the placeholder will render
             # only if/when the user toggles it back on.
             if skip_when_missing.get(name, False):
                 continue
-            refresh_fn()
+            # Routes through _refresh_dock so the signature is stored now;
+            # the first time the user activates this dock afterwards it is
+            # reused rather than recomputed.
+            self._refresh_dock(name, sig)
 
     def _arm_transfer_rsp_guard(self) -> None:
         """Install one-shot visibility guards on the Transfer docks.
@@ -1295,12 +1413,7 @@ class MainWindow(QMainWindow):
         """
         if dataset is None:
             return
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.setParent(None)
-                widget.deleteLater()
+        self._clear_layout(layout)
         pairs = []
         for label, epoch in dataset.epochs.items():
             if not epoch.active:
@@ -1338,66 +1451,83 @@ class MainWindow(QMainWindow):
             lambda v, l, w: spQt.Spectrogram3DPlotWidget(v, l, workspace=w),
         )
 
-    def _transfer_cache_signature(self, dataset) -> tuple:
-        """Signature of everything the transfer plots depend on.
+    def _plot_cache_signature(self, dataset) -> tuple:
+        """Signature of everything the computed plot docks depend on.
 
-        Two transfer plots are rebuilt only when this signature changes
-        (see ``show_transfer_plot`` / ``show_transfer_profile_plot``).
-        It captures the active epochs (label + bounds) and every
-        transfer-relevant workspace setting (window / step / coherence /
-        f_max / smooth / input_signal) plus the band edges, so a change
-        to any of them invalidates the cache. R-peak / epoch *edits* don't
-        change this signature directly, so they are handled separately by
-        clearing ``_plot_sig`` whenever the dataset is saved dirty.
+        A dock is rebuilt only when this signature changes since it was
+        last rendered (see :meth:`_refresh_dock`). It captures:
+
+        * the active epochs (label + bounds), and
+        * the whole workspace settings (any analysis parameter, band edge,
+          calibration, etc.).
+
+        Using the entire workspace is deliberately conservative: a change
+        to *any* setting invalidates every dock, which always recomputes
+        the right thing (at worst it recomputes a dock whose own settings
+        did not change - cheap and rare). ``Directories`` is excluded
+        because it never affects a plot.
+
+        R-peak / epoch *edits* don't change this signature on their own,
+        so they are handled separately by clearing ``_plot_sig`` whenever
+        the dataset is saved dirty (see :meth:`_on_dock_visible`).
         """
-        cfg = spQt.transfer_settings_from_workspace(self.workspace)
-        bands = spQt.display_bands_from_workspace(self.workspace)
         epochs = tuple(
             (label, float(ep.start), float(ep.end))
             for label, ep in getattr(dataset, "epochs", {}).items()
             if getattr(ep, "active", False)
         )
-        # sorted(...items()) is keyed on the (unique) dict keys, so values
-        # of mixed/unorderable types are never compared.
-        return (
-            epochs,
-            repr(sorted(cfg.items())),
-            repr(sorted(bands.items())),
-        )
+        ws = self.workspace or {}
+        try:
+            ws_sig = json.dumps(
+                {k: v for k, v in ws.items() if k != "Directories"},
+                sort_keys=True, default=str,
+            )
+        except Exception:
+            # Fall back to a repr if anything in the workspace is not
+            # JSON-serialisable; still stable within a session.
+            ws_sig = repr(sorted(
+                (k, repr(v)) for k, v in ws.items() if k != "Directories"
+            ))
+        return (epochs, ws_sig)
+
+    def _refresh_dock(self, name: str, sig: tuple) -> None:
+        """Refresh dock *name* only if its inputs changed since last render.
+
+        Compares *sig* (from :meth:`_plot_cache_signature`) against the
+        signature stored when the dock was last rendered. On a match the
+        existing widget is left untouched - the user's request: when
+        nothing in the data or settings changed, re-display the old widget
+        instead of recomputing. Otherwise the dock's refresh fn runs and
+        the new signature is stored.
+        """
+        refresh_fn = self._refresh_fns.get(name)
+        if refresh_fn is None:
+            return
+        # Only the expensive, view-independent docks are cached. The cheap
+        # timeline / poincare / epoch docks always refresh so they reflect
+        # the shared zoom/pan window (which the signature does not track).
+        if name in _CACHED_DOCKS and self._plot_sig.get(name) == sig:
+            return  # unchanged -> reuse the already-rendered widget
+        refresh_fn()
+        self._plot_sig[name] = sig
 
     def show_transfer_plot(self, dataset) -> None:
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_layout)
-            self._plot_sig.pop(_DOCK_TRANSFER, None)
             return
-        sig = self._transfer_cache_signature(dataset)
-        if (
-            self._plot_sig.get(_DOCK_TRANSFER) == sig
-            and self.transfer_layout.count() > 0
-        ):
-            return  # already computed for this exact data + settings
         self._swap_in_epoch_plot(
             self.transfer_layout, dataset,
             lambda v, l, w: spQt.TransferPlotWidget(v, l, workspace=w),
         )
-        self._plot_sig[_DOCK_TRANSFER] = sig
 
     def show_transfer_profile_plot(self, dataset) -> None:
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_profile_layout)
-            self._plot_sig.pop(_DOCK_TRANSFER_PROFILE, None)
             return
-        sig = self._transfer_cache_signature(dataset)
-        if (
-            self._plot_sig.get(_DOCK_TRANSFER_PROFILE) == sig
-            and self.transfer_profile_layout.count() > 0
-        ):
-            return  # already computed for this exact data + settings
         self._swap_in_epoch_plot(
             self.transfer_profile_layout, dataset,
             lambda v, l, w: spQt.TransferProfilePlotWidget(v, l, workspace=w),
         )
-        self._plot_sig[_DOCK_TRANSFER_PROFILE] = sig
 
     def show_profile_plot(self, dataset) -> None:
         self._swap_in_epoch_plot(
@@ -1430,7 +1560,7 @@ class MainWindow(QMainWindow):
         self.dataset.epochs[epoch_label] = Epoch(
             active=True, start=start_time, end=end_time
         )
-        self._dirty = True
+        self._mark_data_edited()
         self.epoch_plot_widget.plotEpochs(self.dataset)
 
 

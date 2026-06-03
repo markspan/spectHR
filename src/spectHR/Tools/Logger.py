@@ -12,4 +12,7 @@ if not logger.handlers:
     )
     handler.setFormatter(fmt)
     logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+    # Bootstrap level used until the GUI applies the workspace's
+    # ``Logging.level`` (see MainWindow._apply_log_level). INFO keeps the
+    # pre-workspace start-up quiet; the workspace can raise it to DEBUG.
+    logger.setLevel(logging.INFO)

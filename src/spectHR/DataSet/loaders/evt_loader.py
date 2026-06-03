@@ -189,18 +189,12 @@ def _load_evt_data(physiodata, filename: Path) -> None:
                 "EVT extra column %s: %d values, %.4f–%.4f s (deferred)",
                 name, arr.size, scaled.min(), scaled.max(),
             )
-            # TODO: populate a ``stored_ibi`` array on CardioSeries for
-            # artifact-aware IBI access once that task is implemented.
-            # See chat-mode handover document for design.
         elif upper.startswith("BP"):
             scaled = arr / _BP_SCALE_TO_MMHG  # 0.1 mmHg → mmHg
             logger.debug(
                 "EVT extra column %s: %d values, %.1f–%.1f mmHg (deferred)",
                 name, arr.size, scaled.min(), scaled.max(),
             )
-            # TODO: construct BPSeries(times=rtop_times, sbp=sbp_values) and
-            # store in physiodata.bp_map[band] once BPSeries is implemented.
-            # See chat-mode handover document for design.
         else:
             logger.debug(
                 "EVT extra column %s: %d values, stored raw (deferred)",

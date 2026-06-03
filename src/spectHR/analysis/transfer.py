@@ -79,6 +79,7 @@ __all__ = [
     "INPUT_SIGNALS",
     "INPUT_SIGNAL_LABELS",
     "input_signal_label",
+    "resolve_transfer_input",
     "compute_transfer",
     "compute_transfer_profile",
 ]
@@ -119,6 +120,40 @@ INPUT_SIGNAL_LABELS = {
 def input_signal_label(input_signal: str) -> str:
     """Return a human-readable name for *input_signal* (falls back to itself)."""
     return INPUT_SIGNAL_LABELS.get(input_signal, str(input_signal))
+
+
+def resolve_transfer_input(pd, input_signal: str):
+    """Resolve the transfer-function input TimeSeries for *input_signal*.
+
+    The transfer pipeline drives its input channel from one of the
+    continuous recordings on *pd*: respiration for ``"rsp"`` or the
+    blood-pressure waveform for ``"bp_sys"`` / ``"bp_dia"`` (the per-beat
+    systolic / diastolic values are extracted from the same BP waveform
+    inside :func:`compute_transfer`).
+
+    Parameters
+    ----------
+    pd : PhysioData
+        The dataset behind the cardio series (``series._pd``).
+    input_signal : str
+        One of :data:`INPUT_SIGNALS`.
+
+    Returns
+    -------
+    (timeseries, error) : tuple
+        ``timeseries`` is the resolved continuous TimeSeries (with
+        ``.times`` / ``.values``) and ``error`` is ``None`` on success; on
+        failure ``timeseries`` is ``None`` and ``error`` is a short
+        human-readable reason for the empty tile.
+    """
+    if input_signal == INPUT_SIGNAL_RSP:
+        key, channel = "rsp", "respiration"
+    else:
+        key, channel = "bp", "blood-pressure"
+    try:
+        return pd[key].timeseries, None
+    except (KeyError, AttributeError):
+        return None, f"No {channel} channel"
 
 
 def _fill_nans(values: np.ndarray) -> np.ndarray:
@@ -197,6 +232,76 @@ def _input_beat_signal(
         f"Unknown input_signal {input_signal!r}; "
         f"expected one of {INPUT_SIGNALS}."
     )
+
+
+def _precompute_full_beat_input(
+    input_timeseries,
+    full_rp_times: np.ndarray,
+    input_signal: str,
+) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Extract the raw per-beat BP input once over the whole recording.
+
+    Returns ``(full_rp_times, raw_beat_values)`` for the blood-pressure
+    inputs, or ``None`` for ``"rsp"`` (whose per-window interpolation is
+    already cheap, so there is nothing to amortise).
+
+    ``raw_beat_values`` keeps the NaNs that :func:`bp_beat_parameters`
+    places on flat-line / artefact beats - they are bridged *per window*
+    by :func:`_resolve_input_beats` so the interpolation stays local to
+    the window, exactly as the un-cached path does.  The point of this
+    helper is to call the expensive :func:`bp_beat_parameters` (whose
+    flat-line test scans the high-rate BP waveform) **once** instead of
+    once per sliding window in :func:`compute_transfer_profile`.
+    """
+    if input_signal not in (INPUT_SIGNAL_BP_SYS, INPUT_SIGNAL_BP_DIA):
+        return None
+    beats = bp_beat_parameters(
+        np.asarray(input_timeseries.times, dtype=float),
+        np.asarray(input_timeseries.values, dtype=float),
+        np.asarray(full_rp_times, dtype=float),
+    )
+    key = "sbp" if input_signal == INPUT_SIGNAL_BP_SYS else "dbp"
+    return np.asarray(full_rp_times, dtype=float), beats[key]
+
+
+def _resolve_input_beats(
+    input_timeseries,
+    rp_times: np.ndarray,
+    input_signal: str,
+    full_beat_input: Optional[Tuple[np.ndarray, np.ndarray]],
+) -> np.ndarray:
+    """Window input-beat values, reusing a full-recording BP precompute.
+
+    When *full_beat_input* is supplied (a ``(full_rp_times, raw_vals)``
+    pair from :func:`_precompute_full_beat_input`) and the input is a BP
+    signal, the window's per-beat values are a contiguous slice of the
+    precomputed array: the clean R-peaks of a time-window are exactly a
+    slice of the recording's clean R-peaks, and each beat value depends
+    only on the BP waveform between two R-peaks, never on the window.
+    The slice is verified against *rp_times*; any mismatch falls back to
+    the direct per-window extraction so correctness never depends on the
+    fast path.
+    """
+    if (
+        full_beat_input is not None
+        and input_signal in (INPUT_SIGNAL_BP_SYS, INPUT_SIGNAL_BP_DIA)
+    ):
+        full_rp, full_raw = full_beat_input
+        n = rp_times.size - 1
+        a = int(np.searchsorted(full_rp, rp_times[0]))
+        if (
+            n >= 1
+            and a + rp_times.size <= full_rp.size
+            and np.allclose(full_rp[a : a + rp_times.size], rp_times)
+        ):
+            seg = full_raw[a : a + n]
+            if not np.any(np.isfinite(seg)):
+                raise ValueError(
+                    "No valid BP beats for the transfer input in this window "
+                    "(every beat is flat-line / artefact)."
+                )
+            return _fill_nans(seg)
+    return _input_beat_signal(input_timeseries, rp_times, input_signal)
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +723,7 @@ def compute_transfer(
     f_max: float = 0.5,
     taper: str = "carspan_index",
     alpha_taper: float = 0.10,
+    _full_beat_input: Optional[Tuple[np.ndarray, np.ndarray]] = None,
 ) -> TransferResult:
     """Compute an input->HR transfer function using the CARSPAN pipeline.
 
@@ -710,7 +816,9 @@ def compute_transfer(
     # Aligned with the IBI DFT grid (cumulative times end at R-peaks 1-N-1).
     # "rsp": interpolated waveform; "bp_sys"/"bp_dia": per-beat BP values.  #
     # ------------------------------------------------------------------ #
-    in_vals = _input_beat_signal(input_timeseries, rp_times, input_signal)
+    in_vals = _resolve_input_beats(
+        input_timeseries, rp_times, input_signal, _full_beat_input
+    )
 
     # ------------------------------------------------------------------ #
     # 3. Mean-subtract both signals (Pascal: NData := DataIn - Mean)      #
@@ -906,6 +1014,16 @@ def compute_transfer_profile(
     band_names = list(bands.keys())
     n_bands    = len(band_names)
 
+    # Extract the per-beat BP input once over the whole recording, then let
+    # each window slice it (see _resolve_input_beats).  bp_beat_parameters'
+    # flat-line test scans the high-rate BP waveform, so calling it once
+    # rather than once per overlapping window is the dominant speed-up for
+    # the BP -> HR (baroreflex) profile.  None for "rsp" (interpolation per
+    # window is already cheap).
+    full_beat_input = _precompute_full_beat_input(
+        input_timeseries, event_times_clean(series), input_signal,
+    )
+
     mod_grid   = np.full((n_bands, n_windows), np.nan)
     phw_grid   = np.full((n_bands, n_windows), np.nan)
     phu_grid   = np.full((n_bands, n_windows), np.nan)
@@ -932,6 +1050,7 @@ def compute_transfer_profile(
                 f_max=f_max,
                 taper=taper,
                 alpha_taper=alpha_taper,
+                _full_beat_input=full_beat_input,
             )
         except Exception:
             continue

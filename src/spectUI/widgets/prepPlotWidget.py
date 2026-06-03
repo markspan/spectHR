@@ -16,16 +16,13 @@ expects is documented as a comment near :meth:`PrepPlotWidget.prepPlot`.
 
 from __future__ import annotations
 
-import math
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
-from matplotlib.ticker import MultipleLocator
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -42,6 +39,7 @@ from spectUI.common import (
     EpochName,
     LineHandler,
     OverviewWindow,
+    TimelinePlotWidget,
     TimeSeconds,
     ViewState,
     draw_interval_arrows,
@@ -188,9 +186,15 @@ class RTopController:
 # ======================================================================
 
 
-class PrepPlotWidget(QWidget):
+class PrepPlotWidget(TimelinePlotWidget):
     """
     Interactive ECG pre-processing widget.
+
+    Subclasses :class:`~spectUI.common.TimelinePlotWidget` to inherit the
+    shared zoom / pan / goto navigation and the ``viewChanged`` view-sync
+    signal, but builds its own richer figure (ECG axis + breathing twin +
+    overview) and rendering, so it sets its widgets up directly rather than
+    through the base ``__init__`` template used by the simpler HR / BP docks.
 
     Responsibilities
     ----------------
@@ -209,11 +213,23 @@ class PrepPlotWidget(QWidget):
     Operates on a PhysioData instance as described in the module docstring.
     """
 
+    # Emitted whenever the user actually mutates the R-peaks (add / move /
+    # remove). MainWindow connects this to mark the dataset dirty, so plot
+    # caches are invalidated only on a real edit - merely viewing this dock
+    # leaves them intact. (``viewChanged`` is inherited from the base.)
+    dataEdited = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         """
         Initialize the widget UI and set up state containers.
         """
-        super().__init__(parent)
+        # PrepPlotWidget assembles its own 3-axis figure and an edit-mode
+        # toolbar, so it skips TimelinePlotWidget.__init__ (which lays out
+        # the single-signal HR / BP form) and initialises the QWidget
+        # directly. The shared navigation methods it inherits only need
+        # ``data`` / ``data.view`` / ``_primary_series`` / ``redraw``, all
+        # provided below.
+        QWidget.__init__(self, parent)
 
         # Matplotlib figure and canvas
         self.fig: Figure = Figure()
@@ -283,6 +299,20 @@ class PrepPlotWidget(QWidget):
         """
         assert self.data is not None
         return self.data["ecg"].timeseries
+
+    def _primary_series(self) -> TimeSeries | None:
+        """The ECG series drives the navigation window (TimelinePlotWidget hook).
+
+        Returns ``None`` when no dataset / ECG channel is loaded so the
+        inherited ``_can_navigate`` / ``_constrained_window`` guards stay
+        safe.
+        """
+        if self.data is None:
+            return None
+        try:
+            return self.data["ecg"].timeseries
+        except (KeyError, AttributeError):
+            return None
 
     @property
     def breathing_series(self) -> TimeSeries | None:
@@ -616,7 +646,10 @@ class PrepPlotWidget(QWidget):
         style_axis_clean(self.ax_ecg)
 
         # Time window
-        self._set_time_axis(self.ax_ecg, self.data.view.x_min, self.data.view.x_max)
+        self._set_time_axis(
+            self.ax_ecg, self.data.view.x_min, self.data.view.x_max,
+            show_xlabel=True,
+        )
 
         # ------------------------------------------------------------
         # Y-scaling
@@ -925,83 +958,14 @@ class PrepPlotWidget(QWidget):
         )
 
     # ------------------------------------------------------------------
-    # Navigation helpers
-    # ------------------------------------------------------------------
-
-    def _set_window(self, x_min: float, x_max: float) -> None:
-        """Update view window and redraw."""
-        assert self.data is not None and self.data.view is not None
-        self.data.view.x_min = float(x_min)
-        self.data.view.x_max = float(x_max)
-        self.redraw()
-
-    def _constrained_window(self, x_min: float, x_max: float) -> tuple[float, float]:
-        """Clamp window to ECG time range."""
-        ecg = self.ecg_series
-        global_min = float(np.min(ecg.times))
-        global_max = float(np.max(ecg.times))
-        width = x_max - x_min
-        x_min = max(global_min, x_min)
-        x_max = min(global_max, x_min + width)
-        return x_min, x_max
-
-    # ------------------------------------------------------------------
     # Navigation actions (toolbar)
+    #
+    # zoom_in / zoom_out / pan_left / pan_right / go_to_start / go_to_end,
+    # plus _set_window and _constrained_window, are inherited unchanged from
+    # TimelinePlotWidget (they drive the shared ``data.view`` through the
+    # ``_primary_series`` hook above). Only the R-top jump buttons below are
+    # specific to the preprocessing dock.
     # ------------------------------------------------------------------
-
-    def zoom_in(self) -> None:
-        """Zoom in by reducing window width to 1/3."""
-        assert self.data is not None and self.data.view is not None
-        width = self.data.view.width() / 3.0
-        mid = self.data.view.center()
-        new_min = mid - width
-        new_max = mid + width
-        new_min, new_max = self._constrained_window(new_min, new_max)
-        self._set_window(new_min, new_max)
-
-    def zoom_out(self) -> None:
-        """Zoom out by increasing window width by factor 1.5."""
-        assert self.data is not None and self.data.view is not None
-        width = self.data.view.width() * 1.5
-        mid = self.data.view.center()
-        new_min = mid - width / 2.0
-        new_max = mid + width / 2.0
-        new_min, new_max = self._constrained_window(new_min, new_max)
-        self._set_window(new_min, new_max)
-
-    def pan_left(self) -> None:
-        """Pan window left by one window width."""
-        assert self.data is not None and self.data.view is not None
-        width = self.data.view.width()
-        new_min, new_max = self._constrained_window(
-            self.data.view.x_min - width, self.data.view.x_max - width
-        )
-        self._set_window(new_min, new_max)
-
-    def pan_right(self) -> None:
-        """Pan window right by one window width."""
-        assert self.data is not None and self.data.view is not None
-        width = self.data.view.width()
-        new_min, new_max = self._constrained_window(
-            self.data.view.x_min + width, self.data.view.x_max + width
-        )
-        self._set_window(new_min, new_max)
-
-    def go_to_start(self) -> None:
-        """Move window to start of ECG."""
-        assert self.data is not None and self.data.view is not None
-        ecg = self.ecg_series
-        width = self.data.view.width()
-        start = float(np.min(ecg.times))
-        self._set_window(start, start + width)
-
-    def go_to_end(self) -> None:
-        """Move window to end of ECG."""
-        assert self.data is not None and self.data.view is not None
-        ecg = self.ecg_series
-        width = self.data.view.width()
-        end = float(np.max(ecg.times))
-        self._set_window(end - width, end)
 
     def next(self) -> None:
         """Jump to next non-normal R-top after current x_max."""
@@ -1183,6 +1147,7 @@ class PrepPlotWidget(QWidget):
         ):
             self.rtop_ctrl.add(float(event.xdata), label="N")
             self.redraw()
+            self.dataEdited.emit()
 
     def _on_motion(self, event) -> None:
         """
@@ -1232,8 +1197,11 @@ class PrepPlotWidget(QWidget):
             and self.data is not None
             and self.data.view is not None
         ):
+            was_dragging = self.data.view.drag_mode is not None
             self.data.view.drag_mode = None
             self.redraw()
+            if was_dragging:
+                self.viewChanged.emit()
 
     # ------------------------------------------------------------------
     # LineHandler callbacks (R-top drag/remove)
@@ -1245,6 +1213,7 @@ class PrepPlotWidget(QWidget):
             return
         self.rtop_ctrl.move(old_x, new_x)
         self.redraw()
+        self.dataEdited.emit()
 
     def _on_line_remove(self, old_x: float, new_x: float) -> None:
         """Called when a R-top line is removed."""
@@ -1252,20 +1221,4 @@ class PrepPlotWidget(QWidget):
             return
         self.rtop_ctrl.delete(new_x)
         self.redraw()
-
-    # ------------------------------------------------------------------
-    # Styling helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _set_time_axis(ax: Axes, x_min: float, x_max: float) -> None:
-        """
-        Configure the x-axis for a time-based plot with nice tick spacing.
-        """
-        ax.set_xlim(x_min, x_max)
-        width = max(x_max - x_min, 1e-6)
-        tdisp = round(math.log10(width), 0)
-        major = math.pow(10, tdisp - 1)
-        ax.set_xlabel("Time (seconds)")
-        ax.xaxis.set_major_locator(MultipleLocator(major))
-        ax.xaxis.set_minor_locator(MultipleLocator(major / 5.0))
+        self.dataEdited.emit()
