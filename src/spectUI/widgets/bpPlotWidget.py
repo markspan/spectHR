@@ -136,7 +136,7 @@ class BPPlotWidget(TimelinePlotWidget):
             x1 = min(float(ep.end), x_view_max)
             if x1 <= x0:
                 continue
-            visible.append((name, x0, x1))
+            visible.append((name, x0, x1 ))
 
         if not visible:
             return
