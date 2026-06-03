@@ -66,6 +66,28 @@ _DEFAULT_WORKSPACE = {
         },
     },
     # ------------------------------------------------------------------
+    # Manual signal calibration (raw ADC counts -> physical units)
+    # ------------------------------------------------------------------
+    # CARSPAN derives blood-pressure time series from the raw BP waveform
+    # via a linear calibration ``mmHg = scale * raw + zero`` entered by the
+    # user in the *Specify data* dialog (Carspan manual sec. 8.1.2). The
+    # bundled ``example1.nff`` ships *uncalibrated* - its NFF header carries
+    # no scale/zero - so the loader leaves it in raw counts and this manual
+    # calibration is applied afterwards (in ``PreProcessFile``) to reproduce
+    # the manual's figures (MEAN BPSys 121.5 mmHg). The manual's worked
+    # example specifies exactly Scale Factor 0.125, Zero Level 0 for this
+    # dataset, which are the defaults here.
+    #
+    # Applied only when the NFF header did *not* already carry a per-channel
+    # calibration (mirrors the manual's "when not already included in the
+    # header" rule); a header-calibrated channel is left untouched.
+    # ``bp_scale`` is in mmHg per raw count; leave it at 1.0 / 0.0 for a
+    # no-op (raw counts preserved).
+    "Calibration": {
+        "bp_scale": 0.125,
+        "bp_zero": 0.0,
+    },
+    # ------------------------------------------------------------------
     # Spectral profiles
     # ------------------------------------------------------------------
     # A spectral profile is the time course of a band-power measure
@@ -192,6 +214,13 @@ _DEFAULT_WORKSPACE = {
     # Profile (sliding-window): the same 3-row stack with band-summary
     # statistics on the time x-axis.
     "TransferAnalysis": {
+        # Which signal drives the transfer-function *input* channel (the
+        # output is always IBI/HR). "rsp" is the classic respiration->HR
+        # (respiratory sinus arrhythmia) transfer; "bp_sys"/"bp_dia" give the
+        # blood-pressure->HR baroreflex-sensitivity transfer using per-beat
+        # systolic / diastolic pressure. Requires the matching channel to be
+        # present (respiration or blood pressure).
+        "input_signal": "rsp",
         "window (sec)": 30.0,
         "step (sec)":    5.0,
         # Squared-coherence threshold used by the band integrators
@@ -332,6 +361,25 @@ def psd_ci_alpha(workspace: "Dict[str, Any] | None") -> float:
     return float(fa.get("confidence_interval_alpha", 0.05))
 
 
+def bp_calibration_from_workspace(
+    workspace: "Dict[str, Any] | None",
+) -> "tuple[float, float]":
+    """Return ``(bp_scale, bp_zero)`` for the manual BP calibration.
+
+    The blood-pressure waveform is converted from raw ADC counts to mmHg
+    via ``mmHg = bp_scale * raw + bp_zero``. Defaults mirror
+    ``_DEFAULT_WORKSPACE["Calibration"]`` (0.125 / 0.0, the values the
+    CARSPAN manual's worked example specifies for ``example1.nff``).
+    """
+    if workspace is None:
+        return 0.125, 0.0
+    cal = workspace.get("Calibration", {}) or {}
+    return (
+        float(cal.get("bp_scale", 0.125)),
+        float(cal.get("bp_zero", 0.0)),
+    )
+
+
 def profile_settings_from_workspace(
     workspace: "Dict[str, Any] | None",
 ) -> Dict[str, Any]:
@@ -460,9 +508,10 @@ def transfer_settings_from_workspace(
 ) -> Dict[str, Any]:
     """Return ``workspace["TransferAnalysis"]`` flattened with defaults applied.
 
-    Returned keys: ``window_s``, ``step_s``, ``min_coherence``,
-    ``f_max``, ``phase_view``, ``show_coherence_threshold``,
-    ``coherence_threshold_level``, ``coherence_mask_alpha``.
+    Returned keys: ``input_signal``, ``window_s``, ``step_s``,
+    ``min_coherence``, ``f_max``, ``phase_view``,
+    ``show_coherence_threshold``, ``coherence_threshold_level``,
+    ``coherence_mask_alpha``.
 
     The Bode-plot widgets read this dict directly, the band edges they
     feed to :func:`spectHR.analysis.transfer.compute_transfer` are
@@ -470,6 +519,7 @@ def transfer_settings_from_workspace(
     :func:`display_bands_from_workspace`.
     """
     defaults = {
+        "input_signal":              "rsp",
         "window_s":                  30.0,
         "step_s":                     5.0,
         "min_coherence":              0.5,
@@ -484,6 +534,7 @@ def transfer_settings_from_workspace(
         return defaults
     cfg = workspace.get("TransferAnalysis", {}) or {}
     return {
+        "input_signal": str(cfg.get("input_signal", defaults["input_signal"])),
         "window_s": float(
             cfg.get("window (sec)", cfg.get("window_s", defaults["window_s"]))
         ),
@@ -504,6 +555,42 @@ def transfer_settings_from_workspace(
             cfg.get("coherence_mask_alpha", defaults["coherence_mask_alpha"])
         ),
     }
+
+
+def resolve_transfer_input(pd, input_signal: str):
+    """Resolve the transfer-function input TimeSeries for *input_signal*.
+
+    The transfer pipeline drives its input channel from one of the
+    continuous recordings on *pd*: respiration for ``"rsp"`` or the
+    blood-pressure waveform for ``"bp_sys"`` / ``"bp_dia"`` (the per-beat
+    systolic / diastolic values are extracted from the same BP waveform
+    inside :func:`spectHR.analysis.transfer.compute_transfer`).
+
+    Parameters
+    ----------
+    pd : PhysioData
+        The dataset behind the cardio series (``series._pd``).
+    input_signal : str
+        One of ``spectHR.analysis.transfer.INPUT_SIGNALS``.
+
+    Returns
+    -------
+    (timeseries, error) : tuple
+        ``timeseries`` is the resolved continuous TimeSeries (with
+        ``.times`` / ``.values``) and ``error`` is ``None`` on success; on
+        failure ``timeseries`` is ``None`` and ``error`` is a short
+        human-readable reason for the empty tile.
+    """
+    from spectHR.analysis.transfer import INPUT_SIGNAL_RSP
+
+    if input_signal == INPUT_SIGNAL_RSP:
+        key, channel = "rsp", "respiration"
+    else:
+        key, channel = "bp", "blood-pressure"
+    try:
+        return pd[key].timeseries, None
+    except (KeyError, AttributeError):
+        return None, f"No {channel} channel"
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

@@ -2,29 +2,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
-
-
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.ticker import MultipleLocator
-from PySide6.QtWidgets import (
-    QHBoxLayout,
-    QVBoxLayout,
-    QWidget,
-)
 
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectUI.common import (
-    OverviewWindow,
+    TimelinePlotWidget,
     make_nav_button,
     style_axis_clean,
-    swap_canvas,
 )
 
 # ======================================================================
@@ -32,51 +19,39 @@ from spectUI.common import (
 # ======================================================================
 
 
-class HRPlotWidget(QWidget):
+class HRPlotWidget(TimelinePlotWidget):
     """
-    Interactive Heartrate pre-processing widget.
+    Interactive heart-rate (IBI) timeseries widget.
 
-    Responsibilities
-    ----------------
-    - Displays:
-        * HR signal (main axis)
-        * Optional breathing signal (if present)
-        * Overview plot with draggable window
-    - Provides:
-        * Navigation: zoom, pan, goto start/end, jump to next/prev abnormal R-top
+    A :class:`~spectUI.common.TimelinePlotWidget` whose primary series is
+    a heart-rate trace derived from the active CardioSeries. Adds two
+    things on top of the shared scaffolding:
+
+    - an optional breathing overlay on a twinned y-axis, and
+    - two extra navigation buttons that jump to the previous / next
+      non-normal R-top.
 
     It operates on a PhysioData instance with:
-        - data["heartrate"] -> StreamAccessor -> TimeSeries (times, values)
-        - data.hrv  -> CardioSeries
-        - optionally a "breathing..." TimeSeries.
+        - data.hrv  -> CardioSeries (R-peak times, IBIs, labels)
+        - optionally a "RSP..." breathing TimeSeries.
     """
+
+    overview_color = "green"
 
     # --------------------------------------------------------------
     # Construction
     # --------------------------------------------------------------
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
 
-        # Matplotlib figure and canvas
-        self.hrfig: Figure = Figure()
-        self.canvas: FigureCanvas = FigureCanvas(self.hrfig)
+        # Breathing overlay axis (twinx); rebuilt on each redraw.
+        self._ax_br_twin: Axes | None = None
 
-        # Plot axes
-        self.ax_heartrate: Axes | None = None
-        self.ax_overview: Axes | None = None
-        self._ax_br_twin: Axes | None = None  # breathing overlay axis (twinx)
+        # Not used by this widget directly; present so the next/prev
+        # guards have something to test. Wired by the preprocessing flow.
+        self.rtop_ctrl = None
 
-        # State
-        self.data: PhysioData | None = None
-        self.overview_window: OverviewWindow | None = None
-        self.rtop_ctrl = None  # not used in this widget; present for next/prev guards
-
-        # Mpl event ids
-        self._mpl_cid_press: int | None = None
-        self._mpl_cid_move: int | None = None
-        self._mpl_cid_release: int | None = None
-
-        # R-top color mapping
+        # R-top color mapping (kept for parity with the preprocessing view).
         self.RTopColors = {
             "N": "blue",
             "L": "cyan",
@@ -86,70 +61,72 @@ class HRPlotWidget(QWidget):
             "SNS": "lightseagreen",
         }
 
-        self.navigation_bar = self._create_navigation_bar()
+    # ==============================================================
+    # TimelinePlotWidget hooks
+    # ==============================================================
 
-        # Layout
-        layout = QVBoxLayout()
-        layout.addWidget(self.canvas)
-        layout.addWidget(self.navigation_bar)
-        self.setLayout(layout)
+    def _nav_buttons(self):
+        """Standard nav set plus prev/next non-normal R-top jumps."""
+        return (
+            make_nav_button("fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"),
+            make_nav_button("fa6s.backward",          self.pan_left,               tooltip="Pan Left"),
+            make_nav_button("fa6s.square-caret-left", self.prev,                   tooltip="Previous non-normal R-top"),
+            make_nav_button("ei.zoom-in",             self.zoom_in,                tooltip="Zoom In"),
+            make_nav_button("ei.zoom-out",            self.zoom_out,               tooltip="Zoom Out"),
+            make_nav_button("fa6s.square-caret-right",self.next,                   tooltip="Next non-normal R-top"),
+            make_nav_button("fa6s.forward",           self.pan_right,              tooltip="Pan Right"),
+            make_nav_button("fa6s.right-to-bracket",  self.go_to_end,              tooltip="Goto End"),
+        )
 
-        self.setVisible(False)
+    def _prepare(self) -> None:
+        """Derive the heart-rate series and stash it on the dataset."""
+        assert self.data is not None
+        hr_ts = self.hr_from_hrvseries(self.data.hrv)
+        self.data.timeseries["heartrate"] = hr_ts
 
-    def _has_resp_phases(self) -> bool:
-        """
-        True iff PhysioData carries Phase intervals for the active band.
-        """
-        if self.data is None:
-            return False
-        phases = getattr(self.data, "phases", None)
-        band = getattr(self.data, "active_band", None)
-        if not isinstance(phases, dict) or band is None:
-            return False
-        return (f"inh-{band}" in phases) or (f"exh-{band}" in phases)
+    def _primary_series(self) -> TimeSeries:
+        assert self.data is not None
+        return self.data["heartrate"].timeseries
 
-    def _draw_phase_backgrounds(
-        self,
-        ax: Axes,
-        *,
-        phase_prefix: str,
-        color: str = "#ADD8E6",
-        alpha: float = 0.25,
-    ) -> None:
-        """
-        Draw Phase interval backgrounds (axvspan) for the active band.
+    def _draw_main(self) -> None:
+        """Draw the heart-rate signal in the main axis."""
+        assert self.ax_main is not None
+        assert self.data is not None and self.data.view is not None
+        heartrate = self.data["heartrate"].timeseries
 
-        Does nothing if:
-        - no self.data
-        - no self.data.phases
-        - no self.data.active_band
-        - phase missing or inactive
-        """
-        if self.data is None:
-            return
+        self.ax_main.clear()
+        self.ax_main.plot(
+            heartrate.times, heartrate.values, color="red", linewidth=2, alpha=1.0
+        )
+        self.ax_main.set_title("Heart Rate Timeseries")
+        self.ax_main.set_ylabel("Heart rate (bpm)")
+        style_axis_clean(self.ax_main)
+        self._set_time_axis(
+            self.ax_main,
+            self.data.view.x_min,
+            self.data.view.x_max,
+            show_xlabel=False,
+        )
 
-        phases = getattr(self.data, "phases", None)
-        band = getattr(self.data, "active_band", None)
-        if not isinstance(phases, dict) or band is None:
-            return
-
-        key = f"{phase_prefix}-{band}"
-        phase = phases.get(key)
-        if phase is None or not getattr(phase, "active", False):
-            return
-
-        for start, end in getattr(phase, "intervals", []):
-            ax.axvspan(
-                float(start),
-                float(end),
-                color=color,
-                alpha=alpha,
-                zorder=0,  # behind line plots
-                linewidth=0,
-            )
+    def _draw_extras(self) -> None:
+        self._draw_breathing()
 
     # ==============================================================
-    # Convenience properties
+    # Public API
+    # ==============================================================
+
+    def hrPlot(
+        self,
+        data: PhysioData,
+        fig: Figure | None = None,
+        x_min: float | None = None,
+        x_max: float | None = None,
+    ) -> Figure:
+        """Initialise and display the heart-rate plot for *data*."""
+        return self._plot(data, fig, x_min, x_max)
+
+    # ==============================================================
+    # HR-specific helpers
     # ==============================================================
 
     @staticmethod
@@ -234,230 +211,68 @@ class HRPlotWidget(QWidget):
                 return ts
         return None
 
-    # ==============================================================
-    # UI construction
-    # ==============================================================
+    def _has_resp_phases(self) -> bool:
+        """
+        True iff PhysioData carries Phase intervals for the active band.
+        """
+        if self.data is None:
+            return False
+        phases = getattr(self.data, "phases", None)
+        band = getattr(self.data, "active_band", None)
+        if not isinstance(phases, dict) or band is None:
+            return False
+        return (f"inh-{band}" in phases) or (f"exh-{band}" in phases)
 
-    def _create_navigation_bar(self) -> QWidget:
-        """Create the navigation bar with zoom/pan/next/prev controls."""
-        buttons = (
-            make_nav_button("fa6s.right-to-bracket", self.go_to_start, rotate=180, tooltip="Goto Start"),
-            make_nav_button("fa6s.backward",          self.pan_left,               tooltip="Pan Left"),
-            make_nav_button("fa6s.square-caret-left", self.prev,                   tooltip="Previous non-normal R-top"),
-            make_nav_button("ei.zoom-in",             self.zoom_in,                tooltip="Zoom In"),
-            make_nav_button("ei.zoom-out",            self.zoom_out,               tooltip="Zoom Out"),
-            make_nav_button("fa6s.square-caret-right",self.next,                   tooltip="Next non-normal R-top"),
-            make_nav_button("fa6s.forward",           self.pan_right,              tooltip="Pan Right"),
-            make_nav_button("fa6s.right-to-bracket",  self.go_to_end,              tooltip="Goto End"),
-        )
-        nav_layout = QHBoxLayout()
-        nav_layout.setContentsMargins(0, 0, 0, 0)
-        nav_layout.setSpacing(4)
-        for btn in buttons:
-            nav_layout.addWidget(btn)
-        nav_widget = QWidget()
-        nav_widget.setLayout(nav_layout)
-        nav_widget.setFixedHeight(50)
-        return nav_widget
-
-    # ==============================================================
-    # Public API
-    # ==============================================================
-
-    def hrPlot(
+    def _draw_phase_backgrounds(
         self,
-        data: PhysioData,
-        fig: Figure | None = None,
-        x_min: float | None = None,
-        x_max: float | None = None,
-    ) -> Figure:
-        """
-        Initialize and display the pre-processing plot for a PhysioData object.
-
-        Parameters
-        ----------
-        data : PhysioData
-            Dataset with at least rtops.
-        fig : Figure, optional
-            An existing Matplotlib figure to reuse. If None, a new figure is created.
-        x_min : float, optional
-            Initial left bound of the visible time window. Defaults to start of series.
-        x_max : float, optional
-            Initial right bound of the visible time window. Defaults to end of series.
-
-        Returns
-        -------
-        Figure
-            The Matplotlib Figure used for plotting.
-        """
-        self.data = data
-        hr_ts = self.hr_from_hrvseries(self.data.hrv)
-        self.data.timeseries["heartrate"] = hr_ts
-
-        self.setVisible(True)
-        plt.ioff()  # No blocking windows
-
-        # Determine initial window
-        x_min_default = data.hrv.times.min() if data.hrv else 0.0
-        x_max_default = data.hrv.times.max() if data.hrv else 100.0
-
-        xmin = x_min if x_min is not None else x_min_default
-        xmax = x_max if x_max is not None else x_max_default
-
-        if not hasattr(data, "view"):
-            self.data.view = ViewState(x_min=xmin, x_max=xmax)
-
-        # Create or reuse figure/axes
-        if fig is None:
-            self._create_figure_and_axes()
-        else:
-            self.hrfig = fig
-            self._reuse_axes_from_figure()
-
-        self._setup_matplotlib_canvas()
-        self._connect_mpl_events()
-
-        # Draw everything once
-        self.redraw()
-
-        return self.hrfig
-
-    # ==============================================================
-    # Figure / Axes setup
-    # ==============================================================
-
-    def _create_figure_and_axes(self) -> None:
-        """
-        Create a compact figure with:
-        - main heartrate axis
-        - overview axis
-        Breathing (if available) is rendered via twinx() on the main axis.
-        """
-        self.hrfig, (ax_hr, ax_overview) = plt.subplots(
-            2,
-            1,
-            figsize=(15, 3),
-            sharex=False,
-            gridspec_kw={"height_ratios": [5, 1]},
-        )
-        plt.close(self.hrfig)  # prevent orphan figure window
-
-        self.ax_heartrate = ax_hr
-        self.ax_overview = ax_overview
-
-    def _reuse_axes_from_figure(self) -> None:
-        axes = self.hrfig.axes
-        if len(axes) >= 2:
-            self.ax_heartrate = axes[0]
-            self.ax_overview = axes[-1]
-        else:
-            self._create_figure_and_axes()
-
-    def _setup_matplotlib_canvas(self) -> None:
-        """Attach the Matplotlib Figure to the Qt canvas and insert into layout."""
-        # Hide toolbar/header for embedded use
-        self.hrfig.canvas.toolbar_visible = False  # type: ignore[attr-defined]
-        self.hrfig.canvas.header_visible = False  # type: ignore[attr-defined]
-        self.hrfig.tight_layout()
-
-        # Replace the previous canvas at the top of the layout. The
-        # orphan-window rationale lives in swap_canvas.
-        self.canvas = swap_canvas(
-            self.layout(),   # type: ignore[arg-type]
-            self.canvas,
-            self.hrfig,
-            index=0,
-        )
-
-    # ==============================================================
-    # Matplotlib event wiring
-    # ==============================================================
-
-    def _connect_mpl_events(self) -> None:
-        """
-        Connect mouse events for overview dragging and add-mode clicks.
-        """
-        if self._mpl_cid_press is not None:
-            self.hrfig.canvas.mpl_disconnect(self._mpl_cid_press)
-        if self._mpl_cid_move is not None:
-            self.hrfig.canvas.mpl_disconnect(self._mpl_cid_move)
-        if self._mpl_cid_release is not None:
-            self.hrfig.canvas.mpl_disconnect(self._mpl_cid_release)
-
-        self._mpl_cid_press = self.hrfig.canvas.mpl_connect(
-            "button_press_event", self._on_press
-        )
-        self._mpl_cid_move = self.hrfig.canvas.mpl_connect(
-            "motion_notify_event", self._on_motion
-        )
-        self._mpl_cid_release = self.hrfig.canvas.mpl_connect(
-            "button_release_event", self._on_release
-        )
-
-    # ==============================================================
-    # Rendering pipeline
-    # ==============================================================
-    @staticmethod
-    def _set_time_axis(
-        ax: Axes, x_min: float, x_max: float, *, show_xlabel: bool
+        ax: Axes,
+        *,
+        phase_prefix: str,
+        color: str = "#ADD8E6",
+        alpha: float = 0.25,
     ) -> None:
-        """Set x-limits, ticks, and optionally the x-axis label."""
-        ax.set_xlim(x_min, x_max)
-
-        width = max(x_max - x_min, 1e-6)
-        tdisp = round(math.log10(width), 0)
-        major = math.pow(10, tdisp - 1)
-
-        ax.xaxis.set_major_locator(MultipleLocator(major))
-        ax.xaxis.set_minor_locator(MultipleLocator(major / 5.0))
-
-        if show_xlabel:
-            ax.set_xlabel("Time (seconds)")
-        else:
-            ax.set_xlabel("")
-
-    def redraw(self) -> None:
-        assert self.data is not None and self.data.view is not None
-        assert self.ax_heartrate is not None
-        assert self.ax_overview is not None
-
-        self._draw_heartrate()
-        self._draw_breathing()  # <-- always call; it will no-op if no breathing
-        self._draw_overview()
-
-        self.canvas.draw_idle()
-
-    def _draw_heartrate(self) -> None:
         """
-        Draw hartrate signal in the main axis.
-        """
-        assert self.ax_heartrate is not None and self.data.view is not None
-        heartrate = self.data["heartrate"].timeseries
+        Draw Phase interval backgrounds (axvspan) for the active band.
 
-        self.ax_heartrate.clear()
-        self.ax_heartrate.plot(
-            heartrate.times, heartrate.values, color="red", linewidth=2, alpha=1.0
-        )
-        # title
-        self.ax_heartrate.set_title("IBI Timeseries Signal")
-        style_axis_clean(self.ax_heartrate)
-        self._set_time_axis(
-            self.ax_heartrate,
-            self.data.view.x_min,
-            self.data.view.x_max,
-            show_xlabel=False,
-        )
+        Does nothing if:
+        - no self.data
+        - no self.data.phases
+        - no self.data.active_band
+        - phase missing or inactive
+        """
+        if self.data is None:
+            return
+
+        phases = getattr(self.data, "phases", None)
+        band = getattr(self.data, "active_band", None)
+        if not isinstance(phases, dict) or band is None:
+            return
+
+        key = f"{phase_prefix}-{band}"
+        phase = phases.get(key)
+        if phase is None or not getattr(phase, "active", False):
+            return
+
+        for start, end in getattr(phase, "intervals", []):
+            ax.axvspan(
+                float(start),
+                float(end),
+                color=color,
+                alpha=alpha,
+                zorder=0,  # behind line plots
+                linewidth=0,
+            )
 
     def _draw_breathing(self) -> None:
         """
-        Draw breathing signal as a twin y-axis overlay on the heartrate axis.
+        Draw breathing signal as a twin y-axis overlay on the main axis.
 
         Behavior
         --------
         - If no breathing series exists, remove any previous twin axis and return.
         - Otherwise, rebuild the twin axis on each redraw (robust).
         """
-        assert self.ax_heartrate is not None
+        assert self.ax_main is not None
         assert self.data is not None and self.data.view is not None
 
         ts = self.breathing_series
@@ -473,10 +288,10 @@ class HRPlotWidget(QWidget):
         if ts is None:
             return
 
-        ax_hr = self.ax_heartrate
+        ax_hr = self.ax_main
         self._ax_br_twin = ax_hr.twinx()
 
-        # Optional: phase shading on the HR axis (or on ax_br; pick one)
+        # Optional: phase shading on the HR axis
         if self._has_resp_phases():
             self._draw_phase_backgrounds(
                 ax_hr,
@@ -504,141 +319,17 @@ class HRPlotWidget(QWidget):
         # Keep behind the HR trace
         self._ax_br_twin.set_zorder(0)
         style_axis_clean(self._ax_br_twin)  # removes top/left/right spines too
-        # and typically you do NOT want an x-label on the twin axis:
         self._ax_br_twin.set_xlabel("")
 
-    def _draw_overview(self) -> None:
-        """
-        Draw the overview Heartrate plot and its draggable window rectangle.
-        The x-axis of the overview never changes.
-        The rectangle is ALWAYS recreated to avoid disappearing after redraws.
-        """
-        assert self.ax_overview is not None
-        assert self.data.view is not None
-
-        heartrate = self.data["heartrate"].timeseries
-
-        # Redraw the overview axis completely.
-        self.ax_overview.clear()
-        self.ax_overview.plot(
-            heartrate.times, heartrate.values, linewidth=0.25, alpha=1, color="green"
-        )
-        style_axis_clean(self.ax_overview)
-        self._set_time_axis(
-            self.ax_overview,
-            float(heartrate.times.min()),
-            float(heartrate.times.max()),
-            show_xlabel=True,
-        )
-
-        # Recreate the rectangle every time - most robust behaviour.
-        self.overview_window = OverviewWindow(
-            self.ax_overview,
-            self.data.view.x_min,
-            self.data.view.x_max,
-        )
-
     # ==============================================================
-    # Navigation helpers
+    # R-top jump navigation
     # ==============================================================
-
-    def _set_window(self, x_min: float, x_max: float) -> None:
-        """
-        Update the current view window and redraw.
-        """
-        assert self.data.view is not None
-        self.data.view.x_min = float(x_min)
-        self.data.view.x_max = float(x_max)
-        self.redraw()
-
-    def _constrained_window(self, x_min: float, x_max: float) -> tuple[float, float]:
-        """
-        Clamp the window [x_min, x_max] to the heartrate data range.
-        """
-        heartrate = self.data["heartrate"].timeseries
-        global_min = float(heartrate.times.min())
-        global_max = float(heartrate.times.max())
-        width = x_max - x_min
-
-        x_min = max(global_min, x_min)
-        x_max = min(global_max, x_min + width)
-        return x_min, x_max
-
-    # ==============================================================
-    # Navigation actions (called by toolbar buttons)
-    # ==============================================================
-
-    def zoom_in(self) -> None:
-        """
-        Zoom in by reducing the window width to 1/3 of current.
-        """
-        assert self.data.view is not None
-        width = self.data.view.width() / 3.0
-        mid = self.data.view.center()
-        new_min = mid - width
-        new_max = mid + width
-        new_min, new_max = self._constrained_window(new_min, new_max)
-        self._set_window(new_min, new_max)
-
-    def zoom_out(self) -> None:
-        """
-        Zoom out by increasing the window width by factor 1.5.
-        """
-        assert self.data.view is not None
-        width = self.data.view.width() * 1.5
-        mid = self.data.view.center()
-        new_min = mid - width / 2.0
-        new_max = mid + width / 2.0
-        new_min, new_max = self._constrained_window(new_min, new_max)
-        self._set_window(new_min, new_max)
-
-    def pan_left(self) -> None:
-        """
-        Pan window left by one window width.
-        """
-        assert self.data.view is not None
-        width = self.data.view.width()
-        new_min, new_max = self._constrained_window(
-            self.data.view.x_min - width, self.data.view.x_max - width
-        )
-        self._set_window(new_min, new_max)
-
-    def pan_right(self) -> None:
-        """
-        Pan window right by one window width.
-        """
-        assert self.data.view is not None
-        width = self.data.view.width()
-        new_min, new_max = self._constrained_window(
-            self.data.view.x_min + width, self.data.view.x_max + width
-        )
-        self._set_window(new_min, new_max)
-
-    def go_to_start(self) -> None:
-        """
-        Move window to the very beginning of the heartrate series.
-        """
-        assert self.data.view is not None
-        heartrate = self.data["heartrate"].timeseries
-        width = self.data.view.width()
-        start = float(heartrate.times.min())
-        self._set_window(start, start + width)
-
-    def go_to_end(self) -> None:
-        """
-        Move window to the very end of the heartrate series.
-        """
-        assert self.data.view is not None
-        heartrate = self.data["heartrate"].timeseries
-        width = self.data.view.width()
-        end = float(heartrate.times.max())
-        self._set_window(end - width, end)
 
     def next(self) -> None:
         """
         Jump to next non-normal R-top (label != 'N') after current x_max.
         """
-        if self.rtop_ctrl is None or self.data.view is None:
+        if self.rtop_ctrl is None or self.data is None or self.data.view is None:
             return
         t = self.rtop_ctrl.next_non_normal(self.data.view.x_max)
         if t is None:
@@ -650,85 +341,10 @@ class HRPlotWidget(QWidget):
         """
         Jump to previous non-normal R-top (label != 'N') before current x_min.
         """
-        if self.rtop_ctrl is None or self.data.view is None:
+        if self.rtop_ctrl is None or self.data is None or self.data.view is None:
             return
         t = self.rtop_ctrl.prev_non_normal(self.data.view.x_min)
         if t is None:
             return
         width = self.data.view.width()
         self._set_window(t - 0.5 * width, t + 0.5 * width)
-
-    # ==============================================================
-    # Event handlers (overview drag & add-mode)
-    # ==============================================================
-
-    def _on_press(self, event) -> None:
-        """
-        Matplotlib mouse press callback.
-
-        - If click on overview: start dragging window.
-        - If in Add mode and on heartrate axis: add a new R-top at click time.
-        """
-        if event.inaxes is None or self.data.view is None:
-            return
-
-        # Overview drag
-        if event.inaxes is self.ax_overview:
-            if event.xdata is None:
-                return
-            self.data.view.initial_xmin = self.data.view.x_min
-            self.data.view.initial_xmax = self.data.view.x_max
-            width = self.data.view.width()
-
-            # Determine drag mode based on proximity to window edges
-            if abs(event.xdata - self.data.view.x_min) < 0.3 * width:
-                self.data.view.drag_mode = "left"
-            elif abs(event.xdata - self.data.view.x_max) < 0.3 * width:
-                self.data.view.drag_mode = "right"
-            else:
-                self.data.view.drag_mode = "center"
-
-    def _on_motion(self, event) -> None:
-        """
-        Matplotlib mouse motion callback (while dragging window).
-        """
-        if event.inaxes is None or self.data.view is None:
-            return
-
-        if event.inaxes is self.ax_overview and self.data.view.drag_mode is not None:
-            if (
-                event.xdata is None
-                or self.data.view.initial_xmin is None
-                or self.data.view.initial_xmax is None
-            ):
-                return
-
-            width = self.data.view.initial_xmax - self.data.view.initial_xmin
-            if self.data.view.drag_mode == "left":
-                x_min = min(event.xdata, self.data.view.x_max - 0.1)
-                x_max = self.data.view.x_max
-            elif self.data.view.drag_mode == "right":
-                x_min = self.data.view.x_min
-                x_max = max(event.xdata, self.data.view.x_min + 0.1)
-            else:  # center
-                dx = event.xdata - 0.5 * (
-                    self.data.view.initial_xmin + self.data.view.initial_xmax
-                )
-                x_min = self.data.view.initial_xmin + dx
-                x_max = self.data.view.initial_xmax + dx
-
-            x_min, x_max = self._constrained_window(x_min, x_max)
-            self.data.view.x_min = x_min
-            self.data.view.x_max = x_max
-
-            if self.overview_window is not None:
-                self.overview_window.set_window(x_min, x_max)
-            self.canvas.draw_idle()
-
-    def _on_release(self, event) -> None:
-        """Matplotlib mouse release callback: finish dragging."""
-        if self.data is None or self.data.view is None:
-            return
-        self.data.view.drag_mode = None
-        self.redraw()
-

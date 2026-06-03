@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import csv
 import datetime
+import textwrap
 from pathlib import Path
 
 import numpy as np
@@ -67,6 +68,7 @@ from PySide6.QtWidgets import (
 )
 
 from spectHR.Tools.Logger import logger
+from spectHR.analysis.registry import get_metrics
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.profile import compute_band_power_profile
@@ -76,6 +78,7 @@ from spectUI.workSpace import (
     get_export_dir,
     profile_settings_from_workspace,
     psd_method_from_workspace,
+    resolve_transfer_input,
     resolved_profile_bands,
     transfer_settings_from_workspace,
 )
@@ -101,7 +104,104 @@ METRIC_ORDER = [
     "lf_power",
     "hf_power",
     "lf_hf_ratio",
+    # Beat-by-beat blood-pressure parameters (CARSPAN).
+    "bp_sbp",
+    "bp_dbp",
+    "bp_pp",
+    "bp_map",
+    # Beat-by-beat respiratory-volume parameters (CARSPAN).
+    "resp_mvo",
+    "resp_svo",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Column help text (header tooltips)
+# ---------------------------------------------------------------------------
+#
+# Tooltips shown when hovering a column header.  Time-domain HRV metrics fall
+# back automatically to their ``@hrv_metric`` docstring (see
+# ``_tooltip_for_column``); the entries below cover the identifier columns,
+# the beat-by-beat BP/RESP parameters and the export-only settings columns.
+# Frequency / profile / transfer columns are described by pattern below.
+
+_COLUMN_HELP_STATIC: dict[str, str] = {
+    "Subject": "Recording identifier (file basename).",
+    "epoch":   "Epoch label.",
+
+    # Beat-by-beat blood pressure (CARSPAN, averaged over the epoch).
+    "bp_sbp": "Systolic blood pressure: per-beat maximum of the BP waveform "
+              "between two R-peaks, averaged over the epoch "
+              "(CARSPAN CalcDataColBPSYS).",
+    "bp_dbp": "Diastolic blood pressure: per-beat minimum of the BP waveform "
+              "just before the systolic peak, averaged over the epoch "
+              "(CARSPAN CalcDataColBPDIA).",
+    "bp_pp":  "Pulse pressure: per-beat systolic minus diastolic, averaged "
+              "over the epoch (CARSPAN CalcDataColBPPUL).",
+    "bp_map": "Mean arterial pressure: integral mean of the BP waveform "
+              "between two successive diastolic minima, averaged over the "
+              "epoch. The true waveform mean, not (SBP + 2·DBP)/3 "
+              "(CARSPAN CalcDataColBPMPR).",
+
+    # Beat-by-beat respiration (CARSPAN, averaged over the epoch).
+    "resp_mvo": "Mean respiratory volume: mean of the respiration signal over "
+                "each cardiac interval [R_i, R_{i+1}], averaged over the epoch "
+                "(CARSPAN CalcDataColRESMVO).",
+    "resp_svo": "Sample respiratory volume: mean of the respiration signal "
+                "over a short window of samples ending at each R-peak, "
+                "averaged over the epoch (CARSPAN CalcDataColRESSVO).",
+
+    "lf_hf_ratio": "Ratio of LF to HF band power (sympatho-vagal balance "
+                   "indicator).",
+
+    # Spectral-profile settings (export metadata).
+    "prof_method":          "PSD method used for the band-power profile.",
+    "prof_unit":            "Unit of the band-power profile values.",
+    "prof_window_s":        "Sliding-window length (s) of the band-power profile.",
+    "prof_step_s":          "Sliding-window step (s) of the band-power profile.",
+    "prof_n_windows":       "Number of profile windows in the epoch.",
+    "prof_adaptive_band":   "Name of the adaptive (breathing-tracking) band.",
+    "prof_adaptive_source": "Source signal driving the adaptive band centre.",
+
+    # Transfer-function settings (export metadata).
+    "tf_method":         "Transfer-function estimation method.",
+    "tf_freq_resolution":"Frequency resolution (Hz) of the transfer function.",
+    "tf_smooth":         "Whether spectral smoothing was applied (1 = yes).",
+    "tf_min_coherence":  "Minimum coherence for a frequency bin to count as "
+                         "coherent.",
+    "tf_f_max":          "Upper frequency bound (Hz) of the transfer analysis.",
+}
+
+# Pattern help for ``{band}_prof_{stat}`` columns.
+_PROFILE_STAT_HELP: dict[str, str] = {
+    "mean":  "Mean of the {band} band-power profile over the epoch.",
+    "std":   "Standard deviation of the {band} band-power profile over the epoch.",
+    "min":   "Minimum of the {band} band-power profile over the epoch.",
+    "max":   "Maximum of the {band} band-power profile over the epoch.",
+    "t_max": "Time (s, relative to epoch start) at which the {band} band-power "
+             "profile peaks.",
+}
+
+# Pattern help for ``{band}_tf_{field}`` columns.
+_TRANSFER_FIELD_HELP: dict[str, str] = {
+    "modulus":   "Transfer-function modulus (gain) in the {band} band "
+                 "(respiration → IBI).",
+    "phase_w":   "Transfer-function phase (wrapped, rad) in the {band} band.",
+    "phase_u":   "Transfer-function phase (unwrapped, rad) in the {band} band.",
+    "coherence": "Coherence-weighted mean coherence in the {band} band.",
+    "n_points":  "Number of frequency bins in the {band} band.",
+    "n_coherent":"Number of coherent frequency bins (above the coherence "
+                 "threshold) in the {band} band.",
+}
+
+
+def _doc_summary(doc: str | None) -> str:
+    """Collapse a docstring's first paragraph into a single tooltip line."""
+    if not doc:
+        return ""
+    text = textwrap.dedent(doc).strip()
+    first = text.split("\n\n", 1)[0]
+    return " ".join(first.split())
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +268,7 @@ class ParametersPlotWidget(QWidget):
         self.h5file   = output_dir / f"{dataset.basename}.h5"
 
         psd_method = psd_method_from_workspace(workspace)
-        labels, cols, values = self.dataset.hrv_epoch_table(psd_method=psd_method)
+        labels, cols, values = self.dataset.epoched_parameters_table(psd_method=psd_method)
 
         # Re-order columns: known metrics first, then extras alphabetically.
         ordered = [c for c in METRIC_ORDER if c in cols]
@@ -194,6 +294,12 @@ class ParametersPlotWidget(QWidget):
         self.table_widget.setRowCount(n_rows)
         self.table_widget.setColumnCount(len(self.headers))
         self.table_widget.setHorizontalHeaderLabels(self.headers)
+
+        # Header hover help: attach a tooltip to every column header.
+        for col, name in enumerate(self.headers):
+            header_item = self.table_widget.horizontalHeaderItem(col)
+            if header_item is not None:
+                header_item.setToolTip(self._tooltip_for_column(name))
 
         for i in range(n_rows):
             for j, v in enumerate(self.data[i]):
@@ -223,12 +329,12 @@ class ParametersPlotWidget(QWidget):
         # scalar summaries (for the CSV) and full arrays (for HDF5).
         epoch_data = self._collect_epoch_data()
 
-        # Inject the hrv_epoch_table scalars (RMSSD, SDNN, band powers,
-        # Poincaré metrics, and any future @hrv_metric additions) into
-        # every epoch's "scalars" dict so they travel to the HDF5 file
-        # as well as the CSV.  self.data rows skip "Subject" (col 0)
-        # and "epoch" (col 1); the remaining columns come from
-        # hrv_epoch_table, which is already complete.
+        # Inject the epoched_parameters_table scalars (RMSSD, SDNN, band
+        # powers, Poincaré metrics, BP/RESP parameters, and any future
+        # @hrv_metric additions) into every epoch's "scalars" dict so they
+        # travel to the HDF5 file as well as the CSV.  self.data rows skip
+        # "Subject" (col 0) and "epoch" (col 1); the remaining columns come
+        # from epoched_parameters_table, which is already complete.
         table_scalars = self._table_scalars_by_epoch()
         for label, ed in epoch_data.items():
             ts = table_scalars.get(label, {})
@@ -297,12 +403,10 @@ class ParametersPlotWidget(QWidget):
             if name != "FullRange" and "low" in spec and "high" in spec
         }
 
-        # Respiration series — shared across all epochs.
-        rsp_ts = None
-        try:
-            rsp_ts = self.dataset["rsp"].timeseries
-        except (KeyError, AttributeError, TypeError):
-            pass
+        # Transfer input series (respiration or blood pressure) — shared
+        # across all epochs; the source is chosen in the workspace settings.
+        tf_input_signal = str(tf_cfg["input_signal"])
+        rsp_ts, _ = resolve_transfer_input(self.dataset, tf_input_signal)
 
         result: dict[str, dict] = {}
 
@@ -414,6 +518,7 @@ class ParametersPlotWidget(QWidget):
                     from spectHR.analysis.transfer import compute_transfer
                     tf_res = compute_transfer(
                         view, rsp_ts,
+                        input_signal   = tf_input_signal,
                         bands          = tf_band_edges,
                         min_coherence  = float(tf_cfg["min_coherence"]),
                         smooth         = bool(tf_cfg["smooth"]),
@@ -483,6 +588,7 @@ class ParametersPlotWidget(QWidget):
                     from spectHR.analysis.transfer import compute_transfer_profile
                     tfp_res = compute_transfer_profile(
                         view, rsp_ts,
+                        input_signal  = tf_input_signal,
                         bands         = tf_band_edges,
                         window_s      = float(tf_cfg["window_s"]),
                         step_s        = float(tf_cfg["step_s"]),
@@ -523,7 +629,7 @@ class ParametersPlotWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _write_csv(self, epoch_data: dict[str, dict]) -> None:
-        """Write the scalar-only CSV, merging hrv_epoch_table data with
+        """Write the scalar-only CSV, merging epoched_parameters_table data with
         spectral summary scalars collected in *epoch_data*."""
         if self.csvfile is None or self.data is None:
             return
@@ -718,8 +824,56 @@ class ParametersPlotWidget(QWidget):
     # Helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _tooltip_for_column(name: str) -> str:
+        """Return hover help text for the column header *name*.
+
+        Resolution order:
+
+        1. An explicit entry in :data:`_COLUMN_HELP_STATIC` (identifier,
+           BP/RESP and settings columns).
+        2. The docstring of the registered ``@hrv_metric`` of the same name
+           (time-domain HRV metrics).
+        3. A pattern match for the generated frequency / profile / transfer
+           columns (``{band}_power``, ``{band}_prof_{stat}``,
+           ``{band}_tf_{field}``).
+        4. The column name itself, as a last resort.
+        """
+        if name in _COLUMN_HELP_STATIC:
+            return _COLUMN_HELP_STATIC[name]
+
+        # Registered time-domain HRV metric → its docstring.
+        metric = get_metrics().get(name)
+        if metric is not None:
+            doc = _doc_summary(metric.__doc__)
+            if doc:
+                return doc
+
+        # Integrated band power: "{band}_power".
+        if name.endswith("_power"):
+            band = name[: -len("_power")]
+            return (
+                f"Integrated PSD power in the {band.upper()} band, per epoch."
+            )
+
+        # Spectral-profile summary: "{band}_prof_{stat}".
+        if "_prof_" in name:
+            band, stat = name.split("_prof_", 1)
+            tmpl = _PROFILE_STAT_HELP.get(stat)
+            if tmpl:
+                return tmpl.format(band=band.upper())
+
+        # Transfer-function summary: "{band}_tf_{field}".
+        if "_tf_" in name:
+            band, field = name.split("_tf_", 1)
+            tmpl = _TRANSFER_FIELD_HELP.get(field)
+            if tmpl:
+                return tmpl.format(band=band.upper())
+
+        return name
+
     def _table_scalars_by_epoch(self) -> dict[str, dict]:
-        """Extract hrv_epoch_table scalars from self.data as a plain dict.
+        """Extract epoched_parameters_table scalars from self.data as a plain dict.
 
         Returns ``{epoch_label: {col_name: python_scalar}}`` for every
         row in self.data.  Column 0 (Subject) and column 1 (epoch) are
@@ -727,7 +881,7 @@ class ParametersPlotWidget(QWidget):
         float / int / str so h5py can store it as an HDF5 attribute.
 
         Any new metric added via ``@hrv_metric`` automatically appears
-        here because it flows through ``hrv_epoch_table`` → ``self.data``
+        here because it flows through ``epoched_parameters_table`` → ``self.data``
         → this method → the HDF5 epoch group attributes.
         """
         if self.data is None:

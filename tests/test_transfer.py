@@ -30,10 +30,13 @@ import numpy as np
 import pytest
 
 from spectHR.analysis.transfer import (
+    INPUT_SIGNALS,
     BandTransfer,
     TransferProfileResult,
     TransferResult,
     _compute_dft,
+    _fill_nans,
+    _input_beat_signal,
     _smooth3,
     compute_transfer,
     compute_transfer_profile,
@@ -267,6 +270,32 @@ def _coupled_respiration(
     return _RespTimeSeries(times=times, values=values)
 
 
+def _synthetic_bp(
+    rp_times: np.ndarray,
+    *,
+    fs: float = 100.0,
+    dia: float = 80.0,
+    sys: float = 120.0,
+) -> _RespTimeSeries:
+    """Build a continuous blood-pressure waveform that pulses once per beat.
+
+    Each cardiac interval gets a half-sine rising from the diastolic level
+    to the systolic peak and back, so :func:`compute_transfer` with
+    ``input_signal="bp_sys"`` / ``"bp_dia"`` extracts well-defined per-beat
+    SBP / DBP values.  Reuses ``_RespTimeSeries`` as a bare ``.times`` /
+    ``.values`` carrier.
+    """
+    t_start, t_end = float(rp_times[0]), float(rp_times[-1])
+    times = np.arange(t_start, t_end + 1.0 / fs, 1.0 / fs)
+    # Beat phase: instantaneous HR from the local interval at each sample.
+    idx = np.clip(np.searchsorted(rp_times, times, side="right") - 1, 0, rp_times.size - 2)
+    beat_start = rp_times[idx]
+    beat_len = np.diff(rp_times)[idx]
+    phase = (times - beat_start) / beat_len           # 0..1 within the beat
+    values = dia + (sys - dia) * np.sin(np.pi * phase)
+    return _RespTimeSeries(times=times, values=values)
+
+
 # ===========================================================================
 # compute_transfer - single-epoch
 # ===========================================================================
@@ -438,3 +467,125 @@ class TestComputeTransferProfile:
         assert mod_finite.any(),      "expected at least one finite column"
         # And timestamps stay populated regardless.
         assert np.all(np.isfinite(res.timestamps))
+
+
+# ===========================================================================
+# Selectable transfer-function input signal (rsp / bp_sys / bp_dia)
+# ===========================================================================
+
+
+class TestInputSignalSelection:
+    """The transfer-function input is selectable: respiration (default), or
+    per-beat systolic / diastolic blood pressure (baroreflex path)."""
+
+    def test_input_signals_constant(self):
+        assert INPUT_SIGNALS == ("rsp", "bp_sys", "bp_dia")
+
+    def test_default_is_respiration(self):
+        """Calling without ``input_signal`` must reproduce the explicit
+        ``"rsp"`` result bit-for-bit (back-compat for existing callers)."""
+        cs = make_spectral_cs(0.25, duration_s=200.0)
+        rsp = _coupled_respiration(cs.times)
+        default = compute_transfer(cs, rsp)
+        explicit = compute_transfer(cs, rsp, input_signal="rsp")
+        assert np.array_equal(default.modulus, explicit.modulus)
+        assert np.array_equal(default.coherence, explicit.coherence)
+
+    def test_bp_sys_runs_and_aligns(self):
+        cs = make_spectral_cs(0.25, duration_s=200.0)
+        bp = _synthetic_bp(cs.times)
+        res = compute_transfer(cs, bp, input_signal="bp_sys")
+        assert isinstance(res, TransferResult)
+        n = res.freqs.size
+        assert res.modulus.shape == (n,)
+        assert np.all(np.isfinite(res.modulus))
+
+    def test_bp_dia_runs_and_aligns(self):
+        cs = make_spectral_cs(0.25, duration_s=200.0)
+        bp = _synthetic_bp(cs.times)
+        res = compute_transfer(cs, bp, input_signal="bp_dia")
+        assert isinstance(res, TransferResult)
+        assert res.modulus.shape == (res.freqs.size,)
+
+    def test_sys_and_dia_differ(self):
+        """SBP and DBP are distinct per-beat signals, so their transfer
+        moduli must not be identical."""
+        cs = make_spectral_cs(0.25, duration_s=200.0)
+        bp = _synthetic_bp(cs.times)
+        sys_res = compute_transfer(cs, bp, input_signal="bp_sys")
+        dia_res = compute_transfer(cs, bp, input_signal="bp_dia")
+        assert not np.allclose(sys_res.modulus, dia_res.modulus)
+
+    def test_unknown_input_signal_raises(self):
+        cs = make_spectral_cs(0.25, duration_s=200.0)
+        rsp = _coupled_respiration(cs.times)
+        with pytest.raises(ValueError, match="Unknown input_signal"):
+            compute_transfer(cs, rsp, input_signal="ecg")
+
+    def test_profile_threads_input_signal(self):
+        cs = make_spectral_cs(0.25, duration_s=200.0)
+        bp = _synthetic_bp(cs.times)
+        bands = {"LF": (0.04, 0.15), "HF": (0.15, 0.40)}
+        res = compute_transfer_profile(
+            cs, bp, input_signal="bp_sys",
+            bands=bands, window_s=40.0, step_s=10.0,
+        )
+        assert isinstance(res, TransferProfileResult)
+        assert res.modulus.shape == (len(bands), res.timestamps.size)
+
+
+class TestFillNans:
+    """``_fill_nans`` bridges artefact NaNs so the DFT stays defined."""
+
+    def test_interior_nan_linearly_interpolated(self):
+        v = np.array([1.0, np.nan, 3.0])
+        assert np.allclose(_fill_nans(v), [1.0, 2.0, 3.0])
+
+    def test_edge_nans_extended(self):
+        v = np.array([np.nan, 2.0, 4.0, np.nan])
+        out = _fill_nans(v)
+        assert out[0] == 2.0      # leading extended with nearest finite
+        assert out[-1] == 4.0     # trailing extended with nearest finite
+
+    def test_all_nan_returned_unchanged(self):
+        v = np.array([np.nan, np.nan])
+        out = _fill_nans(v)
+        assert np.all(np.isnan(out))
+
+    def test_no_nan_is_identity(self):
+        v = np.array([1.0, 2.0, 3.0])
+        assert np.array_equal(_fill_nans(v), v)
+
+
+class TestInputBeatSignal:
+    """``_input_beat_signal`` samples the chosen input onto the IBI grid."""
+
+    def test_rsp_shape_is_n_minus_one(self):
+        cs = make_spectral_cs(0.25, duration_s=120.0)
+        rsp = _coupled_respiration(cs.times)
+        out = _input_beat_signal(rsp, cs.times, "rsp")
+        assert out.shape == (cs.times.size - 1,)
+
+    def test_bp_shape_is_n_minus_one(self):
+        cs = make_spectral_cs(0.25, duration_s=120.0)
+        bp = _synthetic_bp(cs.times)
+        out = _input_beat_signal(bp, cs.times, "bp_sys")
+        assert out.shape == (cs.times.size - 1,)
+        assert np.all(np.isfinite(out))
+
+    def test_all_flatline_bp_raises(self):
+        """A constant (zero-variance) BP waveform flat-lines every beat, so
+        no valid SBP beats exist and the helper must raise."""
+        cs = make_spectral_cs(0.25, duration_s=120.0)
+        flat = _RespTimeSeries(
+            times=np.linspace(cs.times[0], cs.times[-1], 2000),
+            values=np.zeros(2000),
+        )
+        with pytest.raises(ValueError, match="No valid"):
+            _input_beat_signal(flat, cs.times, "bp_sys")
+
+    def test_unknown_kind_raises(self):
+        cs = make_spectral_cs(0.25, duration_s=120.0)
+        rsp = _coupled_respiration(cs.times)
+        with pytest.raises(ValueError, match="Unknown input_signal"):
+            _input_beat_signal(rsp, cs.times, "bogus")

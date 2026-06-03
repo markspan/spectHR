@@ -5,7 +5,7 @@
 HRV metric registry.
 
 Functions decorated with ``@hrv_metric`` are stored here and discovered
-automatically by ``PhysioData.hrv_epoch_table()``.
+automatically by ``PhysioData.epoched_parameters_table()``.
 
 The registry is a plain module-level dict; there is no base class
 requirement. New metrics are added simply by decorating a standalone
@@ -24,7 +24,7 @@ def hrv_metric(func: Callable) -> Callable:
     The decorated function must accept a single positional argument — a
     ``CardioSeriesLike`` — and return a value coercible to ``float``.
     Frequency-domain (band-power) metrics are **not** registered here;
-    they are computed dynamically inside ``hrv_epoch_table`` from the
+    they are computed dynamically inside ``epoched_parameters_table`` from the
     configured :class:`~spectHR.analysis.psd._config.PsdMethod`.
 
     Registration happens at import time; importing ``spectHR.analysis``

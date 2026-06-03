@@ -6,13 +6,13 @@ Frequency-domain HRV helpers.
 
 Band-power values (``lf_power``, ``hf_power``, etc.) are **no longer
 registered as individual** ``@hrv_metric`` **functions**.  They are computed
-directly inside :func:`~spectHR.DataSet.PhysioData.PhysioData.hrv_epoch_table`
+directly inside :func:`~spectHR.DataSet.PhysioData.PhysioData.epoched_parameters_table`
 from the configured :class:`~spectHR.analysis.psd._config.PsdMethod` so the
 table always reflects the workspace band configuration (any name, any edges)
 rather than the four CARSPAN-default hardcoded names.
 
 This module still exports ``_band_power`` as an internal helper called by
-``hrv_epoch_table``, and keeps the named functions as plain (non-registered)
+``epoched_parameters_table``, and keeps the named functions as plain (non-registered)
 callables so external scripts that imported them directly continue to work.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 def _band_power(series, band_name: str, psd_method=None) -> float:
     """Integrate one named band using *psd_method* (or the default if None).
 
-    Internal helper shared by :func:`~spectHR.DataSet.PhysioData.hrv_epoch_table`
+    Internal helper shared by :func:`~spectHR.DataSet.PhysioData.epoched_parameters_table`
     and any external callers that want a single-band scalar.
     """
     method = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD

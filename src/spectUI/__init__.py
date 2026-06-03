@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectUI/__init__.py
 from spectUI.common import LineHandler
-from spectUI.preProcessFile import PreProcessFile
+from spectUI.preProcessFile import PreProcessFile, apply_bp_calibration
 from spectUI.widgets import (
+    BPPlotWidget,
     DirectorySelectorDialog,
     EpochPlotWidget,
     EventCodeWindow,
@@ -27,9 +28,11 @@ from spectUI.workSpace import (
     display_bands_from_workspace,
     psd_method_from_workspace,
     resolved_profile_bands,
+    transfer_settings_from_workspace,
 )
 
 __all__ = [
+    "BPPlotWidget",
     "DirectorySelectorDialog",
     "EpochPlotWidget",
     "EventCodeWindow",
@@ -41,6 +44,7 @@ __all__ = [
     "PoincarePlotWidget",
     "PopulateTree",
     "PreProcessFile",
+    "apply_bp_calibration",
     "PrepPlotWidget",
     "PSDPlotWidget",
     "ProfilePlotWidget",
@@ -52,5 +56,6 @@ __all__ = [
     "display_bands_from_workspace",
     "psd_method_from_workspace",
     "resolved_profile_bands",
+    "transfer_settings_from_workspace",
     "WorkspaceConfig",
 ]

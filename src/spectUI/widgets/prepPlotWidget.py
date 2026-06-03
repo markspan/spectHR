@@ -17,8 +17,6 @@ expects is documented as a comment near :meth:`PrepPlotWidget.prepPlot`.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,172 +38,22 @@ from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
 from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 from spectUI.common import (
+    AxisYState,
+    EpochName,
     LineHandler,
     OverviewWindow,
+    TimeSeconds,
+    ViewState,
+    draw_interval_arrows,
     make_nav_button,
     style_axis_clean,
     swap_canvas,
 )
 
-# ======================================================================
-# Type aliases
-# ======================================================================
-
-TimeSeconds = float
-EpochName = str
-
-# ======================================================================
-# View state & helpers
-# ======================================================================
-
-
-@dataclass
-class AxisYState:
-    """
-    Stores y-axis state for a single logical axis.
-
-    Attributes
-    ----------
-    auto:
-        If True, y is autoscaled by Matplotlib or the default draw pass.
-        If False, ymin/ymax are applied on redraw.
-    ymin, ymax:
-        Manual limits when auto is False.
-    """
-
-    auto: bool = True
-    ymin: float | None = None
-    ymax: float | None = None
-
-
-@dataclass
-class ViewState:
-    """
-    Holds the current x-range and drag state for the widget.
-
-    Attributes
-    ----------
-    x_min, x_max:
-        Visible time window in seconds.
-    drag_mode:
-        Overview drag mode: 'left', 'right', 'center', or None.
-    initial_xmin, initial_xmax:
-        Window boundaries captured at drag start.
-    y:
-        Per-signal y axis state. Keys used here: 'ecg', 'br'
-    """
-
-    x_min: TimeSeconds
-    x_max: TimeSeconds
-    drag_mode: str | None = None
-    initial_xmin: TimeSeconds | None = None
-    initial_xmax: TimeSeconds | None = None
-    y: dict[str, AxisYState] = field(
-        default_factory=lambda: {
-            "br": AxisYState(),
-        }
-    )
-
-    def width(self) -> TimeSeconds:
-        """Return width of the visible x window."""
-        return self.x_max - self.x_min
-
-    def center(self) -> TimeSeconds:
-        """Return center time of the visible x window."""
-        return 0.5 * (self.x_min + self.x_max)
-
-
-# ======================================================================
-# Epoch rendering helper (reusable)
-# ======================================================================
-
-
-def draw_interval_arrows(
-    *,
-    ax: Axes,
-    intervals: Iterable[tuple[EpochName, TimeSeconds, TimeSeconds]],
-    base_y: float = 1.04,
-    lane_step: float = 0.03,
-    color: str = "green",
-    mutation_scale: float = 18.0,
-    linewidth: float = 0.5,
-    fontsize: float = 8.0,
-) -> None:
-    """
-    Draw horizontally stacked interval arrows with centered labels.
-
-    Overlapping intervals are assigned to separate "lanes" (rows) so that
-    arrows do not share the same y-position.
-
-    Parameters
-    ----------
-    ax:
-        Target axis (ECG axis).
-    intervals:
-        Iterable of (name, x0, x1) tuples in seconds. Caller is expected to
-        have clipped intervals to view range if desired.
-    base_y:
-        First lane y position, in axis coordinates (fraction).
-    lane_step:
-        Vertical distance between lanes, in axis coordinates.
-    color:
-        Arrow and text color.
-    mutation_scale:
-        Arrow head size in display units (points). This is the Matplotlib
-        control that most closely maps to "pixel-ish" sizing.
-    linewidth:
-        Arrow line width.
-    fontsize:
-        Label font size.
-    """
-    intervals_sorted = sorted(intervals, key=lambda it: it[1])
-    if not intervals_sorted:
-        return
-
-    # lane_ends holds the last end-time assigned per lane (in data units)
-    lane_ends: list[TimeSeconds] = []
-    for name, x0, x1 in intervals_sorted:
-        # Find first lane that does not overlap
-        lane_idx = None
-        for i, end_t in enumerate(lane_ends):
-            if x0 >= end_t:
-                lane_idx = i
-                lane_ends[i] = x1
-                break
-        if lane_idx is None:
-            lane_idx = len(lane_ends)
-            lane_ends.append(x1)
-
-        y = base_y + lane_idx * lane_step
-        arrow = FancyArrowPatch(
-            (x0, y),
-            (x1, y),
-            arrowstyle="<->",
-            mutation_scale=mutation_scale,
-            linewidth=linewidth,
-            color=color,
-            transform=ax.get_xaxis_transform(),  # x in data units, y in axes fraction
-            clip_on=False,
-        )
-        ax.add_patch(arrow)
-        ax.text(
-            0.5 * (x0 + x1),
-            y,
-            name,
-            ha="center",
-            va="center",
-            fontsize=fontsize,
-            color=color,
-            transform=ax.get_xaxis_transform(),
-            clip_on=False,
-            bbox=dict(
-                facecolor=ax.get_facecolor(),
-                edgecolor="none",
-                alpha=0.8,
-                pad=1.5,
-            ),
-        )
-
+# ``AxisYState``, ``ViewState``, ``draw_interval_arrows`` and the
+# ``TimeSeconds`` / ``EpochName`` aliases now live in
+# ``spectUI.common.timeline`` so every timeline widget shares one
+# window-state model. They are imported above and re-used unchanged here.
 
 # ======================================================================
 # R-top controller
@@ -439,15 +287,27 @@ class PrepPlotWidget(QWidget):
     @property
     def breathing_series(self) -> TimeSeries | None:
         """
-        Return the first breathing TimeSeries if present, otherwise None.
+        Return the breathing TimeSeries for the active band, else None.
 
-        Breath series are detected by name.startswith("RSP").
+        Resolution order:
+
+        1. The band_map ``"rsp"`` role for the active band. This is the
+           canonical hook and works for every source - XDF/Polar streams
+           named ``RSP-[device]`` as well as NFF channels keyed ``resp``.
+        2. Legacy fallback: the first timeseries whose name starts with
+           ``"RSP"`` (datasets without a band_map ``"rsp"`` entry).
 
         Returns
         -------
         TimeSeries | None
         """
         assert self.data is not None
+        # 1. Canonical band-aware resolution (XDF "RSP-[...]" and NFF "resp").
+        try:
+            return self.data["rsp"].timeseries
+        except KeyError:
+            pass
+        # 2. Legacy name-prefix scan.
         for name, ts in self.data.timeseries.items():
             if name.startswith("RSP"):
                 return ts

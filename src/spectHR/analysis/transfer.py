@@ -2,17 +2,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/transfer.py
 """
-Transfer function computation (Respiration -> HR coupling).
+Transfer function computation (input -> HR coupling).
 
 Faithful Python port of the CARSPAN ``RunTransfer`` pipeline
 (``T_AnaFunctions.pas`` lines 492-809, 2178-2610).
+
+The input channel is selectable (``input_signal``): the classic respiration
+-> HR transfer, or a blood-pressure -> HR transfer (spectral baroreflex
+sensitivity) driven by per-beat systolic or diastolic pressure.  The output
+channel is always the IBI (HR) series.
 
 Pipeline
 --------
 For a single epoch the steps are:
 
-1.  Interpolate the continuous respiration TimeSeries at R-peak times
-    to obtain a beat-indexed respiration signal.
+1.  Sample the chosen input onto the IBI beat grid: interpolate the
+    continuous respiration TimeSeries at R-peak times, or extract per-beat
+    systolic / diastolic blood-pressure values.
 2.  Mean-subtract both the IBI and respiration signals and apply the
     CARSPAN cosine-bell taper, then weight by the local IBI duration
     (Pascal ``Amp := NData[i] * IData[i]/1000``).
@@ -33,7 +39,7 @@ For a single epoch the steps are:
 
 Public surface
 --------------
-``compute_transfer(series, rsp_timeseries, *, ...) -> TransferResult``
+``compute_transfer(series, input_timeseries, *, input_signal="rsp", ...) -> TransferResult``
 
 Notes
 -----
@@ -59,6 +65,7 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
+from spectHR.analysis.bp_metrics import bp_beat_parameters
 from spectHR.analysis.ibi_helpers import event_times_clean
 from spectHR.analysis.psd._carspan import _dft, _make_window, _native_grid
 from spectHR.analysis.profile import _setup_profile_grid
@@ -69,9 +76,127 @@ __all__ = [
     "BandTransfer",
     "TransferResult",
     "TransferProfileResult",
+    "INPUT_SIGNALS",
+    "INPUT_SIGNAL_LABELS",
+    "input_signal_label",
     "compute_transfer",
     "compute_transfer_profile",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Selectable transfer-function input signal
+# ---------------------------------------------------------------------------
+#
+# The transfer function H = Cross / Auto_in measures coupling from an *input*
+# signal to the IBI (HR) output.  Historically the input was hard-wired to
+# respiration (respiration -> HR).  ``input_signal`` now lets the caller pick
+# what drives the input channel:
+#
+#   "rsp"    - continuous respiration waveform, interpolated at R-peak times.
+#              The classic respiratory-sinus-arrhythmia transfer.
+#   "bp_sys" - per-beat systolic blood pressure (from the BP waveform).
+#   "bp_dia" - per-beat diastolic blood pressure (from the BP waveform).
+#              BP -> IBI transfer is the spectral baroreflex-sensitivity path.
+#
+# For "rsp" the second positional argument is the respiration TimeSeries; for
+# the "bp_*" kinds it is the continuous blood-pressure TimeSeries.
+INPUT_SIGNAL_RSP = "rsp"
+INPUT_SIGNAL_BP_SYS = "bp_sys"
+INPUT_SIGNAL_BP_DIA = "bp_dia"
+INPUT_SIGNALS = (INPUT_SIGNAL_RSP, INPUT_SIGNAL_BP_SYS, INPUT_SIGNAL_BP_DIA)
+
+# Human-readable names for the transfer input signal, used in plot
+# legends / titles so the user can tell at a glance which datatype drove
+# the transfer (respiration -> HR vs baroreflex BP -> HR).
+INPUT_SIGNAL_LABELS = {
+    INPUT_SIGNAL_RSP: "Respiration",
+    INPUT_SIGNAL_BP_SYS: "BP systolic",
+    INPUT_SIGNAL_BP_DIA: "BP diastolic",
+}
+
+
+def input_signal_label(input_signal: str) -> str:
+    """Return a human-readable name for *input_signal* (falls back to itself)."""
+    return INPUT_SIGNAL_LABELS.get(input_signal, str(input_signal))
+
+
+def _fill_nans(values: np.ndarray) -> np.ndarray:
+    """Bridge NaNs so the input signal is DFT-safe.
+
+    Internal NaNs are linearly interpolated over the beat index; leading /
+    trailing NaNs are extended with the nearest finite value (``np.interp``
+    edge behaviour).  The CARSPAN cross-spectral DFT cannot accept NaN, and
+    the beat-by-beat BP parameters carry NaN at flat-line / artefact beats, so
+    bridging keeps the transfer estimate defined across the whole window.
+
+    An all-NaN array is returned unchanged; callers detect and reject it.
+    """
+    v = np.asarray(values, dtype=float).copy()
+    finite = np.isfinite(v)
+    if not np.any(finite) or np.all(finite):
+        return v
+    idx = np.arange(v.size)
+    v[~finite] = np.interp(idx[~finite], idx[finite], v[finite])
+    return v
+
+
+def _input_beat_signal(
+    input_timeseries,
+    rp_times: np.ndarray,
+    input_signal: str,
+) -> np.ndarray:
+    """Sample the chosen input signal onto the IBI beat grid.
+
+    Returns an ``(N-1,)`` array (``N = rp_times.size``) aligned with the
+    cumulative-IBI DFT grid used for the output (IBI) channel: element ``i``
+    corresponds to the cardiac interval ``[R_i, R_{i+1}]`` and is placed at the
+    grid time of ``R_{i+1}`` - the same convention the respiration path has
+    always used (interpolation at ``rp_times[1:]``).
+
+    Parameters
+    ----------
+    input_timeseries : TimeSeries-like
+        ``.times`` / ``.values`` for either the respiration waveform
+        (``input_signal="rsp"``) or the blood-pressure waveform
+        (``input_signal="bp_sys"`` / ``"bp_dia"``).
+    rp_times : np.ndarray
+        Clean R-peak times (seconds).
+    input_signal : str
+        One of :data:`INPUT_SIGNALS`.
+
+    Raises
+    ------
+    ValueError
+        For an unknown ``input_signal`` or when a BP input yields no valid
+        beats at all (every beat flat-line / artefact).
+    """
+    if input_signal == INPUT_SIGNAL_RSP:
+        return np.interp(
+            rp_times[1:],
+            input_timeseries.times,
+            input_timeseries.values,
+        )
+
+    if input_signal in (INPUT_SIGNAL_BP_SYS, INPUT_SIGNAL_BP_DIA):
+        beats = bp_beat_parameters(
+            np.asarray(input_timeseries.times, dtype=float),
+            np.asarray(input_timeseries.values, dtype=float),
+            rp_times,
+        )
+        key = "sbp" if input_signal == INPUT_SIGNAL_BP_SYS else "dbp"
+        vals = beats[key]          # (N-1,) - one value per cardiac interval
+        if not np.any(np.isfinite(vals)):
+            raise ValueError(
+                f"No valid {key.upper()} beats for the transfer input "
+                "(every beat is flat-line / artefact)."
+            )
+        return _fill_nans(vals)
+
+    raise ValueError(
+        f"Unknown input_signal {input_signal!r}; "
+        f"expected one of {INPUT_SIGNALS}."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +257,9 @@ class TransferResult:
         Frequency grid in Hz (native df = 1/T grid, DC excluded).
     modulus : (N,) ndarray
         ``|H(f)|`` - amplitude gain of the transfer function at each
-        frequency.  Units are ``output_unit / input_unit`` (e.g. ms/V
-        when HR is in ms and respiration in Volts).
+        frequency.  Units are ``output_unit / input_unit``: e.g. ms/V for
+        respiration->HR (HR in ms, respiration in Volts), or ms/mmHg for
+        BP->HR (the baroreflex-sensitivity gain).
     phase_wrapped : (N,) ndarray
         ``arctan2(Im H, Re H)`` in radians, range ``(-pi, +pi]``.
         Faithful to ``T_AnaFunctions.pas:Phase()``.
@@ -483,8 +609,9 @@ def _band_phase_mean(
 
 def compute_transfer(
     series,
-    rsp_timeseries,
+    input_timeseries,
     *,
+    input_signal: str = INPUT_SIGNAL_RSP,
     bands: Optional[Dict[str, Tuple[float, float]]] = None,
     min_coherence: float = 0.5,
     smooth: bool = False,
@@ -492,10 +619,15 @@ def compute_transfer(
     taper: str = "carspan_index",
     alpha_taper: float = 0.10,
 ) -> TransferResult:
-    """Compute the Respiration->HR transfer function using the CARSPAN pipeline.
+    """Compute an input->HR transfer function using the CARSPAN pipeline.
 
     Faithful port of ``T_AnaFunctions.pas:RunDFT`` + ``RunPDS`` +
     ``RunCrossSpectrum`` + ``RunTransfer`` for a single epoch.
+
+    The input channel is selectable via *input_signal*: the classic
+    respiration->HR transfer (default), or a blood-pressure->HR transfer
+    (spectral baroreflex sensitivity) driven by per-beat systolic or diastolic
+    pressure.  The output channel is always the IBI (HR) series.
 
     Parameters
     ----------
@@ -503,10 +635,18 @@ def compute_transfer(
         Heart-rate series exposing ``.times``, ``.ibi``, ``.labels``.
         Artefact-labelled beats are excluded via
         :func:`~spectHR.analysis.ibi_helpers.event_times_clean`.
-    rsp_timeseries : TimeSeries
-        Continuous respiration recording with ``.times`` (seconds) and
-        ``.values`` (arbitrary units, e.g. Volts).  Linearly interpolated
-        at R-peak times.  The time range should cover the cardiac epoch.
+    input_timeseries : TimeSeries
+        Continuous recording with ``.times`` (seconds) and ``.values`` that
+        drives the input channel.  For ``input_signal="rsp"`` this is the
+        respiration waveform (linearly interpolated at R-peak times); for
+        ``input_signal="bp_sys"`` / ``"bp_dia"`` it is the blood-pressure
+        waveform, from which per-beat systolic / diastolic values are
+        extracted (CARSPAN ``CalcDataColBPSYS`` / ``BPDIA``).  The time range
+        should cover the cardiac epoch.
+    input_signal : {"rsp", "bp_sys", "bp_dia"}
+        Which signal drives the transfer-function input (see
+        :data:`INPUT_SIGNALS`).  Default ``"rsp"`` reproduces the legacy
+        respiration->HR behaviour exactly.
     bands : dict {name: (low_hz, high_hz)}, optional
         Frequency bands for which band-summary statistics are computed.
         Standard CARSPAN bands::
@@ -544,6 +684,12 @@ def compute_transfer(
         If fewer than 4 clean R-peaks are available, the recording is too
         short for the requested ``f_max``, or the frequency grid is empty.
     """
+    if input_signal not in INPUT_SIGNALS:
+        raise ValueError(
+            f"Unknown input_signal {input_signal!r}; "
+            f"expected one of {INPUT_SIGNALS}."
+        )
+
     # ------------------------------------------------------------------ #
     # 1. Extract clean R-peak times                                        #
     # ------------------------------------------------------------------ #
@@ -560,20 +706,17 @@ def compute_transfer(
     T = float(rp_times[-1] - rp_times[0])
 
     # ------------------------------------------------------------------ #
-    # 2. Respiration sampled at R-peak times 1..N-1                       #
-    # Aligned with the IBI DFT grid (cumulative times end at R-peaks 1-N-1)
+    # 2. Input signal sampled onto the IBI beat grid (beats 1..N-1)       #
+    # Aligned with the IBI DFT grid (cumulative times end at R-peaks 1-N-1).
+    # "rsp": interpolated waveform; "bp_sys"/"bp_dia": per-beat BP values.  #
     # ------------------------------------------------------------------ #
-    rsp_vals = np.interp(
-        rp_times[1:],
-        rsp_timeseries.times,
-        rsp_timeseries.values,
-    )
+    in_vals = _input_beat_signal(input_timeseries, rp_times, input_signal)
 
     # ------------------------------------------------------------------ #
     # 3. Mean-subtract both signals (Pascal: NData := DataIn - Mean)      #
     # ------------------------------------------------------------------ #
-    nd_ibi = ibi_ms  - float(np.mean(ibi_ms))
-    nd_rsp = rsp_vals - float(np.mean(rsp_vals))
+    nd_ibi = ibi_ms - float(np.mean(ibi_ms))
+    nd_in  = in_vals - float(np.mean(in_vals))
 
     # ------------------------------------------------------------------ #
     # 4. Taper and IBI-amplitude weights                                  #
@@ -588,7 +731,7 @@ def compute_transfer(
         amplitude_correction=False,
     )
     amp_ibi = nd_ibi * w * ibi_s    # (ms x s) -- HR output amplitude
-    amp_rsp = nd_rsp * w * ibi_s    # (resp_unit x s) -- Resp input amplitude
+    amp_in  = nd_in  * w * ibi_s    # (input_unit x s) -- input amplitude
 
     # Cumulative IBI times -- the DFT evaluation grid
     # (Pascal: T accumulates IData from 0 inside SOC main loop)
@@ -607,7 +750,7 @@ def compute_transfer(
     # ------------------------------------------------------------------ #
     # 6. Complex DFTs for both channels                                   #
     # ------------------------------------------------------------------ #
-    dft_rsp = _compute_dft(freqs, cum_times, amp_rsp)  # respiration (input)
+    dft_in  = _compute_dft(freqs, cum_times, amp_in)   # chosen input signal
     dft_ibi = _compute_dft(freqs, cum_times, amp_ibi)  # HR / IBI (output)
 
     # ------------------------------------------------------------------ #
@@ -615,9 +758,9 @@ def compute_transfer(
     # Pascal: RunPDS (WindowSize=0 spectra / 3 profiles)                  #
     #         RunCrossSpectrum (same WindowSize)                           #
     # ------------------------------------------------------------------ #
-    auto_rsp = _auto_spectrum(dft_rsp, T)
+    auto_in  = _auto_spectrum(dft_in, T)
     auto_ibi = _auto_spectrum(dft_ibi, T)
-    cross    = _cross_spectrum(dft_rsp, dft_ibi, T)
+    cross    = _cross_spectrum(dft_in, dft_ibi, T)
 
     if smooth:
         # Profile path: 3-point triangular smoother applied INSIDE Pascal's
@@ -625,7 +768,7 @@ def compute_transfer(
         # 443-487 / 519-570). The single _smooth3 helper handles the real
         # and complex branches together (Pascal calls AutoSpectrum and
         # CrossSpectrum, which are separate functions sharing a kernel).
-        auto_rsp = _smooth3(auto_rsp)
+        auto_in  = _smooth3(auto_in)
         auto_ibi = _smooth3(auto_ibi)
         cross    = _smooth3(cross)
 
@@ -633,11 +776,11 @@ def compute_transfer(
     # 8. Transfer function, modulus, phase, coherence                     #
     # Pascal: RunTransfer                                                  #
     # ------------------------------------------------------------------ #
-    H           = _transfer_function(cross, auto_rsp)
+    H           = _transfer_function(cross, auto_in)
     mod         = _modulus(H)
     phase_w     = _phase_wrapped(H)
     phase_u     = _unwrap_phase(phase_w, thresh=np.pi, step=2.0 * np.pi)
-    coh         = _coherence(cross, auto_rsp, auto_ibi)
+    coh         = _coherence(cross, auto_in, auto_ibi)
 
     # ------------------------------------------------------------------ #
     # 9. Per-band summaries                                               #
@@ -647,7 +790,7 @@ def compute_transfer(
         n_freqs = freqs.size
         for name, (low_hz, high_hz) in bands.items():
             lo, hi = _band_slice(low_hz, high_hz, delta_f, n_freqs)
-            wt_coh, n_pts  = _band_weighted_coherence(coh, auto_rsp, lo, hi)
+            wt_coh, n_pts  = _band_weighted_coherence(coh, auto_in, lo, hi)
             bmod,   n_coh  = _band_modulus_mean(mod,     coh, lo, hi, min_coherence)
             # CARSPAN Phase2 path: Caluculate_PhaseSum on wrapped phase
             bphs,   _      = _band_phase_mean(phase_w,   coh, lo, hi, min_coherence)
@@ -676,8 +819,9 @@ def compute_transfer(
 
 def compute_transfer_profile(
     series,
-    rsp_timeseries,
+    input_timeseries,
     *,
+    input_signal: str = INPUT_SIGNAL_RSP,
     bands: Dict[str, Tuple[float, float]],
     window_s: float,
     step_s: float,
@@ -705,10 +849,16 @@ def compute_transfer_profile(
     series : CardioSeriesLike
         Heart-rate series exposing ``.times``, ``.ibi``, ``.labels``,
         ``.view(t_start, t_end)``.
-    rsp_timeseries : TimeSeries
-        Continuous respiration recording (``.times``, ``.values``).
-        Passed unchanged to :func:`compute_transfer`; interpolated at
-        R-peak times inside each window.
+    input_timeseries : TimeSeries
+        Continuous recording (``.times``, ``.values``) that drives the
+        transfer-function input.  Passed unchanged to
+        :func:`compute_transfer` inside each window: for
+        ``input_signal="rsp"`` it is the respiration waveform (interpolated
+        at R-peak times); for ``input_signal="bp_sys"`` / ``"bp_dia"`` it is
+        the blood-pressure waveform (per-beat systolic / diastolic values).
+    input_signal : {"rsp", "bp_sys", "bp_dia"}
+        Which signal drives the transfer-function input (see
+        :data:`INPUT_SIGNALS`).  Default ``"rsp"``.
     bands : dict {name: (low_hz, high_hz)}
         Frequency bands for which band-summary profiles are built.
         Must not be empty.
@@ -774,7 +924,8 @@ def compute_transfer_profile(
         try:
             result = compute_transfer(
                 win_view,
-                rsp_timeseries,
+                input_timeseries,
+                input_signal=input_signal,
                 bands=bands,
                 min_coherence=min_coherence,
                 smooth=smooth,      # CARSPAN profile default WindowSize=3; toggleable from UI

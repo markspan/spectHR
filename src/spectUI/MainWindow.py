@@ -17,6 +17,7 @@ import pickle
 import sys
 import webbrowser
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import qtawesome as qta
@@ -122,6 +123,7 @@ def _migrate_from_registry_if_needed() -> None:
 _DOCK_TREE          = "dock.workspace"
 _DOCK_PREPROCESSING = "dock.preprocessing"
 _DOCK_IBI           = "dock.ibi"
+_DOCK_BP            = "dock.bp"
 _DOCK_POINCARE      = "dock.poincare"
 _DOCK_EPOCHS        = "dock.epochs"
 _DOCK_PSD               = "dock.psd"
@@ -193,6 +195,15 @@ class MainWindow(QMainWindow):
         # something new to persist.
         self._dirty: bool = False
 
+        # Cache of the last-computed signature per expensive dock
+        # (Transfer, Transfer profile). The transfer-function profile is
+        # costly to compute, so we rebuild its widget only when the inputs
+        # actually change - see ``_transfer_cache_signature`` and the
+        # signature guard in ``show_transfer_plot`` /
+        # ``show_transfer_profile_plot``. Cleared whenever the dataset is
+        # mutated (peaks / epochs edited -> ``_dirty``).
+        self._plot_sig: dict[str, Any] = {}
+
         # Refresh registry, dock objectName -> refresh fn.
         self._refresh_fns: dict[str, callable] = {}
 
@@ -253,6 +264,7 @@ class MainWindow(QMainWindow):
         # ---- analysis plot widgets ----------------------------------
         self.prep_plot_widget       = spQt.PrepPlotWidget()
         self.hr_plot_widget         = spQt.HRPlotWidget()
+        self.bp_plot_widget         = spQt.BPPlotWidget()
         self.poincare_plot_widget   = spQt.PoincarePlotWidget()
         self.epoch_plot_widget      = spQt.EpochPlotWidget()
         self.parameters_plot_widget = spQt.ParametersPlotWidget()
@@ -293,7 +305,8 @@ class MainWindow(QMainWindow):
             )
             return dock
 
-        ibi_dock         = _tab(_DOCK_IBI,         "IBI Series",  self.hr_plot_widget)
+        ibi_dock         = _tab(_DOCK_IBI,         "HR Series",   self.hr_plot_widget)
+        bp_dock          = _tab(_DOCK_BP,          "Blood Pressure", self.bp_plot_widget)
         poincare_dock    = _tab(_DOCK_POINCARE,    "Poincare",    self.poincare_plot_widget)
         epochs_dock      = _tab(_DOCK_EPOCHS,      "Epochs",      self.epoch_plot_widget)
         psd_dock         = _tab(_DOCK_PSD,         "PSD",         self.psd_scroll)
@@ -313,6 +326,7 @@ class MainWindow(QMainWindow):
             _DOCK_TREE:             tree_dock,
             _DOCK_PREPROCESSING:    prep_dock,
             _DOCK_IBI:              ibi_dock,
+            _DOCK_BP:               bp_dock,
             _DOCK_POINCARE:         poincare_dock,
             _DOCK_EPOCHS:           epochs_dock,
             _DOCK_PSD:              psd_dock,
@@ -333,6 +347,7 @@ class MainWindow(QMainWindow):
         self._refresh_fns = {
             _DOCK_PREPROCESSING:    self._refresh_preprocessing,
             _DOCK_IBI:              self._refresh_ibi,
+            _DOCK_BP:               self._refresh_bp,
             _DOCK_POINCARE:         self._refresh_poincare,
             _DOCK_EPOCHS:           self._refresh_epochs,
             _DOCK_PSD:              self._refresh_psd,
@@ -512,6 +527,7 @@ class MainWindow(QMainWindow):
             _DOCK_TREE,
             _DOCK_PREPROCESSING,
             _DOCK_IBI,
+            _DOCK_BP,
             _DOCK_POINCARE,
             _DOCK_EPOCHS,
             _DOCK_PSD,
@@ -686,16 +702,25 @@ class MainWindow(QMainWindow):
         refresh_fn = self._refresh_fns.get(name)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            # Persist only when something actually changed.
+            # Persist only when something actually changed. A dirty save
+            # means peaks / epochs were mutated, so any cached transfer
+            # plots are now stale: drop their signatures to force a
+            # recompute the next time those docks are shown.
             if self._dirty and self.savename is not None:
                 self.dataset.save(self.savename)
                 self._dirty = False
+                self._plot_sig.clear()
             if refresh_fn is not None:
                 refresh_fn()
             # Floating content docks piggy-back on every visibility
             # change so they catch mutations done elsewhere.
             for other_name, dock in self.docks.items():
                 if other_name == name:
+                    continue
+                # The transfer plots are expensive; never piggy-back them.
+                # They recompute only when their own dock is brought
+                # forward (and only if the cache signature changed).
+                if other_name in (_DOCK_TRANSFER, _DOCK_TRANSFER_PROFILE):
                     continue
                 other_fn = self._refresh_fns.get(other_name)
                 if other_fn is None:
@@ -711,6 +736,9 @@ class MainWindow(QMainWindow):
 
     def _refresh_ibi(self) -> None:
         self.show_hr_plot(self.dataset)
+
+    def _refresh_bp(self) -> None:
+        self.show_bp_plot(self.dataset)
 
     def _refresh_poincare(self) -> None:
         self.show_poincare_plot(self.dataset)
@@ -800,8 +828,13 @@ class MainWindow(QMainWindow):
                 self.show_spectrogram_plot(self.dataset)
                 if not self.docks[_DOCK_SPECTROGRAM_3D].isClosed():
                     self.show_spectrogram3d_plot(self.dataset)
-                self.show_transfer_plot(self.dataset)
-                self.show_transfer_profile_plot(self.dataset)
+                # The transfer plots are expensive; only recompute them
+                # if their dock is open. A closed dock recomputes lazily
+                # (with the new settings) the next time it is shown.
+                if not self.docks[_DOCK_TRANSFER].isClosed():
+                    self.show_transfer_plot(self.dataset)
+                if not self.docks[_DOCK_TRANSFER_PROFILE].isClosed():
+                    self.show_transfer_profile_plot(self.dataset)
                 self.show_profile_plot(self.dataset)
 
     # ------------------------------------------------------------------
@@ -1015,6 +1048,10 @@ class MainWindow(QMainWindow):
                         dataset.save(self.savename)
             else:
                 dataset = PhysioData(Path(dirs["DataDirectory"]) / Path(filename))
+                # Apply the manual BP calibration on the cold load too, so a
+                # reloaded single-band file gets BP in mmHg, not raw counts
+                # (PreProcessFile does the same for the band-node path).
+                spQt.apply_bp_calibration(dataset, self.workspace)
                 if dataset.has_ecg:
                     dataset.preprocess_ecg(
                         respiration_per_epoch=self._respiration_per_epoch(),
@@ -1116,10 +1153,29 @@ class MainWindow(QMainWindow):
         else:
             self._disarm_transfer_rsp_guard()
 
+        # Blood-pressure dock follows the presence of a "bp" timeseries.
+        # When absent we close the dock and disable its View-menu toggle
+        # (no placeholder is rendered - the widget simply draws nothing).
+        timeseries = getattr(self.dataset, "timeseries", None) or {}
+        has_bp = "bp" in timeseries
+        bp_dock = self.docks[_DOCK_BP]
+        bp_dock.toggleView(has_bp and not bp_dock.isClosed())
+        bp_action = bp_dock.toggleViewAction()
+        bp_action.setEnabled(has_bp)
+        bp_action.setToolTip(
+            "" if has_bp
+            else "Disabled: this recording has no blood-pressure channel"
+        )
+
         skip_when_missing = {
             _DOCK_PREPROCESSING:    not has_ecg,
-            _DOCK_TRANSFER:         not has_rsp,
-            _DOCK_TRANSFER_PROFILE: not has_rsp,
+            _DOCK_BP:               not has_bp,
+            # The transfer plots are expensive (per-epoch coherence /
+            # transfer-function estimation). Skip them when the channel is
+            # missing *or* the dock is closed, and let visibilityChanged
+            # compute lazily the first time the user brings them forward.
+            _DOCK_TRANSFER:         not has_rsp or self.docks[_DOCK_TRANSFER].isClosed(),
+            _DOCK_TRANSFER_PROFILE: not has_rsp or self.docks[_DOCK_TRANSFER_PROFILE].isClosed(),
             # 3-D spectrogram is the most expensive widget; skip it when
             # the dock is closed and let visibilityChanged handle it lazily.
             _DOCK_SPECTROGRAM_3D:   self.docks[_DOCK_SPECTROGRAM_3D].isClosed(),
@@ -1203,6 +1259,10 @@ class MainWindow(QMainWindow):
         if data is not None:
             self.hr_plot_widget.hrPlot(data)
 
+    def show_bp_plot(self, data):
+        if data is not None:
+            self.bp_plot_widget.bpPlot(data)
+
     def show_epoch_plot(self, data):
         if data is not None:
             self.epoch_plot_widget.plotEpochs(data)
@@ -1278,23 +1338,66 @@ class MainWindow(QMainWindow):
             lambda v, l, w: spQt.Spectrogram3DPlotWidget(v, l, workspace=w),
         )
 
+    def _transfer_cache_signature(self, dataset) -> tuple:
+        """Signature of everything the transfer plots depend on.
+
+        Two transfer plots are rebuilt only when this signature changes
+        (see ``show_transfer_plot`` / ``show_transfer_profile_plot``).
+        It captures the active epochs (label + bounds) and every
+        transfer-relevant workspace setting (window / step / coherence /
+        f_max / smooth / input_signal) plus the band edges, so a change
+        to any of them invalidates the cache. R-peak / epoch *edits* don't
+        change this signature directly, so they are handled separately by
+        clearing ``_plot_sig`` whenever the dataset is saved dirty.
+        """
+        cfg = spQt.transfer_settings_from_workspace(self.workspace)
+        bands = spQt.display_bands_from_workspace(self.workspace)
+        epochs = tuple(
+            (label, float(ep.start), float(ep.end))
+            for label, ep in getattr(dataset, "epochs", {}).items()
+            if getattr(ep, "active", False)
+        )
+        # sorted(...items()) is keyed on the (unique) dict keys, so values
+        # of mixed/unorderable types are never compared.
+        return (
+            epochs,
+            repr(sorted(cfg.items())),
+            repr(sorted(bands.items())),
+        )
+
     def show_transfer_plot(self, dataset) -> None:
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_layout)
+            self._plot_sig.pop(_DOCK_TRANSFER, None)
             return
+        sig = self._transfer_cache_signature(dataset)
+        if (
+            self._plot_sig.get(_DOCK_TRANSFER) == sig
+            and self.transfer_layout.count() > 0
+        ):
+            return  # already computed for this exact data + settings
         self._swap_in_epoch_plot(
             self.transfer_layout, dataset,
             lambda v, l, w: spQt.TransferPlotWidget(v, l, workspace=w),
         )
+        self._plot_sig[_DOCK_TRANSFER] = sig
 
     def show_transfer_profile_plot(self, dataset) -> None:
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_profile_layout)
+            self._plot_sig.pop(_DOCK_TRANSFER_PROFILE, None)
             return
+        sig = self._transfer_cache_signature(dataset)
+        if (
+            self._plot_sig.get(_DOCK_TRANSFER_PROFILE) == sig
+            and self.transfer_profile_layout.count() > 0
+        ):
+            return  # already computed for this exact data + settings
         self._swap_in_epoch_plot(
             self.transfer_profile_layout, dataset,
             lambda v, l, w: spQt.TransferProfilePlotWidget(v, l, workspace=w),
         )
+        self._plot_sig[_DOCK_TRANSFER_PROFILE] = sig
 
     def show_profile_plot(self, dataset) -> None:
         self._swap_in_epoch_plot(

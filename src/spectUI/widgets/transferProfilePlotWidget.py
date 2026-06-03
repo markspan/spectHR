@@ -31,6 +31,7 @@ from spectHR.Tools.Logger import logger
 from spectHR.analysis.transfer import (
     TransferProfileResult,
     compute_transfer_profile,
+    input_signal_label,
 )
 from spectUI.common import (
     PlotExportMixin,
@@ -40,6 +41,7 @@ from spectUI.common import (
 )
 from spectUI.workSpace import (
     display_bands_from_workspace,
+    resolve_transfer_input,
     transfer_settings_from_workspace,
 )
 
@@ -64,6 +66,7 @@ class _TransferProfilePlotData:
     window_s: float
     step_s: float
     method: str
+    input_signal: str = "rsp"
     error: str | None = None
 
 
@@ -92,6 +95,7 @@ def _fetch_transfer_profile(
     min_coherence: float,
     f_max: float,
     smooth: bool = True,
+    input_signal: str = "rsp",
 ) -> _TransferProfilePlotData:
     """Compute one epoch's transfer profile, never raises."""
     empty = _TransferProfilePlotData(
@@ -106,6 +110,7 @@ def _fetch_transfer_profile(
         window_s=window_s,
         step_s=step_s,
         method="",
+        input_signal=input_signal,
     )
 
     pd = getattr(series, "_pd", None)
@@ -113,16 +118,15 @@ def _fetch_transfer_profile(
         return _TransferProfilePlotData(
             **{**empty.__dict__, "error": "No PhysioData"}
         )
-    # The continuous respiration TimeSeries lives at ``pd["rsp"].timeseries``
-    # (StreamAccessor.timeseries). pd.rsp_map holds RespirationSeries phase
-    # intervals (INH/EXH), which is a different object and has no
-    # .times / .values - those would crash ``compute_transfer_profile``.
-    try:
-        rsp_for_transfer = pd["rsp"].timeseries
-    except KeyError:
-        return _TransferProfilePlotData(
-            **{**empty.__dict__, "error": "No respiration channel"}
-        )
+    # The input channel depends on ``input_signal``: the continuous
+    # respiration TimeSeries (``pd["rsp"].timeseries``) for "rsp", or the
+    # blood-pressure waveform (``pd["bp"].timeseries``) for "bp_sys"/"bp_dia".
+    # pd.rsp_map holds RespirationSeries phase intervals (INH/EXH), which is a
+    # different object and has no .times / .values - those would crash
+    # ``compute_transfer_profile``.
+    input_for_transfer, in_err = resolve_transfer_input(pd, input_signal)
+    if input_for_transfer is None:
+        return _TransferProfilePlotData(**{**empty.__dict__, "error": in_err})
 
     bands = _band_edges(workspace)
     if not bands:
@@ -133,7 +137,8 @@ def _fetch_transfer_profile(
     try:
         result: TransferProfileResult = compute_transfer_profile(
             series,
-            rsp_for_transfer,
+            input_for_transfer,
+            input_signal=input_signal,
             bands=bands,
             window_s=window_s,
             step_s=step_s,
@@ -174,6 +179,7 @@ def _fetch_transfer_profile(
         window_s=float(result.window_s),
         step_s=float(result.step_s),
         method=result.method,
+        input_signal=input_signal,
     )
 
 
@@ -301,6 +307,7 @@ class TransferProfilePlotWidget(PlotExportMixin, QWidget):
                 min_coherence=float(cfg["min_coherence"]),
                 f_max=float(cfg["f_max"]),
                 smooth=bool(cfg["smooth"]),
+                input_signal=str(cfg["input_signal"]),
             )
             for series, label in zip(series_list, labels)
         ]
@@ -437,6 +444,12 @@ class TransferProfilePlotWidget(PlotExportMixin, QWidget):
         ax_mod.set_ylim(bottom=0.0)
         ax_mod.spines["top"].set_visible(False)
         ax_mod.spines["right"].set_visible(False)
+        # Name the input datatype that drove the transfer (respiration vs
+        # blood pressure) as a legend-only entry alongside the per-band lines.
+        ax_mod.plot(
+            [], [], " ",
+            label=f"input: {input_signal_label(data.input_signal)}",
+        )
         ax_mod.legend(loc="upper right", fontsize=7, framealpha=0.75)
 
         # ---- phase ---------------------------------------------------

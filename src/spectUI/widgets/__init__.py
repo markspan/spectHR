@@ -43,6 +43,7 @@ from spectUI.widgets.WorkSpaceEditor import (
     DirectorySelectorDialog,
     ParametersEditorDialog,
 )
+from spectUI.widgets.bpPlotWidget import BPPlotWidget
 from spectUI.widgets.epochPlotWidget import EpochPlotWidget
 from spectUI.widgets.hrPlotWidget import HRPlotWidget
 from spectUI.widgets.parametersPlotWidget import ParametersPlotWidget
@@ -54,6 +55,7 @@ from spectUI.widgets.transferPlotWidget import TransferPlotWidget
 from spectUI.widgets.transferProfilePlotWidget import TransferProfilePlotWidget
 
 __all__ = [
+    "BPPlotWidget",
     "DirectorySelectorDialog",
     "EpochPlotWidget",
     "EventCodeWindow",

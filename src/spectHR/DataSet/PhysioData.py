@@ -228,7 +228,7 @@ class PhysioData:
             return None
         return self.hrv_map.get(self.active_band)
 
-    def hrv_epoch_table(
+    def epoched_parameters_table(
         self,
         psd_method=None,
     ) -> "tuple[np.ndarray, list[str], np.ndarray]":
@@ -261,12 +261,28 @@ class PhysioData:
         """
         from spectHR.analysis.psd._engine import PSDEngine
         from spectHR.analysis.psd._band_power import band_power_rectangular
+        from spectHR.analysis.bp_metrics import (
+            bp_epoch_metrics,
+            resp_epoch_metrics,
+        )
 
         hrv = self.hrv
         if hrv is None:
             return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
 
         metrics = get_metrics()   # time-domain only — no inspect needed
+
+        # Optional waveform channels for the beat-by-beat CARSPAN parameters.
+        # Both are R-peak-gated, so they share the per-epoch CardioSeries view's
+        # ``.times`` below.  Absent channels simply contribute no columns.
+        try:
+            bp_ts = self["bp"].timeseries
+        except (KeyError, AttributeError, TypeError):
+            bp_ts = None
+        try:
+            rsp_ts = self["rsp"].timeseries
+        except (KeyError, AttributeError, TypeError):
+            rsp_ts = None
 
         labels_list: list = []
         rows: list[dict[str, float]] = []
@@ -283,6 +299,20 @@ class PhysioData:
                         row[name] = float(fn(view))
                     except Exception:
                         row[name] = float("nan")
+
+                # ---- beat-by-beat BP / RESP parameters (CARSPAN) --------
+                # Computed on the same R-peaks (``view.times``) that drive the
+                # HRV metrics, so the values line up beat-for-beat.
+                if bp_ts is not None:
+                    try:
+                        row.update(bp_epoch_metrics(bp_ts, view.times))
+                    except Exception:
+                        pass
+                if rsp_ts is not None:
+                    try:
+                        row.update(resp_epoch_metrics(rsp_ts, view.times))
+                    except Exception:
+                        pass
 
                 # ---- frequency-domain: one PSD, all configured bands ----
                 # Computing from psd_method.bands means the table reflects

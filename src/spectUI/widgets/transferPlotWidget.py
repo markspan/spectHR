@@ -35,6 +35,7 @@ from spectHR.analysis.transfer import (
     BandTransfer,
     TransferResult,
     compute_transfer,
+    input_signal_label,
 )
 from spectUI.common import (
     PlotExportMixin,
@@ -45,6 +46,7 @@ from spectUI.common import (
 )
 from spectUI.workSpace import (
     display_bands_from_workspace,
+    resolve_transfer_input,
     transfer_settings_from_workspace,
 )
 
@@ -140,6 +142,7 @@ class _TransferPlotData:
     freq_resolution: float
     method: str
     band_results: "dict[str, BandTransfer] | None"
+    input_signal: str = "rsp"
     error: str | None = None
 
 
@@ -167,6 +170,7 @@ def _fetch_transfer(
     min_coherence: float,
     f_max: float,
     smooth: bool = True,
+    input_signal: str = "rsp",
 ) -> _TransferPlotData:
     """Compute a single-epoch TransferResult, never raises."""
     empty = _TransferPlotData(
@@ -179,24 +183,25 @@ def _fetch_transfer(
         freq_resolution=0.0,
         method="",
         band_results=None,
+        input_signal=input_signal,
     )
 
     pd = getattr(series, "_pd", None)
     if pd is None:
         return _TransferPlotData(**{**empty.__dict__, "error": "No PhysioData"})
-    # Continuous respiration TimeSeries lives at ``pd["rsp"].timeseries`` -
-    # ``pd.rsp_map`` holds phase intervals (INH/EXH) and has no .times.
-    try:
-        rsp_for_transfer = pd["rsp"].timeseries
-    except KeyError:
-        return _TransferPlotData(
-            **{**empty.__dict__, "error": "No respiration channel"}
-        )
+    # Input channel depends on ``input_signal``: the continuous respiration
+    # TimeSeries (``pd["rsp"].timeseries``) for "rsp", or the blood-pressure
+    # waveform (``pd["bp"].timeseries``) for "bp_sys"/"bp_dia". ``pd.rsp_map``
+    # holds phase intervals (INH/EXH) and has no .times, so it must not be used.
+    input_for_transfer, in_err = resolve_transfer_input(pd, input_signal)
+    if input_for_transfer is None:
+        return _TransferPlotData(**{**empty.__dict__, "error": in_err})
 
     try:
         result: TransferResult = compute_transfer(
             series,
-            rsp_for_transfer,
+            input_for_transfer,
+            input_signal=input_signal,
             bands=_band_edges_for_transfer(workspace) or None,
             min_coherence=min_coherence,
             smooth=smooth,   # CARSPAN profile smoother default; toggleable via Settings.
@@ -230,6 +235,7 @@ def _fetch_transfer(
         freq_resolution=float(result.freq_resolution),
         method=result.method,
         band_results=result.band_results,
+        input_signal=input_signal,
     )
 
 
@@ -351,6 +357,7 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
                 min_coherence=float(cfg["min_coherence"]),
                 f_max=float(cfg["f_max"]),
                 smooth=bool(cfg["smooth"]),
+                input_signal=str(cfg["input_signal"]),
             )
             for series, label in zip(series_list, labels)
         ]
@@ -457,6 +464,13 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
             )
         ax_mod.set_ylabel("|H(f)|")
         ax_mod.set_ylim(bottom=0.0)
+        # Name the input datatype that drove the transfer (respiration vs
+        # blood pressure) as a legend-only entry, so the band-modulus
+        # legend also states what H(f) maps *from*.
+        ax_mod.plot(
+            [], [], " ",
+            label=f"input: {input_signal_label(data.input_signal)}",
+        )
         ax_mod.legend(loc="upper right", fontsize=7, framealpha=0.75)
         ax_mod.spines["top"].set_visible(False)
         ax_mod.spines["right"].set_visible(False)

@@ -7,7 +7,7 @@ spectHR.analysis - standalone HRV analysis functions.
 Importing this package populates the metric registry with all built-in
 time- and frequency-domain metrics. Any function decorated with
 ``@hrv_metric`` is then automatically discovered by
-``PhysioData.hrv_epoch_table()``.
+``PhysioData.epoched_parameters_table()``.
 
 Direct usage
 ------------

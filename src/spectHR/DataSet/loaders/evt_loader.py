@@ -18,6 +18,13 @@ from spectHR.Tools.Logger import logger
 # in headless environments - only the GUI path through .evt files with
 # multiple non-RTop codes needs Qt.
 
+# CARSPAN internal unit scale factors.
+# IBI is stored in units of 0.1 ms; divide by 10 000 to get seconds.
+_IBI_SCALE_TO_SECONDS = 10_000.0
+# BPSys (and any future BP channel) is stored in units of 0.1 mmHg;
+# divide by 10 to get mmHg.
+_BP_SCALE_TO_MMHG = 10.0
+
 @register_loader(".evt")
 def load_evt(physiodata, filename: str, **kwargs: Any) -> None:
     """
@@ -57,28 +64,72 @@ def _load_evt_data(physiodata, filename: Path) -> None:
     with filename.open("r") as f:
         lines = f.readlines()
 
-    if not any("[Data]" in line for line in lines):
-        lines.insert(0, "[Data]\n")
+    # Section headers vary in case and spelling across CARSPAN exports
+    # (``[Data]``/``[DATA]``, ``[Event file]``/``[Event File]``), so every
+    # comparison below is done case-insensitively. Legacy exports may carry
+    # no ``[Data]`` header at all; in that case the whole file is data.
+    has_data_header = any(
+        line.strip().lower().startswith("[data") for line in lines
+    )
 
     # --------------------------------------------------
-    # Parse [Data] section
+    # Phase 1 + 2: single pass over the file.
+    #   Phase 1 - header sections ([Events], [Timeseries]) before the data.
+    #   Phase 2 - the data rows themselves.
     # --------------------------------------------------
-    in_data = False
-    event_codes = []
-    times = []
+    in_events = False
+    in_timeseries = False
+    in_data = not has_data_header  # legacy: no header → treat everything as data
+
+    rtop_code: int | None = None        # set from [Events] RPeak key if present
+    timeseries_cols: dict[str, int] = {}  # column name → 0-based data-row index
+
+    event_codes: list[int] = []
+    times: list[float] = []
+    data_rows: list[list[str]] = []     # raw split parts of each accepted data row
 
     for line in lines:
-        if line.strip() == "[Data]":
-            in_data = True
+        stripped = line.strip()
+        low = stripped.lower()
+
+        # ``[End]`` marks end-of-data; stop reading entirely.
+        if low.startswith("[end"):
+            break
+
+        # Any other bracketed line switches the active section.
+        if low.startswith("["):
+            in_events = low.startswith("[events")
+            in_timeseries = low.startswith("[timeseries")
+            in_data = low.startswith("[data")
+            continue
+
+        if in_events:
+            # Find the R-peak code. Match the key prefix ``rpeak``
+            # case-insensitively (``RPeak``, ``Rpeaks``, ``RPEAK`` all match).
+            if "=" in stripped:
+                key, _, val = stripped.partition("=")
+                if key.strip().lower().startswith("rpeak"):
+                    try:
+                        rtop_code = int(val.strip())
+                    except ValueError:
+                        pass
+            continue
+
+        if in_timeseries:
+            # Build the ordered extra-column map. Columns 0=code, 1=time;
+            # extra time-series columns start at index 2.
+            if "=" in stripped:
+                name = stripped.split("=", 1)[1].strip()
+                if name:
+                    timeseries_cols[name] = 2 + len(timeseries_cols)
             continue
 
         if not in_data:
             continue
 
-        parts = line.strip().split()
+        parts = stripped.split()
         if len(parts) < 2:
             continue
-
         try:
             code = int(parts[0])
             time = float(parts[1])
@@ -87,6 +138,7 @@ def _load_evt_data(physiodata, filename: Path) -> None:
 
         event_codes.append(code)
         times.append(time)
+        data_rows.append(parts)
 
     if not times:
         raise ValueError("EVT file contains no valid data.")
@@ -95,10 +147,65 @@ def _load_evt_data(physiodata, filename: Path) -> None:
     times = np.asarray(times)
 
     # --------------------------------------------------
-    # Determine RTop code (most frequent)
+    # Determine RTop code
     # --------------------------------------------------
-    rtop_code = Counter(event_codes).most_common(1)[0][0]
-    logger.info(f"RTop event code assumed to be {rtop_code}")
+    # Prefer the explicit [Events] RPeak code; fall back to the most
+    # frequent code when no [Events] section declared one.
+    if rtop_code is None:
+        rtop_code = int(Counter(event_codes.tolist()).most_common(1)[0][0])
+        logger.info(f"RTop event code inferred by frequency: {rtop_code}")
+    else:
+        logger.info(f"RTop event code from [Events] section: {rtop_code}")
+
+    # --------------------------------------------------
+    # Extract extra time-series columns (IBI, BPSys, ...)
+    # --------------------------------------------------
+    # Only R-peak rows carry the extra columns; epoch-marker rows (e.g. code
+    # 11/21) have just code+time and are skipped by the width guard.
+    extra_cols: dict[str, list[float]] = {name: [] for name in timeseries_cols}
+    n_extra = len(timeseries_cols)
+    for parts in data_rows:
+        if int(parts[0]) != rtop_code:
+            continue
+        if len(parts) < 2 + n_extra:
+            continue
+        for name, idx in timeseries_cols.items():
+            try:
+                extra_cols[name].append(float(parts[idx]))
+            except (ValueError, IndexError):
+                pass
+
+    # Scale to physical units and stash for a follow-up task. These arrays are
+    # not yet wired into CardioSeries / a BPSeries (see deferral notes below);
+    # they are logged at DEBUG so their presence is visible during loading.
+    for name, raw in extra_cols.items():
+        if not raw:
+            continue
+        arr = np.asarray(raw, dtype=float)
+        upper = name.upper()
+        if upper.startswith("IBI"):
+            scaled = arr / _IBI_SCALE_TO_SECONDS  # 0.1 ms → seconds
+            logger.debug(
+                "EVT extra column %s: %d values, %.4f–%.4f s (deferred)",
+                name, arr.size, scaled.min(), scaled.max(),
+            )
+            # TODO: populate a ``stored_ibi`` array on CardioSeries for
+            # artifact-aware IBI access once that task is implemented.
+            # See chat-mode handover document for design.
+        elif upper.startswith("BP"):
+            scaled = arr / _BP_SCALE_TO_MMHG  # 0.1 mmHg → mmHg
+            logger.debug(
+                "EVT extra column %s: %d values, %.1f–%.1f mmHg (deferred)",
+                name, arr.size, scaled.min(), scaled.max(),
+            )
+            # TODO: construct BPSeries(times=rtop_times, sbp=sbp_values) and
+            # store in physiodata.bp_map[band] once BPSeries is implemented.
+            # See chat-mode handover document for design.
+        else:
+            logger.debug(
+                "EVT extra column %s: %d values, stored raw (deferred)",
+                name, arr.size,
+            )
 
     rtop_mask = event_codes == rtop_code
     rtop_times = times[rtop_mask]

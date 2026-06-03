@@ -124,7 +124,7 @@ _EXCLUDED_SECTIONS = {"Directories"}
 # future workspace additions stay editable even before they're explicitly
 # routed.
 _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("General Settings",     ("CardioParameters", "RespirationAnalysis")),
+    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration")),
     ("PSD Settings",         ("FrequencyAnalysis",)),
     ("Profile Settings",     ("Profiles",)),
     ("Spectrogram Settings", ("Spectrogram",)),
@@ -173,6 +173,10 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     # structure inside (-pi, pi]; unwrapped accumulates 2 pi jumps and
     # is mainly useful for reading off a constant delay.
     "TransferAnalysis.phase_view": ["wrapped", "unwrapped"],
+    # Transfer-function input channel: respiration (RSA) or blood-pressure
+    # systolic / diastolic (baroreflex sensitivity). The output is always
+    # IBI/HR.
+    "TransferAnalysis.input_signal": ["rsp", "bp_sys", "bp_dia"],
 }
 
 

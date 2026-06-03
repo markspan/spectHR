@@ -111,6 +111,41 @@ class TNFF:
     def get_sample_rate(self) -> float:
         return 1_000_000 / self.get_interval(self.current_channel)
 
+    # ---------------- calibration ----------------
+    #
+    # CARSPAN stores a linear calibration (gain + offset) per channel in the
+    # 256-byte channel header (``T_Nff.pas`` ``GetScaleFactor`` /
+    # ``GetZeroLevel``).  Each value is a ``factor . 10^exponent`` pair stored
+    # as two 32-bit ints.  Our ``_get_integer(header, n)`` int offset ``n`` maps
+    # to the Pascal ``Int4Channel[n-10]`` (the copy loop is
+    # ``for i:=10 to 24 do Int4Channel[i-10] := i4buf[i]``):
+    #
+    #   ZeroLevel  factor / exponent -> int offsets 10 / 11  (Int4Channel[0/1])
+    #   ScaleFactor factor / exponent -> int offsets 12 / 13  (Int4Channel[2/3])
+    #
+    # The physical conversion CARSPAN applies (``T_EventFile.pas:1350``) is
+    # ``physical = ScaleFactor . raw + ZeroLevel`` where the stored scale is
+    # additionally multiplied by 1e6 (``ReadDataFileInfo``,
+    # ``T_EventFile.pas:761``).
+
+    def get_scale_factor(self, chan: int) -> float:
+        """Per-sample gain ``factor . 10^exponent`` from the channel header.
+
+        This is the *raw* NFF scale; the caller multiplies by 1e6 to match
+        CARSPAN's ``ChanInfo.ScaleFactor := GetScaleFactor . 1000000``.
+        """
+        self._get_channel_header(chan)
+        factor = self._get_integer(self.channel_header, 12)
+        exponent = self._get_integer(self.channel_header, 13)
+        return factor * (10.0 ** exponent)
+
+    def get_zero_level(self, chan: int) -> float:
+        """Per-sample additive offset ``factor . 10^exponent`` (physical units)."""
+        self._get_channel_header(chan)
+        factor = self._get_integer(self.channel_header, 10)
+        exponent = self._get_integer(self.channel_header, 11)
+        return factor * (10.0 ** exponent)
+
     def get_start_time(self) -> int:
         return self._get_integer(self.header, 16)
 
@@ -172,51 +207,106 @@ class TNFF:
 
 
 def load_nff(physiodata, filename: Path, label: str = "ECG") -> None:
-    """Read the named channel from a ``.nff`` file into *physiodata*.
+    """Read **every** channel from a ``.nff`` file into *physiodata*.
 
-    Attaches the channel as ``physiodata.timeseries["ecg"]`` and sets
-    ``band_map``, ``active_band``, and ``has_ecg``.
+    Each channel is attached as ``physiodata.timeseries[key]``, where
+    *key* is the channel label lowercased and stripped (e.g. ``"ecg"``,
+    ``"resp"``, ``"bp"``). Time normalisation (subtracting the global
+    earliest timestamp) is handled later by
+    ``PhysioData._normalize_times_and_build_epochs`` for everything in
+    ``timeseries``, so this loader stores absolute NFF timestamps and
+    must not shift them itself.
+
+    The band model is wired so ECG and RESP share the single ``"ecg"``
+    band: ``band_map["ecg"]["rsp"] = "resp"`` is the hook that lets
+    ``PhysioData.__getitem__("rsp")`` resolve to ``timeseries["resp"]``,
+    which ``preprocess_ecg`` then feeds to
+    ``RespirationSeries.from_timeseries``.
 
     Parameters
     ----------
     physiodata : PhysioData
     filename : Path
     label : str
-        Channel label to read (default ``'ECG'``). Ignored when the
-        file has exactly one channel.
+        Retained for backwards compatibility with the previous
+        single-channel API; no longer used for channel selection since
+        all channels are now loaded.
     """
     logger.info(f"Loading NFF: {filename.name}")
 
+    # Records, per timeseries key, whether the channel carried a usable
+    # per-channel calibration in its NFF header. Consumed by
+    # ``spectUI.preProcessFile.PreProcessFile`` so a manual calibration
+    # (workspace ``Calibration.bp_scale`` / ``bp_zero``) is applied only to
+    # channels the header left uncalibrated - mirroring CARSPAN's "when not
+    # already included in the header" rule (manual sec. 8.1.2 / p. 70).
+    physiodata.channel_calibrated = {}
+
     nff = TNFF()
     nff.open_file(filename)
-    nff.read_nff_header()
+    try:
+        nff.read_nff_header()
 
-    if label not in nff.labels and nff.num_channels != 1:
-        raise ValueError(f"Channel '{label}' not found in NFF file.")
+        # The recording start time lives in the 512-byte top header and is
+        # shared by every channel, so it is read once outside the loop.
+        start_time = nff.get_start_time() / 1000.0
 
-    chan = 1 if nff.num_channels == 1 else nff.labels.index(label) + 1
-    nff.current_channel = chan
+        for chan in range(1, nff.num_channels + 1):
+            raw_label = nff.labels[chan - 1]
+            # Derive the timeseries key from the channel label. Fall back to
+            # a positional name when a channel carries no usable label so no
+            # channel is silently dropped.
+            key = raw_label.lower().strip() or f"chan{chan}"
 
-    data = nff.read_channel_data(chan)
+            # ``get_interval`` loads this channel's 256-byte header (setting
+            # ``current_channel``) so the subsequent ``read_channel_data``
+            # reads the correct per-channel sample count.
+            interval = nff.get_interval(chan)
+            sample_rate = 1_000_000.0 / interval
 
-    sample_rate = nff.get_sample_rate()
-    start_time = nff.get_start_time() / 1000.0
+            data = nff.read_channel_data(chan)
+            timestamps = start_time + np.arange(len(data)) / sample_rate
 
-    timestamps = start_time + np.arange(len(data)) / sample_rate
+            # Apply the per-channel calibration so amplitude channels (BP,
+            # respiration, ...) come out in physical units (mmHg, V, ...)
+            # rather than raw int16 ADC counts. CARSPAN:
+            #   physical = (ScaleFactor x 1e6) x raw + ZeroLevel
+            # The 1e6 reproduces ``ChanInfo.ScaleFactor := GetScaleFactor x 1e6``
+            # (T_EventFile.pas:761). A zero / non-finite scale means the channel
+            # carries no usable calibration (the case for the bundled example
+            # recordings, whose header calibration fields are empty); we then
+            # leave the raw counts untouched instead of multiplying the signal
+            # away to zero. R-peak-derived metrics (IBI/HR) are unaffected
+            # either way because they come from event timing, not amplitude.
+            values = data.astype(float)
+            scale = nff.get_scale_factor(chan) * 1_000_000.0
+            zero = nff.get_zero_level(chan)
+            calibrated = np.isfinite(scale) and scale != 0.0
+            if calibrated:
+                values = scale * values + zero
 
-    nff.close_file()
+            physiodata.channel_calibrated[key] = calibrated
+            physiodata.timeseries[key] = TimeSeries(timestamps, values)
+            logger.info(
+                f"NFF channel loaded: label='{raw_label}' → key='{key}', "
+                f"samples={len(data)}, fs={sample_rate:.2f} Hz, "
+                f"calibrated={calibrated}"
+                + (f" (scale={scale:.6g}, zero={zero:.6g})" if calibrated else "")
+            )
+    finally:
+        nff.close_file()
 
-    logger.info(
-        f"NFF loaded: channel='{label}', "
-        f"samples={len(data)}, fs={sample_rate:.2f} Hz"
-    )
+    # Wire the single-band model. Only one band exists for NFF (there is no
+    # per-device suffix as in the XDF/Polar case), so ECG and RESP are
+    # indexed under the same ``"ecg"`` band key. Mirrors the pattern in
+    # ``xdf_loader._index_polar_bands``.
+    band_streams: dict[str, str] = {}
+    if "ecg" in physiodata.timeseries:
+        band_streams["ecg"] = "ecg"
+    if "resp" in physiodata.timeseries:
+        # Key is the band role ``"rsp"``; value is the timeseries key ``"resp"``.
+        band_streams["rsp"] = "resp"
 
-    physiodata.timeseries["ecg"] = TimeSeries(
-        timestamps,
-        data.astype(float),
-    )
-
-    # Set up the single-band model.
-    physiodata.band_map = {"ecg": {"ecg": "ecg"}}
+    physiodata.band_map = {"ecg": band_streams}
     physiodata.active_band = "ecg"
-    physiodata.has_ecg = True
+    physiodata.has_ecg = "ecg" in physiodata.timeseries
