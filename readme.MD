@@ -350,6 +350,14 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), and Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)). These columns are always present; the values are blank when the corresponding channel is absent.
 - **Transfer** (when the input channel is present): per-band modulus, phase and weighted coherence
 
+#### RSA lag (`rsa_lag_s`)
+
+The Grossman peak-to-valley algorithm finds, per breath cycle, the shortest IBI during inhalation and the longest IBI during exhalation, and returns their difference. Because vagal neural conduction takes ~0.5–1.5 s, the cardiac response to a phase transition does not arrive instantaneously: the IBI that "belongs" to inhalation may fall just after the inhalation window closes. `rsa_lag_s` extends each search window beyond the phase boundary by this amount.
+
+The default of **1.0 s** is the value used in [Grossman et al. (1990)](#ref-grossman1990) and matches the VU-DAMS implementation.
+
+**Why it matters for breathing rate.** At slow breathing (6 bpm) each phase lasts ~5 s, so a 1 s extension is a modest 20% overhang and causes no problems. At fast breathing (20–25 bpm) each phase lasts only ~1.2–1.5 s; a 1 s extension then reaches nearly as far as the next full phase, causing the inhalation and exhalation windows to overlap and the algorithm to mix beats from both phases. The measured RSA is biased upward. **For children** (typical rate 20–30 bpm) the 1.0 s default is too large; values of 0.3–0.5 s are more appropriate. Configure `rsa_lag_s` under **Settings → Edit Parameters → General Settings → Respiration Analysis**.
+
 Click **Save** to export **two files** to the configured Output folder:
 
 | File | What it contains |
@@ -610,7 +618,7 @@ All parameters are stored in a JSON workspace file, editable through the applica
 
 **WorkSpace → Edit Parameters** is a tabbed dialog:
 
-- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *Logging* (minimum log level shown in the Log dock / console).
+- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *Logging* (minimum log level shown in the Log dock / console).
 - **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
 - **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window (sec)`, `step (sec)`), and the optional `smooth_for_display` time-axis smoother.
 
