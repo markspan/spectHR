@@ -1006,6 +1006,7 @@ class MainWindow(QMainWindow):
                 if not self.docks[_DOCK_TRANSFER_PROFILE].isClosed():
                     self._refresh_dock(_DOCK_TRANSFER_PROFILE, sig)
                 self._refresh_dock(_DOCK_PROFILES, sig)
+                self._refresh_dock(_DOCK_IBI, sig)
 
     # ------------------------------------------------------------------
     # Workspace tree context menu
@@ -1461,7 +1462,7 @@ class MainWindow(QMainWindow):
 
     def show_hr_plot(self, data):
         if data is not None:
-            self.hr_plot_widget.hrPlot(data)
+            self.hr_plot_widget.hrPlot(data, workspace=self.workspace)
 
     def show_bp_plot(self, data):
         if data is not None:
