@@ -179,7 +179,7 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     "TransferAnalysis.input_signal": ["rsp", "bp_sys", "bp_dia"],
     # Minimum severity shown in the Log dock / console (most verbose first).
     "Logging.level": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-    "RespirationAnalysis.rsa_overlay": ["both", "rsa", "rsa0", "none"],
+    "RespirationAnalysis.rsa_overlay": ["rsa", "rsa0", "none"],
 }
 
 

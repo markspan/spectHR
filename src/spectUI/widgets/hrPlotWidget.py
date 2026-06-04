@@ -279,8 +279,8 @@ class HRPlotWidget(TimelinePlotWidget):
 
     def _rsa_overlay_mode(self) -> str:
         ra = ((self.workspace or {}).get("RespirationAnalysis") or {})
-        mode = str(ra.get("rsa_overlay", "both")).lower()
-        return mode if mode in ("none", "rsa", "rsa0", "both") else "both"
+        mode = str(ra.get("rsa_overlay", "rsa0")).lower()
+        return mode if mode in ("none", "rsa", "rsa0") else "rsa0"
 
     def _draw_rsa_overlay(self) -> None:
         """
@@ -289,7 +289,7 @@ class HRPlotWidget(TimelinePlotWidget):
         Each point is positioned at the midpoint of its INH→EXH cycle pair.
         Which series are drawn is controlled by RespirationAnalysis.rsa_overlay:
         "rsa" = filled circles (valid cycles only), "rsa0" = hollow circles
-        (invalid → 0) with a trend line, "both" = both, "none" = nothing.
+        (invalid → 0) with a trend line,  "none" = nothing.
         """
         # Clean up previous overlay axis unconditionally so "none" also
         # removes a stale axis from the previous redraw.
@@ -365,13 +365,13 @@ class HRPlotWidget(TimelinePlotWidget):
         ax_r = self._ax_rsa_twin
         legend_handles = []
 
-        if mode in ("rsa0", "both"):
+        if mode in ("rsa0"):
             ax_r.plot(x_arr, rsa0_arr,
                       color="darkorange", linewidth=0.8, alpha=0.4, zorder=3)
-            ax_r.scatter(x_arr, rsa0_arr, s=20, marker="x",
+            ax_r.scatter(x_arr, rsa0_arr, s=10, marker="x",
                          color="darkorange", alpha=0.7, zorder=4)
 
-        if mode in ("rsa", "both"):
+        if mode in ("rsa"):
             valid = np.isfinite(rsa_arr)
             if np.any(valid):
                 sc = ax_r.scatter(x_arr[valid], rsa_arr[valid], s=10,
