@@ -396,7 +396,7 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
          sd1, sd2, sd_ratio, ellipse_area,                    ← Poincaré
          {band}_power, lf_hf_ratio,                           ← band powers
          bp_sbp/bp_dbp/bp_pp/bp_map, resp_mvo/resp_svo,        ← BP / respiration
-         rsa, rsa0,                                             ← Grossman RSA
+         rsa, rsa0,                                             ← Grossman RSA (epoch means)
          {band}_prof_mean/std/min/max/t_max,                  ← profile summaries
          prof_method, prof_unit, prof_window_s, prof_step_s,
          prof_n_windows [, prof_adaptive_band, prof_adaptive_source],
@@ -438,7 +438,13 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
     /{band}/
       datasets: modulus [N_w], phase [N_w], phase_unwrapped [N_w],
                 weighted_coherence [N_w], n_coherent [N_w]
+
+  /respiration/                (present only when INH/EXH phases were detected)
+    attrs: lag_s, n_breaths, n_valid
+    datasets: rsa [N_br], rsa0 [N_br], breath_times [N_br]
 ```
+
+`N_br` = number of complete INH→EXH breath cycles in the epoch. `rsa` contains `NaN` for invalid cycles (negative peak-to-valley difference or missing IBI); `rsa0` has those replaced with 0. `breath_times` is the midpoint timestamp (seconds) of each cycle. `lag_s` is the configured search-window extension (default 1.0 s).
 
 All datasets are `float64` (gzip-compressed, level 4); `n_coherent` is `int32`. Array lengths: `N_f` = full frequency grid; `N_b` = frequency bins inside the band's `[low, high]` range; `N_w` = number of sliding windows.
 

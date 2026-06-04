@@ -35,6 +35,10 @@ Parameters table widget and export.
                      — sliding-window transfer-function time series per band;
                        present only when the recording has a respiration
                        channel.
+    ``/respiration/`` — per-breath RSA and RSA0 arrays (ms), breath midpoint
+                       timestamps, and metadata (lag_s, n_breaths, n_valid);
+                       present only when a respiration channel with detected
+                       INH/EXH phases is available.
 
     Scalar summaries are stored as HDF5 attributes on the relevant group
     so they are visible without loading any dataset.  All arrays are
@@ -414,6 +418,13 @@ class ParametersPlotWidget(QWidget):
         tf_input_signal = str(tf_cfg["input_signal"])
         rsp_ts, _ = resolve_transfer_input(self.dataset, tf_input_signal)
 
+        active_band = getattr(self.dataset, "active_band", None)
+        rsp_series  = getattr(self.dataset, "rsp_map", {}).get(active_band)
+        rsa_lag_s   = float(
+            ((self.workspace or {}).get("RespirationAnalysis") or {})
+            .get("rsa_lag_s", 1.0)
+        )
+
         result: dict[str, dict] = {}
 
         for label, _ep in self._iter_active_epochs():
@@ -423,7 +434,8 @@ class ParametersPlotWidget(QWidget):
                 continue
 
             epoch: dict = {"scalars": {}, "psd": None, "profile": None,
-                           "transfer": None, "transfer_profile": None}
+                           "transfer": None, "transfer_profile": None,
+                           "respiration": None}
 
             # ---- PSD -------------------------------------------------
             try:
@@ -626,6 +638,48 @@ class ParametersPlotWidget(QWidget):
                         "Transfer-profile export failed for epoch %r: %s", label, exc
                     )
 
+            # ---- RSA per-breath ------------------------------------
+            if rsp_series is not None:
+                try:
+                    from spectHR.analysis.bp_metrics import grossman_rsa_per_breath
+                    rsp_phases = rsp_series.view(float(_ep.start), float(_ep.end))
+                    if len(rsp_phases) >= 2:
+                        rsa_raw = grossman_rsa_per_breath(
+                            np.asarray(view.times,  dtype=float),
+                            np.asarray(view.labels, dtype=object),
+                            rsp_phases,
+                            lag_s=rsa_lag_s,
+                        )
+                        if rsa_raw.size > 0:
+                            p_starts = np.asarray(rsp_phases.starts, dtype=float)
+                            p_ends   = np.asarray(rsp_phases.ends,   dtype=float)
+                            p_labels = np.asarray(rsp_phases.labels, dtype=object)
+                            x_pts, pair_idx = [], 0
+                            for i in range(len(p_starts) - 1):
+                                if p_labels[i] == "INH" and p_labels[i + 1] == "EXH":
+                                    if pair_idx < rsa_raw.size:
+                                        x_pts.append(
+                                            (p_starts[i] + p_ends[i + 1]) / 2.0
+                                        )
+                                    pair_idx += 1
+                            epoch["respiration"] = {
+                                "rsa":          rsa_raw,
+                                "rsa0":         np.where(
+                                                    np.isfinite(rsa_raw),
+                                                    rsa_raw, 0.0),
+                                "breath_times": np.array(x_pts, dtype=float),
+                                "lag_s":        rsa_lag_s,
+                                "n_breaths":    int(rsa_raw.size),
+                                "n_valid":      int(
+                                                    np.sum(
+                                                        np.isfinite(rsa_raw)
+                                                        & (rsa_raw >= 0)
+                                                    )
+                                                ),
+                            }
+                except Exception as exc:
+                    logger.debug("RSA export failed for epoch %r: %s", label, exc)
+
             result[label] = epoch
 
         return result
@@ -702,6 +756,10 @@ class ParametersPlotWidget(QWidget):
                 /{band}/
                   datasets: modulus, phase, phase_unwrapped,
                             weighted_coherence, n_coherent
+              /respiration/       (only when rsp phases detected)
+                attrs: lag_s, n_breaths, n_valid
+                datasets: rsa [N_breaths], rsa0 [N_breaths],
+                          breath_times [N_breaths]
         """
         if self.h5file is None:
             return
@@ -803,6 +861,17 @@ class ParametersPlotWidget(QWidget):
                         _h5write(bg, "phase_wrapped_raw",   bd["phase_wrapped_raw"])
                         _h5write(bg, "phase_unwrapped_raw", bd["phase_unwrapped_raw"])
                         _h5write(bg, "coherence_raw",       bd["coherence_raw"])
+
+                # ---- Respiration / RSA per breath ---------------
+                rsp_h5 = ed.get("respiration")
+                if rsp_h5:
+                    rg = eg.require_group("respiration")
+                    rg.attrs["lag_s"]     = rsp_h5["lag_s"]
+                    rg.attrs["n_breaths"] = rsp_h5["n_breaths"]
+                    rg.attrs["n_valid"]   = rsp_h5["n_valid"]
+                    _h5write(rg, "rsa",          rsp_h5["rsa"])
+                    _h5write(rg, "rsa0",         rsp_h5["rsa0"])
+                    _h5write(rg, "breath_times", rsp_h5["breath_times"])
 
                 # ---- Transfer profile ---------------------------
                 tfp = ed.get("transfer_profile")
