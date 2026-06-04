@@ -271,7 +271,10 @@ class ParametersPlotWidget(QWidget):
         self.h5file   = output_dir / f"{dataset.basename}.h5"
 
         psd_method = psd_method_from_workspace(workspace)
-        labels, cols, values = self.dataset.epoched_parameters_table(psd_method=psd_method)
+        rsa_lag_s = ((workspace or {}).get("RespirationAnalysis") or {}).get("rsa_lag_s", 1.0)
+        labels, cols, values = self.dataset.epoched_parameters_table(
+            psd_method=psd_method, rsa_lag_s=float(rsa_lag_s)
+        )
 
         # Re-order columns: known metrics first, then extras alphabetically.
         ordered = [c for c in METRIC_ORDER if c in cols]
