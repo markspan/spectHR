@@ -347,7 +347,7 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default)
-- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`) and mean / sample respiratory volume (`resp_mvo`, `resp_svo`). These columns are always present; the values are blank when the corresponding channel is absent.
+- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), and Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`). These columns are always present; the values are blank when the corresponding channel is absent.
 - **Transfer** (when the input channel is present): per-band modulus, phase and weighted coherence
 
 Click **Save** to export **two files** to the configured Output folder:
@@ -371,7 +371,7 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 | **Time-domain HRV** | `count`, `mean`, `median`, `min`, `max`, `rmssd`, `sdnn`, `sdsd`, … |
 | **Poincaré** | `sd1`, `sd2`, `sd_ratio`, `ellipse_area` |
 | **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default) |
-| **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo` (always present; blank when the corresponding channel is absent) |
+| **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
 | **Profile summaries** | `{band}_prof_mean/std/min/max/t_max` per band; `prof_method`, `prof_unit`, `prof_window_s`, `prof_step_s`, `prof_n_windows` |
 | **Transfer summaries** | `{band}_tf_modulus`, `_tf_phase_w`, `_tf_phase_u`, `_tf_coherence`, `_tf_n_points`, `_tf_n_coherent` per band; `tf_method`, `tf_freq_resolution`, `tf_smooth`, `tf_min_coherence`; written only when a respiration channel is present |
 
@@ -388,6 +388,7 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
          sd1, sd2, sd_ratio, ellipse_area,                    ← Poincaré
          {band}_power, lf_hf_ratio,                           ← band powers
          bp_sbp/bp_dbp/bp_pp/bp_map, resp_mvo/resp_svo,        ← BP / respiration
+         rsa, rsa0,                                             ← Grossman RSA
          {band}_prof_mean/std/min/max/t_max,                  ← profile summaries
          prof_method, prof_unit, prof_window_s, prof_step_s,
          prof_n_windows [, prof_adaptive_band, prof_adaptive_source],
@@ -1462,3 +1463,9 @@ van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of math
 
 <a id="ref-dewaard1996"></a>
 de Waard, D. (1996). *The measurement of drivers' mental workload*. Ph.D. Thesis, University of Groningen. https://www.researchgate.net/publication/237132452_The_Measurement_of_Drivers'_Mental_Workload
+
+<a id="ref-grossman1990"></a>
+Grossman, P., van Beek, J., & Wientjes, C. (1990). A comparison of three quantification methods for estimation of respiratory sinus arrhythmia. *Psychophysiology*, 27(6), 702–714. https://doi.org/10.1111/j.1469-8986.1990.tb03198.x
+
+<a id="ref-buron2026"></a>
+Buron, J., & Menuet, C. (2026). Respiratory heart rate variability: Insights into mechanisms, measurements and interpretations. *Biological Psychology*, 208, 109299. https://doi.org/10.1016/j.biopsycho.2026.109299
