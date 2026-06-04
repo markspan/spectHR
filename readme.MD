@@ -347,7 +347,7 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default)
-- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), and Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`). These columns are always present; the values are blank when the corresponding channel is absent.
+- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), and Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)). These columns are always present; the values are blank when the corresponding channel is absent.
 - **Transfer** (when the input channel is present): per-band modulus, phase and weighted coherence
 
 Click **Save** to export **two files** to the configured Output folder:
