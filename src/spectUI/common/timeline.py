@@ -319,7 +319,7 @@ class TimelinePlotWidget(QWidget):
             nav_layout.addWidget(btn)
         nav_widget = QWidget()
         nav_widget.setLayout(nav_layout)
-        nav_widget.setFixedHeight(50)
+        nav_widget.setFixedHeight(20)
         return nav_widget
 
     # ==============================================================

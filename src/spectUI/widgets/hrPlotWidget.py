@@ -100,7 +100,7 @@ class HRPlotWidget(TimelinePlotWidget):
         )
         self.ax_main.set_title("Heart Rate Timeseries")
         self.ax_main.set_ylabel("Heart rate (bpm)")
-        style_axis_clean(self.ax_main)
+        style_axis_clean(self.ax_main, show_y=True)
         self._set_time_axis(
             self.ax_main,
             self.data.view.x_min,

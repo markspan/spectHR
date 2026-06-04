@@ -118,18 +118,18 @@ def make_nav_button(
     if icon_name:
         icon = qta.icon(icon_name)
         if rotate:
-            pixmap = icon.pixmap(QSize(48, 48))
+            pixmap = icon.pixmap(QSize(24, 24))
             transform = QTransform().rotate(rotate if isinstance(rotate, int) else 0)
             icon = QIcon(pixmap.transformed(transform))
         btn.setIcon(icon)
-        btn.setIconSize(QSize(48, 48))
+        btn.setIconSize(QSize(24, 24))
     btn.setFlat(True)
     btn.setStyleSheet(
         """
         QPushButton {
             margin: 4px;
-            width: 56px;
-            height: 56px;
+            width: 28px;
+            height: 28px;
             border: none;
         }
         """
@@ -145,12 +145,29 @@ def make_nav_button(
 # ---------------------------------------------------------------------------
 
 
-def style_axis_clean(ax: Axes) -> None:
-    """Hide the y-axis tick marks and remove left, right, and top spines."""
-    ax.get_yaxis().set_visible(False)
+def style_axis_clean(ax: Axes, *, show_y: bool = False) -> None:
+    """Remove top and right spines; optionally keep the y-axis.
+
+    Parameters
+    ----------
+    ax
+        Target axes.
+    show_y
+        When ``False`` (default) the y-axis ticks, labels and left spine are
+        hidden — the historic behaviour used for overview strips and any axis
+        where amplitude is not meaningful to the reader.
+        When ``True`` the y-axis and left spine are kept so the signal
+        amplitude can be read off the plot (e.g. blood pressure in mmHg,
+        heart rate in bpm).
+    """
     ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_visible(False)
     ax.spines["top"].set_visible(False)
+    if show_y:
+        ax.spines["left"].set_visible(True)
+        ax.get_yaxis().set_visible(True)
+    else:
+        ax.spines["left"].set_visible(False)
+        ax.get_yaxis().set_visible(False)
 
 
 # ---------------------------------------------------------------------------

@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStyle,
     QToolBar,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -518,6 +519,12 @@ class MainWindow(QMainWindow):
         # ---- assemble menubar ----------------------------------------
         menubar = self.menuBar()
 
+        act_quit = QAction(qta.icon("mdi6.exit-to-app"), "Quit", self)
+        act_quit.setShortcut("Ctrl+Q")
+        act_quit.setStatusTip("Quit spectHR")
+        act_quit.setToolTip("Quit spectHR")
+        act_quit.triggered.connect(self._quit_with_confirmation)
+
         ws_menu = menubar.addMenu("WorkSpace")
         ws_menu.addAction(act_open)
         ws_menu.addSeparator()
@@ -525,9 +532,11 @@ class MainWindow(QMainWindow):
         ws_menu.addAction(act_save_ws)
         ws_menu.addSeparator()
         ws_menu.addAction(act_settings)
+        ws_menu.addSeparator()
+        ws_menu.addAction(act_quit)
 
-        edits_menu = menubar.addMenu("Edits")
-        edits_menu.addAction(act_add_epoch)
+        #edits_menu = menubar.addMenu("Edits")
+        #edits_menu.addAction(act_add_epoch)
 
         # Help anchors the right end of the strip; _wire_view_menu
         # uses self._help_menu as the insertion point for View.
@@ -547,11 +556,35 @@ class MainWindow(QMainWindow):
         # platforms instead of pinning a hard pixel count. The enum
         # lives on the QStyle class in PySide6, not on style instances.
         base = self.style().pixelMetric(QStyle.PixelMetric.PM_ToolBarIconSize)
-        bumped = max(int(round(base * 2.0)), base + 1)
+        bumped = max(int(round(base * 1.0)), base + 1)
         toolbar.setIconSize(QSize(bumped, bumped))
         toolbar.addAction(act_open)
-        toolbar.addAction(act_edit_ws)
-        toolbar.addAction(act_save_ws)
+
+        # Edit + Save workspace: half-size icons stacked vertically so they
+        # occupy the same horizontal space as one full-size button but signal
+        # visually that they are a related pair.
+        small = max(base // 2, 12)
+        ws_pair = QWidget()
+        ws_pair.setAttribute(Qt.WA_TranslucentBackground)
+        ws_pair_layout = QVBoxLayout(ws_pair)
+        ws_pair_layout.setContentsMargins(0, 2, 0, 2)
+        ws_pair_layout.setSpacing(1)
+        _pair_btns: list[QToolButton] = []
+        for _action in (act_edit_ws, act_save_ws):
+            _btn = QToolButton()
+            _btn.setDefaultAction(_action)
+            _btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            _btn.setIconSize(QSize(small, small))
+            _btn.setAutoRaise(True)
+            ws_pair_layout.addWidget(_btn)
+            _pair_btns.append(_btn)
+        # Pin both buttons to the width of the wider one so they are
+        # equal-width without stretching to fill the whole toolbar.
+        _max_w = max(b.sizeHint().width() for b in _pair_btns)
+        for b in _pair_btns:
+            b.setFixedWidth(_max_w)
+        toolbar.addWidget(ws_pair)
+
         toolbar.addSeparator()
         toolbar.addAction(act_settings)
         toolbar.addSeparator()
@@ -746,9 +779,25 @@ class MainWindow(QMainWindow):
         from the mutated data. Because this is driven by genuine edits,
         simply viewing the Preprocessing / Epochs dock no longer
         invalidates anything.
+
+        Any computed dock (PSD, Profile, Parameters, …) that is already
+        visible is refreshed immediately so the user does not have to
+        switch away and back to see the change reflected.
         """
         self._dirty = True
         self._plot_sig.clear()
+
+        if self.dataset is None:
+            return
+        sig = self._plot_cache_signature(self.dataset)
+        for name, dock in self.docks.items():
+            if name not in _CACHED_DOCKS:
+                continue
+            if not self._dock_alive(dock):
+                continue
+            if dock.isClosed() or not dock.isVisible():
+                continue
+            self._refresh_dock(name, sig)
 
     def _sync_timeline_views(self) -> None:
         """Mirror a committed view-window change onto the other timelines.
@@ -819,6 +868,8 @@ class MainWindow(QMainWindow):
             for other_name, dock in self.docks.items():
                 if other_name == name:
                     continue
+                if not self._dock_alive(dock):
+                    continue
                 if dock.isClosed() or not dock.isFloating():
                     continue
                 self._refresh_dock(other_name, sig)
@@ -864,6 +915,18 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Workspace menu actions
     # ------------------------------------------------------------------
+
+    def _quit_with_confirmation(self) -> None:
+        """Ask the user to confirm before closing the application."""
+        reply = QMessageBox.question(
+            self,
+            "Quit spectHR",
+            "Are you sure you want to quit?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.close()
 
     def OpenWorkSpace(self):
         """Open a JSON workspace file."""
@@ -1251,6 +1314,8 @@ class MainWindow(QMainWindow):
         has_rsp = bool(rsp_map)
         for name in (_DOCK_TRANSFER, _DOCK_TRANSFER_PROFILE):
             dock = self.docks[name]
+            if not self._dock_alive(dock):
+                continue
             dock.toggleView(has_rsp and not dock.isClosed())
             action = dock.toggleViewAction()
             action.setEnabled(has_rsp)
@@ -1271,13 +1336,18 @@ class MainWindow(QMainWindow):
         timeseries = getattr(self.dataset, "timeseries", None) or {}
         has_bp = "bp" in timeseries
         bp_dock = self.docks[_DOCK_BP]
-        bp_dock.toggleView(has_bp and not bp_dock.isClosed())
-        bp_action = bp_dock.toggleViewAction()
-        bp_action.setEnabled(has_bp)
-        bp_action.setToolTip(
-            "" if has_bp
-            else "Disabled: this recording has no blood-pressure channel"
-        )
+        if self._dock_alive(bp_dock):
+            bp_dock.toggleView(has_bp and not bp_dock.isClosed())
+            bp_action = bp_dock.toggleViewAction()
+            bp_action.setEnabled(has_bp)
+            bp_action.setToolTip(
+                "" if has_bp
+                else "Disabled: this recording has no blood-pressure channel"
+            )
+
+        def _closed(dock_name: str) -> bool:
+            d = self.docks.get(dock_name)
+            return not self._dock_alive(d) or d.isClosed()
 
         skip_when_missing = {
             _DOCK_PREPROCESSING:    not has_ecg,
@@ -1286,11 +1356,11 @@ class MainWindow(QMainWindow):
             # transfer-function estimation). Skip them when the channel is
             # missing *or* the dock is closed, and let visibilityChanged
             # compute lazily the first time the user brings them forward.
-            _DOCK_TRANSFER:         not has_rsp or self.docks[_DOCK_TRANSFER].isClosed(),
-            _DOCK_TRANSFER_PROFILE: not has_rsp or self.docks[_DOCK_TRANSFER_PROFILE].isClosed(),
+            _DOCK_TRANSFER:         not has_rsp or _closed(_DOCK_TRANSFER),
+            _DOCK_TRANSFER_PROFILE: not has_rsp or _closed(_DOCK_TRANSFER_PROFILE),
             # 3-D spectrogram is the most expensive widget; skip it when
             # the dock is closed and let visibilityChanged handle it lazily.
-            _DOCK_SPECTROGRAM_3D:   self.docks[_DOCK_SPECTROGRAM_3D].isClosed(),
+            _DOCK_SPECTROGRAM_3D:   _closed(_DOCK_SPECTROGRAM_3D),
         }
         # New dataset -> every cached plot is stale.
         self._plot_sig.clear()
@@ -1305,6 +1375,22 @@ class MainWindow(QMainWindow):
             # the first time the user activates this dock afterwards it is
             # reused rather than recomputed.
             self._refresh_dock(name, sig)
+
+    @staticmethod
+    def _dock_alive(dock) -> bool:
+        """Return True if the CDockWidget's C++ backing object still exists.
+
+        PySide6QtAds dock widgets are parented to the CDockManager; when
+        ``deleteLater()`` is called on the manager at close time the C++
+        objects are destroyed, but Python lambdas connected to signals may
+        still fire.  Any method call on a deleted C++ object raises
+        ``RuntimeError``; this guard catches that gracefully.
+        """
+        try:
+            dock.objectName()   # any innocuous CDockWidget method
+            return True
+        except RuntimeError:
+            return False
 
     def _arm_transfer_rsp_guard(self) -> None:
         """Install one-shot visibility guards on the Transfer docks.
@@ -1569,7 +1655,7 @@ if __name__ == "__main__":
     app.setOrganizationName(_ORG_NAME)
     app.setApplicationName(_APP_NAME)
 
-    default_font = QFont("Segoe UI", 12)
+    default_font = QFont("Segoe UI", 10)
     default_font.setBold(False)
     app.setStyle("WindowsVista")
     app.setFont(default_font)

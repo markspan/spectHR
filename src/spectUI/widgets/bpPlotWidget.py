@@ -82,7 +82,7 @@ class BPPlotWidget(TimelinePlotWidget):
         )
         #self.ax_main.set_title("Blood Pressure Timeseries")
         self.ax_main.set_ylabel("Blood pressure [mmHg]")
-        style_axis_clean(self.ax_main)
+        style_axis_clean(self.ax_main, show_y=True)
         self._set_time_axis(
             self.ax_main,
             self.data.view.x_min,
