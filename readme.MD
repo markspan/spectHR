@@ -1419,8 +1419,14 @@ spectHR is released under the GNU GPL-3.0 license. See the [LICENSE](LICENSE) fi
 <a id="ref-arutyunova2024"></a>
 Arutyunova, K.R., Bakhchina, A.V., Konovalov, D.I., Margaryan, M., Filimonov, A.V., & Shishalov, I.S. (2024). Heart rate dynamics for cognitive load estimation in a driving simulation task. *Scientific Reports*, 14, 31656. https://doi.org/10.1038/s41598-024-79728-x
 
+<a id="ref-buron2026"></a>
+Buron, J., & Menuet, C. (2026). Respiratory heart rate variability: Insights into mechanisms, measurements and interpretations. *Biological Psychology*, 208, 109299. https://doi.org/10.1016/j.biopsycho.2026.109299
+
 <a id="ref-degeus2019"></a>
 de Geus, E.J.C., Gianaros, P.J., Brindle, R.C., Jennings, J.R., & Berntson, G.G. (2019). Should heart rate variability be "corrected" for heart rate? Biological, quantitative, and interpretive considerations. *Psychophysiology*, 56(2), e13287. https://doi.org/10.1111/psyp.13287
+
+<a id="ref-grossman1990"></a>
+Grossman, P., van Beek, J., & Wientjes, C. (1990). A comparison of three quantification methods for estimation of respiratory sinus arrhythmia. *Psychophysiology*, 27(6), 702–714. https://doi.org/10.1111/j.1469-8986.1990.tb03198.x
 
 <a id="ref-carspan-manual"></a>
 Mulder, B., Hofstetter, H., & van Roon, A. (2009). *CARSPAN for Windows: User's manual* (Version 0.0.1.36). University of Groningen. [docs/Carspan_Manual_VERSION_36.pdf](docs/Carspan_Manual_VERSION_36.pdf)
@@ -1431,11 +1437,11 @@ Mulder, G. (1980). *The heart of mental effort*. Ph.D. Thesis, University of Gro
 <a id="ref-mulder1988"></a>
 Mulder, L.J.M. (1988). *Assessment of cardiovascular reactivity by means of spectral analysis*. Ph.D. Thesis, University of Groningen. [Ref](https://research.rug.nl/en/publications/assessment-of-cardiovascular-reactivity-by-means-of-spectral-anal/)
 
-<a id="ref-mulder1992"></a>
-Mulder, L.J.M. (1992). Measurement and analysis methods of heart rate and respiration for use in applied environments. *Biological Psychology*, 34, 205–236. https://doi.org/10.1016/0301-0511(92)90016-N
-
 <a id="ref-mulder1989"></a>
 Mulder, L.J.M. (1989). Cardiovascular reactivity and mental workload. *International Journal of Psychophysiology*, 7, 321. https://doi.org/10.1016/0167-8760(89)90258-4
+
+<a id="ref-mulder1992"></a>
+Mulder, L.J.M. (1992). Measurement and analysis methods of heart rate and respiration for use in applied environments. *Biological Psychology*, 34, 205–236. https://doi.org/10.1016/0301-0511(92)90016-N
 
 <a id="ref-mulder2004"></a>
 Mulder, L.J.M., de Waard, D., & Brookhuis, K.A. (2004). Estimating mental effort using heart rate and heart rate variability. In N.A. Stanton, A. Hedge, K. Brookhuis, E. Salas, & H. Hendrick (Eds.), *Handbook of Human Factors and Ergonomics Methods* (pp. 20.1–20.8). Boca Raton: CRC Press. https://doi.org/10.1201/9780203489925.ch20
@@ -1449,6 +1455,9 @@ De Rivecourt, M., Kuperus, M.N., Post, W.J., & Mulder, L.J.M. (2008). Cardiovasc
 <a id="ref-rompelman1985"></a>
 Rompelman, O. (1985). Spectral analysis of heart-rate variability. In J.F. Orlebeke, G. Mulder, & L.J.P. van Doornen (Eds.), *Psychophysiology of Cardiovascular Control* (pp. 315–331). New York: Plenum Press.
 
+<a id="ref-vanroon2025"></a>
+van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. *Entropy*, 27(8), 861. https://doi.org/10.3390/e27080861
+
 <a id="ref-stuiver2014"></a>
 Stuiver, A., & Mulder, L.J.M. (2014). Cardiovascular state changes in simulated work environments. *Frontiers in Neuroscience*, 8, 399. https://doi.org/10.3389/fnins.2014.00399
 
@@ -1458,14 +1467,5 @@ Task Force of the European Society of Cardiology and the North American Society 
 <a id="ref-tegegne2019"></a>
 Tegegne, B., Man, T., van Roon, A., Riese, H., & Snieder, H. (2019). To the Editor: 10-second ECG-based RMSSD as valid measure of HRV. *Heart Rhythm*, 16(3), e35. https://doi.org/10.1016/j.hrthm.2018.10.038
 
-<a id="ref-vanroon2025"></a>
-van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. *Entropy*, 27(8), 861. https://doi.org/10.3390/e27080861
-
 <a id="ref-dewaard1996"></a>
 de Waard, D. (1996). *The measurement of drivers' mental workload*. Ph.D. Thesis, University of Groningen. https://www.researchgate.net/publication/237132452_The_Measurement_of_Drivers'_Mental_Workload
-
-<a id="ref-grossman1990"></a>
-Grossman, P., van Beek, J., & Wientjes, C. (1990). A comparison of three quantification methods for estimation of respiratory sinus arrhythmia. *Psychophysiology*, 27(6), 702–714. https://doi.org/10.1111/j.1469-8986.1990.tb03198.x
-
-<a id="ref-buron2026"></a>
-Buron, J., & Menuet, C. (2026). Respiratory heart rate variability: Insights into mechanisms, measurements and interpretations. *Biological Psychology*, 208, 109299. https://doi.org/10.1016/j.biopsycho.2026.109299
