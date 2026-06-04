@@ -420,6 +420,127 @@ def resp_svo(ctx) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Grossman (1990) peak-to-valley RSA
+# ---------------------------------------------------------------------------
+
+_DEFAULT_RSA_LAG_S: float = 1.0   # dZ-HR phase shift; VU-DAMS default 1000 ms
+
+
+def grossman_rsa_per_breath(
+    rpeak_times: np.ndarray,
+    rpeak_labels: np.ndarray,
+    rsp_phases,
+    *,
+    lag_s: float = _DEFAULT_RSA_LAG_S,
+) -> np.ndarray:
+    """Per-breath RSA in ms using the Grossman et al. (1990) peak-to-valley method.
+
+    For each INH→EXH breath cycle:
+
+    * **Shortest IBI** — the minimum IBI within ``[INH_start, INH_end + lag_s]``
+      that sits on an *accelerating* slope (IBI shorter than the preceding one).
+    * **Longest IBI**  — the maximum IBI within ``[EXH_start, EXH_end + lag_s]``
+      that sits on a *decelerating* slope (IBI longer than the preceding one).
+    * **RSA** = longest − shortest (ms).  Negative values and breaths where
+      either IBI could not be located are stored as ``NaN``.
+
+    Parameters
+    ----------
+    rpeak_times : np.ndarray
+        R-peak timestamps in seconds (epoch view, may include artefact beats).
+    rpeak_labels : np.ndarray
+        Per-beat classification labels; beats labelled ``"T"`` or ``"TL"`` are
+        excluded before the search.
+    rsp_phases :
+        A ``RespirationSeriesView`` (or any object exposing ``.starts``,
+        ``.ends``, ``.labels`` arrays) covering the same epoch.
+    lag_s : float
+        Phase-shift applied to the end of each INH and EXH window (default
+        1.0 s, matching VU-DAMS).  Increasing this helps at low respiratory
+        rates; the VU-DAMS manual suggests adjusting it for children.
+
+    Returns
+    -------
+    np.ndarray
+        One value per detected INH→EXH pair.  ``NaN`` for invalid breaths.
+    """
+    from spectHR.analysis.ibi_helpers import valid_label_mask
+
+    clean_t = np.asarray(rpeak_times, dtype=float)[
+        valid_label_mask(np.asarray(rpeak_labels, dtype=object))
+    ]
+
+    if clean_t.size < 3:
+        return np.array([], dtype=float)
+
+    ibi_ms = np.diff(clean_t) * 1000.0   # ibi_ms[j] starts at clean_t[j]
+
+    starts = np.asarray(rsp_phases.starts, dtype=float)
+    ends   = np.asarray(rsp_phases.ends,   dtype=float)
+    labels = np.asarray(rsp_phases.labels, dtype=object)
+
+    results: list[float] = []
+
+    for i in range(len(starts) - 1):
+        if labels[i] != "INH" or labels[i + 1] != "EXH":
+            continue
+
+        inh_s, inh_e = float(starts[i]),     float(ends[i])
+        exh_s, exh_e = float(starts[i + 1]), float(ends[i + 1])
+
+        wi_lo, wi_hi = inh_s, inh_e + lag_s
+        we_lo, we_hi = exh_s, exh_e + lag_s
+
+        inh_idx = np.where((clean_t[:-1] >= wi_lo) & (clean_t[:-1] <= wi_hi))[0]
+        exh_idx = np.where((clean_t[:-1] >= we_lo) & (clean_t[:-1] <= we_hi))[0]
+
+        # Shortest IBI on an accelerating slope (IBI[j] < IBI[j-1])
+        shortest: float | None = None
+        for j in inh_idx:
+            if j > 0 and ibi_ms[j] < ibi_ms[j - 1]:
+                if shortest is None or ibi_ms[j] < shortest:
+                    shortest = float(ibi_ms[j])
+
+        # Longest IBI on a decelerating slope (IBI[j] > IBI[j-1])
+        longest: float | None = None
+        for j in exh_idx:
+            if j > 0 and ibi_ms[j] > ibi_ms[j - 1]:
+                if longest is None or ibi_ms[j] > longest:
+                    longest = float(ibi_ms[j])
+
+        if shortest is None or longest is None:
+            results.append(np.nan)
+        else:
+            diff = longest - shortest
+            results.append(diff if diff >= 0.0 else np.nan)
+
+    return np.asarray(results, dtype=float)
+
+
+def _rsa_metric(ctx, key: str) -> float:
+    beats = getattr(ctx, "rsa_beats", None)
+    if beats is None or beats.size == 0:
+        return float("nan")
+    if key == "rsa":
+        valid = beats[np.isfinite(beats)]
+        return float(np.mean(valid)) if valid.size > 0 else float("nan")
+    # rsa0: invalid breaths count as zero
+    return float(np.mean(np.where(np.isfinite(beats), beats, 0.0)))
+
+
+@epoch_metric
+def rsa(ctx) -> float:
+    """Respiratory sinus arrhythmia: mean over valid breath cycles (Grossman 1990 peak-to-valley, ms)."""
+    return _rsa_metric(ctx, "rsa")
+
+
+@epoch_metric
+def rsa0(ctx) -> float:
+    """RSA with invalid breaths zeroed; reduces over-estimation bias (VU-DAMS RSA0, ms)."""
+    return _rsa_metric(ctx, "rsa0")
+
+
+# ---------------------------------------------------------------------------
 # Aggregation helper
 # ---------------------------------------------------------------------------
 

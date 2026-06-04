@@ -285,6 +285,7 @@ class PhysioData:
             rsp_ts = self["rsp"].timeseries
         except (KeyError, AttributeError, TypeError):
             rsp_ts = None
+        rsp_series = self.rsp_map.get(self.active_band) if self.active_band else None
 
         labels_list: list = []
         rows: list[dict[str, float]] = []
@@ -293,8 +294,13 @@ class PhysioData:
             if ep.active:
                 labels_list.append(label)
                 view = hrv.view(ep.start, ep.end)
+                rsp_phases = (
+                    rsp_series.view(ep.start, ep.end)
+                    if rsp_series is not None else None
+                )
                 ctx = EpochContext(
                     view, psd_method=psd_method, bp_ts=bp_ts, rsp_ts=rsp_ts,
+                    rsp_phases=rsp_phases,
                 )
                 row: dict[str, float] = {}
 

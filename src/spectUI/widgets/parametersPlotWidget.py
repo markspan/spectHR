@@ -112,6 +112,9 @@ METRIC_ORDER = [
     # Beat-by-beat respiratory-volume parameters (CARSPAN).
     "resp_mvo",
     "resp_svo",
+    # Grossman (1990) peak-to-valley RSA.
+    "rsa",
+    "rsa0",
 ]
 
 
