@@ -16,6 +16,7 @@ Usage:
     hrv.rmssd(series)       # call a metric directly
     hrv.get_metrics()       # {name: fn} dict for automatic table building
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -30,6 +31,7 @@ from spectHR.analysis.ibi_helpers import (
 # ---------------------------------------------------------------------------
 # Magnitude-based statistics
 # ---------------------------------------------------------------------------
+
 
 @epoch_metric
 def count(series) -> float:
@@ -72,13 +74,14 @@ def stationarity(series) -> float:
     if ibi_ms.size <= 2:
         return np.nan
     # Use the same length prefix of times as the cleaned IBI vector.
-    t = series.times[:ibi_ms.size]
+    t = series.times[: ibi_ms.size]
     return float(np.corrcoef(ibi_ms, t)[0, 1])
 
 
 # ---------------------------------------------------------------------------
 # Variability
 # ---------------------------------------------------------------------------
+
 
 @epoch_metric
 def rmssd(series) -> float:
@@ -96,7 +99,7 @@ def sdnn(series) -> float:
 
 @epoch_metric
 def sdsd(series) -> float:
-    """Standard deviation of successive differences (ms). """
+    """Standard deviation of successive differences (ms)."""
     d = successive_diffs_ms(series)
     return float(np.std(d)) if d.size else np.nan
 
@@ -105,9 +108,10 @@ def sdsd(series) -> float:
 # Poincaré
 # ---------------------------------------------------------------------------
 
+
 @epoch_metric
 def sd1(series) -> float:
-    """Poincaré SD1 (minor axis, ms) = std(dIBI) / sqrt(2). """
+    """Poincaré SD1 (minor axis, ms) = std(dIBI) / sqrt(2)."""
     d = successive_diffs_ms(series)
     return float(np.std(d) / np.sqrt(2.0)) if d.size else np.nan
 
