@@ -32,6 +32,7 @@ from spectHR.analysis.transfer import (
     TransferProfileResult,
     compute_transfer_profile,
     input_signal_label,
+    modulus_unit,
     resolve_transfer_input,
 )
 from spectUI.common import (
@@ -439,7 +440,8 @@ class TransferProfilePlotWidget(PlotExportMixin, QWidget):
                 color=colour, lw=1.2, label=name, zorder=3,
             )
         # ---- modulus -------------------------------------------------
-        ax_mod.set_ylabel("|H|")
+        _unit = modulus_unit(data.input_signal)
+        ax_mod.set_ylabel(f"|H| [{_unit}]" if _unit else "|H|")
         ax_mod.set_xlim(*t_lim)
         ax_mod.set_ylim(bottom=0.0)
         ax_mod.spines["top"].set_visible(False)

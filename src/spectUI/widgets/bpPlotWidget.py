@@ -81,7 +81,7 @@ class BPPlotWidget(TimelinePlotWidget):
             bp.times, bp.values, color="darkblue", linewidth=1.0, alpha=1.0
         )
         #self.ax_main.set_title("Blood Pressure Timeseries")
-        self.ax_main.set_ylabel("Blood pressure")
+        self.ax_main.set_ylabel("Blood pressure [mmHg]")
         style_axis_clean(self.ax_main)
         self._set_time_axis(
             self.ax_main,

@@ -116,10 +116,31 @@ INPUT_SIGNAL_LABELS = {
     INPUT_SIGNAL_BP_DIA: "BP diastolic",
 }
 
+# Physical unit of the transfer-function modulus for each input signal.
+# The output is always the IBI series (in ms). For BP inputs the
+# engineering unit of the input is mmHg, giving ms/mmHg for the modulus.
+# Respiration has no standard engineering unit (it comes from an
+# accelerometer or thermistor whose raw values are dimensionless / V),
+# so we leave it blank and let the axis label read just "|H(f)|".
+MODULUS_UNITS = {
+    INPUT_SIGNAL_RSP:    "",
+    INPUT_SIGNAL_BP_SYS: "ms/mmHg",
+    INPUT_SIGNAL_BP_DIA: "ms/mmHg",
+}
+
 
 def input_signal_label(input_signal: str) -> str:
     """Return a human-readable name for *input_signal* (falls back to itself)."""
     return INPUT_SIGNAL_LABELS.get(input_signal, str(input_signal))
+
+
+def modulus_unit(input_signal: str) -> str:
+    """Return the physical unit of |H(f)| for *input_signal*.
+
+    ``"ms/mmHg"`` for blood-pressure inputs (IBI in ms, BP in mmHg).
+    Empty string for respiration (no standardised engineering unit).
+    """
+    return MODULUS_UNITS.get(input_signal, "")
 
 
 def resolve_transfer_input(pd, input_signal: str):

@@ -82,7 +82,7 @@ def stationarity(series) -> float:
 
 @epoch_metric
 def rmssd(series) -> float:
-    """Root mean square of successive differences (ms). Gap-safe."""
+    """Root mean square of successive differences (ms)."""
     d = successive_diffs_ms(series)
     return float(np.sqrt(np.mean(d * d))) if d.size else np.nan
 
@@ -96,7 +96,7 @@ def sdnn(series) -> float:
 
 @epoch_metric
 def sdsd(series) -> float:
-    """Standard deviation of successive differences (ms). Gap-safe."""
+    """Standard deviation of successive differences (ms). """
     d = successive_diffs_ms(series)
     return float(np.std(d)) if d.size else np.nan
 
@@ -107,7 +107,7 @@ def sdsd(series) -> float:
 
 @epoch_metric
 def sd1(series) -> float:
-    """Poincaré SD1 (minor axis, ms) = std(dIBI) / sqrt(2). Gap-safe."""
+    """Poincaré SD1 (minor axis, ms) = std(dIBI) / sqrt(2). """
     d = successive_diffs_ms(series)
     return float(np.std(d) / np.sqrt(2.0)) if d.size else np.nan
 

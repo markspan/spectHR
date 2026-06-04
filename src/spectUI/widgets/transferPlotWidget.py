@@ -36,6 +36,7 @@ from spectHR.analysis.transfer import (
     TransferResult,
     compute_transfer,
     input_signal_label,
+    modulus_unit,
     resolve_transfer_input,
 )
 from spectUI.common import (
@@ -462,7 +463,8 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
                 band_results=data.band_results,
                 draw_low=draw_low, draw_high=draw_high,
             )
-        ax_mod.set_ylabel("|H(f)|")
+        _unit = modulus_unit(data.input_signal)
+        ax_mod.set_ylabel(f"|H(f)| [{_unit}]" if _unit else "|H(f)|")
         ax_mod.set_ylim(bottom=0.0)
         # Name the transfer pairing as a legend-only entry. The output is
         # always the IBI (HR) series; the input datatype (respiration vs
