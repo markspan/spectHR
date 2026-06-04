@@ -350,13 +350,13 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), and Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)). These columns are always present; the values are blank when the corresponding channel is absent.
 - **Transfer** (when the input channel is present): per-band modulus, phase and weighted coherence
 
-#### RSA lag (`rsa_lag_s`)
+#### RSA lag
 
 The Grossman peak-to-valley algorithm finds, per breath cycle, the shortest IBI during inhalation and the longest IBI during exhalation, and returns their difference. Because vagal neural conduction takes ~0.5–1.5 s, the cardiac response to a phase transition does not arrive instantaneously: the IBI that "belongs" to inhalation may fall just after the inhalation window closes. `rsa_lag_s` extends each search window beyond the phase boundary by this amount.
 
 The default of **1.0 s** is the value used in [Grossman et al. (1990)](#ref-grossman1990) and matches the VU-DAMS implementation.
 
-**Why it matters for breathing rate.** At slow breathing (6 bpm) each phase lasts ~5 s, so a 1 s extension is a modest 20% overhang and causes no problems. At fast breathing (20–25 bpm) each phase lasts only ~1.2–1.5 s; a 1 s extension then reaches nearly as far as the next full phase, causing the inhalation and exhalation windows to overlap and the algorithm to mix beats from both phases. The measured RSA is biased upward. **For children** (typical rate 20–30 bpm) the 1.0 s default is too large; values of 0.3–0.5 s are more appropriate. Configure `rsa_lag_s` under **Settings → Edit Parameters → General Settings → Respiration Analysis**.
+ **For children** (typical rate 20–30 bpm) the 1.0 s default could be too large; values of 0.3–0.5 s are more appropriate. Configure `rsa_lag_s` under **Settings → Edit Parameters → General Settings → Respiration Analysis**.
 
 Click **Save** to export **two files** to the configured Output folder:
 
