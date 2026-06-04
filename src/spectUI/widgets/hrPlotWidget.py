@@ -46,6 +46,10 @@ class HRPlotWidget(TimelinePlotWidget):
 
         # Breathing overlay axis (twinx); rebuilt on each redraw.
         self._ax_br_twin: Axes | None = None
+        # RSA per-breath overlay axis (second twinx); rebuilt on each redraw.
+        self._ax_rsa_twin: Axes | None = None
+
+        self.workspace = None
 
         # Not used by this widget directly; present so the next/prev
         # guards have something to test. Wired by the preprocessing flow.
@@ -110,6 +114,7 @@ class HRPlotWidget(TimelinePlotWidget):
 
     def _draw_extras(self) -> None:
         self._draw_breathing()
+        self._draw_rsa_overlay()
 
     # ==============================================================
     # Public API
@@ -121,8 +126,10 @@ class HRPlotWidget(TimelinePlotWidget):
         fig: Figure | None = None,
         x_min: float | None = None,
         x_max: float | None = None,
+        workspace=None,
     ) -> Figure:
         """Initialise and display the heart-rate plot for *data*."""
+        self.workspace = workspace
         return self._plot(data, fig, x_min, x_max)
 
     # ==============================================================
@@ -200,10 +207,12 @@ class HRPlotWidget(TimelinePlotWidget):
 
     @property
     def breathing_series(self) -> TimeSeries | None:
-        """
-        Return the first breathing TimeSeries if present, otherwise None.
-        """
+        """Return the breathing TimeSeries for the active band, else None."""
         assert self.data is not None
+        try:
+            return self.data["rsp"].timeseries
+        except (KeyError, AttributeError, TypeError):
+            pass
         for name, ts in self.data.timeseries.items():
             if name.startswith("RSP"):
                 return ts
@@ -263,17 +272,15 @@ class HRPlotWidget(TimelinePlotWidget):
 
     def _draw_breathing(self) -> None:
         """
-        Draw breathing signal as a twin y-axis overlay on the main axis.
+        Draw INH/EXH phase shading and optional breathing waveform overlay.
 
-        Behavior
-        --------
-        - If no breathing series exists, remove any previous twin axis and return.
-        - Otherwise, rebuild the twin axis on each redraw (robust).
+        Phase shading is drawn whenever respiration phases are available,
+        regardless of whether a raw breathing waveform exists.  The waveform
+        overlay (green line on a twinx) is only added when the timeseries is
+        present.
         """
         assert self.ax_main is not None
         assert self.data is not None and self.data.view is not None
-
-        ts = self.breathing_series
 
         # Remove old twin axis to avoid stacking
         if self._ax_br_twin is not None:
@@ -283,20 +290,21 @@ class HRPlotWidget(TimelinePlotWidget):
                 pass
             self._ax_br_twin = None
 
+        # Phase shading on the primary axis regardless of waveform availability.
+        if self._has_resp_phases():
+            self._draw_phase_backgrounds(
+                self.ax_main,
+                phase_prefix="inh",
+                color="#ADD8E6",
+                alpha=0.25,
+            )
+
+        ts = self.breathing_series
         if ts is None:
             return
 
         ax_hr = self.ax_main
         self._ax_br_twin = ax_hr.twinx()
-
-        # Optional: phase shading on the HR axis
-        if self._has_resp_phases():
-            self._draw_phase_backgrounds(
-                ax_hr,
-                phase_prefix="inh",
-                color="#ADD8E6",
-                alpha=0.25,
-            )
 
         self._ax_br_twin.plot(
             ts.times,
@@ -311,13 +319,120 @@ class HRPlotWidget(TimelinePlotWidget):
 
         # Make breathing subtle
         self._ax_br_twin.tick_params(axis="y", colors="green", labelsize=8)
-        self._ax_br_twin.spines["right"].set_alpha(0.3)
         self._ax_br_twin.set_ylabel("Breathing", color="green", fontsize=8)
 
         # Keep behind the HR trace
         self._ax_br_twin.set_zorder(0)
-        style_axis_clean(self._ax_br_twin)  # removes top/left/right spines too
+        style_axis_clean(self._ax_br_twin)  # removes top/left/right spines
         self._ax_br_twin.set_xlabel("")
+
+    def _rsa_overlay_enabled(self) -> bool:
+        ra = ((self.workspace or {}).get("RespirationAnalysis") or {})
+        return bool(ra.get("rsa_overlay", True))
+
+    def _draw_rsa_overlay(self) -> None:
+        """
+        Draw per-breath RSA and RSA0 as scatter points on a right y-axis.
+
+        Each point is positioned at the midpoint of its INH→EXH cycle pair.
+        Filled circles = RSA (valid breaths only); hollow circles = RSA0
+        (invalid breaths zeroed).  A thin connecting line through RSA0 shows
+        the trend.
+        """
+        # Clean up previous overlay axis unconditionally so a disabled
+        # setting also removes a stale axis from the last redraw.
+        if self._ax_rsa_twin is not None:
+            try:
+                self._ax_rsa_twin.remove()
+            except Exception:
+                pass
+            self._ax_rsa_twin = None
+
+        if not self._rsa_overlay_enabled():
+            return
+        if self.data is None or self.data.view is None:
+            return
+
+        active_band = getattr(self.data, "active_band", None)
+        rsp_series = getattr(self.data, "rsp_map", {}).get(active_band)
+        if rsp_series is None:
+            return
+
+        hrv = self.data.hrv
+        if hrv is None:
+            return
+
+        x_min, x_max = self.data.view.x_min, self.data.view.x_max
+        rsp_phases = rsp_series.view(x_min, x_max)
+        if len(rsp_phases) < 2:
+            return
+
+        try:
+            from spectHR.analysis.bp_metrics import grossman_rsa_per_breath
+            lag_s = float(
+                ((self.workspace or {}).get("RespirationAnalysis") or {})
+                .get("rsa_lag_s", 1.0)
+            )
+            rsa_values = grossman_rsa_per_breath(
+                np.asarray(hrv.times,  dtype=float),
+                np.asarray(hrv.labels, dtype=object),
+                rsp_phases,
+                lag_s=lag_s,
+            )
+        except Exception:
+            return
+
+        if rsa_values.size == 0:
+            return
+
+        # Build per-breath (x, rsa, rsa0) arrays.
+        p_starts = np.asarray(rsp_phases.starts, dtype=float)
+        p_ends   = np.asarray(rsp_phases.ends,   dtype=float)
+        p_labels = np.asarray(rsp_phases.labels, dtype=object)
+
+        x_pts, rsa_pts, rsa0_pts = [], [], []
+        pair_idx = 0
+        for i in range(len(p_starts) - 1):
+            if p_labels[i] == "INH" and p_labels[i + 1] == "EXH":
+                if pair_idx < rsa_values.size:
+                    v = float(rsa_values[pair_idx])
+                    x_pts.append((p_starts[i] + p_ends[i + 1]) / 2.0)
+                    rsa_pts.append(v if np.isfinite(v) else np.nan)
+                    rsa0_pts.append(v if (np.isfinite(v) and v >= 0) else 0.0)
+                pair_idx += 1
+
+        if not x_pts:
+            return
+
+        x_arr    = np.array(x_pts)
+        rsa_arr  = np.array(rsa_pts)
+        rsa0_arr = np.array(rsa0_pts)
+
+        self._ax_rsa_twin = self.ax_main.twinx()
+        ax_r = self._ax_rsa_twin
+
+        # Trend line + hollow markers for RSA0 (all cycles, invalid → 0)
+        ax_r.plot(x_arr, rsa0_arr,
+                  color="darkorange", linewidth=0.8, alpha=0.4, zorder=3)
+        ax_r.scatter(x_arr, rsa0_arr, s=20,
+                     facecolors="none", edgecolors="darkorange", alpha=0.7,
+                     zorder=4)
+
+        # Filled markers for RSA (valid cycles only)
+        valid = np.isfinite(rsa_arr)
+        if np.any(valid):
+            ax_r.scatter(x_arr[valid], rsa_arr[valid], s=35,
+                         color="darkorange", zorder=5)
+
+        ax_r.set_xlim(x_min, x_max)
+        ax_r.set_ylabel("RSA (ms)", color="darkorange", fontsize=8)
+        ax_r.tick_params(axis="y", colors="darkorange", labelsize=8)
+        ax_r.spines["right"].set_visible(True)
+        ax_r.spines["right"].set_color("darkorange")
+        ax_r.spines["right"].set_alpha(0.6)
+        for spine in ("top", "left", "bottom"):
+            ax_r.spines[spine].set_visible(False)
+        ax_r.set_xlabel("")
 
     # ==============================================================
     # R-top jump navigation
