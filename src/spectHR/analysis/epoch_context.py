@@ -54,14 +54,17 @@ class EpochContext:
         ``.times`` and ``.values``).  ``None`` when the channel is not loaded.
     """
 
-    def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None):
+    def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None,
+                 rsp_phases=None):
         self.view = view
         self.psd_method = psd_method
         self.bp_ts = bp_ts
         self.rsp_ts = rsp_ts
+        self.rsp_phases = rsp_phases  # RespirationSeriesView for this epoch
         self._psd = _UNSET
         self._bp_beats = _UNSET
         self._resp_beats = _UNSET
+        self._rsa_beats = _UNSET
 
     # ------------------------------------------------------------------ #
     # Series-interface delegation                                         #
@@ -143,6 +146,26 @@ class EpochContext:
                 np.asarray(self.rsp_ts.times, dtype=float),
                 np.asarray(self.rsp_ts.values, dtype=float),
                 np.asarray(self.rpeak_times, dtype=float),
+            )
+        except Exception:
+            return None
+
+    @property
+    def rsa_beats(self):
+        """Per-breath Grossman peak-to-valley RSA array (ms), or None."""
+        if self._rsa_beats is _UNSET:
+            self._rsa_beats = self._compute_rsa_beats()
+        return self._rsa_beats
+
+    def _compute_rsa_beats(self):
+        if self.rsp_phases is None or len(self.rsp_phases) < 2:
+            return None
+        try:
+            from spectHR.analysis.bp_metrics import grossman_rsa_per_breath
+            return grossman_rsa_per_breath(
+                np.asarray(self.rpeak_times, dtype=float),
+                np.asarray(self.labels,      dtype=object),
+                self.rsp_phases,
             )
         except Exception:
             return None
