@@ -44,9 +44,7 @@ class HRPlotWidget(TimelinePlotWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
 
-        # Breathing overlay axis (twinx); rebuilt on each redraw.
-        self._ax_br_twin: Axes | None = None
-        # RSA per-breath overlay axis (second twinx); rebuilt on each redraw.
+        # RSA per-breath overlay axis (twinx); rebuilt on each redraw.
         self._ax_rsa_twin: Axes | None = None
 
         self.workspace = None
@@ -271,76 +269,30 @@ class HRPlotWidget(TimelinePlotWidget):
             )
 
     def _draw_breathing(self) -> None:
-        """
-        Draw INH/EXH phase shading and optional breathing waveform overlay.
-
-        Phase shading is drawn whenever respiration phases are available,
-        regardless of whether a raw breathing waveform exists.  The waveform
-        overlay (green line on a twinx) is only added when the timeseries is
-        present.
-        """
+        """Draw INH/EXH phase shading on the HR axis (no waveform overlay)."""
         assert self.ax_main is not None
         assert self.data is not None and self.data.view is not None
-
-        # Remove old twin axis to avoid stacking
-        if self._ax_br_twin is not None:
-            try:
-                self._ax_br_twin.remove()
-            except Exception:
-                pass
-            self._ax_br_twin = None
-
-        # Phase shading on the primary axis regardless of waveform availability.
         if self._has_resp_phases():
             self._draw_phase_backgrounds(
-                self.ax_main,
-                phase_prefix="inh",
-                color="#ADD8E6",
-                alpha=0.25,
+                self.ax_main, phase_prefix="inh", color="#ADD8E6", alpha=0.25,
             )
 
-        ts = self.breathing_series
-        if ts is None:
-            return
-
-        ax_hr = self.ax_main
-        self._ax_br_twin = ax_hr.twinx()
-
-        self._ax_br_twin.plot(
-            ts.times,
-            ts.values,
-            color="green",
-            linewidth=0.5,
-            alpha=0.3,
-            zorder=1,
-        )
-
-        self._ax_br_twin.set_xlim(self.data.view.x_min, self.data.view.x_max)
-
-        # Make breathing subtle
-        self._ax_br_twin.tick_params(axis="y", colors="green", labelsize=8)
-        self._ax_br_twin.set_ylabel("Breathing", color="green", fontsize=8)
-
-        # Keep behind the HR trace
-        self._ax_br_twin.set_zorder(0)
-        style_axis_clean(self._ax_br_twin)  # removes top/left/right spines
-        self._ax_br_twin.set_xlabel("")
-
-    def _rsa_overlay_enabled(self) -> bool:
+    def _rsa_overlay_mode(self) -> str:
         ra = ((self.workspace or {}).get("RespirationAnalysis") or {})
-        return bool(ra.get("rsa_overlay", True))
+        mode = str(ra.get("rsa_overlay", "both")).lower()
+        return mode if mode in ("none", "rsa", "rsa0", "both") else "both"
 
     def _draw_rsa_overlay(self) -> None:
         """
-        Draw per-breath RSA and RSA0 as scatter points on a right y-axis.
+        Draw per-breath RSA/RSA0 as scatter points on a right y-axis.
 
         Each point is positioned at the midpoint of its INH→EXH cycle pair.
-        Filled circles = RSA (valid breaths only); hollow circles = RSA0
-        (invalid breaths zeroed).  A thin connecting line through RSA0 shows
-        the trend.
+        Which series are drawn is controlled by RespirationAnalysis.rsa_overlay:
+        "rsa" = filled circles (valid cycles only), "rsa0" = hollow circles
+        (invalid → 0) with a trend line, "both" = both, "none" = nothing.
         """
-        # Clean up previous overlay axis unconditionally so a disabled
-        # setting also removes a stale axis from the last redraw.
+        # Clean up previous overlay axis unconditionally so "none" also
+        # removes a stale axis from the previous redraw.
         if self._ax_rsa_twin is not None:
             try:
                 self._ax_rsa_twin.remove()
@@ -348,7 +300,8 @@ class HRPlotWidget(TimelinePlotWidget):
                 pass
             self._ax_rsa_twin = None
 
-        if not self._rsa_overlay_enabled():
+        mode = self._rsa_overlay_mode()
+        if mode == "none":
             return
         if self.data is None or self.data.view is None:
             return
@@ -410,19 +363,22 @@ class HRPlotWidget(TimelinePlotWidget):
 
         self._ax_rsa_twin = self.ax_main.twinx()
         ax_r = self._ax_rsa_twin
+        legend_handles = []
 
-        # Trend line + hollow markers for RSA0 (all cycles, invalid → 0)
-        ax_r.plot(x_arr, rsa0_arr,
-                  color="darkorange", linewidth=0.8, alpha=0.4, zorder=3)
-        ax_r.scatter(x_arr, rsa0_arr, s=20,
-                     facecolors="none", edgecolors="darkorange", alpha=0.7,
-                     zorder=4)
+        if mode in ("rsa0", "both"):
+            ax_r.plot(x_arr, rsa0_arr,
+                      color="darkorange", linewidth=0.8, alpha=0.4, zorder=3)
+            sc0 = ax_r.scatter(x_arr, rsa0_arr, s=20,
+                               facecolors="none", edgecolors="darkorange",
+                               alpha=0.7, zorder=4, label="RSA₀")
+            legend_handles.append(sc0)
 
-        # Filled markers for RSA (valid cycles only)
-        valid = np.isfinite(rsa_arr)
-        if np.any(valid):
-            ax_r.scatter(x_arr[valid], rsa_arr[valid], s=35,
-                         color="darkorange", zorder=5)
+        if mode in ("rsa", "both"):
+            valid = np.isfinite(rsa_arr)
+            if np.any(valid):
+                sc = ax_r.scatter(x_arr[valid], rsa_arr[valid], s=35,
+                                  color="darkorange", zorder=5, label="RSA")
+                legend_handles.append(sc)
 
         ax_r.set_xlim(x_min, x_max)
         ax_r.set_ylabel("RSA (ms)", color="darkorange", fontsize=8)
@@ -433,6 +389,10 @@ class HRPlotWidget(TimelinePlotWidget):
         for spine in ("top", "left", "bottom"):
             ax_r.spines[spine].set_visible(False)
         ax_r.set_xlabel("")
+
+        if legend_handles:
+            ax_r.legend(handles=legend_handles, loc="upper right",
+                        fontsize=7, framealpha=0.7)
 
     # ==============================================================
     # R-top jump navigation

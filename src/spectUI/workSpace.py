@@ -294,7 +294,7 @@ _DEFAULT_WORKSPACE = {
     "RespirationAnalysis": {
         "per_epoch": False,
         "rsa_lag_s": 1.0,
-        "rsa_overlay": True,
+        "rsa_overlay": "both",
     },
 }
 
