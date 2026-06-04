@@ -368,15 +368,15 @@ class HRPlotWidget(TimelinePlotWidget):
         if mode in ("rsa0", "both"):
             ax_r.plot(x_arr, rsa0_arr,
                       color="darkorange", linewidth=0.8, alpha=0.4, zorder=3)
-            sc0 = ax_r.scatter(x_arr, rsa0_arr, s=20,
+            sc0 = ax_r.scatter(x_arr, rsa0_arr, s=10,
                                facecolors="none", edgecolors="darkorange",
-                               alpha=0.7, zorder=4, label="RSA₀")
+                               alpha=0.7, zorder=4)
             legend_handles.append(sc0)
 
         if mode in ("rsa", "both"):
             valid = np.isfinite(rsa_arr)
             if np.any(valid):
-                sc = ax_r.scatter(x_arr[valid], rsa_arr[valid], s=35,
+                sc = ax_r.scatter(x_arr[valid], rsa_arr[valid], s=10,
                                   color="darkorange", zorder=5, label="RSA")
                 legend_handles.append(sc)
 
