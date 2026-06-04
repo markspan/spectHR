@@ -36,7 +36,7 @@ def segment_respiration(
     *,
     prefilter_cutoff_hz: float = 2.0,
     prefilter_order: Optional[int] = None,
-    min_phase_duration: float = 2.0,
+    min_phase_duration: float = 0.5,
     smooth: bool = True,
     smoothing_window: int = 31,
     polyorder: int = 3,
@@ -56,7 +56,10 @@ def segment_respiration(
     prefilter_order : int or None
         Butterworth filter order.  Auto-estimated via ``buttord`` when None.
     min_phase_duration : float
-        Minimum duration of an accepted INH or EXH phase in seconds (default 2 s).
+        Minimum duration of an accepted INH or EXH phase in seconds (default 0.5 s,
+        which accepts breathing up to ~60 bpm while still blocking cardiac-period
+        artifacts at ~1 s).  The old default of 2.0 s rejected normal breathing
+        above ~12 bpm.
     smooth : bool
         Whether to apply Savitzky-Golay smoothing after low-pass filtering.
     smoothing_window : int

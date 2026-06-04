@@ -62,7 +62,7 @@ class RespirationSeries:
         *,
         prefilter_cutoff_hz: float = 2,
         prefilter_order: int | None = None,
-        min_phase_duration: float = 2,
+        min_phase_duration: float = 0.5,
         smooth: bool = True,
         smoothing_window: int = 31,
         polyorder: int = 3,
