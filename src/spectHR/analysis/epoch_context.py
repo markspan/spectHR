@@ -55,12 +55,13 @@ class EpochContext:
     """
 
     def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None,
-                 rsp_phases=None):
+                 rsp_phases=None, rsa_lag_s: float = 1.0):
         self.view = view
         self.psd_method = psd_method
         self.bp_ts = bp_ts
         self.rsp_ts = rsp_ts
         self.rsp_phases = rsp_phases  # RespirationSeriesView for this epoch
+        self.rsa_lag_s = rsa_lag_s
         self._psd = _UNSET
         self._bp_beats = _UNSET
         self._resp_beats = _UNSET
@@ -166,6 +167,7 @@ class EpochContext:
                 np.asarray(self.rpeak_times, dtype=float),
                 np.asarray(self.labels,      dtype=object),
                 self.rsp_phases,
+                lag_s=self.rsa_lag_s,
             )
         except Exception:
             return None

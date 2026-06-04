@@ -231,6 +231,7 @@ class PhysioData:
     def epoched_parameters_table(
         self,
         psd_method=None,
+        rsa_lag_s: float = 1.0,
     ) -> "tuple[np.ndarray, list[str], np.ndarray]":
         """Compute every per-epoch parameter for every active epoch.
 
@@ -300,7 +301,7 @@ class PhysioData:
                 )
                 ctx = EpochContext(
                     view, psd_method=psd_method, bp_ts=bp_ts, rsp_ts=rsp_ts,
-                    rsp_phases=rsp_phases,
+                    rsp_phases=rsp_phases, rsa_lag_s=rsa_lag_s,
                 )
                 row: dict[str, float] = {}
 

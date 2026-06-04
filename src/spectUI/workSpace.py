@@ -293,6 +293,7 @@ _DEFAULT_WORKSPACE = {
     # flag on without defining task epochs yet is a no-op.
     "RespirationAnalysis": {
         "per_epoch": False,
+        "rsa_lag_s": 1.0,
     },
 }
 
