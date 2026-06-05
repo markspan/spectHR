@@ -639,6 +639,13 @@ class PrepPlotWidget(TimelinePlotWidget):
             plot_times = ecg.times
             plot_values = ecg.values
 
+        # A screen can't show more samples than it has pixels: min/max
+        # decimate the visible segment so a wide window doesn't push
+        # millions of points through matplotlib. The envelope (incl.
+        # R-peaks) and the per-window min/max — and thus the y-autoscale
+        # below — are preserved. No-op once zoomed in past ~screen width.
+        plot_times, plot_values = decimate_minmax(plot_times, plot_values)
+
         self.ax_ecg.clear()
         self.ax_ecg.plot(
             plot_times,
@@ -732,6 +739,9 @@ class PrepPlotWidget(TimelinePlotWidget):
         else:
             plot_times = ts.times
             plot_values = ts.values
+
+        # Decimate the visible segment to ~screen resolution (see _draw_ecg).
+        plot_times, plot_values = decimate_minmax(plot_times, plot_values)
 
         ax_br.plot(
             plot_times,
