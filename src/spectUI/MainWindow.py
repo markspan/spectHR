@@ -1087,6 +1087,7 @@ class MainWindow(QMainWindow):
         # epochs / settings signature did not change.
         self._plot_sig.clear()
         self.show_preprocessing_plot(self.dataset)
+        self.show_hr_plot(self.dataset)
 
     def reload(self, item):
         """Discard cache and reload from raw file."""
