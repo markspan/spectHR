@@ -336,6 +336,18 @@ Both views share Settings, configurable under **WorkSpace -> Edit Parameters -> 
 | `show_coherence_threshold` | `true` | Draw the red reference line at `min_coherence` on the coherence panel. |
 | `coherence_mask_alpha` | 0.20 | Opacity (0..1) applied to phase points where coherence is below `min_coherence`. Set to 0 to hide them entirely. |
 
+#### Reading the plots
+
+Both transfer views render as **three-row tiles per epoch**, all sharing the same x-axis. The Bode tile (per-epoch view) plots against frequency; the Transfer-profile tile plots against time within the epoch.
+
+| Row | Bode tile (per epoch) | Transfer-profile tile (sliding window) |
+|---|---|---|
+| **Top: modulus** | $\|H(f)\|$, a black line with PSD-style under-curve fills coloured by band. A peak at the breathing frequency means heart rate tracks breathing strongly there. The legend reports the coherence-gated mean $\|H\|$ per band (the same number that lands in `<band>_modulus`). Up / Down arrows shrink / grow the y-axis. | One coloured line per band: how the band-mean modulus changes window by window. Tiles start linked (same y-top across epochs) so cross-epoch reading works; Up / Down on a hovered tile unlinks just that one for a closer look. |
+| **Middle: phase** | $\angle H(f)$ as a dot scatter (radians on the y-axis). Solid dots are bins whose coherence cleared `min_coherence`; faded dots (opacity = `coherence_mask_alpha`) are bins below the gate, shown so you can see where phase becomes noisy. Toggle wrapped (default, $[-\pi, \pi]$) or unwrapped in Settings. A near-zero phase at the breathing frequency means heart rate follows breathing without delay; a non-zero phase reflects a respiratory-sinus-arrhythmia time lag. | One coloured line per band over time. Same wrapped / unwrapped toggle. Watch for sustained drifts away from the band's resting-state phase; those flag breathing-pattern changes that are reshaping the coupling. |
+| **Bottom: coherence** | $\|C(f)\|^2 \in [0, 1]$, the linear predictability of heart rate from breathing per bin. A red dashed line sits at `min_coherence` so the visual gate always matches the integrator's gate. If the recording's peak coherence falls below 0.2 the y-axis auto-rescales (with the peak value annotated on the y-label) so a faint trace stays visible instead of hugging the bottom spine. | Weighted-coherence per band as a time series, one coloured line per band. Same auto-rescale rule. Drops here mark windows where breathing stopped driving HRV cleanly. |
+
+Vertical band-coloured shading on the phase and coherence panels marks the configured frequency bands so a peak at, say, 0.25 Hz reads immediately as "inside HF". The modulus panel uses PSD-style **under-curve** fills instead of vertical bars so the area visually scales with $\|H\|$ in that band. FullRange is intentionally not drawn on either view: a 0.02 -- 0.5 Hz overlay would blanket the secondary panels, and the integrated $|H|$ over that whole range is rarely meaningful.
+
 Shift+Ctrl+P exports every Transfer (and Transfer-profile) tile as PNG + PDF to the configured Output folder, alongside the existing PSD and Profile exports.
 
 ---
@@ -1232,20 +1244,6 @@ with asymmetric boundary weights $\tilde{f}_b[0] = \tfrac{3}{8}f_b[0] + \tfrac{5
 ### Transfer functions
 
 The PSD, Profiles and Spectrogram views describe heart-rate variability **on its own**. The Transfer view describes how HRV is **driven by breathing**: a frequency-by-frequency answer to "how much of the heart-rate fluctuation at $f$ is linearly predictable from the breathing signal at $f$, and what is the gain and the phase delay of that prediction?". The implementation is `spectHR.analysis.transfer.compute_transfer` (single-block, one Bode plot per epoch) and `compute_transfer_profile` (sliding-window, one time series per band). Both follow CARSPAN's transfer-function algorithm with one deliberate change documented below.
-
-#### Reading the plots
-
-Both transfer views render as **three-row tiles per epoch**, all sharing the same x-axis. The Bode tile (per-epoch view) plots against frequency; the Transfer-profile tile plots against time within the epoch.
-
-| Row | Bode tile (per epoch) | Transfer-profile tile (sliding window) |
-|---|---|---|
-| **Top: modulus** | $\|H(f)\|$, a black line with PSD-style under-curve fills coloured by band. A peak at the breathing frequency means heart rate tracks breathing strongly there. The legend reports the coherence-gated mean $\|H\|$ per band (the same number that lands in `<band>_modulus`). Up / Down arrows shrink / grow the y-axis. | One coloured line per band: how the band-mean modulus changes window by window. Tiles start linked (same y-top across epochs) so cross-epoch reading works; Up / Down on a hovered tile unlinks just that one for a closer look. |
-| **Middle: phase** | $\angle H(f)$ as a dot scatter (radians on the y-axis). Solid dots are bins whose coherence cleared `min_coherence`; faded dots (opacity = `coherence_mask_alpha`) are bins below the gate, shown so you can see where phase becomes noisy. Toggle wrapped (default, $[-\pi, \pi]$) or unwrapped in Settings. A near-zero phase at the breathing frequency means heart rate follows breathing without delay; a non-zero phase reflects a respiratory-sinus-arrhythmia time lag. | One coloured line per band over time. Same wrapped / unwrapped toggle. Watch for sustained drifts away from the band's resting-state phase; those flag breathing-pattern changes that are reshaping the coupling. |
-| **Bottom: coherence** | $\|C(f)\|^2 \in [0, 1]$, the linear predictability of heart rate from breathing per bin. A red dashed line sits at `min_coherence` so the visual gate always matches the integrator's gate. If the recording's peak coherence falls below 0.2 the y-axis auto-rescales (with the peak value annotated on the y-label) so a faint trace stays visible instead of hugging the bottom spine. | Weighted-coherence per band as a time series, one coloured line per band. Same auto-rescale rule. Drops here mark windows where breathing stopped driving HRV cleanly. |
-
-Vertical band-coloured shading on the phase and coherence panels marks the configured frequency bands so a peak at, say, 0.25 Hz reads immediately as "inside HF". The modulus panel uses PSD-style **under-curve** fills instead of vertical bars so the area visually scales with $\|H\|$ in that band. FullRange is intentionally not drawn on either view: a 0.02 -- 0.5 Hz overlay would blanket the secondary panels, and the integrated $|H|$ over that whole range is rarely meaningful.
-
-Settings for both tiles (frequency range, smoothing, gate threshold, threshold-line toggle, mask alpha, phase view) live on a single **Transfer Settings** tab in *Edit Parameters*, paired horizontally where the keys go together so the dialog reads as a short list of related groups rather than a long ladder of fields.
 
 <details>
 <summary>Transfer, algorithm detail</summary>
