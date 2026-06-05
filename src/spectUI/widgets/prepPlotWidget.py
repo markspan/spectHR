@@ -1148,7 +1148,6 @@ class PrepPlotWidget(TimelinePlotWidget):
             and event.xdata is not None
         ):
             self.rtop_ctrl.add_no_classify(float(event.xdata), label="N")
-            self.redraw()
             self._classify_timer.start()
 
     def _on_motion(self, event) -> None:
@@ -1214,7 +1213,6 @@ class PrepPlotWidget(TimelinePlotWidget):
         if self.rtop_ctrl is None:
             return
         self.rtop_ctrl.move_no_classify(old_x, new_x)
-        self.redraw()
         self._classify_timer.start()
 
     def _on_line_remove(self, old_x: float, new_x: float) -> None:
@@ -1222,7 +1220,6 @@ class PrepPlotWidget(TimelinePlotWidget):
         if self.rtop_ctrl is None:
             return
         self.rtop_ctrl.delete_no_classify(new_x)
-        self.redraw()
         self._classify_timer.start()
 
     def _deferred_classify_and_redraw(self) -> None:
