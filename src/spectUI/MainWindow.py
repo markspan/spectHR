@@ -1650,13 +1650,15 @@ class MainWindow(QMainWindow):
             if not pairs:
                 return
             labels, views = zip(*pairs)
+
+            # Show a lightweight placeholder while the worker runs. Kept
+            # inside the guard: if the dock's layout C++ object was deleted
+            # (dock closed/recreated), abort without submitting work.
+            loading = QLabel("Computing…")
+            loading.setAlignment(Qt.AlignCenter)
+            layout.addWidget(loading)
         except RuntimeError:
             return
-
-        # Show a lightweight placeholder while the worker runs.
-        loading = QLabel("Computing…")
-        loading.setAlignment(Qt.AlignCenter)
-        layout.addWidget(loading)
 
         workspace = self.workspace
 
