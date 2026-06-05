@@ -11,6 +11,7 @@ import spectHR.DataSet.loaders.pkl_loader  # noqa: F401
 import spectHR.DataSet.loaders.evt_loader  # noqa: F401
 import spectHR.DataSet.loaders.polar_csv  # noqa: F401
 import spectHR.DataSet.loaders.harness_csv  # noqa: F401
+import spectHR.DataSet.loaders.edf_loader  # noqa: F401
 
 
 __all__ = ["get_loader", "register_loader"]
