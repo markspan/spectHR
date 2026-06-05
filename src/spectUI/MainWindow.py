@@ -760,7 +760,15 @@ class MainWindow(QMainWindow):
             pass
 
     def closeEvent(self, event) -> None:
-        """Persist current geometry, window state and dock layout on close."""
+        """Persist the dataset, then geometry / window state / dock layout.
+
+        Reached by both close paths: the Quit action (which calls
+        ``self.close()``) and the window's close button. Saving the dataset
+        here is the only on-close persistence point, so unsaved R-peak /
+        epoch edits are flushed before the app exits.
+        """
+        self._save_current_dataset_if_dirty()
+
         # Re-dock every floating panel before saving state.  Floating dock
         # containers are independent top-level windows; if we save state while
         # they are still floating the INI records them that way, and on the next
@@ -808,11 +816,29 @@ class MainWindow(QMainWindow):
         level = spQt.log_level_from_workspace(self.workspace)
         logging.getLogger("spectHR").setLevel(level)
 
+    def _save_current_dataset_if_dirty(self) -> None:
+        """Persist the active dataset to its cache file if it has unsaved edits.
+
+        R-peak / epoch edits mark the dataset dirty but no longer save on
+        every dock switch — pickling the full recording is slow and froze
+        the UI. Instead we save at the two moments the dataset stops being
+        the active one: when another file is selected and when the app is
+        closed (Quit or the window's close button). Both paths call this.
+        """
+        if self._dirty and self.dataset is not None and self.savename is not None:
+            try:
+                self.dataset.save(self.savename)
+            except Exception:
+                logger.exception("Failed to save dataset to %s", self.savename)
+            finally:
+                self._dirty = False
+
     def _mark_data_edited(self) -> None:
         """A real edit happened in an editing dock (R-peaks / epochs).
 
         Fired by the editing widgets' ``dataEdited`` signal. Marks the
-        dataset dirty (so it is persisted on the next dock activation) and
+        dataset dirty (so it is persisted when the dataset stops being
+        active — see _save_current_dataset_if_dirty) and
         drops every cached plot signature so the computed docks recompute
         from the mutated data. Because this is driven by genuine edits,
         simply viewing the Preprocessing / Epochs dock no longer
@@ -887,15 +913,13 @@ class MainWindow(QMainWindow):
             return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            # Persist only when something actually changed. A dirty save
-            # means peaks / epochs were mutated, so every cached plot is
-            # now stale: drop all stored signatures to force a recompute
-            # the next time each dock is shown.
-            if self._dirty and self.savename is not None:
-                self.dataset.save(self.savename)
-                self._dirty = False
-                self._plot_sig.clear()
-                self._scheduler.invalidate()
+            # Edits no longer save here — persisting the full recording is
+            # slow and froze the UI on the first dock switch after an edit.
+            # The dataset is now saved only when it stops being active (file
+            # switch or app close); see _save_current_dataset_if_dirty.
+            # Cache invalidation already happened in _mark_data_edited, so a
+            # dirty dataset's stale docks are recomputed regardless.
+            #
             # One signature for this activation; _refresh_dock reuses the
             # already-rendered widget when the dock's signature is
             # unchanged (no data / settings change since it was built).
@@ -1179,6 +1203,11 @@ class MainWindow(QMainWindow):
             return
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
+
+        # Flush unsaved edits on the dataset we're leaving before its
+        # savename is reassigned below to the newly-selected file.
+        self._save_current_dataset_if_dirty()
+
         dirs = self.workspace["Directories"]
 
         # CASE 1, dataset root node ------------------------------------
@@ -1698,8 +1727,8 @@ class MainWindow(QMainWindow):
         because it never affects a plot.
 
         R-peak / epoch *edits* don't change this signature on their own,
-        so they are handled separately by clearing ``_plot_sig`` whenever
-        the dataset is saved dirty (see :meth:`_on_dock_visible`).
+        so they are handled separately by clearing ``_plot_sig`` on every
+        edit (see :meth:`_mark_data_edited`).
         """
         epochs = tuple(
             (label, float(ep.start), float(ep.end))
