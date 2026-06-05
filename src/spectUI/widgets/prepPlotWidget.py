@@ -43,6 +43,7 @@ from spectUI.common import (
     TimeSeconds,
     ViewState,
     draw_interval_arrows,
+    decimate_minmax,
     make_nav_button,
     style_axis_clean,
     swap_canvas,
@@ -240,6 +241,10 @@ class PrepPlotWidget(TimelinePlotWidget):
         self.overview_window: OverviewWindow | None = None
         self.line_handler: LineHandler | None = None
         self.edit_mode: str = "Drag"
+
+        # Cached overview background for blitting the window rectangle during a
+        # drag (blit helpers are inherited from TimelinePlotWidget).
+        self._overview_bg = None
 
         # Matplotlib event ids
         self._mpl_cid_press: int | None = None
@@ -941,10 +946,13 @@ class PrepPlotWidget(TimelinePlotWidget):
         assert self.data is not None and self.data.view is not None
 
         ecg = self.ecg_series
+        # The overview is only ~screen-width pixels; decimate so a long
+        # recording is not re-rendered at full resolution on every redraw.
+        ov_t, ov_v = decimate_minmax(ecg.times, ecg.values)
         self.ax_overview.clear()
         self.ax_overview.plot(
-            ecg.times,
-            ecg.values,
+            ov_t,
+            ov_v,
             linewidth=0.25,
             alpha=0.5,
             color="blue",
@@ -1140,6 +1148,8 @@ class PrepPlotWidget(TimelinePlotWidget):
             else:
                 self.data.view.drag_mode = "center"
 
+            self._begin_overview_blit()
+
         # Add-mode: add a new R-top on ECG axis
         elif (
             self.edit_mode == "Add"
@@ -1190,20 +1200,22 @@ class PrepPlotWidget(TimelinePlotWidget):
             self.data.view.x_max = x_max
             if self.overview_window is not None:
                 self.overview_window.set_window(x_min, x_max)
-            self.canvas.draw_idle()
+            self._update_overview_blit()
 
     def _on_release(self, event) -> None:
-        """Finish overview dragging and redraw full plot."""
-        if (
-            event.inaxes is self.ax_overview
-            and self.data is not None
-            and self.data.view is not None
-        ):
-            was_dragging = self.data.view.drag_mode is not None
-            self.data.view.drag_mode = None
-            self.redraw()
-            if was_dragging:
-                self.viewChanged.emit()
+        """Finish overview dragging and redraw full plot.
+
+        Finishes the drag wherever the mouse is released (it may leave the
+        overview axis mid-drag), so the blit state is always torn down.
+        """
+        if self.data is None or self.data.view is None:
+            return
+        if self.data.view.drag_mode is None:
+            return
+        self.data.view.drag_mode = None
+        self._end_overview_blit()
+        self.redraw()
+        self.viewChanged.emit()
 
     # ------------------------------------------------------------------
     # LineHandler callbacks (R-top drag/remove)

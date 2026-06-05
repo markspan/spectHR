@@ -36,6 +36,7 @@ from spectUI.common.plot_zoom import (
 from spectUI.common.uitools import (
     OverviewWindow,
     build_epoch_grid,
+    decimate_minmax,
     make_nav_button,
     show_export_summary,
     style_axis_clean,
@@ -65,6 +66,7 @@ __all__ = [
     "Y_ZOOM_STEP_DOWN",
     "Y_ZOOM_STEP_UP",
     "build_epoch_grid",
+    "decimate_minmax",
     "draw_interval_arrows",
     "make_nav_button",
     "sanitize_filename",

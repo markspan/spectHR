@@ -39,6 +39,7 @@ from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectUI.common.uitools import (
     OverviewWindow,
+    decimate_minmax,
     make_nav_button,
     style_axis_clean,
     swap_canvas,
@@ -268,6 +269,10 @@ class TimelinePlotWidget(QWidget):
         self._mpl_cid_move: int | None = None
         self._mpl_cid_release: int | None = None
 
+        # Cached overview background for blitting the window rectangle during a
+        # drag (see _begin/_update/_end_overview_blit).
+        self._overview_bg = None
+
         # Coalesce rapid button clicks: update the view immediately but
         # defer the redraw until the burst stops.
         self._redraw_timer = QTimer(self)
@@ -474,9 +479,13 @@ class TimelinePlotWidget(QWidget):
         if series is None or series.times.size == 0:
             return
 
+        # The overview is only ~screen-width pixels; decimate so a long
+        # recording is not re-rendered at full resolution on every redraw.
+        ov_t, ov_v = decimate_minmax(series.times, series.values)
+
         self.ax_overview.clear()
         self.ax_overview.plot(
-            series.times, series.values, linewidth=0.25, alpha=1, color=self.overview_color
+            ov_t, ov_v, linewidth=0.25, alpha=1, color=self.overview_color
         )
         style_axis_clean(self.ax_overview)
         self._set_time_axis(
@@ -492,6 +501,52 @@ class TimelinePlotWidget(QWidget):
             self.data.view.x_min,
             self.data.view.x_max,
         )
+
+    # ==============================================================
+    # Overview-rectangle blitting (smooth dragging)
+    # ==============================================================
+
+    def _begin_overview_blit(self) -> None:
+        """Capture the overview background so the drag can blit the rectangle.
+
+        The window rectangle is switched to an *animated* artist and the
+        rest of the figure is captured into an off-screen buffer once.
+        Each subsequent motion only restores that buffer and redraws the
+        rectangle, instead of re-rendering every artist in the figure.
+        """
+        if self.overview_window is None or self.ax_overview is None:
+            return
+        try:
+            patch = self.overview_window.patch
+            patch.set_animated(True)
+            self.canvas.draw()
+            self._overview_bg = self.canvas.copy_from_bbox(self.ax_overview.bbox)
+            self.ax_overview.draw_artist(patch)
+            self.canvas.blit(self.ax_overview.bbox)
+        except Exception:
+            # Any backend hiccup -> fall back to plain redraws.
+            self._overview_bg = None
+
+    def _update_overview_blit(self) -> None:
+        """Redraw only the moving rectangle against the cached background."""
+        if self._overview_bg is None or self.overview_window is None:
+            self.canvas.draw_idle()
+            return
+        try:
+            self.canvas.restore_region(self._overview_bg)
+            self.ax_overview.draw_artist(self.overview_window.patch)
+            self.canvas.blit(self.ax_overview.bbox)
+        except Exception:
+            self.canvas.draw_idle()
+
+    def _end_overview_blit(self) -> None:
+        """Tear down blit state; the caller does a full redraw afterwards."""
+        if self.overview_window is not None:
+            try:
+                self.overview_window.patch.set_animated(False)
+            except Exception:
+                pass
+        self._overview_bg = None
 
     # ==============================================================
     # Navigation helpers
@@ -621,6 +676,8 @@ class TimelinePlotWidget(QWidget):
             else:
                 self.data.view.drag_mode = "center"
 
+            self._begin_overview_blit()
+
     def _on_motion(self, event) -> None:
         """Update the visible window while dragging."""
         if event.inaxes is None or self.data is None or self.data.view is None:
@@ -653,7 +710,7 @@ class TimelinePlotWidget(QWidget):
 
             if self.overview_window is not None:
                 self.overview_window.set_window(x_min, x_max)
-            self.canvas.draw_idle()
+            self._update_overview_blit()
 
     def _on_release(self, event) -> None:
         """Finish dragging the overview window."""
@@ -661,6 +718,7 @@ class TimelinePlotWidget(QWidget):
             return
         was_dragging = self.data.view.drag_mode is not None
         self.data.view.drag_mode = None
+        self._end_overview_blit()
         self.redraw()
         if was_dragging:
             self.viewChanged.emit()
