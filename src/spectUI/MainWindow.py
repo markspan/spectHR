@@ -831,11 +831,11 @@ class MainWindow(QMainWindow):
         """
         source = self.sender()
         for w in self._timeline_widgets:
-            if w is source or not w.isVisible():
-                continue
-            if getattr(w, "data", None) is None or getattr(w.data, "view", None) is None:
-                continue
             try:
+                if w is source or not w.isVisible():
+                    continue
+                if getattr(w, "data", None) is None or getattr(w.data, "view", None) is None:
+                    continue
                 w.redraw()
             except Exception:
                 logger.debug("timeline view-sync redraw failed", exc_info=True)
@@ -1497,12 +1497,20 @@ class MainWindow(QMainWindow):
             self.docks[_DOCK_PREPROCESSING].toggleView(False)
 
     def show_hr_plot(self, data):
-        if data is not None:
+        if data is None:
+            return
+        try:
             self.hr_plot_widget.hrPlot(data, workspace=self.workspace)
+        except RuntimeError:
+            pass
 
     def show_bp_plot(self, data):
-        if data is not None:
+        if data is None:
+            return
+        try:
             self.bp_plot_widget.bpPlot(data)
+        except RuntimeError:
+            pass
 
     def show_epoch_plot(self, data):
         if data is not None:
