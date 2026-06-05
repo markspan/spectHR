@@ -277,7 +277,7 @@ class TimelinePlotWidget(QWidget):
         # defer the redraw until the burst stops.
         self._redraw_timer = QTimer(self)
         self._redraw_timer.setSingleShot(True)
-        self._redraw_timer.setInterval(80)
+        self._redraw_timer.setInterval(160)
         self._redraw_timer.timeout.connect(self._deferred_redraw)
 
         self.navigation_bar = self._create_navigation_bar()

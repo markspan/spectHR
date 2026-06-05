@@ -256,7 +256,7 @@ class PrepPlotWidget(TimelinePlotWidget):
         # PrepPlotWidget skips TimelinePlotWidget.__init__, so we create it here.
         self._redraw_timer = QTimer(self)
         self._redraw_timer.setSingleShot(True)
-        self._redraw_timer.setInterval(80)
+        self._redraw_timer.setInterval(160)
         self._redraw_timer.timeout.connect(self._deferred_redraw)
 
         # IBI re-classification after R-top edits runs on a background thread
