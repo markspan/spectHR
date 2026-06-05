@@ -1538,11 +1538,14 @@ class MainWindow(QMainWindow):
     def show_preprocessing_plot(self, data):
         if data is None:
             return
-        if data.has_ecg:
-            self.docks[_DOCK_PREPROCESSING].toggleView(True)
-            self.prep_plot_widget.prepPlot(data)
-        else:
-            self.docks[_DOCK_PREPROCESSING].toggleView(False)
+        try:
+            if data.has_ecg:
+                self.docks[_DOCK_PREPROCESSING].toggleView(True)
+                self.prep_plot_widget.prepPlot(data)
+            else:
+                self.docks[_DOCK_PREPROCESSING].toggleView(False)
+        except RuntimeError:
+            pass
 
     def show_hr_plot(self, data):
         if data is None:
@@ -1561,12 +1564,20 @@ class MainWindow(QMainWindow):
             pass
 
     def show_epoch_plot(self, data):
-        if data is not None:
+        if data is None:
+            return
+        try:
             self.epoch_plot_widget.plotEpochs(data)
+        except RuntimeError:
+            pass
 
     def show_poincare_plot(self, data):
-        if data is not None:
+        if data is None:
+            return
+        try:
             self.poincare_plot_widget.poincarePlot(data)
+        except RuntimeError:
+            pass
 
     def _clear_layout(self, layout) -> None:
         """Remove all widgets from *layout*, deleting them immediately."""
@@ -1776,7 +1787,14 @@ class MainWindow(QMainWindow):
                 except RuntimeError:
                     pass
             return
-        refresh_fn()
+        # toggleView() inside a refresh fn can fire visibilityChanged
+        # re-entrantly and make ADS tear down / recreate other docks
+        # mid-loop, leaving their widgets as dead C++ objects. Central
+        # guard so a stale dock skips refresh instead of crashing the load.
+        try:
+            refresh_fn()
+        except RuntimeError:
+            return
         self._plot_sig[name] = sig
 
     def show_transfer_plot(self, dataset) -> None:
@@ -1815,7 +1833,12 @@ class MainWindow(QMainWindow):
     def show_parameters_plot(self, data) -> None:
         if data is None:
             return
-        self.parameters_plot_widget._start_loading()
+        try:
+            # Touching the table's C++ object raises if the dock was
+            # closed/recreated during a file load; abort without submitting.
+            self.parameters_plot_widget._start_loading()
+        except RuntimeError:
+            return
         workspace = self.workspace
 
         def compute():
