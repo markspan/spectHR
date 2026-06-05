@@ -312,6 +312,14 @@ def resp_beat_parameters(
     if rsp_values.size < 2 or rpeak_times.size == 0:
         return {"mvo": mvo, "svo": svo}
 
+    # Shift the signal so its minimum is 0.  CARSPAN's MVO/SVO are designed
+    # for impedance signals that are always positive (= actual lung volume).
+    # Z-scored surrogates (e.g. accelerometer-derived RSP from Polar) are
+    # centred at 0, so beats landing during exhalation yield negative means.
+    # Shifting by the signal minimum makes MVO/SVO non-negative without
+    # altering the waveform shape used by all other analyses.
+    rsp_values = rsp_values - rsp_values.min()
+
     idx = _rpeak_sample_indices(rsp_times, rpeak_times)
 
     # MVO: mean over each cardiac interval.
