@@ -103,32 +103,23 @@ class RTopController:
         return int(np.argmin(np.abs(self.rtops.times - t)))
 
     def move(self, old_t: float, new_t: float) -> None:
-        """
-        Move the closest R-top around old_t to new_t (seconds).
+        """Move R-top and immediately reclassify (for callers that need labels in one step)."""
+        self.move_no_classify(old_t, new_t)
+        self.rtops.classify_ibi()
 
-        Reclassifies all IBIs after the move so that label colours
-        reflect the updated intervals immediately on redraw.
-        """
+    def move_no_classify(self, old_t: float, new_t: float) -> None:
+        """Move the closest R-top to new_t without reclassifying IBIs."""
         idx = self._closest_idx(old_t)
         self.rtops.times[idx] = float(new_t)
         self._sort_by_time()
-        self.rtops.classify_ibi()  # labels must reflect the new IBI values
 
     def add(self, t: float, label: str = "N") -> None:
-        """
-        Insert a new R-top at time t with label.
+        """Insert a new R-top and immediately reclassify (for callers that need labels in one step)."""
+        self.add_no_classify(t, label)
+        self.rtops.classify_ibi()
 
-        Reclassifies all IBIs after insertion so that the new interval
-        and its neighbours are correctly labelled.
-
-        Parameters
-        ----------
-        t:
-            Time in seconds.
-        label:
-            Initial label string (default: "N"). Will be overwritten by
-            classification unless the series is too short to classify.
-        """
+    def add_no_classify(self, t: float, label: str = "N") -> None:
+        """Insert a new R-top at time t without reclassifying IBIs."""
         self.rtops.times = np.concatenate(
             [self.rtops.times, np.array([t], dtype=float)]
         )
@@ -136,21 +127,19 @@ class RTopController:
             [self.rtops.labels, np.array([label], dtype=object)]
         )
         self._sort_by_time()
-        self.rtops.classify_ibi()  # labels must reflect the new IBI values
 
     def delete(self, t: float) -> None:
-        """
-        Delete the R-top closest to t.
+        """Delete the closest R-top and immediately reclassify (for callers that need labels in one step)."""
+        self.delete_no_classify(t)
+        self.rtops.classify_ibi()
 
-        Reclassifies all IBIs after deletion so that the merged interval
-        is correctly labelled.
-        """
+    def delete_no_classify(self, t: float) -> None:
+        """Delete the R-top closest to t without reclassifying IBIs."""
         idx = self._closest_idx(t)
         mask = np.ones(self.rtops.times.shape[0], dtype=bool)
         mask[idx] = False
         self.rtops.times = self.rtops.times[mask]
         self.rtops.labels = self.rtops.labels[mask]
-        self.rtops.classify_ibi()  # labels must reflect the merged interval
 
     def next_non_normal(self, after_time: float) -> float | None:
         """
@@ -257,12 +246,21 @@ class PrepPlotWidget(TimelinePlotWidget):
         self._mpl_cid_release: int | None = None
         self._mpl_cid_key_press: int | None = None
 
-        # Debounce timer shared with TimelinePlotWidget (see _set_window).
+        # Debounce timer for toolbar nav (shared with TimelinePlotWidget._set_window).
         # PrepPlotWidget skips TimelinePlotWidget.__init__, so we create it here.
         self._redraw_timer = QTimer(self)
         self._redraw_timer.setSingleShot(True)
         self._redraw_timer.setInterval(80)
         self._redraw_timer.timeout.connect(self._deferred_redraw)
+
+        # Deferred IBI re-classification after R-top edits.
+        # The structural change (R-top added/moved/deleted) is shown immediately
+        # via a quick redraw; this timer fires once the edit burst stops and
+        # applies the O(n) classification + a final label-corrected redraw.
+        self._classify_timer = QTimer(self)
+        self._classify_timer.setSingleShot(True)
+        self._classify_timer.setInterval(0)   # next event-loop iteration
+        self._classify_timer.timeout.connect(self._deferred_classify_and_redraw)
 
         # R-top color mapping
         self.RTopColors = {
@@ -1149,9 +1147,9 @@ class PrepPlotWidget(TimelinePlotWidget):
             and self.rtop_ctrl is not None
             and event.xdata is not None
         ):
-            self.rtop_ctrl.add(float(event.xdata), label="N")
+            self.rtop_ctrl.add_no_classify(float(event.xdata), label="N")
             self.redraw()
-            self.dataEdited.emit()
+            self._classify_timer.start()
 
     def _on_motion(self, event) -> None:
         """
@@ -1215,14 +1213,26 @@ class PrepPlotWidget(TimelinePlotWidget):
         """Called when a R-top line is dragged to a new position."""
         if self.rtop_ctrl is None:
             return
-        self.rtop_ctrl.move(old_x, new_x)
+        self.rtop_ctrl.move_no_classify(old_x, new_x)
         self.redraw()
-        self.dataEdited.emit()
+        self._classify_timer.start()
 
     def _on_line_remove(self, old_x: float, new_x: float) -> None:
         """Called when a R-top line is removed."""
         if self.rtop_ctrl is None:
             return
-        self.rtop_ctrl.delete(new_x)
+        self.rtop_ctrl.delete_no_classify(new_x)
+        self.redraw()
+        self._classify_timer.start()
+
+    def _deferred_classify_and_redraw(self) -> None:
+        """Fired after a burst of R-top edits stops.
+
+        Runs the O(n) IBI classification, does a final label-corrected redraw,
+        and marks the dataset dirty. Rapid edits only pay this cost once.
+        """
+        if self.rtop_ctrl is None:
+            return
+        self.rtop_ctrl.rtops.classify_ibi()
         self.redraw()
         self.dataEdited.emit()

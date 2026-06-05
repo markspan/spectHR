@@ -1,7 +1,5 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-import matplotlib.pyplot as plt
-
 from spectHR.Tools.Logger import logger
 
 
@@ -173,7 +171,7 @@ class LineHandler:
         if line in self.draggable_lines:
             line.line.remove()  # Remove line from the plot
             self.draggable_lines.remove(line)
-            plt.draw()
+            line.axes.figure.canvas.draw_idle()
 
             if self.callback_remove:
                 self.callback_remove(line)
@@ -186,8 +184,7 @@ class LineHandler:
             line = draggable_line.line
             if line.axes:  # Check if the line is still associated with an Axes
                 line.remove()  # Remove the line from the plot
-        self.draggable_lines.clear()  # Clear the internal list of draggable lines
-        plt.draw()  # Redraw the canvas
+        self.draggable_lines.clear()
 
     def update_mode(self, mode):
         DraggableVLine.mode = mode
