@@ -773,7 +773,7 @@ CARSPAN automatically corrects detected artefacts by linear interpolation, inser
 
 ## Breathing Signal Extraction
 
-When a Polar H10 accelerometer stream is present, spectHR derives a respiration surrogate from the 3-axis chest-belt movement data by removing the gravity component, bandpassing to 0.10–0.70 Hz, and applying PCA to extract the dominant axis of motion as a single 1-D signal. The result is z-score normalised and overlaid in green on the ECG and heart rate plots. Inhalation phases are shaded in light blue.
+When available, respiration data will be used. When a Polar H10 accelerometer stream is present, spectHR derives a respiration surrogate from the 3-axis chest-belt movement data by removing the gravity component, bandpassing to 0.10–0.70 Hz, and applying PCA to extract the dominant axis of motion as a single 1-D signal. The result is z-score normalised and overlaid in green on the ECG and heart rate plots. If the posture of a subject changed between epochs, it makes sense to set the 'per epoch' respiration analysis setting in the parameter editor. This allows for different 'dominant' axis between epochs. Inhalation phases are shaded in light blue.
 
 ---
 
