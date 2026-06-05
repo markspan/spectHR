@@ -32,7 +32,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
 from matplotlib.ticker import MultipleLocator
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from spectHR.DataSet.PhysioData import PhysioData
@@ -268,6 +268,13 @@ class TimelinePlotWidget(QWidget):
         self._mpl_cid_move: int | None = None
         self._mpl_cid_release: int | None = None
 
+        # Coalesce rapid button clicks: update the view immediately but
+        # defer the redraw until the burst stops.
+        self._redraw_timer = QTimer(self)
+        self._redraw_timer.setSingleShot(True)
+        self._redraw_timer.setInterval(80)
+        self._redraw_timer.timeout.connect(self._deferred_redraw)
+
         self.navigation_bar = self._create_navigation_bar()
 
         layout = QVBoxLayout()
@@ -498,12 +505,24 @@ class TimelinePlotWidget(QWidget):
         return series is not None and series.times.size > 0
 
     def _set_window(self, x_min: float, x_max: float) -> None:
-        """Update the current view window and redraw."""
+        """Update the current view window and schedule a debounced redraw.
+
+        Rapid successive calls (e.g. holding a toolbar button) accumulate
+        the view-state change but only trigger one redraw once the burst
+        of clicks stops.
+        """
         assert self.data is not None and self.data.view is not None
         self.data.view.x_min = float(x_min)
         self.data.view.x_max = float(x_max)
-        self.redraw()
-        self.viewChanged.emit()
+        self._redraw_timer.start()  # restarts the timer if already running
+
+    def _deferred_redraw(self) -> None:
+        """Fired by the debounce timer; does the actual redraw and view sync."""
+        try:
+            self.redraw()
+            self.viewChanged.emit()
+        except RuntimeError:
+            pass
 
     def _constrained_window(self, x_min: float, x_max: float) -> tuple[float, float]:
         """Clamp the window [x_min, x_max] to the primary-series data range."""
