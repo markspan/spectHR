@@ -26,10 +26,10 @@ _DEFAULT_WORKSPACE = {
     "FrequencyAnalysis": {
         "method": "carspan",
         "bands": {
-            "FullRange": {"low": 0.02, "high": 0.5,  "color": "gray", "alpha": 0.35},
-            "VLF":       {"low": 0.02, "high": 0.06, "color": "blue"},
-            "LF":        {"low": 0.07, "high": 0.14, "color": "darkgreen"},
-            "HF":        {"low": 0.15, "high": 0.40, "color": "red"},
+            "FullRange": {"low": 0.02, "high": 0.5, "color": "gray", "alpha": 0.35},
+            "VLF": {"low": 0.02, "high": 0.06, "color": "blue"},
+            "LF": {"low": 0.07, "high": 0.14, "color": "darkgreen"},
+            "HF": {"low": 0.15, "high": 0.40, "color": "red"},
         },
         "carspan": {
             "freq_resolution": 0.01,
@@ -126,8 +126,8 @@ _DEFAULT_WORKSPACE = {
     # in the dialog exactly as written here.
     "Profiles": {
         "window (sec)": 30.0,
-        "step (sec)":   5.0,
-        "bands":    ["LF", "HF"],
+        "step (sec)": 5.0,
+        "bands": ["LF", "HF"],
         # ``adaptive_bands`` maps band names to their adaptive half-width
         # settings. Each entry opts that band into respiration-centered
         # profile integration (same idea as CARSPAN's
@@ -208,7 +208,7 @@ _DEFAULT_WORKSPACE = {
     # heat map when a RespirationSeries is loaded for the epoch.
     "Spectrogram": {
         "window (sec)": 30.0,
-        "step (sec)":    5.0,
+        "step (sec)": 5.0,
         "show_respiration_overlay": True,
         # Matplotlib colormap name driving the pcolormesh tile. The
         # default (RdYlBu_r) is the standard neuroimaging ERSP palette,
@@ -234,27 +234,27 @@ _DEFAULT_WORKSPACE = {
         # present (respiration or blood pressure).
         "input_signal": "rsp",
         "window (sec)": 30.0,
-        "step (sec)":    5.0,
+        "step (sec)": 5.0,
         # Squared-coherence threshold used by the band integrators
         # (Caluculate_ModulusSum / Caluculate_PhaseSum) and by the
         # phase mask in the per-epoch plot. CARSPAN default 0.5.
-        "min_coherence":  0.5,
+        "min_coherence": 0.5,
         # Frequency-axis range for the per-epoch Bode plots (Hz). f_max
         # also caps the native DFT grid - everything above it is dropped
         # before the transfer formula. 0.5 covers everything
         # physiologically interesting for adult HRV.
-        "f_min":          0.0,
-        "f_max":          0.5,
+        "f_min": 0.0,
+        "f_max": 0.5,
         # 3-point triangular smoother on the auto- and cross-spectra
         # before computing transfer / coherence. Without it the
         # single-block periodogram makes coherence identically 1 at
         # every bin (uninformative). CARSPAN profile path always
         # smooths; the per-epoch path historically did not. Default
         # True so the coherence panel reads correctly.
-        "smooth":         True,
+        "smooth": True,
         # "wrapped"   keeps phase in (-pi, pi], easier to read structure.
         # "unwrapped" cumulates 2 pi jumps, useful for delay estimation.
-        "phase_view":     "wrapped",
+        "phase_view": "wrapped",
         # Horizontal coherence threshold line on the bottom panel of
         # the per-epoch tile. The line sits at ``min_coherence`` (the
         # statistical gate the band integrators use) - useful as a
@@ -266,7 +266,7 @@ _DEFAULT_WORKSPACE = {
         # Alpha applied to phase points below the coherence threshold,
         # so the user can see where phase is being read off noise.
         # 0.0 fully hides them, 1.0 shows them solid.
-        "coherence_mask_alpha":     0.20,
+        "coherence_mask_alpha": 0.20,
     },
     # ------------------------------------------------------------------
     # Respiration analysis
@@ -362,9 +362,7 @@ def display_bands_from_workspace(workspace: "Dict[str, Any] | None") -> Dict[str
     """
     if workspace is None:
         return {}
-    return dict(
-        (workspace.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
-    )
+    return dict((workspace.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {})
 
 
 def psd_ci_alpha(workspace: "Dict[str, Any] | None") -> float:
@@ -430,27 +428,23 @@ def profile_settings_from_workspace(
     """
     if workspace is None:
         return {
-            "window_s":            30.0,
-            "step_s":               5.0,
-            "bands":                [],
-            "smooth_for_display":  False,
-            "adaptive_source":     "respiration_channel",
-            "smooth_breath_freq":  False,
-            "adaptive_bands":      {},
+            "window_s": 30.0,
+            "step_s": 5.0,
+            "bands": [],
+            "smooth_for_display": False,
+            "adaptive_source": "respiration_channel",
+            "smooth_breath_freq": False,
+            "adaptive_bands": {},
         }
     profs = workspace.get("Profiles", {}) or {}
     return {
-        "window_s": float(
-            profs.get("window (sec)", profs.get("window_s", 30.0))
-        ),
-        "step_s": float(
-            profs.get("step (sec)", profs.get("step_s", 5.0))
-        ),
+        "window_s": float(profs.get("window (sec)", profs.get("window_s", 30.0))),
+        "step_s": float(profs.get("step (sec)", profs.get("step_s", 5.0))),
         "bands": list(profs.get("bands", []) or []),
-        "smooth_for_display":  bool(profs.get("smooth_for_display", False)),
-        "adaptive_source":     str(profs.get("adaptive_source", "respiration_channel")),
-        "smooth_breath_freq":  bool(profs.get("smooth_breath_freq", False)),
-        "adaptive_bands":      dict(profs.get("adaptive_bands", {}) or {}),
+        "smooth_for_display": bool(profs.get("smooth_for_display", False)),
+        "adaptive_source": str(profs.get("adaptive_source", "respiration_channel")),
+        "smooth_breath_freq": bool(profs.get("smooth_breath_freq", False)),
+        "adaptive_bands": dict(profs.get("adaptive_bands", {}) or {}),
     }
 
 
@@ -482,11 +476,11 @@ def resolved_profile_bands(
         Name of the active adaptive band, or ``None``.
     """
     cfg = profile_settings_from_workspace(workspace)
-    fa  = (workspace or {}).get("FrequencyAnalysis", {}) or {}
+    fa = (workspace or {}).get("FrequencyAnalysis", {}) or {}
     all_bands = list((fa.get("bands", {}) or {}).keys())
 
     adaptive_bands = cfg["adaptive_bands"]
-    adaptive_name  = next(iter(adaptive_bands), None)
+    adaptive_name = next(iter(adaptive_bands), None)
     if adaptive_name and adaptive_name in all_bands:
         return [adaptive_name], adaptive_name
 
@@ -513,28 +507,20 @@ def spectrogram_settings_from_workspace(
     default_colormap = "RdYlBu_r"
     if workspace is None:
         return {
-            "window_s":                  30.0,
-            "step_s":                     5.0,
-            "show_respiration_overlay":  True,
-            "colormap":                  default_colormap,
-            "adaptive_source":           "respiration_channel",
+            "window_s": 30.0,
+            "step_s": 5.0,
+            "show_respiration_overlay": True,
+            "colormap": default_colormap,
+            "adaptive_source": "respiration_channel",
         }
-    spec  = workspace.get("Spectrogram", {}) or {}
-    profs = workspace.get("Profiles",    {}) or {}
+    spec = workspace.get("Spectrogram", {}) or {}
+    profs = workspace.get("Profiles", {}) or {}
     return {
-        "window_s": float(
-            spec.get("window (sec)", spec.get("window_s", 30.0))
-        ),
-        "step_s": float(
-            spec.get("step (sec)", spec.get("step_s", 5.0))
-        ),
-        "show_respiration_overlay": bool(
-            spec.get("show_respiration_overlay", True)
-        ),
+        "window_s": float(spec.get("window (sec)", spec.get("window_s", 30.0))),
+        "step_s": float(spec.get("step (sec)", spec.get("step_s", 5.0))),
+        "show_respiration_overlay": bool(spec.get("show_respiration_overlay", True)),
         "colormap": str(spec.get("colormap", default_colormap)),
-        "adaptive_source": str(
-            profs.get("adaptive_source", "respiration_channel")
-        ),
+        "adaptive_source": str(profs.get("adaptive_source", "respiration_channel")),
     }
 
 
@@ -553,16 +539,16 @@ def transfer_settings_from_workspace(
     :func:`display_bands_from_workspace`.
     """
     defaults = {
-        "input_signal":              "rsp",
-        "window_s":                  30.0,
-        "step_s":                     5.0,
-        "min_coherence":              0.5,
-        "f_min":                     0.0,
-        "f_max":                     0.5,
-        "smooth":                    True,
-        "phase_view":                "wrapped",
-        "show_coherence_threshold":  True,
-        "coherence_mask_alpha":      0.20,
+        "input_signal": "rsp",
+        "window_s": 30.0,
+        "step_s": 5.0,
+        "min_coherence": 0.5,
+        "f_min": 0.0,
+        "f_max": 0.5,
+        "smooth": True,
+        "phase_view": "wrapped",
+        "show_coherence_threshold": True,
+        "coherence_mask_alpha": 0.20,
     }
     if workspace is None:
         return defaults
@@ -572,12 +558,8 @@ def transfer_settings_from_workspace(
         "window_s": float(
             cfg.get("window (sec)", cfg.get("window_s", defaults["window_s"]))
         ),
-        "step_s": float(
-            cfg.get("step (sec)", cfg.get("step_s", defaults["step_s"]))
-        ),
-        "min_coherence": float(
-            cfg.get("min_coherence", defaults["min_coherence"])
-        ),
+        "step_s": float(cfg.get("step (sec)", cfg.get("step_s", defaults["step_s"]))),
+        "min_coherence": float(cfg.get("min_coherence", defaults["min_coherence"])),
         "f_min": float(cfg.get("f_min", defaults["f_min"])),
         "f_max": float(cfg.get("f_max", defaults["f_max"])),
         "smooth": bool(cfg.get("smooth", defaults["smooth"])),
@@ -763,7 +745,7 @@ def _migrate_respiration_band_to_profiles(workspace: dict) -> None:
     # tracking is now a single-band setting.
     adaptive_val = profiles.get("adaptive_bands")
     if isinstance(adaptive_val, list):
-        first = adaptive_val[:1]   # keep at most one band
+        first = adaptive_val[:1]  # keep at most one band
         profiles["adaptive_bands"] = {
             name: {
                 "lower half-width (Hz)": 0.04,
@@ -782,8 +764,7 @@ def _migrate_respiration_band_to_profiles(workspace: dict) -> None:
         first_key = next(iter(adaptive_val))
         profiles["adaptive_bands"] = {first_key: adaptive_val[first_key]}
         logger.info(
-            "Collapsed multi-entry Profiles.adaptive_bands to single band: "
-            f"{first_key}"
+            f"Collapsed multi-entry Profiles.adaptive_bands to single band: {first_key}"
         )
 
 
@@ -812,9 +793,7 @@ def _migrate_window_keys(workspace: dict) -> None:
             renamed.append(f"{old} → {new!r}")
         del profiles[old]
     if renamed:
-        logger.info(
-            "Migrated Profiles window/step keys: %s", ", ".join(renamed)
-        )
+        logger.info("Migrated Profiles window/step keys: %s", ", ".join(renamed))
 
 
 def SaveWorkspace(workspace: dict, json_file) -> None:
@@ -860,12 +839,12 @@ def _bands_from_workspace(
             low=float(spec["low"]),
             high=float(spec["high"]),
             respiration_band=(name in adaptive),
-            resp_low=float(
-                adaptive[name].get("lower half-width (Hz)", 0.04)
-            ) if name in adaptive else 0.04,
-            resp_high=float(
-                adaptive[name].get("upper half-width (Hz)", 0.04)
-            ) if name in adaptive else 0.04,
+            resp_low=float(adaptive[name].get("lower half-width (Hz)", 0.04))
+            if name in adaptive
+            else 0.04,
+            resp_high=float(adaptive[name].get("upper half-width (Hz)", 0.04))
+            if name in adaptive
+            else 0.04,
         )
         for name, spec in bands_dict.items()
     }
@@ -927,7 +906,7 @@ def PopulateTree(treewidget, workspace: dict) -> None:
     data_dir = workspace["Directories"]["DataDirectory"]
     categories = {
         "XDF Files": "*.xdf",
-        "EDF Files": "*.edf",
+        "VAMS EDF Files": "*.edf",
         "CARSPAN EVT Files": "*.evt",
         "RR Text Files": "*.txt",
     }
