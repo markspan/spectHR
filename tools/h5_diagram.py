@@ -363,6 +363,7 @@ ax.text(lx, ly - 0.1,
 for out, opts in [
     ("/home/user/spectHR/images/h5_structure.png", {"dpi": 150}),
     ("/home/user/spectHR/images/h5_structure.pdf", {}),
+    ("/home/user/spectHR/images/h5_structure.svg", {}),
 ]:
     fig.savefig(out, bbox_inches="tight", facecolor=C_BG, **opts)
     print(f"Saved → {out}")
