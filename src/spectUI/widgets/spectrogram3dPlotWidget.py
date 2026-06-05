@@ -35,6 +35,7 @@ Design notes
 """
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -364,8 +365,10 @@ class Spectrogram3DPlotWidget(PlotExportMixin, QWidget):
         ax.set_ylabel("Frequency [Hz]",        labelpad=8)
         ax.set_zlabel("Power (normalised)",     labelpad=6)
 
-        ax.set_xlim(float(ds_timestamps[0]),   float(ds_timestamps[-1]))
-        ax.set_ylim(float(ds_freqs[0]),        float(ds_freqs[-1]))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", ".*identical low and high.*", UserWarning)
+            ax.set_xlim(float(ds_timestamps[0]),   float(ds_timestamps[-1]))
+            ax.set_ylim(float(ds_freqs[0]),        float(ds_freqs[-1]))
         ax.set_zlim(0.0, 1.0)
 
         # ---- respiration overlay at z = 0 ----------------------------

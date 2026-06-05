@@ -23,6 +23,7 @@ Design notes
 """
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -276,11 +277,13 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
 
         ax.set_xlabel("Time within epoch [s]")
         ax.set_ylabel("Frequency [Hz]")
-        ax.set_xlim(
-            data.window_s / 2.0,
-            float(t_rel[-1]) + data.step_s * 0.5,
-        )
-        ax.set_ylim(float(data.freqs[0]), float(data.freqs[-1]))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", ".*identical low and high.*", UserWarning)
+            ax.set_xlim(
+                data.window_s / 2.0,
+                float(t_rel[-1]) + data.step_s * 0.5,
+            )
+            ax.set_ylim(float(data.freqs[0]), float(data.freqs[-1]))
 
         # ---- respiration overlay (optional) --------------------------
         if show_respiration_overlay and data.resp_freqs is not None:
