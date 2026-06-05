@@ -22,7 +22,7 @@ from matplotlib.axes import Axes
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -256,6 +256,13 @@ class PrepPlotWidget(TimelinePlotWidget):
         self._mpl_cid_move: int | None = None
         self._mpl_cid_release: int | None = None
         self._mpl_cid_key_press: int | None = None
+
+        # Debounce timer shared with TimelinePlotWidget (see _set_window).
+        # PrepPlotWidget skips TimelinePlotWidget.__init__, so we create it here.
+        self._redraw_timer = QTimer(self)
+        self._redraw_timer.setSingleShot(True)
+        self._redraw_timer.setInterval(80)
+        self._redraw_timer.timeout.connect(self._deferred_redraw)
 
         # R-top color mapping
         self.RTopColors = {
