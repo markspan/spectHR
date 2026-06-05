@@ -262,10 +262,42 @@ class ParametersPlotWidget(QWidget):
         self.workspace: dict | None = None
 
     # ------------------------------------------------------------------
+    # Background prefetch (call on a worker thread, pass result as _precomputed)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def prefetch_table(dataset, workspace):
+        """Compute the parameters table without touching any Qt object.
+
+        Intended to be called on a background thread via
+        :class:`~spectUI.plot_worker.DockScheduler`.  Pass the tuple
+        ``(labels, cols, values)`` as ``_precomputed`` to
+        :meth:`display_parameters` so the main thread only handles
+        the fast Qt table-widget population step.
+        """
+        psd_method = psd_method_from_workspace(workspace)
+        rsa_lag_s = (
+            ((workspace or {}).get("RespirationAnalysis") or {})
+            .get("rsa_lag_s", 1.0)
+        )
+        return dataset.epoched_parameters_table(
+            psd_method=psd_method, rsa_lag_s=float(rsa_lag_s)
+        )
+
+    def _start_loading(self) -> None:
+        """Show a placeholder while the parameters are being computed."""
+        self.table_widget.clear()
+        self.table_widget.setRowCount(1)
+        self.table_widget.setColumnCount(1)
+        item = QTableWidgetItem("Computing…")
+        item.setTextAlignment(Qt.AlignCenter)
+        self.table_widget.setItem(0, 0, item)
+
+    # ------------------------------------------------------------------
     # Population
     # ------------------------------------------------------------------
 
-    def display_parameters(self, dataset, workspace):
+    def display_parameters(self, dataset, workspace, *, _precomputed=None):
         self.dataset   = dataset
         self.workspace = workspace
         self.setFocus()
@@ -274,11 +306,14 @@ class ParametersPlotWidget(QWidget):
         self.csvfile  = output_dir / f"{dataset.basename}.csv"
         self.h5file   = output_dir / f"{dataset.basename}.h5"
 
-        psd_method = psd_method_from_workspace(workspace)
-        rsa_lag_s = ((workspace or {}).get("RespirationAnalysis") or {}).get("rsa_lag_s", 1.0)
-        labels, cols, values = self.dataset.epoched_parameters_table(
-            psd_method=psd_method, rsa_lag_s=float(rsa_lag_s)
-        )
+        if _precomputed is not None:
+            labels, cols, values = _precomputed
+        else:
+            psd_method = psd_method_from_workspace(workspace)
+            rsa_lag_s = ((workspace or {}).get("RespirationAnalysis") or {}).get("rsa_lag_s", 1.0)
+            labels, cols, values = self.dataset.epoched_parameters_table(
+                psd_method=psd_method, rsa_lag_s=float(rsa_lag_s)
+            )
 
         # Re-order columns: known metrics first, then extras alphabetically.
         ordered = [c for c in METRIC_ORDER if c in cols]

@@ -341,6 +341,7 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         parent: QWidget | None = None,
         *,
         workspace: dict[str, Any] | None = None,
+        _precomputed: list | None = None,
     ) -> None:
         super().__init__(parent)
 
@@ -351,17 +352,22 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         # underlying curve.
         bands = {n: s for n, s in bands_all.items() if n != "FullRange"}
 
-        plots: list[_TransferPlotData] = [
-            _fetch_transfer(
-                series, label,
-                workspace=workspace,
-                min_coherence=float(cfg["min_coherence"]),
-                f_max=float(cfg["f_max"]),
-                smooth=bool(cfg["smooth"]),
-                input_signal=str(cfg["input_signal"]),
-            )
-            for series, label in zip(series_list, labels)
-        ]
+        # When _precomputed is supplied the heavy fetch is skipped (already done
+        # on a background thread by DockScheduler).
+        if _precomputed is not None:
+            plots: list[_TransferPlotData] = _precomputed
+        else:
+            plots = [
+                _fetch_transfer(
+                    series, label,
+                    workspace=workspace,
+                    min_coherence=float(cfg["min_coherence"]),
+                    f_max=float(cfg["f_max"]),
+                    smooth=bool(cfg["smooth"]),
+                    input_signal=str(cfg["input_signal"]),
+                )
+                for series, label in zip(series_list, labels)
+            ]
 
         self._labels: list[str] = list(labels)
         self._series_list: list = list(series_list)
@@ -401,6 +407,30 @@ class TransferPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         # Up / Down arrow shortcuts; build_epoch_grid already installs
         # Ctrl+Shift+P for _save_all_plots.
         wire_y_zoom_shortcuts(self)
+
+    # ------------------------------------------------------------------
+    # Background prefetch (call on a worker thread, pass result as _precomputed)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def prefetch(
+        series_list,
+        labels,
+        workspace: dict[str, Any] | None,
+    ) -> list[_TransferPlotData]:
+        """Compute per-epoch transfer functions without touching any Qt object."""
+        cfg = transfer_settings_from_workspace(workspace)
+        return [
+            _fetch_transfer(
+                series, label,
+                workspace=workspace,
+                min_coherence=float(cfg["min_coherence"]),
+                f_max=float(cfg["f_max"]),
+                smooth=bool(cfg["smooth"]),
+                input_signal=str(cfg["input_signal"]),
+            )
+            for series, label in zip(series_list, labels)
+        ]
 
     # ------------------------------------------------------------------
     # Pure plotting backend

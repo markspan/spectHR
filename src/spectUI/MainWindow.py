@@ -38,12 +38,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QInputDialog,
+    QLabel,
     QMessageBox,
     QMainWindow,
     QMenu,
     QPlainTextEdit,
     QScrollArea,
     QStyle,
+    QTableWidgetItem,
     QToolBar,
     QToolButton,
     QTreeWidget,
@@ -53,6 +55,7 @@ from PySide6.QtWidgets import (
 )
 
 import spectUI as spQt
+from spectUI.plot_worker import DockScheduler
 from spectUI.workSpace import WorkspaceConfig
 from spectHR._version import __version__
 from spectHR.DataSet.Epoch import Epoch
@@ -226,6 +229,12 @@ class MainWindow(QMainWindow):
         # mutated (peaks / epochs edited -> ``_dirty`` save) or the
         # workspace settings are edited.
         self._plot_sig: dict[str, Any] = {}
+
+        # Background worker scheduler - one concurrent worker per dock.
+        # All heavy plot computation (PSD / Profiles / Spectrogram / Transfer /
+        # Parameters) runs on the global thread pool; results are delivered
+        # back on the main thread via cross-thread Qt signals.
+        self._scheduler = DockScheduler()
 
         # Refresh registry, dock objectName -> refresh fn.
         self._refresh_fns: dict[str, callable] = {}
@@ -786,6 +795,7 @@ class MainWindow(QMainWindow):
         """
         self._dirty = True
         self._plot_sig.clear()
+        self._scheduler.invalidate()
 
         if self.dataset is None:
             return
@@ -856,6 +866,7 @@ class MainWindow(QMainWindow):
                 self.dataset.save(self.savename)
                 self._dirty = False
                 self._plot_sig.clear()
+                self._scheduler.invalidate()
             # One signature for this activation; _refresh_dock reuses the
             # already-rendered widget when the dock's signature is
             # unchanged (no data / settings change since it was built).
@@ -988,6 +999,7 @@ class MainWindow(QMainWindow):
                 # the signatures makes each dock recompute (with the new
                 # settings) the next time it is shown.
                 self._plot_sig.clear()
+                self._scheduler.invalidate()
                 sig = self._plot_cache_signature(self.dataset)
                 # PSD, Spectrogram, and Profiles depend directly on what
                 # was edited (bands, window, step, PSD method, coherence
@@ -1087,6 +1099,7 @@ class MainWindow(QMainWindow):
         # R-peaks were rebuilt; every computed plot is stale even though the
         # epochs / settings signature did not change.
         self._plot_sig.clear()
+        self._scheduler.invalidate()
         self.show_preprocessing_plot(self.dataset)
         self.show_hr_plot(self.dataset)
 
@@ -1111,6 +1124,7 @@ class MainWindow(QMainWindow):
         self._dirty = False
         # ECG polarity flipped and re-detected; every computed plot is stale.
         self._plot_sig.clear()
+        self._scheduler.invalidate()
         self.show_preprocessing_plot(self.dataset)
 
     def _respiration_per_epoch(self) -> bool:
@@ -1367,6 +1381,7 @@ class MainWindow(QMainWindow):
         }
         # New dataset -> every cached plot is stale.
         self._plot_sig.clear()
+        self._scheduler.invalidate()
         sig = self._plot_cache_signature(self.dataset)
         for name in self._refresh_fns:
             # Skip refresh on docks whose data isn't on this dataset.
@@ -1531,28 +1546,102 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             pass
 
+    def _async_swap_epoch_plot(
+        self,
+        dock_name: str,
+        layout,
+        dataset,
+        prefetch_fn,
+        widget_fn,
+    ) -> None:
+        """Submit the heavy PSD / Spectrogram / Profile / Transfer computation
+        to the global thread pool and swap in the resulting widget on the
+        main thread when done.
+
+        Parameters
+        ----------
+        dock_name:   Stable ``_DOCK_*`` constant; drives the generation counter.
+        layout:      The dock's inner ``QVBoxLayout`` whose contents are swapped.
+        dataset:     The current ``PhysioData`` instance.
+        prefetch_fn: ``(views, labels, workspace) -> list``  — pure compute,
+                     called on a **background thread**.
+        widget_fn:   ``(views, labels, workspace, precomputed) -> QWidget``  —
+                     widget construction with the precomputed data, called on
+                     the **main thread** in ``on_done``.
+        """
+        if dataset is None:
+            return
+        try:
+            self._clear_layout(layout)
+            pairs: list = []
+            for label, epoch in dataset.epochs.items():
+                if not epoch.active:
+                    continue
+                try:
+                    pairs.append((label, dataset.hrv[label]))
+                except Exception:
+                    continue
+            if not pairs:
+                return
+            labels, views = zip(*pairs)
+        except RuntimeError:
+            return
+
+        # Show a lightweight placeholder while the worker runs.
+        loading = QLabel("Computing…")
+        loading.setAlignment(Qt.AlignCenter)
+        layout.addWidget(loading)
+
+        workspace = self.workspace
+
+        def compute():
+            return prefetch_fn(views, labels, workspace)
+
+        def on_done(precomputed):
+            try:
+                self._clear_layout(layout)
+                layout.addWidget(widget_fn(views, labels, workspace, precomputed))
+            except RuntimeError:
+                pass
+
+        def on_error(exc):
+            try:
+                self._clear_layout(layout)
+                err = QLabel(f"Error: {exc}")
+                err.setAlignment(Qt.AlignCenter)
+                layout.addWidget(err)
+                logger.warning("Plot computation failed for %s: %s", dock_name, exc)
+            except RuntimeError:
+                pass
+
+        self._scheduler.submit(dock_name, compute, on_done, on_error)
+
     def show_psd_plot(self, dataset) -> None:
-        self._swap_in_epoch_plot(
-            self.psd_layout, dataset,
-            lambda v, l, w: spQt.PSDPlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_PSD, self.psd_layout, dataset,
+            prefetch_fn=spQt.PSDPlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.PSDPlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def show_spectrogram_plot(self, dataset) -> None:
-        self._swap_in_epoch_plot(
-            self.spectrogram_layout, dataset,
-            lambda v, l, w: spQt.SpectrogramPlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_SPECTROGRAM, self.spectrogram_layout, dataset,
+            prefetch_fn=spQt.SpectrogramPlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.SpectrogramPlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def show_spectrogram3d_plot(self, dataset) -> None:
-        """Refresh the Spectrogram 3D dock with a new surface grid.
-
-        Calls the same ``_swap_in_epoch_plot`` helper used by every
-        other plot dock, building one ``Spectrogram3DPlotWidget`` from
-        the current active-epoch views and the current workspace.
-        """
-        self._swap_in_epoch_plot(
-            self.spectrogram3d_layout, dataset,
-            lambda v, l, w: spQt.Spectrogram3DPlotWidget(v, l, workspace=w),
+        """Refresh the Spectrogram 3D dock on a background thread."""
+        self._async_swap_epoch_plot(
+            _DOCK_SPECTROGRAM_3D, self.spectrogram3d_layout, dataset,
+            prefetch_fn=spQt.Spectrogram3DPlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.Spectrogram3DPlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def _plot_cache_signature(self, dataset) -> tuple:
@@ -1619,29 +1708,65 @@ class MainWindow(QMainWindow):
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_layout)
             return
-        self._swap_in_epoch_plot(
-            self.transfer_layout, dataset,
-            lambda v, l, w: spQt.TransferPlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_TRANSFER, self.transfer_layout, dataset,
+            prefetch_fn=spQt.TransferPlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.TransferPlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def show_transfer_profile_plot(self, dataset) -> None:
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_profile_layout)
             return
-        self._swap_in_epoch_plot(
-            self.transfer_profile_layout, dataset,
-            lambda v, l, w: spQt.TransferProfilePlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_TRANSFER_PROFILE, self.transfer_profile_layout, dataset,
+            prefetch_fn=spQt.TransferProfilePlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.TransferProfilePlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def show_profile_plot(self, dataset) -> None:
-        self._swap_in_epoch_plot(
-            self.profile_layout, dataset,
-            lambda v, l, w: spQt.ProfilePlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_PROFILES, self.profile_layout, dataset,
+            prefetch_fn=spQt.ProfilePlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.ProfilePlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
-    def show_parameters_plot(self, data):
-        if data is not None:
-            self.parameters_plot_widget.display_parameters(data, self.workspace)
+    def show_parameters_plot(self, data) -> None:
+        if data is None:
+            return
+        self.parameters_plot_widget._start_loading()
+        workspace = self.workspace
+
+        def compute():
+            return spQt.ParametersPlotWidget.prefetch_table(data, workspace)
+
+        def on_done(precomputed):
+            try:
+                self.parameters_plot_widget.display_parameters(
+                    data, workspace, _precomputed=precomputed,
+                )
+            except RuntimeError:
+                pass
+
+        def on_error(exc):
+            try:
+                self.parameters_plot_widget.table_widget.clear()
+                self.parameters_plot_widget.table_widget.setRowCount(1)
+                self.parameters_plot_widget.table_widget.setColumnCount(1)
+                self.parameters_plot_widget.table_widget.setItem(
+                    0, 0, QTableWidgetItem(f"Error: {exc}"),
+                )
+                logger.warning("Parameters computation failed: %s", exc)
+            except RuntimeError:
+                pass
+
+        self._scheduler.submit(_DOCK_PARAMETERS, compute, on_done, on_error)
 
     # ------------------------------------------------------------------
     # Epoch creation
