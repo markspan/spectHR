@@ -661,6 +661,37 @@ The plain-text RR-interval export format from the Polar app. See `ExampleData/`.
 
 CARSPAN event files. If an `.nff` file with the same base name is present, spectHR loads **every channel** it contains — ECG, respiration, and blood pressure — keyed by the channel labels in the file header. In that case the R-peak timestamps from the `.evt` file are authoritative: the ECG is filtered for display but R-peaks are **not** re-detected from it (the loader sets `rtops_locked` on the resulting `CardioSeries`). An uncalibrated blood-pressure channel is converted to mmHg using the workspace [Calibration](#configuring-the-analysis) setting (see [Blood Pressure](#blood-pressure)).
 
+### VU-AMS EDF / EDF+C
+
+spectHR reads `.edf` files exported from [VU-AMS](https://vu-ams.nl) (Amsterdam Medical Supplies), an ambulatory monitor that records physiological signals during daily activity. The export is in **EDF+C** format (European Data Format with Continuous annotations).
+
+#### Exporting from VU-AMS
+
+In the VU-AMS data-management software, select a recording and use **File → Export → Export to EDF**. Export the signals you need; at minimum ECG is required for HRV analysis. The software can export all channels in a single file.
+
+To export the condition labels, use **File → Export → Export configuration file (.cfg)**. This produces a plain-text file that maps the numeric condition codes stored inside the EDF to the human-readable names you defined in your protocol (e.g. `10  Lying_supine`, `11  Standing`).
+
+#### Why both files are needed
+
+The EDF file records condition boundaries as timestamped annotations using internal numeric codes (`10_`, `11_`, …). These codes correspond to the condition numbers in your experimental protocol, but the EDF format itself carries no names — only numbers. Without the `.cfg` file, spectHR can still build epochs from the timing information, but they will be labelled `10_`, `11_`, etc. rather than `Lying_supine`, `Standing`.
+
+Place the `.cfg` file in the **same directory** as the `.edf` file before opening it in spectHR. The loader matches them by file name stem; if the names differ (which can happen when VU-AMS uses a project-level cfg) it falls back to any single `.cfg` present in that directory. With the cfg loaded, all 39 (or however many) conditions appear in spectHR with their full protocol names.
+
+#### Supported channels
+
+| VU-AMS channel | Unit | Rate | spectHR role |
+|---|---|---|---|
+| ECG | mV | 1000 Hz | Primary ECG for R-peak detection and HRV |
+| MXR + MYR + MZR | g | 1000 Hz | Respiration surrogate via 3-axis PCA (preferred) |
+| DZ | Ω | 1000 Hz | Respiration fallback if no accelerometers |
+| DZDT | Ω/s | 1000 Hz | Respiration second fallback |
+| Z0 | Ω | 250 Hz | Stored as auxiliary time series |
+| SCL | µS | 10 Hz | Stored as auxiliary time series |
+| BAT | V | 1 Hz | Stored as auxiliary time series |
+| MYA | g | 1 Hz | Stored as auxiliary time series |
+
+The respiration signal is derived from the three-axis accelerometers (MXR, MYR, MZR) when all three are exported: gravity is removed with a low-pass filter and the first principal component of the 0.1–0.7 Hz band is used as the breathing surrogate. When accelerometers are absent, DZ (raw thoracic impedance) is used instead, followed by DZDT (dZ/dt). The chosen signal is stored as `rsp-[vuams]` and linked to the ECG band for RSA and transfer-function analysis.
+
 ---
 
 ## IBI Classification
