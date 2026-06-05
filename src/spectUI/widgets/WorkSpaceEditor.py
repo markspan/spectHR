@@ -182,7 +182,6 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     "RespirationAnalysis.rsa_overlay": ["rsa", "rsa0", "none"],
 }
 
-
 def _label(key: str) -> str:
     """Turn a snake_case or camelCase key into a human-readable label.
 
