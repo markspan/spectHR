@@ -1020,6 +1020,7 @@ class MainWindow(QMainWindow):
             not item.text(0).lower().endswith(".xdf")
             and not item.text(0).lower().endswith(".txt")
             and not item.text(0).lower().endswith(".evt")
+            and not item.text(0).lower().endswith(".edf")
         ):
             return
 

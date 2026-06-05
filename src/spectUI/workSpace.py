@@ -927,6 +927,7 @@ def PopulateTree(treewidget, workspace: dict) -> None:
     data_dir = workspace["Directories"]["DataDirectory"]
     categories = {
         "XDF Files": "*.xdf",
+        "EDF Files": "*.edf",
         "CARSPAN EVT Files": "*.evt",
         "RR Text Files": "*.txt",
     }
