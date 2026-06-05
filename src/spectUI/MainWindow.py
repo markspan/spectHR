@@ -151,6 +151,9 @@ _DOCK_LOG           = "dock.log"
 # signature does not track. They always refresh on activation so they
 # pick up zoom/pan changes made in a sibling timeline.
 _CACHED_DOCKS = frozenset({
+    _DOCK_PREPROCESSING,
+    _DOCK_IBI,
+    _DOCK_BP,
     _DOCK_PSD,
     _DOCK_SPECTROGRAM,
     _DOCK_SPECTROGRAM_3D,
@@ -159,6 +162,11 @@ _CACHED_DOCKS = frozenset({
     _DOCK_PROFILES,
     _DOCK_PARAMETERS,
 })
+
+# Timeline docks whose view can drift while hidden; on a cache hit we still
+# call redraw() to sync the shared zoom/pan window without re-running the
+# full (slow) plot-build.
+_TIMELINE_DOCKS = frozenset({_DOCK_PREPROCESSING, _DOCK_IBI, _DOCK_BP})
 
 
 class _QtLogHandler(logging.Handler):
@@ -1696,11 +1704,18 @@ class MainWindow(QMainWindow):
         refresh_fn = self._refresh_fns.get(name)
         if refresh_fn is None:
             return
-        # Only the expensive, view-independent docks are cached. The cheap
-        # timeline / poincare / epoch docks always refresh so they reflect
-        # the shared zoom/pan window (which the signature does not track).
         if name in _CACHED_DOCKS and self._plot_sig.get(name) == sig:
-            return  # unchanged -> reuse the already-rendered widget
+            # Timeline docks share a zoom/pan window that can change while the
+            # dock is hidden; call redraw() to sync the view without re-running
+            # the full (slow) plot build.
+            if name in _TIMELINE_DOCKS:
+                try:
+                    w = self.docks[name].widget()
+                    if w is not None and getattr(w, "data", None) is not None:
+                        w.redraw()
+                except RuntimeError:
+                    pass
+            return
         refresh_fn()
         self._plot_sig[name] = sig
 
