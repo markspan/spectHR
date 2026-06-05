@@ -42,6 +42,8 @@ class DraggableVLine:
         self.callback_drag = callback_drag
         self.callback_remove = callback_remove
         self.press = None
+        self._canvas = None
+        self._cids: list[int] = []
         self.connect(ax.figure)
 
     def update_y_extent(self):
@@ -118,12 +120,29 @@ class DraggableVLine:
         """
         Connects events for dragging the line.
 
+        The connection ids are kept so :meth:`disconnect` can remove them
+        again. Without this, every redraw rebuilds the R-top lines and
+        leaks three canvas-level callbacks per line; after a few minutes of
+        editing thousands of dead callbacks fire on every mouse-move and
+        the whole view crawls.
+
         Args:
             fig (matplotlib.figure.Figure): The figure in which to capture events.
         """
-        fig.canvas.mpl_connect('button_press_event', self.on_press)
-        fig.canvas.mpl_connect('motion_notify_event', self.on_drag)
-        fig.canvas.mpl_connect('button_release_event', self.on_release)
+        self._canvas = fig.canvas
+        self._cids = [
+            fig.canvas.mpl_connect('button_press_event', self.on_press),
+            fig.canvas.mpl_connect('motion_notify_event', self.on_drag),
+            fig.canvas.mpl_connect('button_release_event', self.on_release),
+        ]
+
+    def disconnect(self):
+        """Remove this line's canvas callbacks. Safe to call more than once."""
+        if self._canvas is not None:
+            for cid in self._cids:
+                self._canvas.mpl_disconnect(cid)
+        self._cids = []
+        self._canvas = None
 
 
 class LineHandler:
@@ -169,9 +188,11 @@ class LineHandler:
             line (DraggableVLine): The line object to be removed.
         """
         if line in self.draggable_lines:
-            line.line.remove()  # Remove line from the plot
+            line.disconnect()
+            if line.line is not None and line.line.axes is not None:
+                line.line.remove()  # Remove line from the plot
+                line.line.axes.figure.canvas.draw_idle()
             self.draggable_lines.remove(line)
-            line.axes.figure.canvas.draw_idle()
 
             if self.callback_remove:
                 self.callback_remove(line)
@@ -179,10 +200,14 @@ class LineHandler:
     def clear(self):
         """
         Removes all draggable lines from the Axes and clears the `draggable_lines` list.
+
+        Each line's canvas callbacks are disconnected so they do not pile up
+        across redraws (see ``DraggableVLine.disconnect``).
         """
         for draggable_line in self.draggable_lines:
+            draggable_line.disconnect()
             line = draggable_line.line
-            if line.axes:  # Check if the line is still associated with an Axes
+            if line is not None and line.axes:  # still attached to an Axes?
                 line.remove()  # Remove the line from the plot
         self.draggable_lines.clear()
 
