@@ -11,4 +11,4 @@ the build metadata and the on-screen version label come from the same
 constant, kept in sync automatically.
 """
 
-__version__ = "1.3.4"
+__version__ = "1.3.5"
