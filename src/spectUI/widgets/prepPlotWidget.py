@@ -495,14 +495,11 @@ class PrepPlotWidget(TimelinePlotWidget):
         - a main ECG axis (with optional breathing overlay)
         - an overview axis
         """
-        self.fig, (ax_ecg, ax_overview) = plt.subplots(
-            2,
-            1,
-            figsize=(15, 3),
-            sharex=False,
-            gridspec_kw={"height_ratios": [5, 1]},
-        )
-        self.ax_ecg, self.ax_overview = ax_ecg, ax_overview
+        self.fig = Figure(figsize=(15, 3))
+        self.fig.set_facecolor("white")
+        gs = self.fig.add_gridspec(2, 1, height_ratios=[5, 1])
+        self.ax_ecg      = self.fig.add_subplot(gs[0])
+        self.ax_overview = self.fig.add_subplot(gs[1])
         self._compact_layout()
 
     def _reuse_axes_from_figure(self) -> None:
