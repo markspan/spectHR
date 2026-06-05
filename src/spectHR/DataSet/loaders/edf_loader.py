@@ -3,6 +3,7 @@
 """EDF / EDF+C loader — primary target is VU-AMS 5fs exports."""
 from __future__ import annotations
 
+from pathlib import Path
 import numpy as np
 
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
@@ -218,6 +219,72 @@ def _acc_to_rsp(acc: np.ndarray, fs: float) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # VU-AMS EDF / EDF+C loader
 # ---------------------------------------------------------------------------
+# VU-AMS .cfg condition-label parser
+# ---------------------------------------------------------------------------
+
+def _load_vuams_cfg(edf_path: str) -> dict[str, str]:
+    """
+    Look for a VU-AMS condition-label file (.cfg) alongside the EDF file and
+    return a mapping from condition number string to human-readable label.
+
+    Search order
+    ------------
+    1. ``<same_stem>.cfg`` in the same directory (exact name match)
+    2. Any single ``*.cfg`` file in the same directory (fallback for the
+       common case where VU-AMS exports the cfg under a different base name)
+    3. Nothing found → return empty dict (labels stay as raw codes)
+
+    Format expected
+    ---------------
+    Lines are ``<number> <label>``; lines starting with ``#`` are comments.
+    """
+    edf_path_obj = Path(edf_path)
+    candidates: list[Path] = []
+
+    # 1. exact stem match
+    exact = edf_path_obj.with_suffix(".cfg")
+    if exact.exists():
+        candidates = [exact]
+    else:
+        # 2. any .cfg in the same directory
+        candidates = list(edf_path_obj.parent.glob("*.cfg"))
+
+    if not candidates:
+        return {}
+    if len(candidates) > 1:
+        logger.warning(
+            "EDF loader: multiple .cfg files found; skipping condition-label "
+            "lookup. Place a single .cfg next to the .edf to enable labeling."
+        )
+        return {}
+
+    cfg_path = candidates[0]
+    mapping: dict[str, str] = {}
+    try:
+        with open(cfg_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split(None, 1)
+                if len(parts) == 2:
+                    mapping[parts[0]] = parts[1]
+        logger.info(
+            f"EDF loader: loaded {len(mapping)} condition labels from {cfg_path.name}"
+        )
+    except OSError as exc:
+        logger.warning(f"EDF loader: could not read {cfg_path}: {exc}")
+
+    return mapping
+
+
+def _vuams_label(code: str, cfg: dict[str, str]) -> str:
+    """Resolve a VU-AMS annotation code (e.g. '10_') to a human label."""
+    key = code.rstrip("_")
+    return cfg.get(key, code)
+
+
+# ---------------------------------------------------------------------------
 
 @register_loader(".edf")
 def load_edf(physiodata, filename: str, **kwargs) -> None:
@@ -360,20 +427,24 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
     # EDF+C annotations → EventSeries
     # Duration-based annotations become start/stop epoch pairs so that
     # spectHR's epoch builder can derive epochs automatically.
+    # A VU-AMS .cfg file (same dir) maps numeric codes to readable labels.
     # ------------------------------------------------------------------
+    cfg = _load_vuams_cfg(filename)
+
     if annotations:
         ev_times:  list[float] = []
         ev_labels: list[str]   = []
 
         for onset, duration, text in annotations:
+            label = _vuams_label(text, cfg)
             if duration > 0:
                 ev_times.append(onset)
-                ev_labels.append(f"start {text}")
+                ev_labels.append(f"start {label}")
                 ev_times.append(onset + duration)
-                ev_labels.append(f"stop {text}")
+                ev_labels.append(f"stop {label}")
             else:
                 ev_times.append(onset)
-                ev_labels.append(text)
+                ev_labels.append(label)
 
         sort_order = np.argsort(ev_times)
         ev_times_arr  = np.array(ev_times, dtype=float)[sort_order]
