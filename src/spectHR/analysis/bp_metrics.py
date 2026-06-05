@@ -48,6 +48,7 @@ that flow through
 :meth:`~spectHR.DataSet.PhysioData.PhysioData.epoched_parameters_table` into the CSV and
 HDF5 exports.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -57,9 +58,9 @@ import numpy as np
 from spectHR.analysis.registry import epoch_metric
 
 # CARSPAN IsFlatLine constants (T_EventFile.pas).
-_FLATLINE_WINDOW_S = 0.300   # Twin  - 300 ms analysis window
-_FLATLINE_STEP_S = 0.010     # Tstep - 10 ms slide step
-_FLATLINE_VC = 0.005         # variation-coefficient threshold
+_FLATLINE_WINDOW_S = 0.300  # Twin  - 300 ms analysis window
+_FLATLINE_STEP_S = 0.010  # Tstep - 10 ms slide step
+_FLATLINE_VC = 0.005  # variation-coefficient threshold
 
 # CARSPAN default DataCol.ResSamples (TEventFile sets ResSamples := 10).
 _DEFAULT_RES_SAMPLES = 10
@@ -68,6 +69,7 @@ _DEFAULT_RES_SAMPLES = 10
 # ---------------------------------------------------------------------------
 # Low-level helpers
 # ---------------------------------------------------------------------------
+
 
 def _median_dt(times: np.ndarray) -> Optional[float]:
     """Median positive sample interval of *times* (seconds), or None."""
@@ -126,14 +128,14 @@ def is_flatline(
     e = b + n_win
     if e >= idx_e:
         e = idx_e - 1
-    if e >= n:                       # R-peak past end of signal
+    if e >= n:  # R-peak past end of signal
         return True
 
     while e < idx_e:
-        seg = sig_values[b:e + 1]
+        seg = sig_values[b : e + 1]
         if seg.size:
             mean = float(np.mean(seg))
-            std = float(np.std(seg))          # population std (CARSPAN /N)
+            std = float(np.std(seg))  # population std (CARSPAN /N)
             if mean == 0.0:
                 return True
             if abs(std / mean) < _FLATLINE_VC:
@@ -147,6 +149,7 @@ def is_flatline(
 # ---------------------------------------------------------------------------
 # Blood-pressure beat-by-beat parameters
 # ---------------------------------------------------------------------------
+
 
 def bp_beat_parameters(
     bp_times: np.ndarray,
@@ -208,7 +211,7 @@ def bp_beat_parameters(
         if is_flatline(bp_times, bp_values, lo, hi, dt=dt):
             continue
 
-        seg = bp_values[lo:hi + 1]          # inclusive, as CARSPAN IdxB..IdxE
+        seg = bp_values[lo : hi + 1]  # inclusive, as CARSPAN IdxB..IdxE
         if seg.size == 0:
             continue
 
@@ -217,7 +220,7 @@ def bp_beat_parameters(
         sys_val = float(bp_values[max_global])
 
         # Diastole: minimum sample *before* (up to and including) the systole.
-        pre = bp_values[lo:max_global + 1]
+        pre = bp_values[lo : max_global + 1]
         min_local = int(np.argmin(pre))
         min_global = lo + min_local
         dia_val = float(bp_values[min_global])
@@ -232,7 +235,7 @@ def bp_beat_parameters(
         d0, d1 = int(dia_idx[i]), int(dia_idx[i + 1])
         if d0 < 0 or d1 < 0 or d1 <= d0:
             continue
-        seg = bp_values[d0:d1 + 1]
+        seg = bp_values[d0 : d1 + 1]
         if seg.size:
             mapr[i] = float(np.mean(seg))
 
@@ -274,6 +277,7 @@ def bp_epoch_metrics(
 # ---------------------------------------------------------------------------
 # Respiration beat-by-beat parameters
 # ---------------------------------------------------------------------------
+
 
 def resp_beat_parameters(
     rsp_times: np.ndarray,
@@ -317,8 +321,12 @@ def resp_beat_parameters(
     # Z-scored surrogates (e.g. accelerometer-derived RSP from Polar) are
     # centred at 0, so beats landing during exhalation yield negative means.
     # Shifting by the signal minimum makes MVO/SVO non-negative without
-    # altering the waveform shape used by all other analyses.
-    rsp_values = rsp_values - rsp_values.min()
+    # altering the waveform shape used by all other analyses. Only done when
+    # negative values are present, to preserve the original scale when it is
+    # already positive.
+    rsp_min = rsp_values.min()
+    if rsp_min < 0:
+        rsp_values = rsp_values - rsp_min
 
     idx = _rpeak_sample_indices(rsp_times, rpeak_times)
 
@@ -327,7 +335,7 @@ def resp_beat_parameters(
         lo, hi = int(idx[i]), int(idx[i + 1])
         if hi < lo:
             continue
-        seg = rsp_values[lo:hi + 1]
+        seg = rsp_values[lo : hi + 1]
         if seg.size:
             mvo[i] = float(np.mean(seg))
 
@@ -336,7 +344,7 @@ def resp_beat_parameters(
     for i in range(rpeak_times.size):
         e = int(idx[i])
         b = max(0, e - half)
-        seg = rsp_values[b:e + 1]
+        seg = rsp_values[b : e + 1]
         if seg.size:
             svo[i] = float(np.mean(seg))
 
@@ -376,6 +384,7 @@ def resp_epoch_metrics(
 # epoch) and returns the epoch ``nanmean`` of one parameter.  When the
 # corresponding waveform channel is absent the context yields ``None`` and the
 # metric reports ``NaN``.  The column name is the function name.
+
 
 def _bp_metric(ctx, key: str) -> float:
     beats = getattr(ctx, "bp_beats", None)
@@ -417,13 +426,13 @@ def bp_map(ctx) -> float:
 
 @epoch_metric
 def resp_mvo(ctx) -> float:
-    """Mean respiratory volume per cardiac interval, epoch mean (CARSPAN)."""
+    """Mean respiratory volume per cardiac interval, epoch mean (CARSPAN) (no unit!)."""
     return _resp_metric(ctx, "mvo")
 
 
 @epoch_metric
 def resp_svo(ctx) -> float:
-    """Sample respiratory volume at each R-peak, epoch mean (CARSPAN)."""
+    """Sample respiratory volume at each R-peak, epoch mean (CARSPAN) (no unit!)."""
     return _resp_metric(ctx, "svo")
 
 
@@ -431,7 +440,7 @@ def resp_svo(ctx) -> float:
 # Grossman (1990) peak-to-valley RSA
 # ---------------------------------------------------------------------------
 
-_DEFAULT_RSA_LAG_S: float = 1.0   # dZ-HR phase shift; VU-DAMS default 1000 ms
+_DEFAULT_RSA_LAG_S: float = 1.0  # dZ-HR phase shift; VU-DAMS default 1000 ms
 
 
 def grossman_rsa_per_breath(
@@ -481,10 +490,10 @@ def grossman_rsa_per_breath(
     if clean_t.size < 3:
         return np.array([], dtype=float)
 
-    ibi_ms = np.diff(clean_t) * 1000.0   # ibi_ms[j] starts at clean_t[j]
+    ibi_ms = np.diff(clean_t) * 1000.0  # ibi_ms[j] starts at clean_t[j]
 
     starts = np.asarray(rsp_phases.starts, dtype=float)
-    ends   = np.asarray(rsp_phases.ends,   dtype=float)
+    ends = np.asarray(rsp_phases.ends, dtype=float)
     labels = np.asarray(rsp_phases.labels, dtype=object)
 
     results: list[float] = []
@@ -493,7 +502,7 @@ def grossman_rsa_per_breath(
         if labels[i] != "INH" or labels[i + 1] != "EXH":
             continue
 
-        inh_s, inh_e = float(starts[i]),     float(ends[i])
+        inh_s, inh_e = float(starts[i]), float(ends[i])
         exh_s, exh_e = float(starts[i + 1]), float(ends[i + 1])
 
         wi_lo, wi_hi = inh_s, inh_e + lag_s
@@ -551,6 +560,7 @@ def rsa0(ctx) -> float:
 # ---------------------------------------------------------------------------
 # Aggregation helper
 # ---------------------------------------------------------------------------
+
 
 def _nanmean(arr: np.ndarray) -> float:
     """``np.nanmean`` that returns NaN (not a warning) for an all-NaN array."""
