@@ -26,7 +26,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Iterable
 
-import matplotlib.pyplot as plt
+import matplotlib
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -344,7 +344,7 @@ class TimelinePlotWidget(QWidget):
         self.data = data
         self._prepare()
         self.setVisible(True)
-        plt.ioff()  # No blocking windows
+        matplotlib.interactive(False)
 
         series = self._primary_series()
         if series is None:
@@ -382,17 +382,10 @@ class TimelinePlotWidget(QWidget):
 
     def _create_figure_and_axes(self) -> None:
         """Create a compact figure with a main axis and an overview axis."""
-        self.fig, (ax_main, ax_overview) = plt.subplots(
-            2,
-            1,
-            figsize=(15, 3),
-            sharex=False,
-            gridspec_kw={"height_ratios": [5, 1]},
-        )
-        plt.close(self.fig)  # prevent orphan figure window
-
-        self.ax_main = ax_main
-        self.ax_overview = ax_overview
+        self.fig = Figure(figsize=(15, 3))
+        gs = self.fig.add_gridspec(2, 1, height_ratios=[5, 1])
+        self.ax_main     = self.fig.add_subplot(gs[0])
+        self.ax_overview = self.fig.add_subplot(gs[1])
 
     def _reuse_axes_from_figure(self) -> None:
         axes = self.fig.axes
