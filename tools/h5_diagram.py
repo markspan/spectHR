@@ -360,6 +360,9 @@ ax.text(lx, ly - 0.1,
 # ═══════════════════════════════════════════════════════════════════════
 # save
 # ═══════════════════════════════════════════════════════════════════════
-out = "/home/user/spectHR/images/h5_structure.png"
-fig.savefig(out, dpi=150, bbox_inches="tight", facecolor=C_BG)
-print(f"Saved → {out}")
+for out, opts in [
+    ("/home/user/spectHR/images/h5_structure.png", {"dpi": 150}),
+    ("/home/user/spectHR/images/h5_structure.pdf", {}),
+]:
+    fig.savefig(out, bbox_inches="tight", facecolor=C_BG, **opts)
+    print(f"Saved → {out}")

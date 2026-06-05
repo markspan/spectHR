@@ -1378,6 +1378,15 @@ class MainWindow(QMainWindow):
             # reused rather than recomputed.
             self._refresh_dock(name, sig)
 
+        # The parameters dock may already be the active/visible tab when a
+        # file is loaded (e.g. on app restart). visibilityChanged therefore
+        # doesn't fire for it, so the only path is through the loop above.
+        # If _on_dock_visible fired mid-loop (from an earlier toggleView) and
+        # stored the sig, the loop's _refresh_dock sees a match and skips the
+        # refresh. Guard against that by forcing it unconditionally here.
+        self._plot_sig.pop(_DOCK_PARAMETERS, None)
+        self._refresh_dock(_DOCK_PARAMETERS, sig)
+
     @staticmethod
     def _dock_alive(dock) -> bool:
         """Return True if the CDockWidget's C++ backing object still exists.
