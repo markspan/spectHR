@@ -1478,12 +1478,15 @@ class MainWindow(QMainWindow):
 
     def _clear_layout(self, layout) -> None:
         """Remove all widgets from *layout*, deleting them immediately."""
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.setParent(None)
-                widget.deleteLater()
+        try:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.setParent(None)
+                    widget.deleteLater()
+        except RuntimeError:
+            pass
 
     def _swap_in_epoch_plot(self, layout, dataset, factory) -> None:
         """
