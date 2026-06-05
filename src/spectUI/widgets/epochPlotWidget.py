@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+import matplotlib.cm as cm
 import matplotlib.patches as patches
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -72,7 +73,7 @@ class EpochPlotWidget(QWidget):
         names = [name for name, _ in active_items]
         epochs = [ep for _, ep in active_items]
 
-        cmap = plt.cm.tab20(np.linspace(0, 1, len(names)))
+        cmap = cm.tab20(np.linspace(0, 1, len(names)))
 
         # Draw bars
         for i, (name, ep) in enumerate(zip(names, epochs)):
