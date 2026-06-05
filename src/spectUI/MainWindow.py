@@ -1504,19 +1504,22 @@ class MainWindow(QMainWindow):
         """
         if dataset is None:
             return
-        self._clear_layout(layout)
-        pairs = []
-        for label, epoch in dataset.epochs.items():
-            if not epoch.active:
-                continue
-            try:
-                pairs.append((label, dataset.hrv[label]))
-            except Exception:
-                continue
-        if not pairs:
-            return
-        labels, views = zip(*pairs)
-        layout.addWidget(factory(views, labels, self.workspace))
+        try:
+            self._clear_layout(layout)
+            pairs = []
+            for label, epoch in dataset.epochs.items():
+                if not epoch.active:
+                    continue
+                try:
+                    pairs.append((label, dataset.hrv[label]))
+                except Exception:
+                    continue
+            if not pairs:
+                return
+            labels, views = zip(*pairs)
+            layout.addWidget(factory(views, labels, self.workspace))
+        except RuntimeError:
+            pass
 
     def show_psd_plot(self, dataset) -> None:
         self._swap_in_epoch_plot(
