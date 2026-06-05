@@ -47,6 +47,7 @@ from spectUI.common import (
     style_axis_clean,
     swap_canvas,
 )
+from spectUI.plot_worker import DockScheduler
 
 # ``AxisYState``, ``ViewState``, ``draw_interval_arrows`` and the
 # ``TimeSeconds`` / ``EpochName`` aliases now live in
@@ -253,14 +254,13 @@ class PrepPlotWidget(TimelinePlotWidget):
         self._redraw_timer.setInterval(80)
         self._redraw_timer.timeout.connect(self._deferred_redraw)
 
-        # Deferred IBI re-classification after R-top edits.
-        # The structural change (R-top added/moved/deleted) is shown immediately
-        # via a quick redraw; this timer fires once the edit burst stops and
-        # applies the O(n) classification + a final label-corrected redraw.
-        self._classify_timer = QTimer(self)
-        self._classify_timer.setSingleShot(True)
-        self._classify_timer.setInterval(0)   # next event-loop iteration
-        self._classify_timer.timeout.connect(self._deferred_classify_and_redraw)
+        # IBI re-classification after R-top edits runs on a background thread
+        # (it is O(n) over every beat). The structural change is shown
+        # immediately with stale labels; when the worker finishes, the final
+        # label-corrected redraw + dataEdited notification happen on the main
+        # thread. Rapid edits bump the generation counter so only the latest
+        # classification is applied (see plot_worker.DockScheduler).
+        self._classify_scheduler = DockScheduler()
 
         # R-top color mapping
         self.RTopColors = {
@@ -1148,7 +1148,8 @@ class PrepPlotWidget(TimelinePlotWidget):
             and event.xdata is not None
         ):
             self.rtop_ctrl.add_no_classify(float(event.xdata), label="N")
-            self._classify_timer.start()
+            self.redraw()                 # instant structural feedback (stale labels)
+            self._classify_async()        # final label-corrected redraw off-thread
 
     def _on_motion(self, event) -> None:
         """
@@ -1213,23 +1214,51 @@ class PrepPlotWidget(TimelinePlotWidget):
         if self.rtop_ctrl is None:
             return
         self.rtop_ctrl.move_no_classify(old_x, new_x)
-        self._classify_timer.start()
+        self.redraw()                 # instant structural feedback (stale labels)
+        self._classify_async()        # final label-corrected redraw off-thread
 
     def _on_line_remove(self, old_x: float, new_x: float) -> None:
         """Called when a R-top line is removed."""
         if self.rtop_ctrl is None:
             return
         self.rtop_ctrl.delete_no_classify(new_x)
-        self._classify_timer.start()
+        self.redraw()                 # instant structural feedback (stale labels)
+        self._classify_async()        # final label-corrected redraw off-thread
 
-    def _deferred_classify_and_redraw(self) -> None:
-        """Fired after a burst of R-top edits stops.
+    def _classify_async(self) -> None:
+        """Reclassify IBIs on a background thread, then redraw + notify.
 
-        Runs the O(n) IBI classification, does a final label-corrected redraw,
-        and marks the dataset dirty. Rapid edits only pay this cost once.
+        The structural edit has already been applied and drawn with stale
+        labels. Here we snapshot the IBI/label arrays on the main thread,
+        run the O(n) classification on the pool, and apply the result back
+        on the main thread once it completes. The scheduler's generation
+        counter means a fresh edit cancels an in-flight classification, so
+        only the labels for the latest edit are ever applied.
         """
         if self.rtop_ctrl is None:
             return
-        self.rtop_ctrl.rtops.classify_ibi()
-        self.redraw()
-        self.dataEdited.emit()
+        rtops = self.rtop_ctrl.rtops
+        ibi_snapshot    = np.asarray(rtops.ibi,    dtype=float).copy()
+        labels_snapshot = np.asarray(rtops.labels, dtype=object).copy()
+
+        def compute():
+            from spectHR.Tools.IbiClassification import classify_ibi
+            classify_ibi(ibi_snapshot, labels_snapshot)  # mutates the copy
+            return labels_snapshot
+
+        def on_done(new_labels):
+            if self.rtop_ctrl is None:
+                return
+            rtops = self.rtop_ctrl.rtops
+            # Belt-and-suspenders: the generation guard already discards
+            # results superseded by a later edit, so the length matches.
+            if new_labels.shape[0] != rtops.labels.shape[0]:
+                return
+            try:
+                rtops.labels = new_labels
+                self.redraw()
+            except RuntimeError:
+                return
+            self.dataEdited.emit()
+
+        self._classify_scheduler.submit("prep_classify", compute, on_done)

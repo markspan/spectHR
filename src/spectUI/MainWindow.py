@@ -31,7 +31,7 @@ import matplotlib
 matplotlib.use("QtAgg", force=True)
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QByteArray, QSettings, QSize, Qt
+from PySide6.QtCore import QByteArray, QObject, QSettings, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QFont, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -172,22 +172,41 @@ _TIMELINE_DOCKS = frozenset({_DOCK_PREPROCESSING, _DOCK_IBI, _DOCK_BP})
 
 
 class _QtLogHandler(logging.Handler):
-    """Logging handler that appends records to a QPlainTextEdit widget."""
+    """Logging handler that appends records to a QPlainTextEdit widget.
+
+    Records can arrive from background worker threads (e.g. the R-top
+    classification or the heavy plot-dock prefetch). Touching a QWidget
+    off the main thread is undefined behaviour, so the formatted message
+    is delivered through a queued signal: the ``_Emitter`` QObject lives
+    on the main thread, so its ``message`` signal is marshalled there
+    regardless of which thread called ``emit``.
+    """
+
+    class _Emitter(QObject):
+        message = Signal(str)
 
     def __init__(self, widget: QPlainTextEdit):
         super().__init__()
         self._widget = widget
+        self._emitter = self._Emitter()
+        self._emitter.message.connect(self._append)
         self.setFormatter(logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             datefmt="%H:%M:%S",
         ))
 
-    def emit(self, record):
+    def _append(self, msg: str) -> None:
+        """Runs on the main thread (queued from emit)."""
         try:
-            msg = self.format(record)
             self._widget.appendPlainText(msg)
             # Keep the view scrolled to the latest entry.
             self._widget.moveCursor(QTextCursor.End)
+        except RuntimeError:
+            pass  # widget's C++ object was deleted
+
+    def emit(self, record):
+        try:
+            self._emitter.message.emit(self.format(record))
         except Exception:
             self.handleError(record)
 
