@@ -69,7 +69,7 @@ class EpochContext:
         self._bp_beats = _UNSET
         self._resp_beats = _UNSET
         self._rsa_beats = _UNSET
-        self._pep_beats = _UNSET
+        self._pep_value = _UNSET
 
     # ------------------------------------------------------------------ #
     # Series-interface delegation                                         #
@@ -177,24 +177,25 @@ class EpochContext:
             return None
 
     @property
-    def pep_beats(self):
-        """Per-beat pre-ejection period array (ms, cached), or None when no ICG."""
-        if self._pep_beats is _UNSET:
-            self._pep_beats = self._compute_pep_beats()
-        return self._pep_beats
+    def pep_value(self):
+        """Epoch pre-ejection period (ms, cached) from the ensemble-averaged
+        ICG/ECG complex, or ``None`` when no ICG channel is present."""
+        if self._pep_value is _UNSET:
+            self._pep_value = self._compute_pep_value()
+        return self._pep_value
 
-    def _compute_pep_beats(self):
+    def _compute_pep_value(self):
         if self.icg_ts is None:
             return None
         try:
-            from spectHR.analysis.icg_metrics import pep_per_beat
+            from spectHR.analysis.icg_metrics import pep_ensemble
             ecg_kw: dict = {}
             if self.ecg_ts is not None:
                 ecg_kw = dict(
                     ecg_times=np.asarray(self.ecg_ts.times, dtype=float),
                     ecg_values=np.asarray(self.ecg_ts.values, dtype=float),
                 )
-            return pep_per_beat(
+            return pep_ensemble(
                 np.asarray(self.icg_ts.times, dtype=float),
                 np.asarray(self.icg_ts.values, dtype=float),
                 np.asarray(self.rpeak_times, dtype=float),

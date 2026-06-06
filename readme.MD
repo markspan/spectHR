@@ -408,11 +408,13 @@ The actual statistical correction (e.g. regressing HF on `resp_rate` across epoc
 
 When the recording carries an impedance-cardiography (ICG) `dZ/dt` channel — VU-AMS EDF exports store it as `DZDT` — spectHR computes the **pre-ejection period**, the cleanest non-invasive index of *sympathetic* (beta-adrenergic) drive to the heart, the branch HRV alone cannot isolate ([Sherwood et al., 1990](#ref-sherwood1990); [Berntson et al., 2004](#ref-berntson2004)).
 
-Per beat, within an early-systole window after the Q-onset, the **C-point** is the `dZ/dt` maximum (peak ejection velocity) and the **B-point** (aortic-valve opening) is taken as the point of maximum upstroke acceleration before C — the maximum of the second derivative of `dZ/dt`, a standard automated heuristic ([Lozano et al., 2007](#ref-lozano2007)).
+PEP is defined as the interval from the onset of left-ventricular depolarization (the ECG **Q-onset**) to the opening of the aortic valves (the **B-point** on the ICG `dZ/dt`). spectHR follows the VU-DAMS scoring recipe (manual §5.5): single-beat `dZ/dt` is far too noisy for reliable inflection-point detection, so the waveform is **ensemble-averaged** before scoring.
 
-**Q-onset detection.** Because the ECG waveform is already loaded alongside the ICG, spectHR detects the Q-onset automatically for each beat: it searches the 100 ms window before the R-peak, locates the Q trough (the brief negative deflection), and then walks backward to the last isoelectric sample — the point where the waveform transitions from baseline into the Q descent. PEP is therefore the true **Q-onset-to-B** interval in ms. Without an ECG the slightly shorter R-to-B is reported instead. The epoch mean is exported as the scalar `pep`; implausible beats (outside 40–180 ms) are dropped.
+**Per-epoch ensemble averaging.** All beats in the epoch are averaged together, time-locked to the R-peak, producing one clean `dZ/dt` complex (and one ECG complex); this large-scale ensemble average is the standard VU approach ([Riese et al., 2004](#ref-riese2004)). The averaged ICG is then **low-pass filtered at 60 Hz** — the VU-DAMS default, *"necessary to overcome the noise confound and assure reliable detection of the inflection points."* spectHR also **auto-detects the signal polarity**: the raw VU-AMS `dZ/dt` carries the C-point as a *minimum* ("the dZ/dt minimum is shown as a maximum by the program"), so the sign is corrected automatically before scoring.
 
-> **Note.** Automated B-point detection is heuristic — in demanding applications `pep` values should be visually spot-checked against the dZ/dt waveform.
+On the averaged complex the **C-point** is the `dZ/dt` maximum (peak ejection velocity) and the **B-point** (aortic-valve opening) is the point of maximum upstroke acceleration before C — the maximum of the second derivative of `dZ/dt` ([Lozano et al., 2007](#ref-lozano2007)). The **Q-onset** is located on the averaged ECG as the isoelectric-to-Q transition just before the R-peak; when no Q wave is resolvable, the VU-DAMS fallback of Q-point − 12 ms is used (manual TIP17). PEP is the resulting **Q-onset-to-B** interval in ms — one scalar per epoch, exported as `pep` (the slightly shorter R-to-B is reported if no ECG is present). Implausible values (outside 40–180 ms) are blanked.
+
+> **Note.** The VU-DAMS manual is explicit that automated B-point detection *"simply will not work for all signals"* — every ensemble complex is normally visually inspected and manually corrected. spectHR's automated `pep` should likewise be spot-checked against the `dZ/dt` waveform in demanding applications.
 
 Click **Save** to export **two files** to the configured Output folder:
 
@@ -1561,6 +1563,9 @@ Peng, C.-K., Havlin, S., Stanley, H.E., & Goldberger, A.L. (1995). Quantificatio
 
 <a id="ref-derivecourt2008"></a>
 De Rivecourt, M., Kuperus, M.N., Post, W.J., & Mulder, L.J.M. (2008). Cardiovascular and eye activity measures as indices for momentary changes in mental effort during simulated flight. *Ergonomics*, 51, 1295–1319. https://doi.org/10.1080/00140130802120267
+
+<a id="ref-riese2004"></a>
+Riese, H., Groot, P.F.C., van den Berg, M., Kupper, N.H.M., Magnee, E.H.B., Rohaan, E.J., Vrijkotte, T.G.M., Willemsen, G., & de Geus, E.J.C. (2004). Large-scale ensemble averaging of ambulatory impedance cardiograms. *Behavior Research Methods, Instruments, & Computers*, 36(3), 467–477. https://doi.org/10.3758/BF03195597
 
 <a id="ref-robbe1987"></a>
 Robbe, H.W.J., Mulder, L.J.M., Rüddel, H., Langewitz, W.A., Veldman, J.B.P., & Mulder, G. (1987). Assessment of baroreceptor reflex sensitivity by means of spectral analysis. *Hypertension*, 10(5), 538–543. https://doi.org/10.1161/01.HYP.10.5.538
