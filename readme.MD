@@ -32,7 +32,7 @@ This project is a work in progress. Blood-pressure support (calibration, beat-by
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
 - [Step 6, Track band power over time (Profiles tab)](#step-6-track-band-power-over-time-profiles-tab)
-- [Step 7, Examine respiration -> HR coupling (Transfer tab)](#step-7-examine-respiration--hr-coupling-transfer-tab)
+- [Step 7, Examine input → HR coupling: RSA and baroreflex (Transfer tab)](#step-7-examine-input--hr-coupling-rsa-and-baroreflex-transfer-tab)
 - [Step 8, Export your results (Parameters tab)](#step-8-export-your-results-parameters-tab)
 
 </details>
@@ -206,7 +206,7 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | **Epochs** | Draw and adjust your analysis segments |
 | **PSD** | Read the frequency-domain power spectrum per epoch |
 | **Profiles** | Track each band's power as it evolves over time within an epoch |
-| **Transfer** | Bode plot of how the breathing rhythm drives HRV: modulus, phase, and coherence over frequency for each epoch |
+| **Transfer** | Bode plot of how an input signal — blood pressure (baroreflex, the default) or respiration (RSA) — drives HRV: modulus, phase, and coherence over frequency for each epoch |
 | **Transfer profile** | Sliding-window time course of the same modulus / phase / coherence summaries per band |
 | **Parameters** | See all HRV metrics in a table and export two files: a scalar CSV (all summaries, opens in JASP / SPSS) and an HDF5 file (full spectra, profile and transfer time series) |
 
@@ -248,7 +248,7 @@ Once the peaks look correct, switch to the **IBI Series tab** to see heart rate 
 
 If the recording carries a continuous blood-pressure waveform (for example the BP channel of a CARSPAN `.nff` file), the **Blood Pressure tab** appears and shows that waveform on the same scrollable, zoomable timeline as the ECG and IBI views — pan/zoom is linked, so framing one view re-frames the others. When the BP channel arrives uncalibrated, spectHR converts it from raw A/D counts to **mmHg** using a linear calibration `mmHg = scale · raw + zero`, configurable under **WorkSpace → Edit Parameters → General Settings → Calibration** (`bp_scale`, `bp_zero`; defaults 0.125 / 0 match the worked example in the CARCAL manual for a Finapres/Finometer through a 12-bit converter). If the file's header already carries a per-channel calibration, that is kept and the manual values are ignored.
 
-From the calibrated waveform spectHR derives, per cardiac interval, four beat-by-beat parameters following the CARSPAN algorithm: **SBP** (systolic, the maximum in the interval), **DBP** (diastolic, the minimum preceding the systolic peak), **PP** (pulse pressure, SBP − DBP) and **MAP** (mean arterial pressure, the true integral mean between successive diastolic minima). Beats failing a flat-line / artefact check are dropped. Their per-epoch means are exported in the Parameters tab (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), and the systolic / diastolic series can drive the baroreflex transfer (see [Step 7](#step-7-examine-respiration--hr-coupling-transfer-tab)).
+From the calibrated waveform spectHR derives, per cardiac interval, four beat-by-beat parameters following the CARSPAN algorithm: **SBP** (systolic, the maximum in the interval), **DBP** (diastolic, the minimum preceding the systolic peak), **PP** (pulse pressure, SBP − DBP) and **MAP** (mean arterial pressure, the true integral mean between successive diastolic minima). Beats failing a flat-line / artefact check are dropped. Their per-epoch means are exported in the Parameters tab (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), and the systolic / diastolic series can drive the baroreflex transfer (see [Step 7](#step-7-examine-input--hr-coupling-rsa-and-baroreflex-transfer-tab)).
 
 ---
 
@@ -320,14 +320,14 @@ An alternative to the profiles plot is the 'spectrogram', where the x-axis is ti
 
 The **Transfer tab** answers a different question from the PSD and Profiles tabs: not *"how much power is there in band X"*, but *"how much of the heart-rate fluctuation at frequency f can be predicted from an input signal at that frequency, and with what gain and phase delay"*. The output channel is always the IBI (HR) series; the **input channel is selectable** (Transfer Settings → `input_signal`), which makes this one tab serve two distinct, equally-important analyses:
 
-- **Respiration → HR** (`rsp`, the default) — respiratory sinus arrhythmia (RSA): how the breathing rhythm drives heart-rate variability. Needs a respiration channel. Because respiration has no standard engineering unit, the modulus axis reads simply $|H(f)|$.
-- **Blood pressure → HR** (`bp_sys` / `bp_dia`) — spectral **baroreflex sensitivity (BRS)**: how beat-by-beat systolic or diastolic pressure drives heart rate, the cardiovascular-control quantity at the heart of mental-effort research. Needs a blood-pressure channel. The modulus is a genuine gain in **ms/mmHg** and the legend names the pairing it computed (e.g. `IBI ↔ BP diastolic`).
+- **Blood pressure → HR** (`bp_sys` / `bp_dia`) — spectral **baroreflex sensitivity (BRS)**: how beat-by-beat systolic or diastolic pressure drives heart rate, the cardiovascular-control quantity at the heart of mental-effort research. **This is the default**, with **systolic** pressure as the input (the [Robbe et al. (1987)](#ref-robbe1987) BRS convention). Needs a blood-pressure channel. The modulus is a genuine gain in **ms/mmHg** and the legend names the pairing it computed (e.g. `IBI ↔ BP systolic`).
+- **Respiration → HR** (`rsp`) — respiratory sinus arrhythmia (RSA): how the breathing rhythm drives heart-rate variability. Needs a respiration channel. Because respiration has no standard engineering unit, the modulus axis reads simply $|H(f)|$.
 
-Switch between the two with `input_signal` in Transfer Settings; everything downstream (Bode tiles, band summaries, exports) works identically for both.
+Switch between them with `input_signal` in Transfer Settings; everything downstream (Bode tiles, band summaries, exports) works identically for both.
 
 > **Note on spectral BRS.** Blood pressure and heart rate drive each other in a closed loop, so the transfer function $H = \text{IBI} / \text{BP}$ is technically an open-loop approximation of a closed-loop system. This is inherent to the cross-spectral method and is shared by all single-channel spectral BRS estimators. [Robbe et al. (1987)](#ref-robbe1987) validated this approximation together with the 0.5 coherence gate used here. Interpret BRS values as estimates of spontaneous baroreflex gain, not as a direct open-loop measurement.
 
-The tab is enabled when the recording carries a **respiration** channel; without one the View-menu entry is greyed out and trying to open it pops a message explaining why. The blood-pressure → HR (baroreflex) input additionally requires a blood-pressure channel.
+The tab is enabled when the recording carries a **blood-pressure or respiration** channel; with neither, the View-menu entry is greyed out and trying to open it pops a message explaining why. The default input is `bp_sys`, so on a recording that has respiration but no blood pressure, switch `input_signal` to `rsp` in Transfer Settings to populate the view.
 
 Each active epoch gets one **Bode tile** with three stacked panels sharing the frequency x-axis:
 
@@ -343,7 +343,7 @@ Both views share Settings, configurable under **WorkSpace -> Edit Parameters -> 
 
 | Setting | Default | What it does |
 |---|---|---|
-| `input_signal` | `rsp` | Which signal drives the transfer input: `rsp` (respiration → HR, RSA), `bp_sys` or `bp_dia` (blood pressure → HR, baroreflex sensitivity). The output is always the IBI/HR series. |
+| `input_signal` | `bp_sys` | Which signal drives the transfer input: `bp_sys` (default) or `bp_dia` (blood pressure → HR, baroreflex sensitivity), or `rsp` (respiration → HR, RSA). The output is always the IBI/HR series. |
 | `window (sec)` / `step (sec)` | 30 / 5 | Sliding-window length and step used by the Transfer-profile view. Same sizing rules as the Profiles tab. |
 | `min_coherence` | 0.5 | Squared-coherence gate. In compute, only bins clearing this threshold contribute to band-mean modulus / phase. In the per-epoch plot, the red dashed reference line sits at this value and the phase mask fades bins below it. |
 | `f_min` / `f_max` | 0 / 0.5 Hz | Frequency-axis range for the per-epoch Bode plot. `f_max` also caps the native DFT grid. |

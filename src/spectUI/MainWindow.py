@@ -1340,35 +1340,38 @@ class MainWindow(QMainWindow):
 
         Docks whose underlying data isn't available on this dataset are
         closed (Preprocessing without ECG, Transfer + Transfer-profile
-        without a respiration channel). The View-menu entry stays
-        enabled so the user can re-open them - on re-open the widget
-        renders its own "No respiration channel" placeholder.
+        without a blood-pressure or respiration channel). The View-menu
+        entry stays enabled so the user can re-open them - on re-open the
+        widget renders its own "no input channel" placeholder.
         """
         # Preprocessing dock visibility follows ECG availability.
         has_ecg = bool(getattr(self.dataset, "has_ecg", False))
         self.docks[_DOCK_PREPROCESSING].toggleView(has_ecg)
 
-        # Transfer-family docks follow respiration availability. When
-        # the recording has no respiration channel we close them, grey
-        # out their View-menu toggle, and arm a visibility-guard that
-        # explains via QMessageBox if anything else (perspective
-        # restore, programmatic call) tries to open them.
+        # Transfer-family docks need a transfer *input* channel. The output
+        # is always the IBI/HR series; the input is blood pressure (the
+        # default, for baroreflex sensitivity) or respiration (for RSA),
+        # selectable in the workspace. The docks are therefore available
+        # when EITHER channel is present, and only disabled (with a guard +
+        # explanatory toggle) when both are absent.
         rsp_map = getattr(self.dataset, "rsp_map", None) or {}
         has_rsp = bool(rsp_map)
+        timeseries = getattr(self.dataset, "timeseries", None) or {}
+        has_bp = "bp" in timeseries
+        has_tf_input = has_rsp or has_bp
         for name in (_DOCK_TRANSFER, _DOCK_TRANSFER_PROFILE):
             dock = self.docks[name]
             if not self._dock_alive(dock):
                 continue
-            dock.toggleView(has_rsp and not dock.isClosed())
+            dock.toggleView(has_tf_input and not dock.isClosed())
             action = dock.toggleViewAction()
-            action.setEnabled(has_rsp)
-            if not has_rsp:
-                action.setToolTip(
-                    "Disabled: this recording has no respiration channel"
-                )
-            else:
-                action.setToolTip("")
-        if not has_rsp:
+            action.setEnabled(has_tf_input)
+            action.setToolTip(
+                "" if has_tf_input
+                else "Disabled: this recording has no respiration or "
+                     "blood-pressure channel"
+            )
+        if not has_tf_input:
             self._arm_transfer_rsp_guard()
         else:
             self._disarm_transfer_rsp_guard()
@@ -1376,8 +1379,6 @@ class MainWindow(QMainWindow):
         # Blood-pressure dock follows the presence of a "bp" timeseries.
         # When absent we close the dock and disable its View-menu toggle
         # (no placeholder is rendered - the widget simply draws nothing).
-        timeseries = getattr(self.dataset, "timeseries", None) or {}
-        has_bp = "bp" in timeseries
         bp_dock = self.docks[_DOCK_BP]
         if self._dock_alive(bp_dock):
             bp_dock.toggleView(has_bp and not bp_dock.isClosed())
@@ -1399,8 +1400,8 @@ class MainWindow(QMainWindow):
             # transfer-function estimation). Skip them when the channel is
             # missing *or* the dock is closed, and let visibilityChanged
             # compute lazily the first time the user brings them forward.
-            _DOCK_TRANSFER:         not has_rsp or _closed(_DOCK_TRANSFER),
-            _DOCK_TRANSFER_PROFILE: not has_rsp or _closed(_DOCK_TRANSFER_PROFILE),
+            _DOCK_TRANSFER:         not has_tf_input or _closed(_DOCK_TRANSFER),
+            _DOCK_TRANSFER_PROFILE: not has_tf_input or _closed(_DOCK_TRANSFER_PROFILE),
             # 3-D spectrogram is the most expensive widget; skip it when
             # the dock is closed and let visibilityChanged handle it lazily.
             _DOCK_SPECTROGRAM_3D:   _closed(_DOCK_SPECTROGRAM_3D),
@@ -1475,10 +1476,12 @@ class MainWindow(QMainWindow):
                         self,
                         "Transfer analysis unavailable",
                         "Cannot open the Transfer view.\n\n"
-                        "This analysis estimates how the breathing signal "
-                        "drives heart-rate variability, so it needs a "
-                        "respiration channel in the recording. The "
-                        "currently loaded file has none.",
+                        "This analysis estimates how an input signal drives "
+                        "heart-rate variability — blood pressure (for "
+                        "baroreflex sensitivity) or respiration (for RSA) — "
+                        "so it needs a blood-pressure or respiration channel "
+                        "in the recording. The currently loaded file has "
+                        "neither.",
                     )
                 return _slot
 

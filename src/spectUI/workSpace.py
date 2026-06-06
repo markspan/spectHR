@@ -227,12 +227,13 @@ _DEFAULT_WORKSPACE = {
     # statistics on the time x-axis.
     "TransferAnalysis": {
         # Which signal drives the transfer-function *input* channel (the
-        # output is always IBI/HR). "rsp" is the classic respiration->HR
-        # (respiratory sinus arrhythmia) transfer; "bp_sys"/"bp_dia" give the
+        # output is always IBI/HR). "bp_sys"/"bp_dia" give the
         # blood-pressure->HR baroreflex-sensitivity transfer using per-beat
-        # systolic / diastolic pressure. Requires the matching channel to be
-        # present (respiration or blood pressure).
-        "input_signal": "rsp",
+        # systolic / diastolic pressure (the default; systolic is the Robbe
+        # et al. 1987 BRS convention); "rsp" is the classic respiration->HR
+        # (respiratory sinus arrhythmia) transfer. Requires the matching
+        # channel to be present (blood pressure or respiration).
+        "input_signal": "bp_sys",
         "window (sec)": 30.0,
         "step (sec)": 5.0,
         # Squared-coherence threshold used by the band integrators
@@ -539,7 +540,7 @@ def transfer_settings_from_workspace(
     :func:`display_bands_from_workspace`.
     """
     defaults = {
-        "input_signal": "rsp",
+        "input_signal": "bp_sys",
         "window_s": 30.0,
         "step_s": 5.0,
         "min_coherence": 0.5,
