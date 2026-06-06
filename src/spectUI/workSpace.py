@@ -897,6 +897,7 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
         welch=welch_opts,
         lombscargle=ls_opts,
         carspan=carspan_opts,
+        detrend_lambda=float(fa.get("detrend_lambda", 0.0) or 0.0),
     )
 
 

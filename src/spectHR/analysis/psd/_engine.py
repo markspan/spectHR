@@ -233,8 +233,26 @@ class PSDEngine:
     # Back-end dispatchers (one per algorithm)
     # ------------------------------------------------------------------
 
+    def _maybe_detrend(self, method: PsdMethod, ibi_values_ms: np.ndarray) -> np.ndarray:
+        """Optionally smoothness-priors-detrend the IBI tachogram.
+
+        Applied only to the tachogram-based PSD methods (Welch,
+        Lomb-Scargle) and only when ``method.detrend_lambda > 0``. The
+        zero-mean residual has the original mean added back so cubic
+        interpolation in the back-ends stays numerically well-behaved; the
+        DC term is removed again inside the spectral estimator. The CARSPAN
+        paths never call this — they keep the faithful manual pipeline.
+        """
+        lam = float(getattr(method, "detrend_lambda", 0.0) or 0.0)
+        if lam <= 0 or ibi_values_ms.size < 4:
+            return ibi_values_ms
+        from spectHR.analysis.detrend import smoothness_priors_detrend
+        residual = smoothness_priors_detrend(ibi_values_ms, lam)
+        return residual + float(np.mean(ibi_values_ms))
+
     def _psd_welch(self, method: PsdMethod, *, with_ci: bool = True) -> PSDResult:
         ibi_times_s, ibi_values_ms = ibi_clean_pairs(self._series)
+        ibi_values_ms = self._maybe_detrend(method, ibi_values_ms)
         convert, unit = self._ibi_psd_display(method.welch.units)
         raw = _compute_welch_psd(
             ibi_times_s,
@@ -254,6 +272,7 @@ class PSDEngine:
         self, method: PsdMethod, *, with_ci: bool = True
     ) -> PSDResult:
         ibi_times_s, ibi_values_ms = ibi_clean_pairs(self._series)
+        ibi_values_ms = self._maybe_detrend(method, ibi_values_ms)
         convert, unit = self._ibi_psd_display(method.lombscargle.units)
         raw = _compute_lombscargle_psd(
             ibi_times_s,

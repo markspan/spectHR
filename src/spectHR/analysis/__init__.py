@@ -24,6 +24,9 @@ from spectHR.analysis.registry import epoch_metric, get_metrics
 from spectHR.analysis import time_metrics       # noqa: F401
 from spectHR.analysis import frequency_metrics  # noqa: F401
 from spectHR.analysis import bp_metrics         # noqa: F401
+from spectHR.analysis import nonlinear          # noqa: F401  (dfa_a1)
+from spectHR.analysis import respiration_metrics  # noqa: F401  (resp_rate, hf_resp_in_band)
+from spectHR.analysis import icg_metrics        # noqa: F401  (pep)
 
 __all__ = [
     "epoch_metric",

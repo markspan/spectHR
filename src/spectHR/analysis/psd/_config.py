@@ -205,5 +205,12 @@ class PsdMethod:
     lombscargle: LombscargleOptions = field(default_factory=LombscargleOptions)
     carspan: CarspanOptions = field(default_factory=CarspanOptions)
 
+    detrend_lambda: float = 0.0
+    """Optional smoothness-priors (Tarvainen 2002) detrending strength.
+    ``0`` (default) disables it. When > 0 the IBI tachogram is detrended
+    before the **tachogram-based** PSD methods (Welch, Lomb-Scargle); the
+    faithful CARSPAN paths are never altered. Larger values remove slower
+    trends (a typical choice is ~500)."""
+
 
 _DEFAULT_PSD_METHOD = PsdMethod()

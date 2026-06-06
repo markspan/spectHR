@@ -288,6 +288,16 @@ class PhysioData:
             rsp_ts = None
         rsp_series = self.rsp_map.get(self.active_band) if self.active_band else None
 
+        # ICG dZ/dt channel for the pre-ejection-period metric. VU-AMS EDF
+        # exports store it as ``dzdt-[vuams]``; locate it by name prefix so
+        # PEP is computed whenever an ICG derivative is present (NaN otherwise).
+        icg_ts = None
+        for _name, _ts in self.timeseries.items():
+            _nl = _name.lower()
+            if _nl.startswith("dzdt") or _nl.startswith("dz/dt"):
+                icg_ts = _ts
+                break
+
         labels_list: list = []
         rows: list[dict[str, float]] = []
 
@@ -301,7 +311,7 @@ class PhysioData:
                 )
                 ctx = EpochContext(
                     view, psd_method=psd_method, bp_ts=bp_ts, rsp_ts=rsp_ts,
-                    rsp_phases=rsp_phases, rsa_lag_s=rsa_lag_s,
+                    rsp_phases=rsp_phases, rsa_lag_s=rsa_lag_s, icg_ts=icg_ts,
                 )
                 row: dict[str, float] = {}
 

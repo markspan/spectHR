@@ -55,17 +55,19 @@ class EpochContext:
     """
 
     def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None,
-                 rsp_phases=None, rsa_lag_s: float = 1.0):
+                 rsp_phases=None, rsa_lag_s: float = 1.0, icg_ts=None):
         self.view = view
         self.psd_method = psd_method
         self.bp_ts = bp_ts
         self.rsp_ts = rsp_ts
         self.rsp_phases = rsp_phases  # RespirationSeriesView for this epoch
         self.rsa_lag_s = rsa_lag_s
+        self.icg_ts = icg_ts          # ICG dZ/dt TimeSeries (for PEP), or None
         self._psd = _UNSET
         self._bp_beats = _UNSET
         self._resp_beats = _UNSET
         self._rsa_beats = _UNSET
+        self._pep_beats = _UNSET
 
     # ------------------------------------------------------------------ #
     # Series-interface delegation                                         #
@@ -168,6 +170,26 @@ class EpochContext:
                 np.asarray(self.labels,      dtype=object),
                 self.rsp_phases,
                 lag_s=self.rsa_lag_s,
+            )
+        except Exception:
+            return None
+
+    @property
+    def pep_beats(self):
+        """Per-beat pre-ejection period array (ms, cached), or None when no ICG."""
+        if self._pep_beats is _UNSET:
+            self._pep_beats = self._compute_pep_beats()
+        return self._pep_beats
+
+    def _compute_pep_beats(self):
+        if self.icg_ts is None:
+            return None
+        try:
+            from spectHR.analysis.icg_metrics import pep_per_beat
+            return pep_per_beat(
+                np.asarray(self.icg_ts.times, dtype=float),
+                np.asarray(self.icg_ts.values, dtype=float),
+                np.asarray(self.rpeak_times, dtype=float),
             )
         except Exception:
             return None
