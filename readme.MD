@@ -149,6 +149,8 @@ spectHR follows the CARSPAN band convention. Band boundaries are **user-configur
 
 See [Mulder (1989)](#ref-mulder1989) and [Mulder (1988)](#ref-mulder1988) for background.
 
+> **Comparison with other tools.** The CARSPAN LF band (0.07–0.14 Hz) is **not the same quantity** as the Task Force (1996) LF band (0.04–0.15 Hz). The two conventions use different edges for both LF and VLF. Numeric LF or VLF values from spectHR cannot be directly compared with published Task Force values without reconfiguring the bands to match. HF (0.15–0.40 Hz) is identical in both conventions.
+
 ### Practical considerations
 
 **Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals (visible in spectHR's shaded CI band). Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2019) showed that a 10-second ECG can yield a valid RMSSD estimate in large samples.
@@ -271,7 +273,7 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded (default ranges in brackets):
 
-- **FullRange (0.02–0.65 Hz)**, the total HRV spectrum.
+- **FullRange (0.02–0.50 Hz)**, the total HRV spectrum.
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes.
 - **LF (0.07–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
 - **HF (0.15–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
@@ -310,6 +312,8 @@ The **Transfer tab** answers a different question from the PSD and Profiles tabs
 
 - **Respiration** (default) — the classic respiration → HR transfer, i.e. respiratory sinus arrhythmia. Needs a respiration channel.
 - **BP systolic** / **BP diastolic** — beat-by-beat blood pressure → HR, i.e. spectral **baroreflex sensitivity**. Needs a blood-pressure channel. The legend names the pairing it computed (e.g. `IBI ↔ BP diastolic`).
+
+> **Note on spectral BRS.** BP and HR drive each other in a closed loop, so the transfer function H = IBI / BP is technically an open-loop approximation of a closed-loop system. This is inherent to the cross-spectral method and is shared by all single-channel spectral BRS estimators. Robbe et al. (1987) validated this approximation and the 0.5 coherence gate used here. Interpret BRS values as estimates of spontaneous baroreflex gain, not as a direct open-loop measurement.
 
 The output channel is always the IBI (HR) series. The tab is enabled when the recording carries a respiration channel; without one the View-menu entry is greyed out and trying to open it pops a message explaining why.
 
