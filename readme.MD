@@ -63,11 +63,23 @@ This project is a work in progress. Blood-pressure support (calibration, beat-by
 </details>
 
 <details open>
+<summary><a href="#respiration-context-hf"><strong>Respiration-context HF</strong></a></summary>
+</details>
+
+<details open>
 <summary><a href="#blood-pressure"><strong>Blood Pressure</strong></a></summary>
 </details>
 
 <details open>
+<summary><a href="#pre-ejection-period-pep"><strong>Pre-ejection period (PEP)</strong></a></summary>
+</details>
+
+<details open>
 <summary><a href="#poincaré-metrics"><strong>Poincaré Metrics</strong></a></summary>
+</details>
+
+<details open>
+<summary><a href="#non-linear-and-stationarity-metrics"><strong>Non-linear and stationarity metrics</strong></a></summary>
 </details>
 
 <details>
@@ -387,34 +399,6 @@ The Grossman peak-to-valley algorithm finds, per breath cycle, the shortest IBI 
 The default of **1.0 s** is the value used in [Grossman et al. (1990)](#ref-grossman1990) and matches the VU-DAMS implementation.
 
  **For children** (typical rate 20–30 bpm) the 1.0 s default could be too large; values of 0.3–0.5 s are more appropriate. Configure `rsa_lag_s` under **Settings → Edit Parameters → General Settings → Respiration Analysis**.
-
-#### Non-linear and stationarity metrics
-
-Two additional per-epoch columns complement the time- and frequency-domain measures:
-
-- **`dfa_a1`** — the short-term **detrended-fluctuation-analysis** scaling exponent α1 ([Peng et al., 1995](#ref-peng1995)), computed over box sizes of 4–16 beats. It captures the fractal/long-range correlation structure of the IBI series, a non-linear dimension not visible in spectral or Poincaré measures. Values near 1.0 indicate healthy "1/f" correlation; values toward 0.5 indicate uncorrelated (white-noise-like) variability. It needs at least ~32 beats in the epoch, otherwise it is blank.
-- **`stationarity_z`** — the **reverse-arrangements** stationarity test statistic ([Bendat & Piersol, 2010](#ref-bendat2010)). Whereas the existing `stationarity` column is just a linear IBI-vs-time correlation (catches monotone drift only), `stationarity_z` is a distribution-free z-score for *any* trend: under stationarity it is ~N(0, 1), so **|z| > 1.96 flags a non-stationary epoch** at the 5 % level — a warning that the whole-epoch spectral estimates (which assume stationarity) should be read with care. Pairs naturally with the optional [detrending](#practical-considerations) setting.
-
-#### Respiration-context HF
-
-HF-HRV amplitude depends on breathing rate and depth, not on vagal tone alone ([Grossman & Taylor, 2007](#ref-grossman2007)). Two columns let you judge — or statistically correct — whether an HF change is genuinely vagal:
-
-- **`resp_rate`** — mean breathing frequency for the epoch, in Hz (multiply by 60 for breaths/min).
-- **`hf_resp_in_band`** — `1.0` when `resp_rate` falls inside the configured HF band (0.15–0.40 Hz), `0.0` when it falls outside. A `0.0` is a red flag that the HF power for that epoch may not reflect respiratory sinus arrhythmia at all.
-
-The actual statistical correction (e.g. regressing HF on `resp_rate` across epochs or subjects) is best done in your statistics package (R / JASP); these two columns are the inputs that make it possible.
-
-#### Pre-ejection period (PEP)
-
-When the recording carries an impedance-cardiography (ICG) `dZ/dt` channel — VU-AMS EDF exports store it as `DZDT` — spectHR computes the **pre-ejection period**, the cleanest non-invasive index of *sympathetic* (beta-adrenergic) drive to the heart, the branch HRV alone cannot isolate ([Sherwood et al., 1990](#ref-sherwood1990); [Berntson et al., 2004](#ref-berntson2004)).
-
-PEP is defined as the interval from the onset of left-ventricular depolarization (the ECG **Q-onset**) to the opening of the aortic valves (the **B-point** on the ICG `dZ/dt`). spectHR follows the VU-DAMS scoring recipe (manual §5.5): single-beat `dZ/dt` is far too noisy for reliable inflection-point detection, so the waveform is **ensemble-averaged** before scoring.
-
-**Per-epoch ensemble averaging.** All beats in the epoch are averaged together, time-locked to the R-peak, producing one clean `dZ/dt` complex (and one ECG complex); this large-scale ensemble average is the standard VU approach ([Riese et al., 2004](#ref-riese2004)). The averaged ICG is then **low-pass filtered at 60 Hz** — the VU-DAMS default, *"necessary to overcome the noise confound and assure reliable detection of the inflection points."* spectHR also **auto-detects the signal polarity**: the raw VU-AMS `dZ/dt` carries the C-point as a *minimum* ("the dZ/dt minimum is shown as a maximum by the program"), so the sign is corrected automatically before scoring.
-
-On the averaged complex the **C-point** is the `dZ/dt` maximum (peak ejection velocity) and the **B-point** (aortic-valve opening) is the point of maximum upstroke acceleration before C — the maximum of the second derivative of `dZ/dt` ([Lozano et al., 2007](#ref-lozano2007)). The **Q-onset** is located on the averaged ECG as the isoelectric-to-Q transition just before the R-peak; when no Q wave is resolvable, the VU-DAMS fallback of Q-point − 12 ms is used (manual TIP17). PEP is the resulting **Q-onset-to-B** interval in ms — one scalar per epoch, exported as `pep` (the slightly shorter R-to-B is reported if no ECG is present). Implausible values (outside 40–180 ms) are blanked.
-
-> **Note.** The VU-DAMS manual is explicit that automated B-point detection *"simply will not work for all signals"* — every ensemble complex is normally visually inspected and manually corrected. spectHR's automated `pep` should likewise be spot-checked against the `dZ/dt` waveform in demanding applications.
 
 Click **Save** to export **two files** to the configured Output folder:
 
@@ -828,6 +812,24 @@ When available, respiration data will be used. When a Polar H10 accelerometer st
 
 ---
 
+## Respiration-context HF
+
+HF-HRV amplitude depends not only on vagal tone but also on the **rate and depth of breathing** ([Grossman & Taylor, 2007](#ref-grossman2007)): the same vagal drive produces a smaller HF peak when breathing is fast or shallow, and a breathing frequency that drifts *out of* the HF band breaks the assumption that HF power indexes respiratory sinus arrhythmia at all. spectHR therefore exports, per epoch, the two quantities needed to judge — or statistically correct — whether an HF change is genuinely vagal.
+
+**`resp_rate`** — mean breathing frequency in Hz (multiply by 60 for breaths/min). The phase-segmented respiration signal gives an alternating sequence of $N$ phase boundaries at times $t_1 < t_2 < \dots < t_N$ (each inhalation→exhalation or exhalation→inhalation transition). Pairing successive boundaries into $N-1$ breath cycles, the rate is the mean of the per-cycle instantaneous frequencies:
+
+$$f_\text{resp} = \frac{1}{N-1} \sum_{k=1}^{N-1} \frac{1}{t_{k+1} - t_k}$$
+
+This matches CARSPAN's $1/\overline{\text{MeanIn}}$ for the `RespPeriod` profile. Blank when fewer than two phases fall inside the epoch.
+
+**`hf_resp_in_band`** — a validity flag: `1.0` when the mean breathing frequency lies inside the configured HF band $[f_\text{HF}^\text{low}, f_\text{HF}^\text{high}]$ (default 0.15–0.40 Hz, i.e. 9–24 breaths/min), `0.0` when it falls outside, blank when undeterminable:
+
+$$\texttt{hf\_resp\_in\_band} = \mathbb{1}\!\left[\, f_\text{HF}^\text{low} \le f_\text{resp} \le f_\text{HF}^\text{high} \,\right]$$
+
+A `0.0` is a red flag that the epoch's HF power may not reflect RSA at all. The actual statistical correction (e.g. regressing HF on `resp_rate` across epochs or subjects) is deliberately left to your statistics package (R / JASP) — these two columns are the inputs that make it possible.
+
+---
+
 ## Blood Pressure
 
 When a recording carries a continuous blood-pressure waveform (for example the BP channel of a CARSPAN `.nff` file), spectHR calibrates it, derives beat-by-beat pressures, and makes the systolic / diastolic series available as a baroreflex transfer input.
@@ -849,6 +851,41 @@ A CARSPAN-faithful flat-line guard (a 300 ms / 10 ms-step sliding window flags b
 
 ---
 
+## Pre-ejection period (PEP)
+
+When the recording carries an impedance-cardiography (ICG) `dZ/dt` channel — VU-AMS EDF exports store it as `DZDT` — spectHR computes the **pre-ejection period** (`pep`, ms), the cleanest non-invasive index of *sympathetic* (beta-adrenergic) drive to the heart, the branch HRV alone cannot isolate ([Sherwood et al., 1990](#ref-sherwood1990); [Berntson et al., 2004](#ref-berntson2004)). PEP is the interval from the onset of left-ventricular depolarization (the ECG **Q-onset**) to the opening of the aortic valves (the **B-point** on the ICG `dZ/dt`):
+
+$$\text{PEP} = (\tau_B - \tau_Q)\times 1000 \;\text{ms}$$
+
+with $\tau_B$ and $\tau_Q$ both measured relative to the R-peak ($\tau = 0$). Single-beat `dZ/dt` is far too noisy for reliable inflection-point detection, so spectHR follows the VU-DAMS scoring recipe (manual §5.5) and **ensemble-averages** the waveform across the epoch before scoring.
+
+<details>
+<summary>PEP, scoring detail</summary>
+
+### PEP, scoring detail
+
+**1. Ensemble averaging.** For the $M$ R-peaks $r_1, \dots, r_M$ in the epoch, both the ICG and the ECG are averaged on a common time grid $\tau$ locked to the R-peak — the large-scale ensemble average that is standard VU practice ([Riese et al., 2004](#ref-riese2004)):
+
+$$\bar d(\tau) = \frac{1}{M}\sum_{m=1}^{M} d\!\left(r_m + \tau\right), \qquad \tau \in [-200, +400]\ \text{ms}$$
+
+where $d(\cdot)$ is the `dZ/dt` waveform (and analogously $\bar e(\tau)$ for the ECG).
+
+**2. Filtering & polarity.** The averaged ICG complex is **low-pass filtered at 60 Hz** (the VU-DAMS default, *"necessary to overcome the noise confound and assure reliable detection of the inflection points"*). The polarity is auto-detected: the raw VU-AMS `dZ/dt` carries the C-point as a *minimum* (*"the dZ/dt minimum is shown as a maximum by the program"*), so the sign is corrected so the C-point reads as a maximum.
+
+**3. C- and B-points.** Within the early-systole window the **C-point** (peak ejection velocity) is the maximum and the **B-point** (aortic-valve opening) is the point of maximum upstroke acceleration before it — the maximum of the second derivative of `dZ/dt` ([Lozano et al., 2007](#ref-lozano2007)):
+
+$$\tau_C = \operatorname*{arg\,max}_{\tau}\ \bar d(\tau), \qquad \tau_B = \operatorname*{arg\,max}_{\tau < \tau_C}\ \frac{d^2\bar d}{d\tau^2}$$
+
+**4. Q-onset.** On the averaged ECG, $\tau_Q$ is the isoelectric-to-Q transition just before the R-peak (the last baseline sample preceding the Q trough). When no Q wave is resolvable, the VU-DAMS fallback of $\tau_Q = \tau_\text{Q-point} - 12\,\text{ms}$ is used (manual TIP17). With no ECG channel the R-peak is the reference ($\tau_Q = 0$), giving the slightly shorter R-to-B interval.
+
+Implausible values (outside 40–180 ms) are blanked.
+
+</details>
+
+> **Note.** The VU-DAMS manual is explicit that automated B-point detection *"simply will not work for all signals"* — every ensemble complex is normally visually inspected and manually corrected. spectHR's automated `pep` should likewise be spot-checked against the `dZ/dt` waveform in demanding applications; posture-dependent morphology changes (e.g. supine vs standing) are where it most often needs a manual nudge.
+
+---
+
 ## Poincaré Metrics
 
 **SD1**, beat-to-beat variability, equal to $\text{RMSSD}/\sqrt{2}$:
@@ -864,6 +901,52 @@ $$\text{SD2} = \sqrt{2 \cdot \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \mathrm{V
 **Ellipse area** $= \pi \cdot \text{SD1} \cdot \text{SD2}$, total HRV.
 
 See the note in Step 4 above: SD1 and SD2 add no statistical information beyond RMSSD and SDNN ([van Roon et al., 2025](#ref-vanroon2025)).
+
+---
+
+## Non-linear and stationarity metrics
+
+Two columns probe structure in the IBI series that the time-domain, Poincaré and spectral measures miss: the *fractal scaling* of the fluctuations and whether the epoch is *statistically stationary* in the first place (a precondition the whole-epoch spectral estimates quietly assume).
+
+**`dfa_a1`** — the short-term **detrended-fluctuation-analysis** scaling exponent $\alpha_1$ ([Peng et al., 1995](#ref-peng1995)), computed over box sizes of 4–16 beats. It captures the long-range correlation structure of the IBI series: $\alpha_1 \approx 1.0$ indicates healthy "1/f" correlation, $\alpha_1 \to 0.5$ uncorrelated (white-noise-like) variability, and $\alpha_1 \to 1.5$ a Brownian/random-walk regime. Needs at least $2 \cdot \text{scale}_\max = 32$ beats, otherwise blank.
+
+<details>
+<summary>DFA-α1, algorithm detail</summary>
+
+### DFA-α1, algorithm detail
+
+For an IBI series $x_1, \dots, x_N$ (ms), first form the integrated, mean-removed profile:
+
+$$y(k) = \sum_{i=1}^{k}\big(x_i - \bar{x}\big), \qquad k = 1, \dots, N$$
+
+For each box size $n$, split $y$ into $\lfloor N/n \rfloor$ non-overlapping windows, fit a local linear trend $\hat y_n$ in each window, and take the root-mean-square residual across the whole profile:
+
+$$F(n) = \sqrt{\frac{1}{N}\sum_{k=1}^{N}\big(y(k) - \hat y_n(k)\big)^2}$$
+
+A self-similar series obeys $F(n) \propto n^{\alpha}$, so $\alpha_1$ is the slope of a least-squares line through $\log F(n)$ versus $\log n$ over the short-term scales $n \in [4, 16]$ beats.
+
+</details>
+
+**`stationarity_z`** — the **reverse-arrangements** test statistic ([Bendat & Piersol, 2010](#ref-bendat2010)). Whereas the plain `stationarity` column is just a linear IBI-vs-time correlation (it catches monotone drift only), `stationarity_z` is a distribution-free z-score sensitive to *any* trend. Under stationarity it is $\sim \mathcal{N}(0, 1)$, so **$|z| > 1.96$ flags a non-stationary epoch** at the 5 % level — a warning that the whole-epoch spectral estimates should be read with care. It pairs naturally with the optional [detrending](#practical-considerations) setting. Blank for epochs shorter than 10 valid intervals.
+
+<details>
+<summary>Reverse-arrangements z-score, detail</summary>
+
+### Reverse-arrangements z-score, detail
+
+Count the *reverse arrangements* $A$ — the number of ordered pairs in which a later interval exceeds an earlier one:
+
+$$A = \#\big\{(i, j) : i < j,\ x_j > x_i\big\}$$
+
+Under the null hypothesis of a stationary (exchangeable) series, $A$ has known moments:
+
+$$\mu_A = \frac{N(N-1)}{4}, \qquad \sigma_A^2 = \frac{2N^3 + 3N^2 - 5N}{72}$$
+
+and the standardised statistic is asymptotically normal:
+
+$$z = \frac{A - \mu_A}{\sigma_A} \;\sim\; \mathcal{N}(0, 1)$$
+
+</details>
 
 ---
 
