@@ -936,7 +936,7 @@ A self-similar series obeys $F(n) \propto n^{\alpha}$, so $\alpha_1$ is the slop
 
 Count the *reverse arrangements* $A$ — the number of ordered pairs in which a later interval exceeds an earlier one:
 
-$$A = \#\big\{(i, j) : i < j,\ x_j > x_i\big\}$$
+$$A = \bigl|\{(i, j) : i < j,\ x_j > x_i\}\bigr|$$
 
 Under the null hypothesis of a stationary (exchangeable) series, $A$ has known moments:
 
