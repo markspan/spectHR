@@ -96,6 +96,7 @@ METRIC_ORDER = [
     "count",
     "mean",
     "stationarity",
+    "stationarity_z",
     "median",
     "min",
     "max",
@@ -106,6 +107,8 @@ METRIC_ORDER = [
     "sd2",
     "sd_ratio",
     "ellipse_area",
+    # Non-linear HRV.
+    "dfa_a1",
     "fullrange_power",
     "vlf_power",
     "lf_power",
@@ -116,9 +119,14 @@ METRIC_ORDER = [
     "bp_dbp",
     "bp_pp",
     "bp_map",
+    # Pre-ejection period (ICG dZ/dt; sympathetic index).
+    "pep",
     # Beat-by-beat respiratory-volume parameters (CARSPAN).
     "resp_mvo",
     "resp_svo",
+    # Respiration-context HF.
+    "resp_rate",
+    "hf_resp_in_band",
     # Grossman (1990) peak-to-valley RSA.
     "rsa",
     "rsa0",
@@ -161,8 +169,8 @@ _COLUMN_HELP_STATIC: dict[str, str] = {
                 "over a short window of samples ending at each R-peak, "
                 "averaged over the epoch (CARSPAN CalcDataColRESSVO).",
 
-    "lf_hf_ratio": "Ratio of LF to HF band power (sympatho-vagal balance "
-                   "indicator).",
+    "lf_hf_ratio": "Ratio of LF to HF band power. Report descriptively — it is "
+                   "not a clean sympatho-vagal balance index (Billman 2013).",
 
     # Spectral-profile settings (export metadata).
     "prof_method":          "PSD method used for the band-power profile.",
