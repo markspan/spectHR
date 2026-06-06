@@ -5,9 +5,11 @@ Covers
 ------
 * :class:`BandSpec` — defaults, optional fields, frozenness.
 * :class:`PsdMethod` — defaults, immutability, default bands.
-* :func:`spectUI.workSpace.psd_method_from_workspace` —
+* :func:`spectHR.config.psd_method_from_workspace` —
     f_max derivation from bands, mean_convention selection,
     silent dropping of unknown JSON keys, missing-section fall-backs.
+    Imported from the headless ``spectHR.config`` module so this test
+    stays Qt-free (``spectUI.workSpace`` re-exports the same function).
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ from spectHR.analysis.psd import (
     CarspanOptions,
 )
 
-from spectUI.workSpace import psd_method_from_workspace
+from spectHR.config import psd_method_from_workspace
 
 
 # ===========================================================================
