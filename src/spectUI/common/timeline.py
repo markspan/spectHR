@@ -439,6 +439,9 @@ class TimelinePlotWidget(QWidget):
         self._mpl_cid_release = self.fig.canvas.mpl_connect(
             "button_release_event", self._on_release
         )
+        self.fig.canvas.mpl_connect(
+            "resize_event", self._on_canvas_resize
+        )
 
     # ==============================================================
     # Rendering pipeline
@@ -501,6 +504,21 @@ class TimelinePlotWidget(QWidget):
             self.data.view.x_min,
             self.data.view.x_max,
         )
+
+    def hideEvent(self, event) -> None:
+        """Stop pending redraws when the widget is hidden."""
+        self._redraw_timer.stop()
+        super().hideEvent(event)
+
+    def _on_canvas_resize(self, event) -> None:
+        """Invalidate the blit background when the canvas is resized.
+
+        A resize while a drag is in progress would make the cached pixel
+        buffer stale (wrong dimensions). Clearing it forces the next
+        motion event to fall back to draw_idle instead of blitting the
+        old-sized background.
+        """
+        self._overview_bg = None
 
     # ==============================================================
     # Overview-rectangle blitting (smooth dragging)

@@ -197,7 +197,10 @@ def _band_bounds(bands: dict) -> tuple[float, float, float, float]:
     X-axis uses ``FullRange`` if defined, else the union of all bands.
     Scaling range excludes ``FullRange`` so a wide overview band doesn't
     dominate the y-limit.
+    Returns safe defaults (0–0.5 Hz) when bands is empty or unconfigured.
     """
+    if not bands:
+        return 0.0, 0.5, 0.0, 0.5
     if "FullRange" in bands:
         x_min = bands["FullRange"]["low"]
         x_max = bands["FullRange"]["high"]

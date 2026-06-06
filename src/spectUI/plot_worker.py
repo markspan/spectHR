@@ -70,9 +70,10 @@ class DockScheduler:
     """
 
     def __init__(self) -> None:
-        self._pool:     QThreadPool         = QThreadPool.globalInstance()
-        self._gen:      dict[str, int]      = {}
-        self._inflight: set[_Signals]       = set()
+        self._pool:        QThreadPool         = QThreadPool.globalInstance()
+        self._gen:         dict[str, int]      = {}
+        self._inflight:    set[_Signals]       = set()
+        self._current_sig: dict[str, _Signals] = {}  # dock_name → live signal
 
     # ------------------------------------------------------------------
     # Public API
@@ -101,8 +102,16 @@ class DockScheduler:
         gen = self._gen.get(dock_name, 0) + 1
         self._gen[dock_name] = gen
 
+        # Drop the previous signal for this dock from inflight — its worker
+        # will finish with gen_check()=False and never emit, so the closure
+        # references (layout, views, workspace) would otherwise leak forever.
+        old = self._current_sig.pop(dock_name, None)
+        if old is not None:
+            self._inflight.discard(old)
+
         sig = _Signals()
         self._inflight.add(sig)
+        self._current_sig[dock_name] = sig
 
         def _done(result, _sig=sig):
             self._inflight.discard(_sig)
@@ -139,5 +148,10 @@ class DockScheduler:
         if dock_name is not None:
             if dock_name in self._gen:
                 self._gen[dock_name] += 1
+            old = self._current_sig.pop(dock_name, None)
+            if old is not None:
+                self._inflight.discard(old)
         else:
             self._gen = {k: v + 1 for k, v in self._gen.items()}
+            self._inflight.clear()
+            self._current_sig.clear()

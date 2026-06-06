@@ -828,10 +828,9 @@ class MainWindow(QMainWindow):
         if self._dirty and self.dataset is not None and self.savename is not None:
             try:
                 self.dataset.save(self.savename)
+                self._dirty = False
             except Exception:
                 logger.exception("Failed to save dataset to %s", self.savename)
-            finally:
-                self._dirty = False
 
     def _mark_data_edited(self) -> None:
         """A real edit happened in an editing dock (R-peaks / epochs).
@@ -1591,38 +1590,6 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             pass
 
-    def _swap_in_epoch_plot(self, layout, dataset, factory) -> None:
-        """
-        Replace the contents of ``layout`` with a freshly-built plot widget.
-
-        Shared body for the PSD, Spectrogram and Profile docks. Each
-        of them keeps a permanent QScrollArea in MainWindow and swaps
-        the inner plot widget on every refresh, the only thing that
-        varies between them is which widget class to construct.
-
-        ``factory`` takes ``(views, labels, workspace)`` and returns
-        a QWidget. The active-epoch (label, view) pairs are collected
-        here so the per-dock helpers stay one-liners.
-        """
-        if dataset is None:
-            return
-        try:
-            self._clear_layout(layout)
-            pairs = []
-            for label, epoch in dataset.epochs.items():
-                if not epoch.active:
-                    continue
-                try:
-                    pairs.append((label, dataset.hrv[label]))
-                except Exception:
-                    continue
-            if not pairs:
-                return
-            labels, views = zip(*pairs)
-            layout.addWidget(factory(views, labels, self.workspace))
-        except RuntimeError:
-            pass
-
     def _async_swap_epoch_plot(
         self,
         dock_name: str,
@@ -1682,6 +1649,14 @@ class MainWindow(QMainWindow):
                 layout.addWidget(widget_fn(views, labels, workspace, precomputed))
             except RuntimeError:
                 pass
+            except Exception as exc:
+                logger.warning("Failed to render %s: %s", dock_name, exc, exc_info=True)
+                try:
+                    err = QLabel(f"Error rendering plot: {exc}")
+                    err.setAlignment(Qt.AlignCenter)
+                    layout.addWidget(err)
+                except RuntimeError:
+                    pass
 
         def on_error(exc):
             try:
