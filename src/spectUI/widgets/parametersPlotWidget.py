@@ -733,10 +733,15 @@ class ParametersPlotWidget(QWidget):
             return
 
         # Collect the union of extra scalar column names in epoch order.
+        # Skip names already present in self.headers: the @epoch_metric table
+        # scalars are injected into each epoch's "scalars" dict so they reach
+        # the HDF5 attributes, but they are already columns in self.headers —
+        # without this guard every metric would be written to the CSV twice.
+        header_set = set(self.headers)
         extra_cols: list[str] = []
         for ed in epoch_data.values():
             for k in ed.get("scalars", {}):
-                if k not in extra_cols:
+                if k not in extra_cols and k not in header_set:
                     extra_cols.append(k)
 
         with self.csvfile.open("w", newline="", encoding="utf-8") as f:
