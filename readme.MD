@@ -818,21 +818,13 @@ HF-HRV amplitude depends not only on vagal tone but also on the **rate and depth
 
 **`resp_rate`** — mean breathing frequency in Hz (multiply by 60 for breaths/min). The phase-segmented respiration signal gives an alternating sequence of $N$ phase boundaries at times $t_1 < t_2 < \dots < t_N$ (each inhalation→exhalation or exhalation→inhalation transition). Pairing successive boundaries into $N-1$ breath cycles, the rate is the mean of the per-cycle instantaneous frequencies:
 
-<div align="center">
-
-$f_\text{resp} = \frac{1}{N-1} \sum_{k=1}^{N-1} \frac{1}{t_{k+1} - t_k}$
-
-</div>
+$$f_\text{resp} = \frac{1}{N-1} \sum_{k=1}^{N-1} \frac{1}{t_{k+1} - t_k}$$
 
 This matches CARSPAN's $1/\overline{\text{MeanIn}}$ for the `RespPeriod` profile. Blank when fewer than two phases fall inside the epoch.
 
 **`hf_resp_in_band`** — a validity flag: `1.0` when the mean breathing frequency lies inside the configured HF band $[f_\text{HF}^\text{low}, f_\text{HF}^\text{high}]$ (default 0.15–0.40 Hz, i.e. 9–24 breaths/min), `0.0` when it falls outside, blank when undeterminable. It is the band-membership indicator
 
-<div align="center">
-
-$\mathbb{1}\!\left[\, f_\text{HF}^\text{low} \le f_\text{resp} \le f_\text{HF}^\text{high} \,\right]$
-
-</div>
+$$\mathbb{1}\!\left[\, f_\text{HF}^\text{low} \le f_\text{resp} \le f_\text{HF}^\text{high} \,\right]$$
 
 A `0.0` is a red flag that the epoch's HF power may not reflect RSA at all. The actual statistical correction (e.g. regressing HF on `resp_rate` across epochs or subjects) is deliberately left to your statistics package (R / JASP) — these two columns are the inputs that make it possible.
 
@@ -863,11 +855,7 @@ A CARSPAN-faithful flat-line guard (a 300 ms / 10 ms-step sliding window flags b
 
 When the recording carries an impedance-cardiography (ICG) `dZ/dt` channel — VU-AMS EDF exports store it as `DZDT` — spectHR computes the **pre-ejection period** (`pep`, ms), the cleanest non-invasive index of *sympathetic* (beta-adrenergic) drive to the heart, the branch HRV alone cannot isolate ([Sherwood et al., 1990](#ref-sherwood1990); [Berntson et al., 2004](#ref-berntson2004)). PEP is the interval from the onset of left-ventricular depolarization (the ECG **Q-onset**) to the opening of the aortic valves (the **B-point** on the ICG `dZ/dt`):
 
-<div align="center">
-
-$\text{PEP} = (\tau_B - \tau_Q)\times 1000 \;\text{ms}$
-
-</div>
+$$\text{PEP} = (\tau_B - \tau_Q)\times 1000 \;\text{ms}$$
 
 with $\tau_B$ and $\tau_Q$ both measured relative to the R-peak ($\tau = 0$). Single-beat `dZ/dt` is far too noisy for reliable inflection-point detection, so spectHR follows the VU-DAMS scoring recipe (manual §5.5) and **ensemble-averages** the waveform across the epoch before scoring.
 
@@ -878,11 +866,7 @@ with $\tau_B$ and $\tau_Q$ both measured relative to the R-peak ($\tau = 0$). Si
 
 **1. Ensemble averaging.** For the $M$ R-peaks $r_1, \dots, r_M$ in the epoch, both the ICG and the ECG are averaged on a common time grid $\tau$ locked to the R-peak — the large-scale ensemble average that is standard VU practice ([Riese et al., 2004](#ref-riese2004)):
 
-<div align="center">
-
-$\bar d(\tau) = \frac{1}{M}\sum_{m=1}^{M} d\!\left(r_m + \tau\right), \qquad \tau \in [-200, +400]\ \text{ms}$
-
-</div>
+$$\bar d(\tau) = \frac{1}{M}\sum_{m=1}^{M} d\!\left(r_m + \tau\right), \qquad \tau \in [-200, +400]\ \text{ms}$$
 
 where $d(\cdot)$ is the `dZ/dt` waveform (and analogously $\bar e(\tau)$ for the ECG).
 
@@ -890,11 +874,7 @@ where $d(\cdot)$ is the `dZ/dt` waveform (and analogously $\bar e(\tau)$ for the
 
 **3. C- and B-points.** Within the early-systole window the **C-point** (peak ejection velocity) is the maximum and the **B-point** (aortic-valve opening) is the point of maximum upstroke acceleration before it — the maximum of the second derivative of `dZ/dt` ([Lozano et al., 2007](#ref-lozano2007)):
 
-<div align="center">
-
-$\tau_C = \arg\max_{\tau}\ \bar d(\tau), \qquad \tau_B = \arg\max_{\tau < \tau_C}\ \frac{d^2\bar d}{d\tau^2}$
-
-</div>
+$$\tau_C = \arg\max_{\tau}\ \bar d(\tau), \qquad \tau_B = \arg\max_{\tau < \tau_C}\ \frac{d^2\bar d}{d\tau^2}$$
 
 **4. Q-onset.** On the averaged ECG, $\tau_Q$ is the isoelectric-to-Q transition just before the R-peak (the last baseline sample preceding the Q trough). When no Q wave is resolvable, the VU-DAMS fallback of $\tau_Q = \tau_\text{Q-point} - 12\,\text{ms}$ is used (manual TIP17). With no ECG channel the R-peak is the reference ($\tau_Q = 0$), giving the slightly shorter R-to-B interval.
 
@@ -937,19 +917,11 @@ Two columns probe structure in the IBI series that the time-domain, Poincaré an
 
 For an IBI series $x_1, \dots, x_N$ (ms), first form the integrated, mean-removed profile:
 
-<div align="center">
-
-$y(k) = \sum_{i=1}^{k}\big(x_i - \bar{x}\big), \qquad k = 1, \dots, N$
-
-</div>
+$$y(k) = \sum_{i=1}^{k}\big(x_i - \bar{x}\big), \qquad k = 1, \dots, N$$
 
 For each box size $n$, split $y$ into $\lfloor N/n \rfloor$ non-overlapping windows, fit a local linear trend $\hat y_n$ in each window, and take the root-mean-square residual across the whole profile:
 
-<div align="center">
-
-$F(n) = \sqrt{\frac{1}{N}\sum_{k=1}^{N}\big(y(k) - \hat y_n(k)\big)^2}$
-
-</div>
+$$F(n) = \sqrt{\frac{1}{N}\sum_{k=1}^{N}\big(y(k) - \hat y_n(k)\big)^2}$$
 
 A self-similar series obeys $F(n) \propto n^{\alpha}$, so $\alpha_1$ is the slope of a least-squares line through $\log F(n)$ versus $\log n$ over the short-term scales $n \in [4, 16]$ beats.
 
@@ -964,27 +936,15 @@ A self-similar series obeys $F(n) \propto n^{\alpha}$, so $\alpha_1$ is the slop
 
 Count the *reverse arrangements* $A$ — the number of ordered pairs in which a later interval exceeds an earlier one:
 
-<div align="center">
-
-$A = \#\big\{(i, j) : i < j,\ x_j > x_i\big\}$
-
-</div>
+$$A = \#\big\{(i, j) : i < j,\ x_j > x_i\big\}$$
 
 Under the null hypothesis of a stationary (exchangeable) series, $A$ has known moments:
 
-<div align="center">
-
-$\mu_A = \frac{N(N-1)}{4}, \qquad \sigma_A^2 = \frac{2N^3 + 3N^2 - 5N}{72}$
-
-</div>
+$$\mu_A = \frac{N(N-1)}{4}, \qquad \sigma_A^2 = \frac{2N^3 + 3N^2 - 5N}{72}$$
 
 and the standardised statistic is asymptotically normal:
 
-<div align="center">
-
-$z = \frac{A - \mu_A}{\sigma_A} \;\sim\; \mathcal{N}(0, 1)$
-
-</div>
+$$z = \frac{A - \mu_A}{\sigma_A} \;\sim\; \mathcal{N}(0, 1)$$
 
 </details>
 
