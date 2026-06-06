@@ -30,7 +30,7 @@ import matplotlib
 matplotlib.use("QtAgg", force=True)
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QByteArray, QObject, QSettings, QSize, Qt, Signal
+from PySide6.QtCore import QByteArray, QObject, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QFont, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -262,6 +262,14 @@ class MainWindow(QMainWindow):
         # Parameters) runs on the global thread pool; results are delivered
         # back on the main thread via cross-thread Qt signals.
         self._scheduler = DockScheduler()
+
+        # Set while a perspective (dock layout) is being opened. ADS tears
+        # down and rebuilds every dock in C++ during the switch, firing a
+        # storm of visibilityChanged signals; running the heavy per-dock
+        # refresh re-entrantly inside that teardown is what used to take the
+        # whole app down. While this is True, _on_dock_visible skips the
+        # refresh and a single deferred one runs afterwards.
+        self._switching_perspective = False
 
         # Refresh registry, dock objectName -> refresh fn.
         self._refresh_fns: dict[str, callable] = {}
@@ -716,6 +724,55 @@ class MainWindow(QMainWindow):
         # Back to default as the displayed layout.
         self.dock_manager.openPerspective(perspectives.BUILTIN_DEFAULT)
 
+    def open_perspective(self, name: str) -> None:
+        """Switch to dock layout *name*, guarding against a crash.
+
+        Opening a perspective makes ADS tear down and rebuild the entire
+        dock layout in C++. If anything goes wrong mid-switch the app used
+        to vanish without a trace. Here the switch is wrapped so a failure
+        is logged, reported, and falls back to the Default layout instead
+        of killing the program. Per-dock refreshes are suppressed during
+        the switch (see ``_switching_perspective``) and a single safe
+        refresh is scheduled afterwards, off the ADS teardown stack.
+        """
+        self._switching_perspective = True
+        try:
+            self.dock_manager.openPerspective(name)
+        except Exception:
+            logger.exception("Failed to open perspective %r", name)
+            QMessageBox.warning(
+                self,
+                "Layout error",
+                f"Could not switch to the {name!r} layout.\n\n"
+                "Falling back to the Default layout.",
+            )
+            try:
+                self.dock_manager.openPerspective(perspectives.BUILTIN_DEFAULT)
+            except Exception:
+                logger.exception("Fallback to Default perspective also failed")
+        finally:
+            self._switching_perspective = False
+
+        # One controlled refresh of the now-visible docks, scheduled so it
+        # runs after ADS has finished rebuilding rather than re-entrantly.
+        QTimer.singleShot(0, self._refresh_visible_docks)
+
+    def _refresh_visible_docks(self) -> None:
+        """Refresh every alive, visible dock once (post perspective switch)."""
+        if self.dataset is None:
+            return
+        try:
+            sig = self._plot_cache_signature(self.dataset)
+        except Exception:
+            logger.exception("Plot signature failed after perspective switch")
+            return
+        for name, dock in self.docks.items():
+            if not self._dock_alive(dock):
+                continue
+            if dock.isClosed() or not dock.isVisible():
+                continue
+            self._refresh_dock(name, sig)
+
     def _restore_session(self) -> None:
         """
         Restore window geometry and dock layout from the INI store.
@@ -905,6 +962,11 @@ class MainWindow(QMainWindow):
         # invalidates anything - viewing the Preprocessing / Epochs dock
         # without editing keeps every plot cache valid.
         if not visible:
+            return
+        # During a perspective switch ADS rebuilds the whole layout; defer
+        # refreshing to the single pass in _refresh_visible_docks so we
+        # never run heavy plot builds re-entrantly inside that teardown.
+        if self._switching_perspective:
             return
         if self.dataset is None:
             return
@@ -1773,10 +1835,43 @@ class MainWindow(QMainWindow):
         self.epoch_plot_widget.plotEpochs(self.dataset)
 
 
+def _install_global_excepthook() -> None:
+    """Stop an unhandled exception in a Qt slot from silently killing the app.
+
+    Under PySide6 an exception that escapes a slot aborts the process with
+    no message at all ("poof"). Routing it through our own hook logs the
+    full traceback and shows a dialog, then lets the event loop carry on,
+    so a single bad action (e.g. switching to a broken layout) is
+    recoverable instead of fatal.
+    """
+    def _hook(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        logger.error(
+            "Unhandled exception", exc_info=(exc_type, exc_value, exc_tb)
+        )
+        try:
+            QMessageBox.critical(
+                None,
+                "Unexpected error",
+                f"{exc_type.__name__}: {exc_value}\n\n"
+                "The action was aborted, but the program is still running.",
+            )
+        except Exception:
+            # Never let the handler itself raise — that would re-trigger abort.
+            pass
+
+    sys.excepthook = _hook
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setOrganizationName(_ORG_NAME)
     app.setApplicationName(_APP_NAME)
+
+    # Install before any window exists so even start-up slot errors surface.
+    _install_global_excepthook()
 
     default_font = QFont("Segoe UI", 10)
     default_font.setBold(False)

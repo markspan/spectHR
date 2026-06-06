@@ -171,11 +171,21 @@ class PerspectiveManagerDialog(QDialog):
                 f"A perspective named {new!r} already exists.",
             )
             return
-        live_state = self._dock_manager.saveState()
-        self._dock_manager.openPerspective(old)
-        self._dock_manager.addPerspective(new)
-        self._dock_manager.removePerspective(old)
-        self._dock_manager.restoreState(live_state)
+        # The rename swaps layouts under the live dock state; guard it so a
+        # mid-swap failure is reported rather than killing the app.
+        try:
+            live_state = self._dock_manager.saveState()
+            self._dock_manager.openPerspective(old)
+            self._dock_manager.addPerspective(new)
+            self._dock_manager.removePerspective(old)
+            self._dock_manager.restoreState(live_state)
+        except Exception:
+            logger.exception("Failed to rename perspective %r -> %r", old, new)
+            QMessageBox.warning(
+                self,
+                "Rename failed",
+                f"Could not rename {old!r} to {new!r}.",
+            )
         self._populate()
         if self._on_changed is not None:
             self._on_changed()
@@ -236,7 +246,7 @@ class PerspectiveMenu:
 
         reset_action = QAction("Reset to default", self._parent)
         reset_action.triggered.connect(
-            lambda: self._dock_manager.openPerspective(BUILTIN_DEFAULT)
+            lambda: self._open(BUILTIN_DEFAULT)
         )
         m.addAction(reset_action)
 
@@ -249,14 +259,30 @@ class PerspectiveMenu:
         for name in self._dock_manager.perspectiveNames():
             action = QAction(name, self._parent)
             action.triggered.connect(
-                lambda _checked=False, n=name:
-                    self._dock_manager.openPerspective(n)
+                lambda _checked=False, n=name: self._open(n)
             )
             m.addAction(action)
 
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    def _open(self, name: str) -> None:
+        """Open a perspective via the parent's guarded path when available.
+
+        MainWindow.open_perspective wraps the switch so a mid-switch failure
+        is reported and falls back to Default instead of taking the whole
+        app down. Fall back to a direct (still guarded) call if the parent
+        does not provide it.
+        """
+        opener = getattr(self._parent, "open_perspective", None)
+        if callable(opener):
+            opener(name)
+            return
+        try:
+            self._dock_manager.openPerspective(name)
+        except Exception:
+            logger.exception("Failed to open perspective %r", name)
 
     def _save_current(self) -> None:
         name, ok = QInputDialog.getText(
