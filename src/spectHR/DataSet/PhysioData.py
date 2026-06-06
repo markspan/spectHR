@@ -298,6 +298,13 @@ class PhysioData:
                 icg_ts = _ts
                 break
 
+        # ECG waveform for Q-onset detection: improves PEP from R-to-B to the
+        # true clinical Q-onset-to-B interval.
+        try:
+            ecg_ts_for_pep = self["ecg"].timeseries
+        except (KeyError, AttributeError, TypeError):
+            ecg_ts_for_pep = None
+
         labels_list: list = []
         rows: list[dict[str, float]] = []
 
@@ -312,6 +319,7 @@ class PhysioData:
                 ctx = EpochContext(
                     view, psd_method=psd_method, bp_ts=bp_ts, rsp_ts=rsp_ts,
                     rsp_phases=rsp_phases, rsa_lag_s=rsa_lag_s, icg_ts=icg_ts,
+                    ecg_ts=ecg_ts_for_pep,
                 )
                 row: dict[str, float] = {}
 

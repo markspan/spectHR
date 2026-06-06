@@ -55,7 +55,8 @@ class EpochContext:
     """
 
     def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None,
-                 rsp_phases=None, rsa_lag_s: float = 1.0, icg_ts=None):
+                 rsp_phases=None, rsa_lag_s: float = 1.0, icg_ts=None,
+                 ecg_ts=None):
         self.view = view
         self.psd_method = psd_method
         self.bp_ts = bp_ts
@@ -63,6 +64,7 @@ class EpochContext:
         self.rsp_phases = rsp_phases  # RespirationSeriesView for this epoch
         self.rsa_lag_s = rsa_lag_s
         self.icg_ts = icg_ts          # ICG dZ/dt TimeSeries (for PEP), or None
+        self.ecg_ts = ecg_ts          # ECG waveform for Q-onset detection, or None
         self._psd = _UNSET
         self._bp_beats = _UNSET
         self._resp_beats = _UNSET
@@ -186,10 +188,17 @@ class EpochContext:
             return None
         try:
             from spectHR.analysis.icg_metrics import pep_per_beat
+            ecg_kw: dict = {}
+            if self.ecg_ts is not None:
+                ecg_kw = dict(
+                    ecg_times=np.asarray(self.ecg_ts.times, dtype=float),
+                    ecg_values=np.asarray(self.ecg_ts.values, dtype=float),
+                )
             return pep_per_beat(
                 np.asarray(self.icg_ts.times, dtype=float),
                 np.asarray(self.icg_ts.values, dtype=float),
                 np.asarray(self.rpeak_times, dtype=float),
+                **ecg_kw,
             )
         except Exception:
             return None

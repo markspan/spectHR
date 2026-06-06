@@ -408,9 +408,11 @@ The actual statistical correction (e.g. regressing HF on `resp_rate` across epoc
 
 When the recording carries an impedance-cardiography (ICG) `dZ/dt` channel — VU-AMS EDF exports store it as `DZDT` — spectHR computes the **pre-ejection period**, the cleanest non-invasive index of *sympathetic* (beta-adrenergic) drive to the heart, the branch HRV alone cannot isolate ([Sherwood et al., 1990](#ref-sherwood1990); [Berntson et al., 2004](#ref-berntson2004)).
 
-Per beat, within an early-systole window after the R-peak, the **C-point** is the `dZ/dt` maximum (peak ejection velocity) and the **B-point** (aortic-valve opening) is taken as the point of maximum upstroke acceleration before C — the maximum of the second derivative of `dZ/dt`, a standard automated heuristic ([Lozano et al., 2007](#ref-lozano2007)). PEP is the R-to-B interval in ms; the epoch mean is exported as the single scalar `pep`. Implausible beats (outside 40–180 ms) are dropped.
+Per beat, within an early-systole window after the Q-onset, the **C-point** is the `dZ/dt` maximum (peak ejection velocity) and the **B-point** (aortic-valve opening) is taken as the point of maximum upstroke acceleration before C — the maximum of the second derivative of `dZ/dt`, a standard automated heuristic ([Lozano et al., 2007](#ref-lozano2007)).
 
-> **Experimental.** Automated B-point detection is error-prone — `pep` should be treated as experimental and spot-checked. True PEP is referenced to the ECG Q-onset rather than the R-peak, so the reported R-to-B value slightly underestimates the classical Q-to-B PEP.
+**Q-onset detection.** Because the ECG waveform is already loaded alongside the ICG, spectHR detects the Q-onset automatically for each beat: it searches the 100 ms window before the R-peak, locates the Q trough (the brief negative deflection), and then walks backward to the last isoelectric sample — the point where the waveform transitions from baseline into the Q descent. PEP is therefore the true **Q-onset-to-B** interval in ms. Without an ECG the slightly shorter R-to-B is reported instead. The epoch mean is exported as the scalar `pep`; implausible beats (outside 40–180 ms) are dropped.
+
+> **Note.** Automated B-point detection is heuristic — in demanding applications `pep` values should be visually spot-checked against the dZ/dt waveform.
 
 Click **Save** to export **two files** to the configured Output folder:
 

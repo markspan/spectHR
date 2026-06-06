@@ -18,10 +18,10 @@ the EDF loader stores as ``dzdt-[vuams]``. When that channel is present,
 module computes a per-beat PEP; its epoch mean becomes the single scalar
 ``pep`` column in the parameters CSV (blank when no ICG channel is loaded).
 
-B-point detection (experimental)
---------------------------------
+B-point detection
+-----------------
 Per cardiac interval, within an early-systole search window after the
-R-peak:
+Q-onset (or R-peak when no ECG is available):
 
 1. the **C-point** is the maximum of ``dZ/dt`` (peak ejection velocity);
 2. the **B-point** (aortic-valve opening) is taken as the point of maximum
@@ -29,12 +29,25 @@ R-peak:
    of ``dZ/dt`` (equivalently the maximum of the third derivative of
    ``Z``), a standard automated B-point heuristic (Lozano et al., 2007).
 
-PEP is reported as the R-to-B interval in ms. True PEP is measured from
-the ECG Q-onset; an optional ``q_offset_ms`` lets the user shift the
-reference to approximate Q-onset (Q precedes R by a few tens of ms).
-Implausible values (outside ``[pep_min_ms, pep_max_ms]``) are dropped as
-``NaN``. Automated B-point detection is error-prone, so PEP here is
-**experimental** and should be visually spot-checked.
+Q-onset detection
+-----------------
+When the ECG waveform is provided (``ecg_times``/``ecg_values``), each
+beat's PEP reference is shifted from the R-peak to the true ECG Q-onset.
+The algorithm searches backward from the R-peak in a 100 ms window:
+
+1. the **Q trough** is the minimum of the lightly smoothed ECG in
+   ``[R − 100 ms, R − 10 ms]``;
+2. the **Q-onset** is the last sample before the Q trough at which the
+   smoothed ECG gradient is non-negative (the point where the waveform
+   transitions from isoelectric baseline to the Q-wave descent).
+
+This yields the true clinical PEP (Q-onset to B-point). Without an ECG
+the reported value is the slightly shorter R-to-B interval; the column
+is still named ``pep`` in both cases.
+
+Implausible values (outside ``[pep_min_ms, pep_max_ms]``) are replaced
+with ``NaN``. B-point detection is heuristic, so individual beats should
+be spot-checked in demanding applications.
 
 References
 ----------
@@ -55,19 +68,61 @@ from spectHR.analysis.registry import epoch_metric
 __all__ = ["pep_per_beat", "pep"]
 
 
+def _find_q_onset(
+    ecg_times: np.ndarray,
+    ecg_values: np.ndarray,
+    r_time: float,
+    *,
+    q_search_ms: float = 100.0,
+    smooth_n: int = 5,
+) -> float:
+    """Return the Q-onset time preceding *r_time*, or *r_time* if undetectable.
+
+    Searches ``[r_time − q_search_ms, r_time − 10 ms]`` for the Q trough
+    (argmin of lightly smoothed ECG), then walks backward from the trough
+    to the last sample with a non-negative gradient — the isoelectric-to-Q
+    descent transition.
+    """
+    t_end = r_time - 0.010          # Q trough is at least 10 ms before R
+    t_start = r_time - q_search_ms / 1000.0
+    lo = int(np.searchsorted(ecg_times, t_start))
+    hi = int(np.searchsorted(ecg_times, t_end))
+    if hi - lo < 5:
+        return r_time               # window too narrow — fall back to R
+
+    seg_t = ecg_times[lo:hi]
+    seg = ecg_values[lo:hi]
+
+    if smooth_n > 1 and seg.size > smooth_n:
+        seg = np.convolve(seg, np.ones(smooth_n) / smooth_n, mode="same")
+
+    q_idx = int(np.argmin(seg))
+    if q_idx < 2:
+        return float(seg_t[0])
+
+    pre_t = seg_t[: q_idx + 1]
+    pre = seg[: q_idx + 1]
+    d1 = np.gradient(pre, pre_t)
+    non_neg = np.where(d1 >= 0)[0]
+    onset_idx = int(non_neg[-1]) if non_neg.size else 0
+    return float(pre_t[onset_idx])
+
+
 def pep_per_beat(
     icg_times: np.ndarray,
     dzdt_values: np.ndarray,
     rpeak_times: np.ndarray,
     *,
-    q_offset_ms: float = 0.0,
+    ecg_times: np.ndarray | None = None,
+    ecg_values: np.ndarray | None = None,
+    q_search_ms: float = 100.0,
     search_start_ms: float = 40.0,
     search_frac: float = 0.4,
     search_max_ms: float = 300.0,
     pep_min_ms: float = 40.0,
     pep_max_ms: float = 180.0,
 ) -> np.ndarray:
-    """Per-beat pre-ejection period (R-to-B-point interval) in ms.
+    """Per-beat pre-ejection period (Q-onset-to-B-point, or R-to-B) in ms.
 
     Parameters
     ----------
@@ -75,13 +130,17 @@ def pep_per_beat(
         The ICG ``dZ/dt`` waveform (seconds, physical units), sorted by time.
     rpeak_times : np.ndarray
         R-peak times (seconds) delimiting the cardiac intervals.
-    q_offset_ms : float
-        Added to every PEP value to approximate the Q-onset reference
-        (R-to-B underestimates true Q-to-B PEP). Default 0 (report R-to-B).
+    ecg_times, ecg_values : np.ndarray | None
+        ECG waveform used for Q-onset detection.  When provided each beat's
+        PEP is measured from the detected Q-onset (true clinical PEP);
+        otherwise from the R-peak (slightly shorter R-to-B interval).
+    q_search_ms : float
+        Backward search window for Q-onset detection (default 100 ms).
     search_start_ms : float
-        Start of the B-point search window after the R-peak (default 40 ms).
+        Start of the B-point search window after the reference time (default
+        40 ms).
     search_frac, search_max_ms : float
-        The window ends at ``R + min(search_frac · IBI, search_max_ms)``.
+        The window ends at ``ref + min(search_frac · IBI, search_max_ms)``.
     pep_min_ms, pep_max_ms : float
         Physiological plausibility bounds; out-of-range beats become NaN.
 
@@ -95,6 +154,14 @@ def pep_per_beat(
     dzdt = np.asarray(dzdt_values, dtype=float)
     rt = np.asarray(rpeak_times, dtype=float)
 
+    use_ecg = (
+        ecg_times is not None and ecg_values is not None
+        and np.asarray(ecg_times).size > 0
+    )
+    if use_ecg:
+        ecg_t = np.asarray(ecg_times, dtype=float)
+        ecg_v = np.asarray(ecg_values, dtype=float)
+
     n_beats = max(0, rt.size - 1)
     pep = np.full(n_beats, np.nan)
     if n_beats == 0 or dzdt.size < 8:
@@ -105,6 +172,12 @@ def pep_per_beat(
         ibi = rt[i + 1] - r
         if not np.isfinite(ibi) or ibi <= 0:
             continue
+
+        # PEP reference: Q-onset when ECG is available, R-peak otherwise.
+        if use_ecg:
+            ref = _find_q_onset(ecg_t, ecg_v, r, q_search_ms=q_search_ms)
+        else:
+            ref = r
 
         w_start = r + search_start_ms / 1000.0
         w_end = r + min(search_frac * ibi, search_max_ms / 1000.0)
@@ -132,7 +205,7 @@ def pep_per_beat(
         b = int(np.argmax(d2))
         t_b = up_t[b]
 
-        val = (t_b - r) * 1000.0 + q_offset_ms
+        val = (t_b - ref) * 1000.0
         if pep_min_ms <= val <= pep_max_ms:
             pep[i] = val
 
@@ -141,7 +214,7 @@ def pep_per_beat(
 
 @epoch_metric
 def pep(ctx) -> float:
-    """Pre-ejection period, epoch mean of per-beat R-to-B intervals (ms; needs ICG dZ/dt)."""
+    """Pre-ejection period, epoch mean of per-beat Q-onset-to-B intervals (ms; needs ICG dZ/dt)."""
     beats = getattr(ctx, "pep_beats", None)
     if beats is None:
         return float("nan")
