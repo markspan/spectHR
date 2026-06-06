@@ -874,7 +874,7 @@ where $d(\cdot)$ is the `dZ/dt` waveform (and analogously $\bar e(\tau)$ for the
 
 **3. C- and B-points.** Within the early-systole window the **C-point** (peak ejection velocity) is the maximum and the **B-point** (aortic-valve opening) is the point of maximum upstroke acceleration before it — the maximum of the second derivative of `dZ/dt` ([Lozano et al., 2007](#ref-lozano2007)):
 
-$$\tau_C = \operatorname*{arg\,max}_{\tau}\ \bar d(\tau), \qquad \tau_B = \operatorname*{arg\,max}_{\tau < \tau_C}\ \frac{d^2\bar d}{d\tau^2}$$
+$$\tau_C = \arg\max_{\tau}\ \bar d(\tau), \qquad \tau_B = \arg\max_{\tau < \tau_C}\ \frac{d^2\bar d}{d\tau^2}$$
 
 **4. Q-onset.** On the averaged ECG, $\tau_Q$ is the isoelectric-to-Q transition just before the R-peak (the last baseline sample preceding the Q trough). When no Q wave is resolvable, the VU-DAMS fallback of $\tau_Q = \tau_\text{Q-point} - 12\,\text{ms}$ is used (manual TIP17). With no ECG channel the R-peak is the reference ($\tau_Q = 0$), giving the slightly shorter R-to-B interval.
 
