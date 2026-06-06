@@ -32,7 +32,32 @@ from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis._smoothing import smooth3 as _ma3  # CARSPAN MAW kernel (T_AnaFunctions.pas:595-643)
 
 
-__all__ = ["compute_band_power_profile"]
+__all__ = ["compute_band_power_profile", "summarize_profile_band"]
+
+
+def summarize_profile_band(
+    power: np.ndarray, t_rel: np.ndarray
+) -> dict[str, float]:
+    """Scalar summary of one band's sliding-window power profile.
+
+    Returns ``mean`` / ``std`` (population, ``ddof=0``) / ``min`` / ``max``
+    over the finite windows, plus ``t_max`` — the epoch-relative time (read
+    from ``t_rel``) of the window holding the maximum power. Returns an
+    empty dict when no window is finite, so callers can splat it directly.
+    """
+    power = np.asarray(power, dtype=float)
+    finite_mask = np.isfinite(power)
+    finite = power[finite_mask]
+    if finite.size == 0:
+        return {}
+    fi = np.where(finite_mask)[0]
+    return {
+        "mean":  float(np.mean(finite)),
+        "std":   float(np.std(finite, ddof=0)),
+        "min":   float(np.min(finite)),
+        "max":   float(np.max(finite)),
+        "t_max": float(np.asarray(t_rel)[fi[int(np.argmax(finite))]]),
+    }
 
 
 

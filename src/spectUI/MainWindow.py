@@ -20,7 +20,6 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import qtawesome as qta
 from platformdirs import user_config_path, user_documents_path
 
@@ -60,7 +59,6 @@ from spectUI.workSpace import WorkspaceConfig
 from spectHR._version import __version__
 from spectHR.DataSet.Epoch import Epoch
 from spectHR.DataSet.PhysioData import PhysioData
-from spectHR.DataSet.Series import CardioSeries
 from spectHR.Tools.Logger import logger
 from spectUI import perspectives
 
@@ -1112,41 +1110,15 @@ class MainWindow(QMainWindow):
         """Retrigger R-peak detection on the current dataset."""
         if self.dataset is None:
             return
-        if self.dataset.active_band is None:
-            raise RuntimeError("No active band selected")
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        ecg_accessor = self.dataset["ecg"]
-        ecg_ts = ecg_accessor.timeseries
-        cs = CardioSeries.from_timeseries(
-            ecg_ts,
-            min_peak_distance_ms=min_peak_distance_ms,
-            classify=False,
-        )
-
-        cs.times = np.array([np.nan])
-        cs.labels = np.array(["TL"])
-        cs._pd = self.dataset
-        cs._stream = ecg_accessor
-        self.dataset.hrv_map[self.dataset.active_band] = cs
-
-        for key, epoch in self.dataset.epochs.items():
-            if not epoch.active:
-                continue
-            ecg_view = ecg_ts.view(epoch.start, epoch.end)
-            cs.replace_from_timeseries(
-                ecg_view,
-                start=epoch.start,
-                end=epoch.end,
-                min_peak_distance_ms=min_peak_distance_ms,
-                classify=False,
+        try:
+            self.dataset.retrigger(
+                min_peak_distance_ms=min_peak_distance_ms, classify=classify
             )
-
-        if classify:
-            cs.classify_ibi()
-
-        QApplication.restoreOverrideCursor()
-        self.dataset.save(self.savename)
+            self.dataset.save(self.savename)
+        finally:
+            QApplication.restoreOverrideCursor()
         self._dirty = False
         # R-peaks were rebuilt; every computed plot is stale even though the
         # epochs / settings signature did not change.
@@ -1219,82 +1191,17 @@ class MainWindow(QMainWindow):
             if Path(self.savename).exists():
                 with open(self.savename, "rb") as f:
                     dataset = pickle.load(f)
-                if not dataset.hrv_map or dataset.active_band is None:
-                    if getattr(dataset, "has_ecg", False):
-                        dataset.preprocess_ecg(
-                            respiration_per_epoch=self._respiration_per_epoch(),
-                        )
-                    if dataset.active_band is None and dataset.band_map:
-                        dataset.active_band = next(iter(dataset.band_map))
+                # A cold cache may need first-time preprocessing; an older
+                # cache may need an in-place migration. Both live on the
+                # model now (PhysioData.ensure_preprocessed / migrate_cached)
+                # and report whether they changed anything so we only re-save
+                # when needed.
+                if dataset.ensure_preprocessed(
+                    respiration_per_epoch=self._respiration_per_epoch()
+                ):
                     dataset.save(self.savename)
-                else:
-                    _resaved = False
-
-                    # ------------------------------------------------------
-                    # Migration 1, locked R-tops saved without IBI classification
-                    # ------------------------------------------------------
-                    # Cached datasets saved before the locked-branch
-                    # classify_ibi() fix have all R-top labels at the
-                    # default "N", an impossible result for real ECG of
-                    # any length. Re-classify in place, no ECG re-filtering
-                    # needed.
-                    for _cs in dataset.hrv_map.values():
-                        if (
-                            getattr(_cs, "rtops_locked", False)
-                            and _cs.times.size > 1
-                            and all(_lbl == "N" for _lbl in _cs.labels)
-                        ):
-                            logger.info(
-                                "Migration 1: classifying locked R-tops that were "
-                                "saved without IBI classification."
-                            )
-                            _cs.classify_ibi()
-                            _resaved = True
-
-                    # ------------------------------------------------------
-                    # Migration 2, CARSPAN epoch-start convention
-                    # ------------------------------------------------------
-                    # Cached datasets saved before the epoch-start fix have
-                    # epoch starts equal to the EVT marker time
-                    # (e.g. 313.900 s) instead of the last R-peak before
-                    # the marker (e.g. 313.096 s).
-                    #
-                    # Detection, if any non-experiment epoch's start time
-                    # matches a "Start Epoch #N" time in the TaskSeries
-                    # EventSeries, the old convention is still in use.
-                    if "TaskSeries" in dataset.events:
-                        _task_ev = dataset.events["TaskSeries"]
-                        _start_marker_times = {
-                            float(t)
-                            for t, lbl in zip(_task_ev.times, _task_ev.labels)
-                            if str(lbl).lower().startswith("start ")
-                        }
-                        _old_convention = any(
-                            abs(_ep.start - _smt) < 0.001
-                            for _epoch_name, _ep in dataset.epochs.items()
-                            if _epoch_name != "experiment"
-                            for _smt in _start_marker_times
-                        )
-                        if _old_convention:
-                            logger.info(
-                                "Migration 2: updating CARSPAN epoch starts to last "
-                                "R-peak before each start marker."
-                            )
-                            for _cs in dataset.hrv_map.values():
-                                for _epoch_name, _ep in dataset.epochs.items():
-                                    if _epoch_name == "experiment":
-                                        continue
-                                    if any(
-                                        abs(_ep.start - _smt) < 0.001
-                                        for _smt in _start_marker_times
-                                    ):
-                                        _preceding = _cs.times[_cs.times < _ep.start]
-                                        if _preceding.size > 0:
-                                            _ep.start = float(_preceding[-1])
-                            _resaved = True
-
-                    if _resaved:
-                        dataset.save(self.savename)
+                elif dataset.migrate_cached():
+                    dataset.save(self.savename)
             else:
                 dataset = PhysioData(Path(dirs["DataDirectory"]) / Path(filename))
                 # Apply the manual BP calibration on the cold load too, so a

@@ -75,7 +75,10 @@ from spectHR.Tools.Logger import logger
 from spectHR.analysis.registry import get_metrics
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._engine import PSDEngine
-from spectHR.analysis.profile import compute_band_power_profile
+from spectHR.analysis.profile import (
+    compute_band_power_profile,
+    summarize_profile_band,
+)
 from spectHR.analysis.transfer import resolve_transfer_input
 from spectUI.common import show_export_summary
 from spectUI.workSpace import (
@@ -522,15 +525,7 @@ class ParametersPlotWidget(QWidget):
                     if bname not in names_in:
                         continue
                     bp = prof_res.band_power[names_in.index(bname)]
-                    finite = bp[np.isfinite(bp)]
-                    stats: dict = {}
-                    if finite.size:
-                        stats["mean"]  = float(np.mean(finite))
-                        stats["std"]   = float(np.std(finite, ddof=0))
-                        stats["min"]   = float(np.min(finite))
-                        stats["max"]   = float(np.max(finite))
-                        fi = np.where(np.isfinite(bp))[0]
-                        stats["t_max"] = float(t_rel[fi[int(np.argmax(finite))]])
+                    stats = summarize_profile_band(bp, t_rel)
                     band_prof[bname] = {"power": bp, **stats}
 
                     # Scalar summary → CSV

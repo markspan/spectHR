@@ -40,6 +40,17 @@ class CardioSeries:
         # still be filtered for display.
         self.rtops_locked: bool = False
 
+    def link(self, pd: "PhysioData", stream: str) -> "CardioSeries":
+        """Attach this series to its parent dataset and stream name.
+
+        Sets the back-references the views rely on (``_pd`` for epoch
+        lookups, ``_stream`` for identity) without callers reaching into
+        private attributes. Returns ``self`` for chaining.
+        """
+        self._pd = pd
+        self._stream = stream
+        return self
+
     # ------------------------------------------------------------------
     # Construction / detection
     # ------------------------------------------------------------------

@@ -433,8 +433,7 @@ class PhysioData:
                     max_ibi_sec=max_ibi_sec,
                     classify=classify,
                 )
-                cs._pd     = self
-                cs._stream = band
+                cs.link(self, band)
                 self.hrv_map[band] = cs
             elif getattr(cs, "rtops_locked", False):
                 # R-peak times are locked (loaded from a .evt file) - keep
@@ -566,6 +565,133 @@ class PhysioData:
             np.concatenate(ends_all),
             np.concatenate(labels_all),
         )
+
+    def retrigger(
+        self, *, min_peak_distance_ms: float = 300.0, classify: bool = True
+    ) -> None:
+        """Re-detect R-peaks for the active band, per active epoch.
+
+        Rebuilds the active band's :class:`CardioSeries` from scratch:
+        starts from an empty series, then re-detects peaks inside each
+        active epoch's bounds and merges them. Used by the UI's
+        "Retrigger ECG" action; kept here so the detection logic lives in
+        the model layer rather than the window.
+        """
+        if self.active_band is None:
+            raise RuntimeError("No active band selected")
+
+        ecg_ts = self["ecg"].timeseries
+        cs = CardioSeries.from_timeseries(
+            ecg_ts,
+            min_peak_distance_ms=min_peak_distance_ms,
+            classify=False,
+        )
+        # Start empty so each epoch's detection is merged in cleanly below.
+        cs.times = np.array([np.nan])
+        cs.labels = np.array(["TL"], dtype=object)
+        cs.link(self, self.active_band)
+        self.hrv_map[self.active_band] = cs
+
+        for epoch in self.epochs.values():
+            if not epoch.active:
+                continue
+            ecg_view = ecg_ts.view(epoch.start, epoch.end)
+            cs.replace_from_timeseries(
+                ecg_view,
+                start=epoch.start,
+                end=epoch.end,
+                min_peak_distance_ms=min_peak_distance_ms,
+                classify=False,
+            )
+
+        if classify:
+            cs.classify_ibi()
+
+    def ensure_preprocessed(self, *, respiration_per_epoch: bool = False) -> bool:
+        """Make sure the dataset is ready for analysis after a cold load.
+
+        Runs ECG preprocessing when no HRV series exists yet and selects a
+        default active band when none is set. Returns ``True`` if anything
+        changed (so the caller can re-persist). Idempotent: a fully
+        prepared dataset is left untouched.
+        """
+        changed = False
+        if not self.hrv_map or self.active_band is None:
+            if getattr(self, "has_ecg", False):
+                self.preprocess_ecg(respiration_per_epoch=respiration_per_epoch)
+                changed = True
+            if self.active_band is None and self.band_map:
+                self.active_band = next(iter(self.band_map))
+                changed = True
+        return changed
+
+    def migrate_cached(self) -> bool:
+        """Repair datasets pickled before later loader fixes. Idempotent.
+
+        Returns ``True`` when a migration mutated the dataset, so the
+        caller knows to re-save the cache file.
+
+        Migration 1 - locked R-tops saved without IBI classification:
+            Caches saved before the locked-branch ``classify_ibi()`` fix
+            have every R-top label at the default ``"N"`` (impossible for
+            real ECG of any length). Re-classify in place.
+
+        Migration 2 - CARSPAN epoch-start convention:
+            Caches saved before the epoch-start fix have epoch starts equal
+            to the EVT marker time instead of the last R-peak before it.
+            Detected by any non-experiment epoch start matching a
+            "Start Epoch #N" time in the TaskSeries; corrected to the
+            preceding R-peak.
+        """
+        resaved = False
+
+        # ---- Migration 1 ------------------------------------------------
+        for cs in self.hrv_map.values():
+            if (
+                getattr(cs, "rtops_locked", False)
+                and cs.times.size > 1
+                and all(lbl == "N" for lbl in cs.labels)
+            ):
+                logger.info(
+                    "Migration 1: classifying locked R-tops saved without "
+                    "IBI classification."
+                )
+                cs.classify_ibi()
+                resaved = True
+
+        # ---- Migration 2 ------------------------------------------------
+        if "TaskSeries" in self.events:
+            task_ev = self.events["TaskSeries"]
+            start_marker_times = {
+                float(t)
+                for t, lbl in zip(task_ev.times, task_ev.labels)
+                if str(lbl).lower().startswith("start ")
+            }
+            old_convention = any(
+                abs(ep.start - smt) < 0.001
+                for name, ep in self.epochs.items()
+                if name != "experiment"
+                for smt in start_marker_times
+            )
+            if old_convention:
+                logger.info(
+                    "Migration 2: updating CARSPAN epoch starts to the last "
+                    "R-peak before each start marker."
+                )
+                for cs in self.hrv_map.values():
+                    for name, ep in self.epochs.items():
+                        if name == "experiment":
+                            continue
+                        if any(
+                            abs(ep.start - smt) < 0.001
+                            for smt in start_marker_times
+                        ):
+                            preceding = cs.times[cs.times < ep.start]
+                            if preceding.size > 0:
+                                ep.start = float(preceding[-1])
+                resaved = True
+
+        return resaved
 
     # ------------------------------------------------------------ #
 
