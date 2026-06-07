@@ -309,6 +309,7 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         parent: QWidget | None = None,
         *,
         workspace: dict[str, Any] | None = None,
+        _precomputed: list | None = None,
     ) -> None:
         super().__init__(parent)
 
@@ -343,16 +344,21 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         )
 
         # ---- compute one profile per series ---------------------------
-        plots: list[_ProfilePlotData] = [
-            _fetch_profile(
-                series, label,
-                window_s=window_s, step_s=step_s, smooth=smooth,
-                psd_method=prof_psd_method,
-                adaptive_source=adaptive_source,
-                smooth_breath_freq=smooth_breath_freq,
-            )
-            for series, label in zip(series_list, labels)
-        ]
+        # When _precomputed is supplied the heavy fetch is skipped (already done
+        # on a background thread by DockScheduler).
+        if _precomputed is not None:
+            plots: list[_ProfilePlotData] = _precomputed
+        else:
+            plots = [
+                _fetch_profile(
+                    series, label,
+                    window_s=window_s, step_s=step_s, smooth=smooth,
+                    psd_method=prof_psd_method,
+                    adaptive_source=adaptive_source,
+                    smooth_breath_freq=smooth_breath_freq,
+                )
+                for series, label in zip(series_list, labels)
+            ]
         # Shared y-limit across all epoch subplots - keeps band-power
         # magnitudes directly comparable across epochs, which is the
         # whole point of plotting them side-by-side. The scale itself
@@ -407,6 +413,34 @@ class ProfilePlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         )
         wire_y_zoom_shortcuts(self)
 
+
+    # ------------------------------------------------------------------
+    # Background prefetch (call on a worker thread, pass result as _precomputed)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def prefetch(
+        series_list,
+        labels,
+        workspace: dict[str, Any] | None,
+    ) -> list[_ProfilePlotData]:
+        """Compute per-epoch band-power profiles without touching any Qt object."""
+        prof_cfg = profile_settings_from_workspace(workspace)
+        prof_psd_method: PsdMethod | None = (
+            psd_method_from_workspace(workspace) if workspace is not None else None
+        )
+        return [
+            _fetch_profile(
+                series, label,
+                window_s=prof_cfg["window_s"],
+                step_s=prof_cfg["step_s"],
+                smooth=prof_cfg["smooth_for_display"],
+                psd_method=prof_psd_method,
+                adaptive_source=prof_cfg["adaptive_source"],
+                smooth_breath_freq=prof_cfg["smooth_breath_freq"],
+            )
+            for series, label in zip(series_list, labels)
+        ]
 
     # ------------------------------------------------------------------
     # Pure plotting backend

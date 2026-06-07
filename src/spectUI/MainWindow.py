@@ -20,7 +20,6 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import qtawesome as qta
 from platformdirs import user_config_path, user_documents_path
 
@@ -31,19 +30,21 @@ import matplotlib
 matplotlib.use("QtAgg", force=True)
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QByteArray, QSettings, QSize, Qt
+from PySide6.QtCore import QByteArray, QObject, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QFont, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFileDialog,
     QInputDialog,
+    QLabel,
     QMessageBox,
     QMainWindow,
     QMenu,
     QPlainTextEdit,
     QScrollArea,
     QStyle,
+    QTableWidgetItem,
     QToolBar,
     QToolButton,
     QTreeWidget,
@@ -53,11 +54,11 @@ from PySide6.QtWidgets import (
 )
 
 import spectUI as spQt
+from spectUI.plot_worker import DockScheduler
 from spectUI.workSpace import WorkspaceConfig
 from spectHR._version import __version__
 from spectHR.DataSet.Epoch import Epoch
 from spectHR.DataSet.PhysioData import PhysioData
-from spectHR.DataSet.Series import CardioSeries
 from spectHR.Tools.Logger import logger
 from spectUI import perspectives
 
@@ -148,6 +149,11 @@ _DOCK_LOG           = "dock.log"
 # signature does not track. They always refresh on activation so they
 # pick up zoom/pan changes made in a sibling timeline.
 _CACHED_DOCKS = frozenset({
+    _DOCK_PREPROCESSING,
+    _DOCK_IBI,
+    _DOCK_BP,
+    _DOCK_POINCARE,
+    _DOCK_EPOCHS,
     _DOCK_PSD,
     _DOCK_SPECTROGRAM,
     _DOCK_SPECTROGRAM_3D,
@@ -157,24 +163,48 @@ _CACHED_DOCKS = frozenset({
     _DOCK_PARAMETERS,
 })
 
+# Timeline docks whose view can drift while hidden; on a cache hit we still
+# call redraw() to sync the shared zoom/pan window without re-running the
+# full (slow) plot-build.
+_TIMELINE_DOCKS = frozenset({_DOCK_PREPROCESSING, _DOCK_IBI, _DOCK_BP})
+
 
 class _QtLogHandler(logging.Handler):
-    """Logging handler that appends records to a QPlainTextEdit widget."""
+    """Logging handler that appends records to a QPlainTextEdit widget.
+
+    Records can arrive from background worker threads (e.g. the R-top
+    classification or the heavy plot-dock prefetch). Touching a QWidget
+    off the main thread is undefined behaviour, so the formatted message
+    is delivered through a queued signal: the ``_Emitter`` QObject lives
+    on the main thread, so its ``message`` signal is marshalled there
+    regardless of which thread called ``emit``.
+    """
+
+    class _Emitter(QObject):
+        message = Signal(str)
 
     def __init__(self, widget: QPlainTextEdit):
         super().__init__()
         self._widget = widget
+        self._emitter = self._Emitter()
+        self._emitter.message.connect(self._append)
         self.setFormatter(logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             datefmt="%H:%M:%S",
         ))
 
-    def emit(self, record):
+    def _append(self, msg: str) -> None:
+        """Runs on the main thread (queued from emit)."""
         try:
-            msg = self.format(record)
             self._widget.appendPlainText(msg)
             # Keep the view scrolled to the latest entry.
             self._widget.moveCursor(QTextCursor.End)
+        except RuntimeError:
+            pass  # widget's C++ object was deleted
+
+    def emit(self, record):
+        try:
+            self._emitter.message.emit(self.format(record))
         except Exception:
             self.handleError(record)
 
@@ -226,6 +256,20 @@ class MainWindow(QMainWindow):
         # mutated (peaks / epochs edited -> ``_dirty`` save) or the
         # workspace settings are edited.
         self._plot_sig: dict[str, Any] = {}
+
+        # Background worker scheduler - one concurrent worker per dock.
+        # All heavy plot computation (PSD / Profiles / Spectrogram / Transfer /
+        # Parameters) runs on the global thread pool; results are delivered
+        # back on the main thread via cross-thread Qt signals.
+        self._scheduler = DockScheduler()
+
+        # Set while a perspective (dock layout) is being opened. ADS tears
+        # down and rebuilds every dock in C++ during the switch, firing a
+        # storm of visibilityChanged signals; running the heavy per-dock
+        # refresh re-entrantly inside that teardown is what used to take the
+        # whole app down. While this is True, _on_dock_visible skips the
+        # refresh and a single deferred one runs afterwards.
+        self._switching_perspective = False
 
         # Refresh registry, dock objectName -> refresh fn.
         self._refresh_fns: dict[str, callable] = {}
@@ -680,6 +724,55 @@ class MainWindow(QMainWindow):
         # Back to default as the displayed layout.
         self.dock_manager.openPerspective(perspectives.BUILTIN_DEFAULT)
 
+    def open_perspective(self, name: str) -> None:
+        """Switch to dock layout *name*, guarding against a crash.
+
+        Opening a perspective makes ADS tear down and rebuild the entire
+        dock layout in C++. If anything goes wrong mid-switch the app used
+        to vanish without a trace. Here the switch is wrapped so a failure
+        is logged, reported, and falls back to the Default layout instead
+        of killing the program. Per-dock refreshes are suppressed during
+        the switch (see ``_switching_perspective``) and a single safe
+        refresh is scheduled afterwards, off the ADS teardown stack.
+        """
+        self._switching_perspective = True
+        try:
+            self.dock_manager.openPerspective(name)
+        except Exception:
+            logger.exception("Failed to open perspective %r", name)
+            QMessageBox.warning(
+                self,
+                "Layout error",
+                f"Could not switch to the {name!r} layout.\n\n"
+                "Falling back to the Default layout.",
+            )
+            try:
+                self.dock_manager.openPerspective(perspectives.BUILTIN_DEFAULT)
+            except Exception:
+                logger.exception("Fallback to Default perspective also failed")
+        finally:
+            self._switching_perspective = False
+
+        # One controlled refresh of the now-visible docks, scheduled so it
+        # runs after ADS has finished rebuilding rather than re-entrantly.
+        QTimer.singleShot(0, self._refresh_visible_docks)
+
+    def _refresh_visible_docks(self) -> None:
+        """Refresh every alive, visible dock once (post perspective switch)."""
+        if self.dataset is None:
+            return
+        try:
+            sig = self._plot_cache_signature(self.dataset)
+        except Exception:
+            logger.exception("Plot signature failed after perspective switch")
+            return
+        for name, dock in self.docks.items():
+            if not self._dock_alive(dock):
+                continue
+            if dock.isClosed() or not dock.isVisible():
+                continue
+            self._refresh_dock(name, sig)
+
     def _restore_session(self) -> None:
         """
         Restore window geometry and dock layout from the INI store.
@@ -722,7 +815,15 @@ class MainWindow(QMainWindow):
             pass
 
     def closeEvent(self, event) -> None:
-        """Persist current geometry, window state and dock layout on close."""
+        """Persist the dataset, then geometry / window state / dock layout.
+
+        Reached by both close paths: the Quit action (which calls
+        ``self.close()``) and the window's close button. Saving the dataset
+        here is the only on-close persistence point, so unsaved R-peak /
+        epoch edits are flushed before the app exits.
+        """
+        self._save_current_dataset_if_dirty()
+
         # Re-dock every floating panel before saving state.  Floating dock
         # containers are independent top-level windows; if we save state while
         # they are still floating the INI records them that way, and on the next
@@ -770,11 +871,28 @@ class MainWindow(QMainWindow):
         level = spQt.log_level_from_workspace(self.workspace)
         logging.getLogger("spectHR").setLevel(level)
 
+    def _save_current_dataset_if_dirty(self) -> None:
+        """Persist the active dataset to its cache file if it has unsaved edits.
+
+        R-peak / epoch edits mark the dataset dirty but no longer save on
+        every dock switch — pickling the full recording is slow and froze
+        the UI. Instead we save at the two moments the dataset stops being
+        the active one: when another file is selected and when the app is
+        closed (Quit or the window's close button). Both paths call this.
+        """
+        if self._dirty and self.dataset is not None and self.savename is not None:
+            try:
+                self.dataset.save(self.savename)
+                self._dirty = False
+            except Exception:
+                logger.exception("Failed to save dataset to %s", self.savename)
+
     def _mark_data_edited(self) -> None:
         """A real edit happened in an editing dock (R-peaks / epochs).
 
         Fired by the editing widgets' ``dataEdited`` signal. Marks the
-        dataset dirty (so it is persisted on the next dock activation) and
+        dataset dirty (so it is persisted when the dataset stops being
+        active — see _save_current_dataset_if_dirty) and
         drops every cached plot signature so the computed docks recompute
         from the mutated data. Because this is driven by genuine edits,
         simply viewing the Preprocessing / Epochs dock no longer
@@ -786,6 +904,7 @@ class MainWindow(QMainWindow):
         """
         self._dirty = True
         self._plot_sig.clear()
+        self._scheduler.invalidate()
 
         if self.dataset is None:
             return
@@ -811,11 +930,11 @@ class MainWindow(QMainWindow):
         """
         source = self.sender()
         for w in self._timeline_widgets:
-            if w is source or not w.isVisible():
-                continue
-            if getattr(w, "data", None) is None or getattr(w.data, "view", None) is None:
-                continue
             try:
+                if w is source or not w.isVisible():
+                    continue
+                if getattr(w, "data", None) is None or getattr(w.data, "view", None) is None:
+                    continue
                 w.redraw()
             except Exception:
                 logger.debug("timeline view-sync redraw failed", exc_info=True)
@@ -844,18 +963,22 @@ class MainWindow(QMainWindow):
         # without editing keeps every plot cache valid.
         if not visible:
             return
+        # During a perspective switch ADS rebuilds the whole layout; defer
+        # refreshing to the single pass in _refresh_visible_docks so we
+        # never run heavy plot builds re-entrantly inside that teardown.
+        if self._switching_perspective:
+            return
         if self.dataset is None:
             return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            # Persist only when something actually changed. A dirty save
-            # means peaks / epochs were mutated, so every cached plot is
-            # now stale: drop all stored signatures to force a recompute
-            # the next time each dock is shown.
-            if self._dirty and self.savename is not None:
-                self.dataset.save(self.savename)
-                self._dirty = False
-                self._plot_sig.clear()
+            # Edits no longer save here — persisting the full recording is
+            # slow and froze the UI on the first dock switch after an edit.
+            # The dataset is now saved only when it stops being active (file
+            # switch or app close); see _save_current_dataset_if_dirty.
+            # Cache invalidation already happened in _mark_data_edited, so a
+            # dirty dataset's stale docks are recomputed regardless.
+            #
             # One signature for this activation; _refresh_dock reuses the
             # already-rendered widget when the dock's signature is
             # unchanged (no data / settings change since it was built).
@@ -988,6 +1111,7 @@ class MainWindow(QMainWindow):
                 # the signatures makes each dock recompute (with the new
                 # settings) the next time it is shown.
                 self._plot_sig.clear()
+                self._scheduler.invalidate()
                 sig = self._plot_cache_signature(self.dataset)
                 # PSD, Spectrogram, and Profiles depend directly on what
                 # was edited (bands, window, step, PSD method, coherence
@@ -1048,45 +1172,20 @@ class MainWindow(QMainWindow):
         """Retrigger R-peak detection on the current dataset."""
         if self.dataset is None:
             return
-        if self.dataset.active_band is None:
-            raise RuntimeError("No active band selected")
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        ecg_accessor = self.dataset["ecg"]
-        ecg_ts = ecg_accessor.timeseries
-        cs = CardioSeries.from_timeseries(
-            ecg_ts,
-            min_peak_distance_ms=min_peak_distance_ms,
-            classify=False,
-        )
-
-        cs.times = np.array([np.nan])
-        cs.labels = np.array(["TL"])
-        cs._pd = self.dataset
-        cs._stream = ecg_accessor
-        self.dataset.hrv_map[self.dataset.active_band] = cs
-
-        for key, epoch in self.dataset.epochs.items():
-            if not epoch.active:
-                continue
-            ecg_view = ecg_ts.view(epoch.start, epoch.end)
-            cs.replace_from_timeseries(
-                ecg_view,
-                start=epoch.start,
-                end=epoch.end,
-                min_peak_distance_ms=min_peak_distance_ms,
-                classify=False,
+        try:
+            self.dataset.retrigger(
+                min_peak_distance_ms=min_peak_distance_ms, classify=classify
             )
-
-        if classify:
-            cs.classify_ibi()
-
-        QApplication.restoreOverrideCursor()
-        self.dataset.save(self.savename)
+            self.dataset.save(self.savename)
+        finally:
+            QApplication.restoreOverrideCursor()
         self._dirty = False
         # R-peaks were rebuilt; every computed plot is stale even though the
         # epochs / settings signature did not change.
         self._plot_sig.clear()
+        self._scheduler.invalidate()
         self.show_preprocessing_plot(self.dataset)
         self.show_hr_plot(self.dataset)
 
@@ -1111,6 +1210,7 @@ class MainWindow(QMainWindow):
         self._dirty = False
         # ECG polarity flipped and re-detected; every computed plot is stale.
         self._plot_sig.clear()
+        self._scheduler.invalidate()
         self.show_preprocessing_plot(self.dataset)
 
     def _respiration_per_epoch(self) -> bool:
@@ -1136,6 +1236,11 @@ class MainWindow(QMainWindow):
             return
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
+
+        # Flush unsaved edits on the dataset we're leaving before its
+        # savename is reassigned below to the newly-selected file.
+        self._save_current_dataset_if_dirty()
+
         dirs = self.workspace["Directories"]
 
         # CASE 1, dataset root node ------------------------------------
@@ -1148,88 +1253,26 @@ class MainWindow(QMainWindow):
             if Path(self.savename).exists():
                 with open(self.savename, "rb") as f:
                     dataset = pickle.load(f)
-                if not dataset.hrv_map or dataset.active_band is None:
-                    if getattr(dataset, "has_ecg", False):
-                        dataset.preprocess_ecg(
-                            respiration_per_epoch=self._respiration_per_epoch(),
-                        )
-                    if dataset.active_band is None and dataset.band_map:
-                        dataset.active_band = next(iter(dataset.band_map))
+                # A cold cache may need first-time preprocessing; an older
+                # cache may need an in-place migration. Both live on the
+                # model now (PhysioData.ensure_preprocessed / migrate_cached)
+                # and report whether they changed anything so we only re-save
+                # when needed.
+                if dataset.ensure_preprocessed(
+                    respiration_per_epoch=self._respiration_per_epoch()
+                ):
                     dataset.save(self.savename)
-                else:
-                    _resaved = False
-
-                    # ------------------------------------------------------
-                    # Migration 1, locked R-tops saved without IBI classification
-                    # ------------------------------------------------------
-                    # Cached datasets saved before the locked-branch
-                    # classify_ibi() fix have all R-top labels at the
-                    # default "N", an impossible result for real ECG of
-                    # any length. Re-classify in place, no ECG re-filtering
-                    # needed.
-                    for _cs in dataset.hrv_map.values():
-                        if (
-                            getattr(_cs, "rtops_locked", False)
-                            and _cs.times.size > 1
-                            and all(_lbl == "N" for _lbl in _cs.labels)
-                        ):
-                            logger.info(
-                                "Migration 1: classifying locked R-tops that were "
-                                "saved without IBI classification."
-                            )
-                            _cs.classify_ibi()
-                            _resaved = True
-
-                    # ------------------------------------------------------
-                    # Migration 2, CARSPAN epoch-start convention
-                    # ------------------------------------------------------
-                    # Cached datasets saved before the epoch-start fix have
-                    # epoch starts equal to the EVT marker time
-                    # (e.g. 313.900 s) instead of the last R-peak before
-                    # the marker (e.g. 313.096 s).
-                    #
-                    # Detection, if any non-experiment epoch's start time
-                    # matches a "Start Epoch #N" time in the TaskSeries
-                    # EventSeries, the old convention is still in use.
-                    if "TaskSeries" in dataset.events:
-                        _task_ev = dataset.events["TaskSeries"]
-                        _start_marker_times = {
-                            float(t)
-                            for t, lbl in zip(_task_ev.times, _task_ev.labels)
-                            if str(lbl).lower().startswith("start ")
-                        }
-                        _old_convention = any(
-                            abs(_ep.start - _smt) < 0.001
-                            for _epoch_name, _ep in dataset.epochs.items()
-                            if _epoch_name != "experiment"
-                            for _smt in _start_marker_times
-                        )
-                        if _old_convention:
-                            logger.info(
-                                "Migration 2: updating CARSPAN epoch starts to last "
-                                "R-peak before each start marker."
-                            )
-                            for _cs in dataset.hrv_map.values():
-                                for _epoch_name, _ep in dataset.epochs.items():
-                                    if _epoch_name == "experiment":
-                                        continue
-                                    if any(
-                                        abs(_ep.start - _smt) < 0.001
-                                        for _smt in _start_marker_times
-                                    ):
-                                        _preceding = _cs.times[_cs.times < _ep.start]
-                                        if _preceding.size > 0:
-                                            _ep.start = float(_preceding[-1])
-                            _resaved = True
-
-                    if _resaved:
-                        dataset.save(self.savename)
+                elif dataset.migrate_cached():
+                    dataset.save(self.savename)
             else:
                 dataset = PhysioData(Path(dirs["DataDirectory"]) / Path(filename))
                 # Apply the manual BP calibration on the cold load too, so a
                 # reloaded single-band file gets BP in mmHg, not raw counts
                 # (PreProcessFile does the same for the band-node path).
                 spQt.apply_bp_calibration(dataset, self.workspace)
+                # Select the respiration source (ICG impedance vs
+                # accelerometer) per the workspace; no-op otherwise.
+                spQt.apply_rsp_source(dataset, self.workspace)
                 if dataset.has_ecg:
                     dataset.preprocess_ecg(
                         respiration_per_epoch=self._respiration_per_epoch(),
@@ -1300,35 +1343,38 @@ class MainWindow(QMainWindow):
 
         Docks whose underlying data isn't available on this dataset are
         closed (Preprocessing without ECG, Transfer + Transfer-profile
-        without a respiration channel). The View-menu entry stays
-        enabled so the user can re-open them - on re-open the widget
-        renders its own "No respiration channel" placeholder.
+        without a blood-pressure or respiration channel). The View-menu
+        entry stays enabled so the user can re-open them - on re-open the
+        widget renders its own "no input channel" placeholder.
         """
         # Preprocessing dock visibility follows ECG availability.
         has_ecg = bool(getattr(self.dataset, "has_ecg", False))
         self.docks[_DOCK_PREPROCESSING].toggleView(has_ecg)
 
-        # Transfer-family docks follow respiration availability. When
-        # the recording has no respiration channel we close them, grey
-        # out their View-menu toggle, and arm a visibility-guard that
-        # explains via QMessageBox if anything else (perspective
-        # restore, programmatic call) tries to open them.
+        # Transfer-family docks need a transfer *input* channel. The output
+        # is always the IBI/HR series; the input is blood pressure (the
+        # default, for baroreflex sensitivity) or respiration (for RSA),
+        # selectable in the workspace. The docks are therefore available
+        # when EITHER channel is present, and only disabled (with a guard +
+        # explanatory toggle) when both are absent.
         rsp_map = getattr(self.dataset, "rsp_map", None) or {}
         has_rsp = bool(rsp_map)
+        timeseries = getattr(self.dataset, "timeseries", None) or {}
+        has_bp = "bp" in timeseries
+        has_tf_input = has_rsp or has_bp
         for name in (_DOCK_TRANSFER, _DOCK_TRANSFER_PROFILE):
             dock = self.docks[name]
             if not self._dock_alive(dock):
                 continue
-            dock.toggleView(has_rsp and not dock.isClosed())
+            dock.toggleView(has_tf_input and not dock.isClosed())
             action = dock.toggleViewAction()
-            action.setEnabled(has_rsp)
-            if not has_rsp:
-                action.setToolTip(
-                    "Disabled: this recording has no respiration channel"
-                )
-            else:
-                action.setToolTip("")
-        if not has_rsp:
+            action.setEnabled(has_tf_input)
+            action.setToolTip(
+                "" if has_tf_input
+                else "Disabled: this recording has no respiration or "
+                     "blood-pressure channel"
+            )
+        if not has_tf_input:
             self._arm_transfer_rsp_guard()
         else:
             self._disarm_transfer_rsp_guard()
@@ -1336,8 +1382,6 @@ class MainWindow(QMainWindow):
         # Blood-pressure dock follows the presence of a "bp" timeseries.
         # When absent we close the dock and disable its View-menu toggle
         # (no placeholder is rendered - the widget simply draws nothing).
-        timeseries = getattr(self.dataset, "timeseries", None) or {}
-        has_bp = "bp" in timeseries
         bp_dock = self.docks[_DOCK_BP]
         if self._dock_alive(bp_dock):
             bp_dock.toggleView(has_bp and not bp_dock.isClosed())
@@ -1359,14 +1403,15 @@ class MainWindow(QMainWindow):
             # transfer-function estimation). Skip them when the channel is
             # missing *or* the dock is closed, and let visibilityChanged
             # compute lazily the first time the user brings them forward.
-            _DOCK_TRANSFER:         not has_rsp or _closed(_DOCK_TRANSFER),
-            _DOCK_TRANSFER_PROFILE: not has_rsp or _closed(_DOCK_TRANSFER_PROFILE),
+            _DOCK_TRANSFER:         not has_tf_input or _closed(_DOCK_TRANSFER),
+            _DOCK_TRANSFER_PROFILE: not has_tf_input or _closed(_DOCK_TRANSFER_PROFILE),
             # 3-D spectrogram is the most expensive widget; skip it when
             # the dock is closed and let visibilityChanged handle it lazily.
             _DOCK_SPECTROGRAM_3D:   _closed(_DOCK_SPECTROGRAM_3D),
         }
         # New dataset -> every cached plot is stale.
         self._plot_sig.clear()
+        self._scheduler.invalidate()
         sig = self._plot_cache_signature(self.dataset)
         for name in self._refresh_fns:
             # Skip refresh on docks whose data isn't on this dataset.
@@ -1434,10 +1479,12 @@ class MainWindow(QMainWindow):
                         self,
                         "Transfer analysis unavailable",
                         "Cannot open the Transfer view.\n\n"
-                        "This analysis estimates how the breathing signal "
-                        "drives heart-rate variability, so it needs a "
-                        "respiration channel in the recording. The "
-                        "currently loaded file has none.",
+                        "This analysis estimates how an input signal drives "
+                        "heart-rate variability — blood pressure (for "
+                        "baroreflex sensitivity) or respiration (for RSA) — "
+                        "so it needs a blood-pressure or respiration channel "
+                        "in the recording. The currently loaded file has "
+                        "neither.",
                     )
                 return _slot
 
@@ -1465,27 +1512,46 @@ class MainWindow(QMainWindow):
     def show_preprocessing_plot(self, data):
         if data is None:
             return
-        if data.has_ecg:
-            self.docks[_DOCK_PREPROCESSING].toggleView(True)
-            self.prep_plot_widget.prepPlot(data)
-        else:
-            self.docks[_DOCK_PREPROCESSING].toggleView(False)
+        try:
+            if data.has_ecg:
+                self.docks[_DOCK_PREPROCESSING].toggleView(True)
+                self.prep_plot_widget.prepPlot(data)
+            else:
+                self.docks[_DOCK_PREPROCESSING].toggleView(False)
+        except RuntimeError:
+            pass
 
     def show_hr_plot(self, data):
-        if data is not None:
+        if data is None:
+            return
+        try:
             self.hr_plot_widget.hrPlot(data, workspace=self.workspace)
+        except RuntimeError:
+            pass
 
     def show_bp_plot(self, data):
-        if data is not None:
+        if data is None:
+            return
+        try:
             self.bp_plot_widget.bpPlot(data)
+        except RuntimeError:
+            pass
 
     def show_epoch_plot(self, data):
-        if data is not None:
+        if data is None:
+            return
+        try:
             self.epoch_plot_widget.plotEpochs(data)
+        except RuntimeError:
+            pass
 
     def show_poincare_plot(self, data):
-        if data is not None:
+        if data is None:
+            return
+        try:
             self.poincare_plot_widget.poincarePlot(data)
+        except RuntimeError:
+            pass
 
     def _clear_layout(self, layout) -> None:
         """Remove all widgets from *layout*, deleting them immediately."""
@@ -1499,24 +1565,34 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             pass
 
-    def _swap_in_epoch_plot(self, layout, dataset, factory) -> None:
-        """
-        Replace the contents of ``layout`` with a freshly-built plot widget.
+    def _async_swap_epoch_plot(
+        self,
+        dock_name: str,
+        layout,
+        dataset,
+        prefetch_fn,
+        widget_fn,
+    ) -> None:
+        """Submit the heavy PSD / Spectrogram / Profile / Transfer computation
+        to the global thread pool and swap in the resulting widget on the
+        main thread when done.
 
-        Shared body for the PSD, Spectrogram and Profile docks. Each
-        of them keeps a permanent QScrollArea in MainWindow and swaps
-        the inner plot widget on every refresh, the only thing that
-        varies between them is which widget class to construct.
-
-        ``factory`` takes ``(views, labels, workspace)`` and returns
-        a QWidget. The active-epoch (label, view) pairs are collected
-        here so the per-dock helpers stay one-liners.
+        Parameters
+        ----------
+        dock_name:   Stable ``_DOCK_*`` constant; drives the generation counter.
+        layout:      The dock's inner ``QVBoxLayout`` whose contents are swapped.
+        dataset:     The current ``PhysioData`` instance.
+        prefetch_fn: ``(views, labels, workspace) -> list``  — pure compute,
+                     called on a **background thread**.
+        widget_fn:   ``(views, labels, workspace, precomputed) -> QWidget``  —
+                     widget construction with the precomputed data, called on
+                     the **main thread** in ``on_done``.
         """
         if dataset is None:
             return
         try:
             self._clear_layout(layout)
-            pairs = []
+            pairs: list = []
             for label, epoch in dataset.epochs.items():
                 if not epoch.active:
                     continue
@@ -1527,32 +1603,74 @@ class MainWindow(QMainWindow):
             if not pairs:
                 return
             labels, views = zip(*pairs)
-            layout.addWidget(factory(views, labels, self.workspace))
+
+            # Show a lightweight placeholder while the worker runs. Kept
+            # inside the guard: if the dock's layout C++ object was deleted
+            # (dock closed/recreated), abort without submitting work.
+            loading = QLabel("Computing…")
+            loading.setAlignment(Qt.AlignCenter)
+            layout.addWidget(loading)
         except RuntimeError:
-            pass
+            return
+
+        workspace = self.workspace
+
+        def compute():
+            return prefetch_fn(views, labels, workspace)
+
+        def on_done(precomputed):
+            try:
+                self._clear_layout(layout)
+                layout.addWidget(widget_fn(views, labels, workspace, precomputed))
+            except RuntimeError:
+                pass
+            except Exception as exc:
+                logger.warning("Failed to render %s: %s", dock_name, exc, exc_info=True)
+                try:
+                    err = QLabel(f"Error rendering plot: {exc}")
+                    err.setAlignment(Qt.AlignCenter)
+                    layout.addWidget(err)
+                except RuntimeError:
+                    pass
+
+        def on_error(exc):
+            try:
+                self._clear_layout(layout)
+                err = QLabel(f"Error: {exc}")
+                err.setAlignment(Qt.AlignCenter)
+                layout.addWidget(err)
+                logger.warning("Plot computation failed for %s: %s", dock_name, exc)
+            except RuntimeError:
+                pass
+
+        self._scheduler.submit(dock_name, compute, on_done, on_error)
 
     def show_psd_plot(self, dataset) -> None:
-        self._swap_in_epoch_plot(
-            self.psd_layout, dataset,
-            lambda v, l, w: spQt.PSDPlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_PSD, self.psd_layout, dataset,
+            prefetch_fn=spQt.PSDPlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.PSDPlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def show_spectrogram_plot(self, dataset) -> None:
-        self._swap_in_epoch_plot(
-            self.spectrogram_layout, dataset,
-            lambda v, l, w: spQt.SpectrogramPlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_SPECTROGRAM, self.spectrogram_layout, dataset,
+            prefetch_fn=spQt.SpectrogramPlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.SpectrogramPlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def show_spectrogram3d_plot(self, dataset) -> None:
-        """Refresh the Spectrogram 3D dock with a new surface grid.
-
-        Calls the same ``_swap_in_epoch_plot`` helper used by every
-        other plot dock, building one ``Spectrogram3DPlotWidget`` from
-        the current active-epoch views and the current workspace.
-        """
-        self._swap_in_epoch_plot(
-            self.spectrogram3d_layout, dataset,
-            lambda v, l, w: spQt.Spectrogram3DPlotWidget(v, l, workspace=w),
+        """Refresh the Spectrogram 3D dock on a background thread."""
+        self._async_swap_epoch_plot(
+            _DOCK_SPECTROGRAM_3D, self.spectrogram3d_layout, dataset,
+            prefetch_fn=spQt.Spectrogram3DPlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.Spectrogram3DPlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def _plot_cache_signature(self, dataset) -> tuple:
@@ -1572,8 +1690,8 @@ class MainWindow(QMainWindow):
         because it never affects a plot.
 
         R-peak / epoch *edits* don't change this signature on their own,
-        so they are handled separately by clearing ``_plot_sig`` whenever
-        the dataset is saved dirty (see :meth:`_on_dock_visible`).
+        so they are handled separately by clearing ``_plot_sig`` on every
+        edit (see :meth:`_mark_data_edited`).
         """
         epochs = tuple(
             (label, float(ep.start), float(ep.end))
@@ -1607,41 +1725,96 @@ class MainWindow(QMainWindow):
         refresh_fn = self._refresh_fns.get(name)
         if refresh_fn is None:
             return
-        # Only the expensive, view-independent docks are cached. The cheap
-        # timeline / poincare / epoch docks always refresh so they reflect
-        # the shared zoom/pan window (which the signature does not track).
         if name in _CACHED_DOCKS and self._plot_sig.get(name) == sig:
-            return  # unchanged -> reuse the already-rendered widget
-        refresh_fn()
+            # Timeline docks share a zoom/pan window that can change while the
+            # dock is hidden; call redraw() to sync the view without re-running
+            # the full (slow) plot build.
+            if name in _TIMELINE_DOCKS:
+                try:
+                    w = self.docks[name].widget()
+                    if w is not None and getattr(w, "data", None) is not None:
+                        w.redraw()
+                except RuntimeError:
+                    pass
+            return
+        # toggleView() inside a refresh fn can fire visibilityChanged
+        # re-entrantly and make ADS tear down / recreate other docks
+        # mid-loop, leaving their widgets as dead C++ objects. Central
+        # guard so a stale dock skips refresh instead of crashing the load.
+        try:
+            refresh_fn()
+        except RuntimeError:
+            return
         self._plot_sig[name] = sig
 
     def show_transfer_plot(self, dataset) -> None:
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_layout)
             return
-        self._swap_in_epoch_plot(
-            self.transfer_layout, dataset,
-            lambda v, l, w: spQt.TransferPlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_TRANSFER, self.transfer_layout, dataset,
+            prefetch_fn=spQt.TransferPlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.TransferPlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def show_transfer_profile_plot(self, dataset) -> None:
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_profile_layout)
             return
-        self._swap_in_epoch_plot(
-            self.transfer_profile_layout, dataset,
-            lambda v, l, w: spQt.TransferProfilePlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_TRANSFER_PROFILE, self.transfer_profile_layout, dataset,
+            prefetch_fn=spQt.TransferProfilePlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.TransferProfilePlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
     def show_profile_plot(self, dataset) -> None:
-        self._swap_in_epoch_plot(
-            self.profile_layout, dataset,
-            lambda v, l, w: spQt.ProfilePlotWidget(v, l, workspace=w),
+        self._async_swap_epoch_plot(
+            _DOCK_PROFILES, self.profile_layout, dataset,
+            prefetch_fn=spQt.ProfilePlotWidget.prefetch,
+            widget_fn=lambda v, l, w, pre: spQt.ProfilePlotWidget(
+                v, l, workspace=w, _precomputed=pre,
+            ),
         )
 
-    def show_parameters_plot(self, data):
-        if data is not None:
-            self.parameters_plot_widget.display_parameters(data, self.workspace)
+    def show_parameters_plot(self, data) -> None:
+        if data is None:
+            return
+        try:
+            # Touching the table's C++ object raises if the dock was
+            # closed/recreated during a file load; abort without submitting.
+            self.parameters_plot_widget._start_loading()
+        except RuntimeError:
+            return
+        workspace = self.workspace
+
+        def compute():
+            return spQt.ParametersPlotWidget.prefetch_table(data, workspace)
+
+        def on_done(precomputed):
+            try:
+                self.parameters_plot_widget.display_parameters(
+                    data, workspace, _precomputed=precomputed,
+                )
+            except RuntimeError:
+                pass
+
+        def on_error(exc):
+            try:
+                self.parameters_plot_widget.table_widget.clear()
+                self.parameters_plot_widget.table_widget.setRowCount(1)
+                self.parameters_plot_widget.table_widget.setColumnCount(1)
+                self.parameters_plot_widget.table_widget.setItem(
+                    0, 0, QTableWidgetItem(f"Error: {exc}"),
+                )
+                logger.warning("Parameters computation failed: %s", exc)
+            except RuntimeError:
+                pass
+
+        self._scheduler.submit(_DOCK_PARAMETERS, compute, on_done, on_error)
 
     # ------------------------------------------------------------------
     # Epoch creation
@@ -1668,10 +1841,43 @@ class MainWindow(QMainWindow):
         self.epoch_plot_widget.plotEpochs(self.dataset)
 
 
+def _install_global_excepthook() -> None:
+    """Stop an unhandled exception in a Qt slot from silently killing the app.
+
+    Under PySide6 an exception that escapes a slot aborts the process with
+    no message at all ("poof"). Routing it through our own hook logs the
+    full traceback and shows a dialog, then lets the event loop carry on,
+    so a single bad action (e.g. switching to a broken layout) is
+    recoverable instead of fatal.
+    """
+    def _hook(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        logger.error(
+            "Unhandled exception", exc_info=(exc_type, exc_value, exc_tb)
+        )
+        try:
+            QMessageBox.critical(
+                None,
+                "Unexpected error",
+                f"{exc_type.__name__}: {exc_value}\n\n"
+                "The action was aborted, but the program is still running.",
+            )
+        except Exception:
+            # Never let the handler itself raise — that would re-trigger abort.
+            pass
+
+    sys.excepthook = _hook
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setOrganizationName(_ORG_NAME)
     app.setApplicationName(_APP_NAME)
+
+    # Install before any window exists so even start-up slot errors surface.
+    _install_global_excepthook()
 
     default_font = QFont("Segoe UI", 10)
     default_font.setBold(False)

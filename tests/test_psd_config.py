@@ -5,9 +5,11 @@ Covers
 ------
 * :class:`BandSpec` — defaults, optional fields, frozenness.
 * :class:`PsdMethod` — defaults, immutability, default bands.
-* :func:`spectUI.workSpace.psd_method_from_workspace` —
+* :func:`spectHR.config.psd_method_from_workspace` —
     f_max derivation from bands, mean_convention selection,
     silent dropping of unknown JSON keys, missing-section fall-backs.
+    Imported from the headless ``spectHR.config`` module so this test
+    stays Qt-free (``spectUI.workSpace`` re-exports the same function).
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ from spectHR.analysis.psd import (
     CarspanOptions,
 )
 
-from spectUI.workSpace import psd_method_from_workspace
+from spectHR.config import psd_method_from_workspace
 
 
 # ===========================================================================
@@ -187,3 +189,36 @@ class TestPsdMethodFromWorkspace:
         assert m.carspan.f_max == 0.5
 
 
+
+
+# ---------------------------------------------------------------------------
+# Respiration source selection (rsp_source_from_workspace)
+# ---------------------------------------------------------------------------
+
+from spectHR.config import RSP_SOURCES, rsp_source_from_workspace  # noqa: E402
+
+
+def test_rsp_source_default_is_icg():
+    """Missing workspace / section / key all fall back to the ICG default."""
+    assert rsp_source_from_workspace(None) == "icg"
+    assert rsp_source_from_workspace({}) == "icg"
+    assert rsp_source_from_workspace({"RespirationAnalysis": {}}) == "icg"
+
+
+def test_rsp_source_reads_accelerometer():
+    ws = {"RespirationAnalysis": {"rsp_source": "accelerometer"}}
+    assert rsp_source_from_workspace(ws) == "accelerometer"
+
+
+def test_rsp_source_is_case_insensitive():
+    ws = {"RespirationAnalysis": {"rsp_source": "ICG"}}
+    assert rsp_source_from_workspace(ws) == "icg"
+
+
+def test_rsp_source_unknown_value_falls_back():
+    ws = {"RespirationAnalysis": {"rsp_source": "magnetometer"}}
+    assert rsp_source_from_workspace(ws) == "icg"
+
+
+def test_rsp_sources_constant():
+    assert RSP_SOURCES == ("icg", "accelerometer")

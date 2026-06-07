@@ -156,6 +156,7 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
         parent: QWidget | None = None,
         *,
         workspace: dict[str, Any] | None = None,
+        _precomputed: list | None = None,
     ) -> None:
         super().__init__(parent)
 
@@ -175,16 +176,21 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
         # All PSD work happens here, in the shared compute layer.
         # The rendering sub-widgets below receive only the pre-computed
         # data objects and never touch the engine directly.
-        plots: list[SpectrogramData] = [
-            fetch_spectrogram(
-                series, label,
-                window_s=window_s,
-                step_s=step_s,
-                psd_method=psd_method,
-                adaptive_source=adaptive_source,
-            )
-            for series, label in zip(series_list, labels)
-        ]
+        # When _precomputed is supplied the heavy fetch is skipped (already done
+        # on a background thread by DockScheduler).
+        if _precomputed is not None:
+            plots: list[SpectrogramData] = _precomputed
+        else:
+            plots = [
+                fetch_spectrogram(
+                    series, label,
+                    window_s=window_s,
+                    step_s=step_s,
+                    psd_method=psd_method,
+                    adaptive_source=adaptive_source,
+                )
+                for series, label in zip(series_list, labels)
+            ]
 
         # ---- build the 2-column scrollable tile grid -----------------
         # build_epoch_grid handles the QScrollArea / QGridLayout
@@ -198,6 +204,32 @@ class SpectrogramPlotWidget(PlotExportMixin, QWidget):
                 colormap=colormap,
             ),
         )
+
+    # ------------------------------------------------------------------
+    # Background prefetch (call on a worker thread, pass result as _precomputed)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def prefetch(
+        series_list,
+        labels,
+        workspace: dict[str, Any] | None,
+    ) -> list[SpectrogramData]:
+        """Compute per-epoch sliding-window spectrograms without touching Qt."""
+        cfg = spectrogram_settings_from_workspace(workspace)
+        psd_method: PsdMethod | None = (
+            psd_method_from_workspace(workspace) if workspace is not None else None
+        )
+        return [
+            fetch_spectrogram(
+                series, label,
+                window_s=cfg["window_s"],
+                step_s=cfg["step_s"],
+                psd_method=psd_method,
+                adaptive_source=cfg["adaptive_source"],
+            )
+            for series, label in zip(series_list, labels)
+        ]
 
     # ------------------------------------------------------------------
     # Static drawing backend

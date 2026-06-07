@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import matplotlib.patches as patches
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QInputDialog
 from spectHR.DataSet.Epoch import Epoch
@@ -33,10 +34,9 @@ class EpochPlotWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(111)
+        self.fig = Figure()
+        self.ax  = self.fig.add_subplot(111)
         self.canvas = FigureCanvas(self.fig)
-        plt.close(self.fig)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.canvas)
@@ -73,7 +73,7 @@ class EpochPlotWidget(QWidget):
         names = [name for name, _ in active_items]
         epochs = [ep for _, ep in active_items]
 
-        cmap = plt.cm.tab20(np.linspace(0, 1, len(names)))
+        cmap = cm.tab20(np.linspace(0, 1, len(names)))
 
         # Draw bars
         for i, (name, ep) in enumerate(zip(names, epochs)):

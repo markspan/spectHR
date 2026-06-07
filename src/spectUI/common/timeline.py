@@ -26,19 +26,20 @@ import math
 from dataclasses import dataclass, field
 from typing import Iterable
 
-import matplotlib.pyplot as plt
+import matplotlib
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
 from matplotlib.ticker import MultipleLocator
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectUI.common.uitools import (
     OverviewWindow,
+    decimate_minmax,
     make_nav_button,
     style_axis_clean,
     swap_canvas,
@@ -268,6 +269,17 @@ class TimelinePlotWidget(QWidget):
         self._mpl_cid_move: int | None = None
         self._mpl_cid_release: int | None = None
 
+        # Cached overview background for blitting the window rectangle during a
+        # drag (see _begin/_update/_end_overview_blit).
+        self._overview_bg = None
+
+        # Coalesce rapid button clicks: update the view immediately but
+        # defer the redraw until the burst stops.
+        self._redraw_timer = QTimer(self)
+        self._redraw_timer.setSingleShot(True)
+        self._redraw_timer.setInterval(160)
+        self._redraw_timer.timeout.connect(self._deferred_redraw)
+
         self.navigation_bar = self._create_navigation_bar()
 
         layout = QVBoxLayout()
@@ -344,7 +356,7 @@ class TimelinePlotWidget(QWidget):
         self.data = data
         self._prepare()
         self.setVisible(True)
-        plt.ioff()  # No blocking windows
+        matplotlib.interactive(False)
 
         series = self._primary_series()
         if series is None:
@@ -382,17 +394,10 @@ class TimelinePlotWidget(QWidget):
 
     def _create_figure_and_axes(self) -> None:
         """Create a compact figure with a main axis and an overview axis."""
-        self.fig, (ax_main, ax_overview) = plt.subplots(
-            2,
-            1,
-            figsize=(15, 3),
-            sharex=False,
-            gridspec_kw={"height_ratios": [5, 1]},
-        )
-        plt.close(self.fig)  # prevent orphan figure window
-
-        self.ax_main = ax_main
-        self.ax_overview = ax_overview
+        self.fig = Figure(figsize=(15, 3))
+        gs = self.fig.add_gridspec(2, 1, height_ratios=[5, 1])
+        self.ax_main     = self.fig.add_subplot(gs[0])
+        self.ax_overview = self.fig.add_subplot(gs[1])
 
     def _reuse_axes_from_figure(self) -> None:
         axes = self.fig.axes
@@ -434,6 +439,9 @@ class TimelinePlotWidget(QWidget):
         self._mpl_cid_release = self.fig.canvas.mpl_connect(
             "button_release_event", self._on_release
         )
+        self.fig.canvas.mpl_connect(
+            "resize_event", self._on_canvas_resize
+        )
 
     # ==============================================================
     # Rendering pipeline
@@ -474,9 +482,13 @@ class TimelinePlotWidget(QWidget):
         if series is None or series.times.size == 0:
             return
 
+        # The overview is only ~screen-width pixels; decimate so a long
+        # recording is not re-rendered at full resolution on every redraw.
+        ov_t, ov_v = decimate_minmax(series.times, series.values)
+
         self.ax_overview.clear()
         self.ax_overview.plot(
-            series.times, series.values, linewidth=0.25, alpha=1, color=self.overview_color
+            ov_t, ov_v, linewidth=0.25, alpha=1, color=self.overview_color
         )
         style_axis_clean(self.ax_overview)
         self._set_time_axis(
@@ -493,6 +505,67 @@ class TimelinePlotWidget(QWidget):
             self.data.view.x_max,
         )
 
+    def hideEvent(self, event) -> None:
+        """Stop pending redraws when the widget is hidden."""
+        self._redraw_timer.stop()
+        super().hideEvent(event)
+
+    def _on_canvas_resize(self, event) -> None:
+        """Invalidate the blit background when the canvas is resized.
+
+        A resize while a drag is in progress would make the cached pixel
+        buffer stale (wrong dimensions). Clearing it forces the next
+        motion event to fall back to draw_idle instead of blitting the
+        old-sized background.
+        """
+        self._overview_bg = None
+
+    # ==============================================================
+    # Overview-rectangle blitting (smooth dragging)
+    # ==============================================================
+
+    def _begin_overview_blit(self) -> None:
+        """Capture the overview background so the drag can blit the rectangle.
+
+        The window rectangle is switched to an *animated* artist and the
+        rest of the figure is captured into an off-screen buffer once.
+        Each subsequent motion only restores that buffer and redraws the
+        rectangle, instead of re-rendering every artist in the figure.
+        """
+        if self.overview_window is None or self.ax_overview is None:
+            return
+        try:
+            patch = self.overview_window.patch
+            patch.set_animated(True)
+            self.canvas.draw()
+            self._overview_bg = self.canvas.copy_from_bbox(self.ax_overview.bbox)
+            self.ax_overview.draw_artist(patch)
+            self.canvas.blit(self.ax_overview.bbox)
+        except Exception:
+            # Any backend hiccup -> fall back to plain redraws.
+            self._overview_bg = None
+
+    def _update_overview_blit(self) -> None:
+        """Redraw only the moving rectangle against the cached background."""
+        if self._overview_bg is None or self.overview_window is None:
+            self.canvas.draw_idle()
+            return
+        try:
+            self.canvas.restore_region(self._overview_bg)
+            self.ax_overview.draw_artist(self.overview_window.patch)
+            self.canvas.blit(self.ax_overview.bbox)
+        except Exception:
+            self.canvas.draw_idle()
+
+    def _end_overview_blit(self) -> None:
+        """Tear down blit state; the caller does a full redraw afterwards."""
+        if self.overview_window is not None:
+            try:
+                self.overview_window.patch.set_animated(False)
+            except Exception:
+                pass
+        self._overview_bg = None
+
     # ==============================================================
     # Navigation helpers
     # ==============================================================
@@ -505,12 +578,24 @@ class TimelinePlotWidget(QWidget):
         return series is not None and series.times.size > 0
 
     def _set_window(self, x_min: float, x_max: float) -> None:
-        """Update the current view window and redraw."""
+        """Update the current view window and schedule a debounced redraw.
+
+        Rapid successive calls (e.g. holding a toolbar button) accumulate
+        the view-state change but only trigger one redraw once the burst
+        of clicks stops.
+        """
         assert self.data is not None and self.data.view is not None
         self.data.view.x_min = float(x_min)
         self.data.view.x_max = float(x_max)
-        self.redraw()
-        self.viewChanged.emit()
+        self._redraw_timer.start()  # restarts the timer if already running
+
+    def _deferred_redraw(self) -> None:
+        """Fired by the debounce timer; does the actual redraw and view sync."""
+        try:
+            self.redraw()
+            self.viewChanged.emit()
+        except RuntimeError:
+            pass
 
     def _constrained_window(self, x_min: float, x_max: float) -> tuple[float, float]:
         """Clamp the window [x_min, x_max] to the primary-series data range."""
@@ -609,6 +694,8 @@ class TimelinePlotWidget(QWidget):
             else:
                 self.data.view.drag_mode = "center"
 
+            self._begin_overview_blit()
+
     def _on_motion(self, event) -> None:
         """Update the visible window while dragging."""
         if event.inaxes is None or self.data is None or self.data.view is None:
@@ -641,7 +728,7 @@ class TimelinePlotWidget(QWidget):
 
             if self.overview_window is not None:
                 self.overview_window.set_window(x_min, x_max)
-            self.canvas.draw_idle()
+            self._update_overview_blit()
 
     def _on_release(self, event) -> None:
         """Finish dragging the overview window."""
@@ -649,6 +736,7 @@ class TimelinePlotWidget(QWidget):
             return
         was_dragging = self.data.view.drag_mode is not None
         self.data.view.drag_mode = None
+        self._end_overview_blit()
         self.redraw()
         if was_dragging:
             self.viewChanged.emit()

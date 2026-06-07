@@ -9,14 +9,15 @@ import numpy as np
 
 from spectHR.DataSet.loaders.registry import register_loader
 from spectHR.DataSet.loaders.nff_loader import load_nff
+from spectHR.DataSet.loaders.code_selection import resolve_epoch_codes
 from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.Series.CardioSeries import CardioSeries
 from spectHR.Tools.Logger import logger
 
-# NOTE: ``EventCodeWindow`` lives in ``spectUI`` (it's a PySide6 dialog).
-# We resolve it lazily inside ``_load_evt_data`` so that ``import spectHR`` works
-# in headless environments - only the GUI path through .evt files with
-# multiple non-RTop codes needs Qt.
+# Picking which event codes mark epoch starts/stops (for .evt files with
+# >2 non-RTop codes) is a UI decision. The loader stays headless by asking
+# the resolver registered in ``code_selection``; the UI registers a
+# dialog-backed one at start-up, headless callers get a single epoch.
 
 # CARSPAN internal unit scale factors.
 # IBI is stored in units of 0.1 ms; divide by 10 000 to get seconds.
@@ -238,21 +239,11 @@ def _load_evt_data(physiodata, filename: Path) -> None:
 
     if unique_other_codes.size > 2:
         # ----------------------------------------------
-        # GUI-based code selection
+        # Code selection (UI-driven, headless-safe)
         # ----------------------------------------------
-        # Lazy import keeps ``spectHR`` headless-safe - the dialog lives
-        # in ``spectUI`` and only this branch (a .evt file with multiple
-        # non-RTop codes) reaches it.
-        from spectUI.widgets.EventCodeWindow import EventCodeWindow
-
-        window = EventCodeWindow(
-            other_codes,
-            ignore=rtop_code,
-        )
-        window.exec()
-
-        start_codes = window.start_codes
-        stop_codes = window.stop_codes
+        # Delegate to the registered resolver. Headless callers get
+        # ([], []) and fall through to the single-epoch default below.
+        start_codes, stop_codes = resolve_epoch_codes(other_codes, rtop_code)
 
         if start_codes and stop_codes:
             start_times = other_times[np.isin(other_codes, start_codes)]

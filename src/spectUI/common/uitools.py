@@ -39,6 +39,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+# ``decimate_minmax`` is a pure-numpy data-reduction routine; it now lives
+# in ``spectHR.Tools.Decimation`` and is re-exported here (and via
+# ``spectUI.common``) so the plot widgets' imports keep working unchanged.
+from spectHR.Tools.Decimation import decimate_minmax  # noqa: E402,F401
+
 
 # ---------------------------------------------------------------------------
 # Post-export dialog

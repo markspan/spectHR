@@ -197,7 +197,10 @@ def _band_bounds(bands: dict) -> tuple[float, float, float, float]:
     X-axis uses ``FullRange`` if defined, else the union of all bands.
     Scaling range excludes ``FullRange`` so a wide overview band doesn't
     dominate the y-limit.
+    Returns safe defaults (0–0.5 Hz) when bands is empty or unconfigured.
     """
+    if not bands:
+        return 0.0, 0.5, 0.0, 0.5
     if "FullRange" in bands:
         x_min = bands["FullRange"]["low"]
         x_max = bands["FullRange"]["high"]
@@ -315,6 +318,7 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         parent: QWidget | None = None,
         *,
         workspace: dict[str, Any] | None = None,
+        _precomputed: list | None = None,
     ) -> None:
         super().__init__(parent)
 
@@ -328,10 +332,15 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
         )
 
         # One call to the PSD backends per series; compute y-max before drawing.
-        plots: list[_PlotData] = [
-            _fetch(series, label, psd_method=psd_method)
-            for series, label in zip(series_list, labels)
-        ]
+        # When _precomputed is supplied the heavy fetch is skipped (already done
+        # on a background thread by DockScheduler).
+        if _precomputed is not None:
+            plots: list[_PlotData] = _precomputed
+        else:
+            plots = [
+                _fetch(series, label, psd_method=psd_method)
+                for series, label in zip(series_list, labels)
+            ]
         y_max = max((_y_max(p, scale_min, scale_max) for p in plots), default=0.0)
         y_top = y_max * 1.1 if y_max > 0 else 1.0
 
@@ -360,6 +369,31 @@ class PSDPlotWidget(YZoomMixin, PlotExportMixin, QWidget):
 
     # _save_all_plots / _resolve_export_dir / _dataset_prefix /
     # _build_filename_stem  inherited from PlotExportMixin
+
+    # ------------------------------------------------------------------
+    # Background prefetch (call on a worker thread, pass result as _precomputed)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def prefetch(
+        series_list,
+        labels,
+        workspace: dict[str, Any] | None,
+    ) -> list[_PlotData]:
+        """Compute per-epoch PSD data without touching any Qt object.
+
+        Intended to be called on a background thread via
+        :class:`~spectUI.plot_worker.DockScheduler`.  Pass the returned list
+        as ``_precomputed`` to the constructor so the main thread only handles
+        the fast matplotlib rendering step.
+        """
+        psd_method: PsdMethod | None = (
+            psd_method_from_workspace(workspace) if workspace is not None else None
+        )
+        return [
+            _fetch(series, label, psd_method=psd_method)
+            for series, label in zip(series_list, labels)
+        ]
 
     # ------------------------------------------------------------------
     # Pure plotting backend

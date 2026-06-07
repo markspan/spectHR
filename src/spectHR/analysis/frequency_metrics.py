@@ -133,7 +133,10 @@ def hf_power(series, psd_method=None) -> float:
 
 @epoch_metric
 def lf_hf_ratio(series, psd_method=None) -> float:
-    """LF/HF ratio - sympatho-vagal balance indicator."""
+    """LF/HF ratio. Historically read as sympatho-vagal balance, but that
+    interpretation is not supported by current evidence (Billman 2013;
+    Reyes del Paso et al. 2013) — LF reflects mixed autonomic influences,
+    not a clean sympathetic index. Report the ratio descriptively."""
     try:
         method = _resolve_method(series, psd_method)
         if method is None:

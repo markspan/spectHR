@@ -15,12 +15,14 @@ Preprocessing and IBI views.
 """
 from __future__ import annotations
 
+import numpy as np
 from matplotlib.figure import Figure
 
 from spectHR.DataSet.PhysioData import PhysioData
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectUI.common import (
     TimelinePlotWidget,
+    decimate_minmax,
     draw_interval_arrows,
     style_axis_clean,
 )
@@ -76,9 +78,22 @@ class BPPlotWidget(TimelinePlotWidget):
         if bp is None:
             return
 
+        # Mask to the visible window, then min/max-decimate to ~screen
+        # resolution. Previously the full recording was drawn on every
+        # redraw (only the x-limits were clipped), pushing millions of
+        # points through matplotlib. Masking also scales the y-axis to the
+        # current window, matching the ECG view.
+        x0, x1 = self.data.view.x_min, self.data.view.x_max
+        mask = (bp.times >= x0) & (bp.times <= x1)
+        if np.any(mask):
+            plot_times, plot_values = bp.times[mask], bp.values[mask]
+        else:
+            plot_times, plot_values = bp.times, bp.values
+        plot_times, plot_values = decimate_minmax(plot_times, plot_values)
+
         self.ax_main.clear()
         self.ax_main.plot(
-            bp.times, bp.values, color="darkblue", linewidth=1.0, alpha=1.0
+            plot_times, plot_values, color="darkblue", linewidth=1.0, alpha=1.0
         )
         #self.ax_main.set_title("Blood Pressure Timeseries")
         self.ax_main.set_ylabel("Blood pressure [mmHg]")

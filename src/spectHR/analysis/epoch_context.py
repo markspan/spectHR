@@ -55,17 +55,25 @@ class EpochContext:
     """
 
     def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None,
-                 rsp_phases=None, rsa_lag_s: float = 1.0):
+                 rsp_phases=None, rsa_lag_s: float = 1.0,
+                 rsa_max_ibi_deviation=None, rsa_max_rate_deviation=None,
+                 icg_ts=None, ecg_ts=None, b_point_guard_ms: float = 30.0):
         self.view = view
         self.psd_method = psd_method
         self.bp_ts = bp_ts
         self.rsp_ts = rsp_ts
         self.rsp_phases = rsp_phases  # RespirationSeriesView for this epoch
         self.rsa_lag_s = rsa_lag_s
+        self.rsa_max_ibi_deviation = rsa_max_ibi_deviation   # None = disabled
+        self.rsa_max_rate_deviation = rsa_max_rate_deviation  # None = disabled
+        self.icg_ts = icg_ts          # ICG dZ/dt TimeSeries (for PEP), or None
+        self.ecg_ts = ecg_ts          # ECG waveform for Q-onset detection, or None
+        self.b_point_guard_ms = b_point_guard_ms  # PEP B-point guard zone (ms)
         self._psd = _UNSET
         self._bp_beats = _UNSET
         self._resp_beats = _UNSET
         self._rsa_beats = _UNSET
+        self._pep_detail = _UNSET
 
     # ------------------------------------------------------------------ #
     # Series-interface delegation                                         #
@@ -168,6 +176,47 @@ class EpochContext:
                 np.asarray(self.labels,      dtype=object),
                 self.rsp_phases,
                 lag_s=self.rsa_lag_s,
+                max_ibi_deviation=self.rsa_max_ibi_deviation,
+                max_rate_deviation=self.rsa_max_rate_deviation,
             )
         except Exception:
             return None
+
+    @property
+    def pep_detail(self):
+        """Ensemble-PEP detail dict (cached) — the scored Q/B/C landmarks plus
+        the ensemble-averaged ICG/ECG complexes (see
+        :func:`spectHR.analysis.icg_metrics.pep_ensemble`).  ``None`` when no ICG
+        channel is present or no scorable ensemble could be formed."""
+        if self._pep_detail is _UNSET:
+            self._pep_detail = self._compute_pep_detail()
+        return self._pep_detail
+
+    def _compute_pep_detail(self):
+        if self.icg_ts is None:
+            return None
+        try:
+            from spectHR.analysis.icg_metrics import pep_ensemble
+            ecg_kw: dict = {}
+            if self.ecg_ts is not None:
+                ecg_kw = dict(
+                    ecg_times=np.asarray(self.ecg_ts.times, dtype=float),
+                    ecg_values=np.asarray(self.ecg_ts.values, dtype=float),
+                )
+            return pep_ensemble(
+                np.asarray(self.icg_ts.times, dtype=float),
+                np.asarray(self.icg_ts.values, dtype=float),
+                np.asarray(self.rpeak_times, dtype=float),
+                b_guard_ms=self.b_point_guard_ms,
+                return_detail=True,
+                **ecg_kw,
+            )
+        except Exception:
+            return None
+
+    @property
+    def pep_value(self):
+        """Epoch pre-ejection period (ms, cached) from the ensemble-averaged
+        ICG/ECG complex, or ``None`` when no ICG channel is present."""
+        detail = self.pep_detail
+        return None if detail is None else detail.get("pep")

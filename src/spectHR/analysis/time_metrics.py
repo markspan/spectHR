@@ -78,6 +78,37 @@ def stationarity(series) -> float:
     return float(np.corrcoef(ibi_ms, t)[0, 1])
 
 
+@epoch_metric
+def stationarity_z(series) -> float:
+    """Reverse-arrangements stationarity test statistic (Bendat & Piersol).
+
+    The linear ``stationarity`` correlation above only catches a monotone
+    drift in the mean. The reverse-arrangements test is a distribution-free
+    test for any trend in the IBI series: it counts, over all pairs i < j,
+    how often a later interval exceeds an earlier one and standardises that
+    count against its null mean and variance.
+
+    The return value is a z-score: under stationarity it is ~N(0, 1), so
+    ``|z| > 1.96`` flags a non-stationary epoch at the 5% level — a warning
+    that whole-epoch spectral estimates (which assume stationarity) should
+    be interpreted with care. Returns ``NaN`` for epochs shorter than 10
+    valid intervals.
+    """
+    ibi_ms = ibi_clean_ms(series)
+    n = ibi_ms.size
+    if n < 10:
+        return np.nan
+    # Count reverse arrangements A = #{(i, j): i < j, ibi[j] > ibi[i]}.
+    a = 0
+    for i in range(n - 1):
+        a += int(np.count_nonzero(ibi_ms[i + 1:] > ibi_ms[i]))
+    mean_a = n * (n - 1) / 4.0
+    var_a = (2.0 * n ** 3 + 3.0 * n ** 2 - 5.0 * n) / 72.0
+    if var_a <= 0:
+        return np.nan
+    return float((a - mean_a) / np.sqrt(var_a))
+
+
 # ---------------------------------------------------------------------------
 # Variability
 # ---------------------------------------------------------------------------

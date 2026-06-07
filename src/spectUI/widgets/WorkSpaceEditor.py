@@ -124,7 +124,7 @@ _EXCLUDED_SECTIONS = {"Directories"}
 # future workspace additions stay editable even before they're explicitly
 # routed.
 _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration", "Logging")),
+    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration", "IcgAnalysis", "Logging")),
     ("PSD Settings",         ("FrequencyAnalysis",)),
     ("Profile Settings",     ("Profiles",)),
     ("Spectrogram Settings", ("Spectrogram",)),
@@ -180,8 +180,16 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     # Minimum severity shown in the Log dock / console (most verbose first).
     "Logging.level": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     "RespirationAnalysis.rsa_overlay": ["rsa", "rsa0", "none"],
+    # Respiration source for ICG-capable (VU-AMS) recordings: the thoracic
+    # impedance (ICG) signal — what VU-AMS scores RSA from — or the
+    # accelerometer chest-wall surrogate.
+    "RespirationAnalysis.rsp_source": ["icg", "accelerometer"],
+    # Breath rejection guards for the Grossman peak-to-valley RSA algorithm:
+    #   none   - no extra rejection (default; legacy spectHR behaviour).
+    #   strict - VU-AMS-style irregular-IBI + irregular-rate guards; brings
+    #            RSA0 closer to VU-AMS output on noisy/sitting recordings.
+    "RespirationAnalysis.rsa_rejection_mode": ["none", "strict"],
 }
-
 
 def _label(key: str) -> str:
     """Turn a snake_case or camelCase key into a human-readable label.
@@ -496,13 +504,24 @@ class ParametersEditorDialog(QDialog):
         sections_per_tab: dict[str, list[str]] = {
             tab_label: [] for tab_label, _ in _TAB_LAYOUT
         }
-        for section_key in workspace:
-            if section_key in _EXCLUDED_SECTIONS:
-                continue
-            if not isinstance(workspace[section_key], dict):
-                continue
-            tab_label = explicit_routes.get(section_key, first_tab_label)
-            sections_per_tab.setdefault(tab_label, []).append(section_key)
+        # Sections valid for editing (dict-valued, not excluded).
+        present = [
+            k for k in workspace
+            if k not in _EXCLUDED_SECTIONS and isinstance(workspace[k], dict)
+        ]
+        present_set = set(present)
+        # Order within each tab follows the declared ``_TAB_LAYOUT`` sequence
+        # (not the workspace JSON key order), so the editor layout is stable
+        # regardless of how a saved workspace happens to order its keys.
+        for tab_label, sec_keys in _TAB_LAYOUT:
+            for sec in sec_keys:
+                if sec in present_set:
+                    sections_per_tab[tab_label].append(sec)
+        # Any section without an explicit route falls into the first tab, in
+        # workspace order, so future additions stay editable before routing.
+        for sec in present:
+            if sec not in explicit_routes:
+                sections_per_tab[first_tab_label].append(sec)
 
         # ---- one tab per group ------------------------------------------------
         tabs = QTabWidget()
@@ -721,6 +740,13 @@ class ParametersEditorDialog(QDialog):
     # All members must be scalars in the same section; dicts, band-lists,
     # and adaptive-band widgets are never grouped horizontally.
     _HORIZONTAL_GROUPS: dict[str, list[str]] = {
+        # General Settings — keep each box compact (one row, except IBI
+        # Classification which has four fields and reads better as two rows).
+        "CardioParameters.IbiClassification.window_length": ["n_std"],
+        "CardioParameters.IbiClassification.max_ibi_sec":   ["min_peak_distance_ms"],
+        "CardioParameters.EcgPreprocessing.filter_type":    ["filter_cutoff"],
+        "RespirationAnalysis.per_epoch":                    ["rsa_lag_s", "rsa_overlay"],
+        "Calibration.bp_scale":                            ["bp_zero"],
         # Transfer
         "TransferAnalysis.f_min":                  ["f_max"],
         "TransferAnalysis.window (sec)":           ["step (sec)"],

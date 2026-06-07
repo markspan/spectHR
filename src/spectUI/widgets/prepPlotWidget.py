@@ -22,7 +22,7 @@ from matplotlib.axes import Axes
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -31,9 +31,8 @@ from PySide6.QtWidgets import (
 )
 
 from spectHR.DataSet.PhysioData import PhysioData
+from spectHR.DataSet.RTopController import RTopController
 from spectHR.DataSet.Series.TimeSeries import TimeSeries
-from spectHR.DataSet.Series.CardioSeries import CardioSeries
-from spectHR.DataSet.Series.CardioSeriesView import CardioSeriesView
 from spectUI.common import (
     AxisYState,
     EpochName,
@@ -43,139 +42,20 @@ from spectUI.common import (
     TimeSeconds,
     ViewState,
     draw_interval_arrows,
+    decimate_minmax,
     make_nav_button,
     style_axis_clean,
     swap_canvas,
 )
+from spectUI.plot_worker import DockScheduler
 
 # ``AxisYState``, ``ViewState``, ``draw_interval_arrows`` and the
 # ``TimeSeconds`` / ``EpochName`` aliases now live in
 # ``spectUI.common.timeline`` so every timeline widget shares one
 # window-state model. They are imported above and re-used unchanged here.
 
-# ======================================================================
-# R-top controller
-# ======================================================================
-
-
-class RTopController:
-    """
-    Encapsulates all mutations & queries on a CardioSeries (R-top data).
-
-    This class is purely about *data*: no plotting, no Qt.
-
-    After any mutation to R-peak times, `classify_ibi()` is called
-    automatically so that labels always reflect the current IBI values.
-    """
-
-    def __init__(self, rtops: CardioSeries) -> None:
-        """
-        Parameters
-        ----------
-        rtops:
-            The CardioSeries instance to control (mutated in place).
-        """
-        self.rtops = rtops
-
-    @property
-    def times(self) -> np.ndarray:
-        """R-top times in seconds."""
-        return self.rtops.times
-
-    @property
-    def labels(self) -> np.ndarray:
-        """Labels aligned to R-top indexing."""
-        return self.rtops.labels
-
-    @property
-    def ibi(self) -> np.ndarray:
-        """Inter-beat intervals in seconds."""
-        return self.rtops.ibi
-
-    def _sort_by_time(self) -> None:
-        """Keep times & labels sorted ascending by time."""
-        order = np.argsort(self.rtops.times)
-        self.rtops.times = self.rtops.times[order]
-        self.rtops.labels = self.rtops.labels[order]
-
-    def _closest_idx(self, t: float) -> int:
-        """Return index of R-top closest in time to t."""
-        return int(np.argmin(np.abs(self.rtops.times - t)))
-
-    def move(self, old_t: float, new_t: float) -> None:
-        """
-        Move the closest R-top around old_t to new_t (seconds).
-
-        Reclassifies all IBIs after the move so that label colours
-        reflect the updated intervals immediately on redraw.
-        """
-        idx = self._closest_idx(old_t)
-        self.rtops.times[idx] = float(new_t)
-        self._sort_by_time()
-        self.rtops.classify_ibi()  # labels must reflect the new IBI values
-
-    def add(self, t: float, label: str = "N") -> None:
-        """
-        Insert a new R-top at time t with label.
-
-        Reclassifies all IBIs after insertion so that the new interval
-        and its neighbours are correctly labelled.
-
-        Parameters
-        ----------
-        t:
-            Time in seconds.
-        label:
-            Initial label string (default: "N"). Will be overwritten by
-            classification unless the series is too short to classify.
-        """
-        self.rtops.times = np.concatenate(
-            [self.rtops.times, np.array([t], dtype=float)]
-        )
-        self.rtops.labels = np.concatenate(
-            [self.rtops.labels, np.array([label], dtype=object)]
-        )
-        self._sort_by_time()
-        self.rtops.classify_ibi()  # labels must reflect the new IBI values
-
-    def delete(self, t: float) -> None:
-        """
-        Delete the R-top closest to t.
-
-        Reclassifies all IBIs after deletion so that the merged interval
-        is correctly labelled.
-        """
-        idx = self._closest_idx(t)
-        mask = np.ones(self.rtops.times.shape[0], dtype=bool)
-        mask[idx] = False
-        self.rtops.times = self.rtops.times[mask]
-        self.rtops.labels = self.rtops.labels[mask]
-        self.rtops.classify_ibi()  # labels must reflect the merged interval
-
-    def next_non_normal(self, after_time: float) -> float | None:
-        """
-        First non-'N' R-top strictly after `after_time`.
-        """
-        mask = (self.rtops.labels != "N") & (self.rtops.times > after_time)
-        if not np.any(mask):
-            return None
-        return float(self.rtops.times[mask][0])
-
-    def prev_non_normal(self, before_time: float) -> float | None:
-        """
-        Last non-'N' R-top strictly before `before_time`.
-        """
-        mask = (self.rtops.labels != "N") & (self.rtops.times < before_time)
-        if not np.any(mask):
-            return None
-        return float(self.rtops.times[mask][-1])
-
-    def window_view(self, x_min: float, x_max: float) -> CardioSeriesView:
-        """
-        Return a CardioSeriesView restricted to [x_min, x_max].
-        """
-        return self.rtops.view(x_min, x_max)
-
+# ``RTopController`` is the headless R-peak editing API; it now lives in
+# ``spectHR.DataSet.RTopController`` and is imported above.
 
 # ======================================================================
 # OverviewWindow (shared, see spectUI._uitools)
@@ -251,11 +131,30 @@ class PrepPlotWidget(TimelinePlotWidget):
         self.line_handler: LineHandler | None = None
         self.edit_mode: str = "Drag"
 
+        # Cached overview background for blitting the window rectangle during a
+        # drag (blit helpers are inherited from TimelinePlotWidget).
+        self._overview_bg = None
+
         # Matplotlib event ids
         self._mpl_cid_press: int | None = None
         self._mpl_cid_move: int | None = None
         self._mpl_cid_release: int | None = None
         self._mpl_cid_key_press: int | None = None
+
+        # Debounce timer for toolbar nav (shared with TimelinePlotWidget._set_window).
+        # PrepPlotWidget skips TimelinePlotWidget.__init__, so we create it here.
+        self._redraw_timer = QTimer(self)
+        self._redraw_timer.setSingleShot(True)
+        self._redraw_timer.setInterval(160)
+        self._redraw_timer.timeout.connect(self._deferred_redraw)
+
+        # IBI re-classification after R-top edits runs on a background thread
+        # (it is O(n) over every beat). The structural change is shown
+        # immediately with stale labels; when the worker finishes, the final
+        # label-corrected redraw + dataEdited notification happen on the main
+        # thread. Rapid edits bump the generation counter so only the latest
+        # classification is applied (see plot_worker.DockScheduler).
+        self._classify_scheduler = DockScheduler()
 
         # R-top color mapping
         self.RTopColors = {
@@ -495,14 +394,11 @@ class PrepPlotWidget(TimelinePlotWidget):
         - a main ECG axis (with optional breathing overlay)
         - an overview axis
         """
-        self.fig, (ax_ecg, ax_overview) = plt.subplots(
-            2,
-            1,
-            figsize=(15, 3),
-            sharex=False,
-            gridspec_kw={"height_ratios": [5, 1]},
-        )
-        self.ax_ecg, self.ax_overview = ax_ecg, ax_overview
+        self.fig = Figure(figsize=(15, 3))
+        self.fig.set_facecolor("white")
+        gs = self.fig.add_gridspec(2, 1, height_ratios=[5, 1])
+        self.ax_ecg      = self.fig.add_subplot(gs[0])
+        self.ax_overview = self.fig.add_subplot(gs[1])
         self._compact_layout()
 
     def _reuse_axes_from_figure(self) -> None:
@@ -632,6 +528,13 @@ class PrepPlotWidget(TimelinePlotWidget):
             plot_times = ecg.times
             plot_values = ecg.values
 
+        # A screen can't show more samples than it has pixels: min/max
+        # decimate the visible segment so a wide window doesn't push
+        # millions of points through matplotlib. The envelope (incl.
+        # R-peaks) and the per-window min/max — and thus the y-autoscale
+        # below — are preserved. No-op once zoomed in past ~screen width.
+        plot_times, plot_values = decimate_minmax(plot_times, plot_values)
+
         self.ax_ecg.clear()
         self.ax_ecg.plot(
             plot_times,
@@ -725,6 +628,9 @@ class PrepPlotWidget(TimelinePlotWidget):
         else:
             plot_times = ts.times
             plot_values = ts.values
+
+        # Decimate the visible segment to ~screen resolution (see _draw_ecg).
+        plot_times, plot_values = decimate_minmax(plot_times, plot_values)
 
         ax_br.plot(
             plot_times,
@@ -939,10 +845,13 @@ class PrepPlotWidget(TimelinePlotWidget):
         assert self.data is not None and self.data.view is not None
 
         ecg = self.ecg_series
+        # The overview is only ~screen-width pixels; decimate so a long
+        # recording is not re-rendered at full resolution on every redraw.
+        ov_t, ov_v = decimate_minmax(ecg.times, ecg.values)
         self.ax_overview.clear()
         self.ax_overview.plot(
-            ecg.times,
-            ecg.values,
+            ov_t,
+            ov_v,
             linewidth=0.25,
             alpha=0.5,
             color="blue",
@@ -1138,6 +1047,8 @@ class PrepPlotWidget(TimelinePlotWidget):
             else:
                 self.data.view.drag_mode = "center"
 
+            self._begin_overview_blit()
+
         # Add-mode: add a new R-top on ECG axis
         elif (
             self.edit_mode == "Add"
@@ -1145,9 +1056,9 @@ class PrepPlotWidget(TimelinePlotWidget):
             and self.rtop_ctrl is not None
             and event.xdata is not None
         ):
-            self.rtop_ctrl.add(float(event.xdata), label="N")
-            self.redraw()
-            self.dataEdited.emit()
+            self.rtop_ctrl.add_no_classify(float(event.xdata), label="N")
+            self.redraw()                 # instant structural feedback (stale labels)
+            self._classify_async()        # final label-corrected redraw off-thread
 
     def _on_motion(self, event) -> None:
         """
@@ -1188,20 +1099,22 @@ class PrepPlotWidget(TimelinePlotWidget):
             self.data.view.x_max = x_max
             if self.overview_window is not None:
                 self.overview_window.set_window(x_min, x_max)
-            self.canvas.draw_idle()
+            self._update_overview_blit()
 
     def _on_release(self, event) -> None:
-        """Finish overview dragging and redraw full plot."""
-        if (
-            event.inaxes is self.ax_overview
-            and self.data is not None
-            and self.data.view is not None
-        ):
-            was_dragging = self.data.view.drag_mode is not None
-            self.data.view.drag_mode = None
-            self.redraw()
-            if was_dragging:
-                self.viewChanged.emit()
+        """Finish overview dragging and redraw full plot.
+
+        Finishes the drag wherever the mouse is released (it may leave the
+        overview axis mid-drag), so the blit state is always torn down.
+        """
+        if self.data is None or self.data.view is None:
+            return
+        if self.data.view.drag_mode is None:
+            return
+        self.data.view.drag_mode = None
+        self._end_overview_blit()
+        self.redraw()
+        self.viewChanged.emit()
 
     # ------------------------------------------------------------------
     # LineHandler callbacks (R-top drag/remove)
@@ -1211,14 +1124,52 @@ class PrepPlotWidget(TimelinePlotWidget):
         """Called when a R-top line is dragged to a new position."""
         if self.rtop_ctrl is None:
             return
-        self.rtop_ctrl.move(old_x, new_x)
-        self.redraw()
-        self.dataEdited.emit()
+        self.rtop_ctrl.move_no_classify(old_x, new_x)
+        self.redraw()                 # instant structural feedback (stale labels)
+        self._classify_async()        # final label-corrected redraw off-thread
 
     def _on_line_remove(self, old_x: float, new_x: float) -> None:
         """Called when a R-top line is removed."""
         if self.rtop_ctrl is None:
             return
-        self.rtop_ctrl.delete(new_x)
-        self.redraw()
-        self.dataEdited.emit()
+        self.rtop_ctrl.delete_no_classify(new_x)
+        self.redraw()                 # instant structural feedback (stale labels)
+        self._classify_async()        # final label-corrected redraw off-thread
+
+    def _classify_async(self) -> None:
+        """Reclassify IBIs on a background thread, then redraw + notify.
+
+        The structural edit has already been applied and drawn with stale
+        labels. Here we snapshot the IBI/label arrays on the main thread,
+        run the O(n) classification on the pool, and apply the result back
+        on the main thread once it completes. The scheduler's generation
+        counter means a fresh edit cancels an in-flight classification, so
+        only the labels for the latest edit are ever applied.
+        """
+        if self.rtop_ctrl is None:
+            return
+        rtops = self.rtop_ctrl.rtops
+        ibi_snapshot    = np.asarray(rtops.ibi,    dtype=float).copy()
+        labels_snapshot = np.asarray(rtops.labels, dtype=object).copy()
+
+        def compute():
+            from spectHR.Tools.IbiClassification import classify_ibi
+            classify_ibi(ibi_snapshot, labels_snapshot)  # mutates the copy
+            return labels_snapshot
+
+        def on_done(new_labels):
+            if self.rtop_ctrl is None:
+                return
+            rtops = self.rtop_ctrl.rtops
+            # Belt-and-suspenders: the generation guard already discards
+            # results superseded by a later edit, so the length matches.
+            if new_labels.shape[0] != rtops.labels.shape[0]:
+                return
+            try:
+                rtops.labels = new_labels
+                self.redraw()
+            except RuntimeError:
+                return
+            self.dataEdited.emit()
+
+        self._classify_scheduler.submit("prep_classify", compute, on_done)

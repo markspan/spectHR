@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import numpy as np
-import matplotlib.pyplot as plt
 import mplcursors
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 from matplotlib.patches import Ellipse
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -53,8 +53,8 @@ class PoincarePlotWidget(QWidget):
         self.cursor = None
 
         # Matplotlib figure
-        self.fig, self.ax = plt.subplots(figsize=(6, 6))
-        plt.close(self.fig)  # prevent orphan figure window
+        self.fig = Figure(figsize=(6, 6))
+        self.ax  = self.fig.add_subplot(111)
         self.canvas = FigureCanvas(self.fig)
 
         # --- layout ----------------------------------------------------

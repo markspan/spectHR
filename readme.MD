@@ -32,7 +32,7 @@ This project is a work in progress. Blood-pressure support (calibration, beat-by
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
 - [Step 6, Track band power over time (Profiles tab)](#step-6-track-band-power-over-time-profiles-tab)
-- [Step 7, Examine respiration -> HR coupling (Transfer tab)](#step-7-examine-respiration--hr-coupling-transfer-tab)
+- [Step 7, Examine input → HR coupling: RSA and baroreflex (Transfer tab)](#step-7-examine-input--hr-coupling-rsa-and-baroreflex-transfer-tab)
 - [Step 8, Export your results (Parameters tab)](#step-8-export-your-results-parameters-tab)
 
 </details>
@@ -63,11 +63,23 @@ This project is a work in progress. Blood-pressure support (calibration, beat-by
 </details>
 
 <details open>
+<summary><a href="#respiration-context-hf"><strong>Respiration-context HF</strong></a></summary>
+</details>
+
+<details open>
 <summary><a href="#blood-pressure"><strong>Blood Pressure</strong></a></summary>
 </details>
 
 <details open>
+<summary><a href="#pre-ejection-period-pep"><strong>Pre-ejection period (PEP)</strong></a></summary>
+</details>
+
+<details open>
 <summary><a href="#poincaré-metrics"><strong>Poincaré Metrics</strong></a></summary>
+</details>
+
+<details open>
+<summary><a href="#non-linear-and-stationarity-metrics"><strong>Non-linear and stationarity metrics</strong></a></summary>
 </details>
 
 <details>
@@ -139,21 +151,33 @@ HRV does not measure perceived stress. It measures a physiological state: the co
 
 ### Frequency bands
 
-spectHR follows the CARSPAN band convention. Band boundaries are **user-configurable**.
+spectHR defaults to the **CARSPAN (Groningen)** band convention, the one used throughout the mental-effort literature this tool serves. Band boundaries are **user-configurable**.
 
-| Band | Default range | Reflects |
-|------|--------------|------|
-| VLF | 0.02–0.06 Hz | Slow regulatory processes |
-| LF | 0.07–0.14 Hz | Baroreceptor reflex, mixed sympathetic/parasympathetic |
-| HF | 0.15–0.40 Hz | Respiratory sinus arrhythmia, parasympathetic tone |
+| Band | Default range | Also labelled | Reflects |
+|------|--------------|------|------|
+| VLF | 0.02–0.06 Hz | "low" | Slow regulatory processes |
+| LF | 0.07–0.14 Hz | "mid" / "middle" | ~0.10 Hz baroreceptor (Mayer) wave, mixed sympathetic/parasympathetic |
+| HF | 0.15–0.40 Hz | "high" | Respiratory sinus arrhythmia, parasympathetic tone |
 
-See [Mulder (1989)](#ref-mulder1989) and [Mulder (1988)](#ref-mulder1988) for background.
+The CARSPAN bands are sometimes written with the names **low / middle (mid) / high** rather than VLF / LF / HF — they refer to the same three components. The middle band is deliberately centred on the ~0.10 Hz oscillation that [Mulder (1980](#ref-mulder1980), [1989)](#ref-mulder1989) identified as the component most sensitive to invested mental effort. See also [Mulder (1988)](#ref-mulder1988) for background.
+
+**Alternative: Task Force (1996) bands.** Many clinical and general HRV studies use the [Task Force (1996)](#ref-taskforce1996) convention instead. You can switch to it by editing the band edges under **WorkSpace → Edit Parameters → Frequency Analysis**:
+
+| Band | Task Force range |
+|------|--------------|
+| VLF | ≤ 0.04 Hz (typically 0.003–0.04 Hz) |
+| LF | 0.04–0.15 Hz |
+| HF | 0.15–0.40 Hz |
+
+> **The two conventions are not interchangeable.** CARSPAN LF (0.07–0.14 Hz) is **narrower and shifted** relative to Task Force LF (0.04–0.15 Hz), and the VLF edges differ too. Numeric LF or VLF values from spectHR's default bands cannot be compared directly with published Task Force values unless you reconfigure the band edges to match. HF (0.15–0.40 Hz) is identical in both conventions.
 
 ### Practical considerations
 
 **Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals (visible in spectHR's shaded CI band). Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2019) showed that a 10-second ECG can yield a valid RMSSD estimate in large samples.
 
 **Artefacts are critical.** A single missed or spurious R-peak introduces broadband spectral energy that can swamp the genuine HRV signal ([Mulder, 1988](#ref-mulder1988)). This is why spectHR requires the user to inspect and verify the IBI series before computing any metrics.
+
+**Detrending (optional).** Slow, non-stationary trends in the IBI series — warm-up, fatigue, posture shifts — leak into the VLF and LF bands and can bias exactly the mid-frequency band that mental-effort research cares about. spectHR offers the smoothness-priors detrending method of [Tarvainen et al. (2002)](#ref-tarvainen2002), which removes such trends without the band-edge distortion of a plain high-pass filter. It is **off by default**; set `detrend_lambda` (the regularisation strength λ; a typical value is ~500) under **WorkSpace → Edit Parameters → Frequency Analysis** to enable it. Detrending conditions the tachogram-based PSD methods (**Welch**, **Lomb-Scargle**) only; the faithful CARSPAN spectral paths are never altered.
 
 **Normalisation.** Absolute spectral power in ms² scales with mean IBI squared, increasing at lower heart rates. The CARSPAN mMI² normalisation corrects for this automatically. For the Welch method the output unit is configurable: the default is **mMI²** (normalised, heart-rate-independent) but can be switched to **ms²** (raw IBI power, not normalised) via the `"units"` key in *Edit Parameters*. Whether to normalise HRV for mean heart rate is genuinely unresolved ([de Geus et al., 2019](#ref-degeus2019)), and no single recommendation fits all research questions.
 
@@ -194,7 +218,7 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | **Epochs** | Draw and adjust your analysis segments |
 | **PSD** | Read the frequency-domain power spectrum per epoch |
 | **Profiles** | Track each band's power as it evolves over time within an epoch |
-| **Transfer** | Bode plot of how the breathing rhythm drives HRV: modulus, phase, and coherence over frequency for each epoch |
+| **Transfer** | Bode plot of how an input signal — blood pressure (baroreflex, the default) or respiration (RSA) — drives HRV: modulus, phase, and coherence over frequency for each epoch |
 | **Transfer profile** | Sliding-window time course of the same modulus / phase / coherence summaries per band |
 | **Parameters** | See all HRV metrics in a table and export two files: a scalar CSV (all summaries, opens in JASP / SPSS) and an HDF5 file (full spectra, profile and transfer time series) |
 
@@ -236,7 +260,7 @@ Once the peaks look correct, switch to the **IBI Series tab** to see heart rate 
 
 If the recording carries a continuous blood-pressure waveform (for example the BP channel of a CARSPAN `.nff` file), the **Blood Pressure tab** appears and shows that waveform on the same scrollable, zoomable timeline as the ECG and IBI views — pan/zoom is linked, so framing one view re-frames the others. When the BP channel arrives uncalibrated, spectHR converts it from raw A/D counts to **mmHg** using a linear calibration `mmHg = scale · raw + zero`, configurable under **WorkSpace → Edit Parameters → General Settings → Calibration** (`bp_scale`, `bp_zero`; defaults 0.125 / 0 match the worked example in the CARCAL manual for a Finapres/Finometer through a 12-bit converter). If the file's header already carries a per-channel calibration, that is kept and the manual values are ignored.
 
-From the calibrated waveform spectHR derives, per cardiac interval, four beat-by-beat parameters following the CARSPAN algorithm: **SBP** (systolic, the maximum in the interval), **DBP** (diastolic, the minimum preceding the systolic peak), **PP** (pulse pressure, SBP − DBP) and **MAP** (mean arterial pressure, the true integral mean between successive diastolic minima). Beats failing a flat-line / artefact check are dropped. Their per-epoch means are exported in the Parameters tab (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), and the systolic / diastolic series can drive the baroreflex transfer (see [Step 7](#step-7-examine-respiration--hr-coupling-transfer-tab)).
+From the calibrated waveform spectHR derives, per cardiac interval, four beat-by-beat parameters following the CARSPAN algorithm: **SBP** (systolic, the maximum in the interval), **DBP** (diastolic, the minimum preceding the systolic peak), **PP** (pulse pressure, SBP − DBP) and **MAP** (mean arterial pressure, the true integral mean between successive diastolic minima). Beats failing a flat-line / artefact check are dropped. Their per-epoch means are exported in the Parameters tab (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), and the systolic / diastolic series can drive the baroreflex transfer (see [Step 7](#step-7-examine-input--hr-coupling-rsa-and-baroreflex-transfer-tab)).
 
 ---
 
@@ -271,7 +295,7 @@ SD1 and SD2 carry no statistical information beyond RMSSD and SDNN respectively.
 
 The **PSD tab** shows one power spectrum per active epoch. Four frequency bands are shaded (default ranges in brackets):
 
-- **FullRange (0.02–0.65 Hz)**, the total HRV spectrum.
+- **FullRange (0.02–0.50 Hz)**, the total HRV spectrum.
 - **VLF (0.02–0.06 Hz)**, slow regulatory processes.
 - **LF (0.07–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
 - **HF (0.15–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
@@ -302,16 +326,20 @@ An alternative to the profiles plot is the 'spectrogram', where the x-axis is ti
 ![spectHR](images/SpectrogramWindow.png)
 ---
 
-### Step 7, Examine respiration -> HR coupling (Transfer tab)
+### Step 7, Examine input → HR coupling: RSA and baroreflex (Transfer tab)
 
 ![spectHR](images/TransferWindow.png)
 
-The **Transfer tab** answers a different question from the PSD and Profiles tabs: not *"how much power is there in band X"*, but *"how much of the heart-rate fluctuation at frequency f can be predicted from an input signal at that frequency, and with what gain and phase delay"*. The **input channel is selectable** (Transfer Settings → `input_signal`):
+The **Transfer tab** answers a different question from the PSD and Profiles tabs: not *"how much power is there in band X"*, but *"how much of the heart-rate fluctuation at frequency f can be predicted from an input signal at that frequency, and with what gain and phase delay"*. The output channel is always the IBI (HR) series; the **input channel is selectable** (Transfer Settings → `input_signal`), which makes this one tab serve two distinct, equally-important analyses:
 
-- **Respiration** (default) — the classic respiration → HR transfer, i.e. respiratory sinus arrhythmia. Needs a respiration channel.
-- **BP systolic** / **BP diastolic** — beat-by-beat blood pressure → HR, i.e. spectral **baroreflex sensitivity**. Needs a blood-pressure channel. The legend names the pairing it computed (e.g. `IBI ↔ BP diastolic`).
+- **Blood pressure → HR** (`bp_sys` / `bp_dia`) — spectral **baroreflex sensitivity (BRS)**: how beat-by-beat systolic or diastolic pressure drives heart rate, the cardiovascular-control quantity at the heart of mental-effort research. **This is the default**, with **systolic** pressure as the input (the [Robbe et al. (1987)](#ref-robbe1987) BRS convention). Needs a blood-pressure channel. The modulus is a genuine gain in **ms/mmHg** and the legend names the pairing it computed (e.g. `IBI ↔ BP systolic`).
+- **Respiration → HR** (`rsp`) — respiratory sinus arrhythmia (RSA): how the breathing rhythm drives heart-rate variability. Needs a respiration channel. Because respiration has no standard engineering unit, the modulus axis reads simply $|H(f)|$.
 
-The output channel is always the IBI (HR) series. The tab is enabled when the recording carries a respiration channel; without one the View-menu entry is greyed out and trying to open it pops a message explaining why.
+Switch between them with `input_signal` in Transfer Settings; everything downstream (Bode tiles, band summaries, exports) works identically for both.
+
+> **Note on spectral BRS.** Blood pressure and heart rate drive each other in a closed loop, so the transfer function $H = \text{IBI} / \text{BP}$ is technically an open-loop approximation of a closed-loop system. This is inherent to the cross-spectral method and is shared by all single-channel spectral BRS estimators. [Robbe et al. (1987)](#ref-robbe1987) validated this approximation together with the 0.5 coherence gate used here. Interpret BRS values as estimates of spontaneous baroreflex gain, not as a direct open-loop measurement.
+
+The tab is enabled when the recording carries a **blood-pressure or respiration** channel; with neither, the View-menu entry is greyed out and trying to open it pops a message explaining why. The default input is `bp_sys`, so on a recording that has respiration but no blood pressure, switch `input_signal` to `rsp` in Transfer Settings to populate the view.
 
 Each active epoch gets one **Bode tile** with three stacked panels sharing the frequency x-axis:
 
@@ -327,7 +355,7 @@ Both views share Settings, configurable under **WorkSpace -> Edit Parameters -> 
 
 | Setting | Default | What it does |
 |---|---|---|
-| `input_signal` | `rsp` | Which signal drives the transfer input: `rsp` (respiration → HR, RSA), `bp_sys` or `bp_dia` (blood pressure → HR, baroreflex sensitivity). The output is always the IBI/HR series. |
+| `input_signal` | `bp_sys` | Which signal drives the transfer input: `bp_sys` (default) or `bp_dia` (blood pressure → HR, baroreflex sensitivity), or `rsp` (respiration → HR, RSA). The output is always the IBI/HR series. |
 | `window (sec)` / `step (sec)` | 30 / 5 | Sliding-window length and step used by the Transfer-profile view. Same sizing rules as the Profiles tab. |
 | `min_coherence` | 0.5 | Squared-coherence gate. In compute, only bins clearing this threshold contribute to band-mean modulus / phase. In the per-epoch plot, the red dashed reference line sits at this value and the phase mask fades bins below it. |
 | `f_min` / `f_max` | 0 / 0.5 Hz | Frequency-axis range for the per-epoch Bode plot. `f_max` also caps the native DFT grid. |
@@ -358,8 +386,10 @@ The **Parameters tab** shows a table with one row per epoch:
 
 - **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
-- **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default)
-- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), and Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)). These columns are always present; the values are blank when the corresponding channel is absent.
+- **Non-linear / stationarity:** DFA short-term scaling exponent (`dfa_a1`) and the reverse-arrangements stationarity z-score (`stationarity_z`) — see [Non-linear and stationarity metrics](#non-linear-and-stationarity-metrics) below.
+- **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default). *The LF/HF ratio is reported because the literature expects it, but it should be read descriptively: it is **not** a clean index of sympatho-vagal balance ([Billman, 2013](#ref-billman2013)).*
+- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)), the mean breathing frequency (`resp_rate`, Hz) and an HF-validity flag (`hf_resp_in_band`) — see [Respiration-context HF](#respiration-context-hf) below. These columns are always present; the values are blank when the corresponding channel is absent.
+- **Sympathetic (ICG):** pre-ejection period (`pep`, ms) when the recording carries an ICG `dZ/dt` channel — see [Pre-ejection period (PEP)](#pre-ejection-period-pep) below.
 - **Transfer** (when the input channel is present): per-band modulus, phase and weighted coherence
 
 #### RSA lag
@@ -369,6 +399,15 @@ The Grossman peak-to-valley algorithm finds, per breath cycle, the shortest IBI 
 The default of **1.0 s** is the value used in [Grossman et al. (1990)](#ref-grossman1990) and matches the VU-DAMS implementation.
 
  **For children** (typical rate 20–30 bpm) the 1.0 s default could be too large; values of 0.3–0.5 s are more appropriate. Configure `rsa_lag_s` under **Settings → Edit Parameters → General Settings → Respiration Analysis**.
+
+#### `rsa` vs `rsa0`
+
+For each breath cycle the algorithm may either (a) find a valid positive RSA, (b) obtain a *negative* difference (the longest IBI came out shorter than the shortest — a sign of measurement error or weak coupling), or (c) fail to locate a qualifying shortest- or longest-IBI altogether. Following the VU-DAMS definition (manual §5.4.1, *Respiratory sinus arrhythmia*), spectHR reports two epoch means:
+
+- **`rsa`** — the mean over breaths with a **valid positive** RSA only. Discarding near-zero breaths that happen to dip negative biases this estimate *upward*.
+- **`rsa0`** — the recommended measure: **every invalid breath** — whether it produced a *negative* RSA or had an *undetectable* IBI — is **included in the mean with value zero**. The denominator is therefore the **total number of breath cycles** in the epoch, so a label dominated by weak or undetectable breaths is correctly pulled toward zero.
+
+The distinction matters: `rsa0` is always ≤ `rsa`, and the two diverge precisely when an epoch contains invalid breaths. When respiratory coupling is strong and clean (e.g. supine rest) almost every breath is valid and positive, so `rsa0 ≈ rsa`; the gap widens under conditions that suppress or distort RSA (e.g. standing). This zero-inclusion is what reproduces VU-DAMS `RSA0` (e.g. standing `rsa` ≈ 16 ms but `rsa0` ≈ 10 ms, matching VU-AMS).
 
 Click **Save** to export **two files** to the configured Output folder:
 
@@ -388,10 +427,12 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 | Column group | Columns |
 | --- | --- |
 | **Identity** | `Subject`, `epoch` |
-| **Time-domain HRV** | `count`, `mean`, `median`, `min`, `max`, `rmssd`, `sdnn`, `sdsd`, … |
+| **Time-domain HRV** | `count`, `mean`, `median`, `min`, `max`, `rmssd`, `sdnn`, `sdsd`, `stationarity`, … |
 | **Poincaré** | `sd1`, `sd2`, `sd_ratio`, `ellipse_area` |
-| **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default) |
-| **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
+| **Non-linear / stationarity** | `dfa_a1`, `stationarity_z` |
+| **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default), `lf_hf_ratio` |
+| **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `resp_rate`, `hf_resp_in_band`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
+| **Sympathetic (ICG)** | the scored landmarks `pep_q_ms` (Q-onset), `pep_b_ms` (B-point), `pep_c_ms` (C-point; all latencies in ms relative to the R-peak) and `pep_n_beats` (ensemble size), followed by `pep` itself. All present; blank when no ICG `dZ/dt` channel |
 | **Profile summaries** | `{band}_prof_mean/std/min/max/t_max` per band; `prof_method`, `prof_unit`, `prof_window_s`, `prof_step_s`, `prof_n_windows` |
 | **Transfer summaries** | `{band}_tf_modulus`, `_tf_phase_w`, `_tf_phase_u`, `_tf_coherence`, `_tf_n_points`, `_tf_n_coherent` per band; `tf_method`, `tf_freq_resolution`, `tf_smooth`, `tf_min_coherence`; written only when a respiration channel is present |
 
@@ -405,9 +446,12 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
 /{epoch}/
   attrs: subject,
          rmssd, sdnn, sdsd, mean, median, count, min, max,   ← time-domain
+         stationarity, stationarity_z, dfa_a1,                ← stationarity / non-linear
          sd1, sd2, sd_ratio, ellipse_area,                    ← Poincaré
          {band}_power, lf_hf_ratio,                           ← band powers
          bp_sbp/bp_dbp/bp_pp/bp_map, resp_mvo/resp_svo,        ← BP / respiration
+         resp_rate, hf_resp_in_band,                           ← respiration-context HF
+         pep, pep_b_ms, pep_c_ms, pep_q_ms, pep_n_beats,       ← pre-ejection period (ICG)
          rsa, rsa0,                                             ← Grossman RSA (epoch means)
          {band}_prof_mean/std/min/max/t_max,                  ← profile summaries
          prof_method, prof_unit, prof_window_s, prof_step_s,
@@ -454,9 +498,16 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
   /respiration/                (present only when INH/EXH phases were detected)
     attrs: lag_s, n_breaths, n_valid
     datasets: rsa [N_br], rsa0 [N_br], breath_times [N_br]
+
+  /icg/                        (present only when an ICG dZ/dt channel is loaded)
+    attrs: pep_ms, q_onset_ms, b_point_ms, c_point_ms, n_beats, polarity
+    datasets: rel_ms [N_e], dzdt_ens [N_e]
+              [, ecg_ens [N_e]]   (present only when an ECG channel is loaded)
 ```
 
 `N_br` = number of complete INH→EXH breath cycles in the epoch. `rsa` contains `NaN` for invalid cycles (negative peak-to-valley difference or missing IBI); `rsa0` has those replaced with 0. `breath_times` is the midpoint timestamp (seconds) of each cycle. `lag_s` is the configured search-window extension (default 1.0 s).
+
+`N_e` = samples on the R-locked ensemble grid (`rel_ms` runs from −200 ms to +400 ms relative to the R-peak). `dzdt_ens` is the polarity-corrected ensemble-averaged `dZ/dt` complex used to score the B- and C-points, and `ecg_ens` the matching ensemble ECG used for the Q-onset; the `*_ms` attributes are the scored landmark latencies (relative to the R-peak) that produce `pep`. Plotting `dzdt_ens` against `rel_ms` and marking `b_point_ms` / `c_point_ms` reproduces exactly what the PEP detector saw — the intended way to spot-check the automated B-point (see [Pre-ejection period](#pre-ejection-period-pep)).
 
 All datasets are `float64` (gzip-compressed, level 4); `n_coherent` is `int32`. Array lengths: `N_f` = full frequency grid; `N_b` = frequency bins inside the band's `[low, high]` range; `N_w` = number of sliding windows.
 
@@ -636,7 +687,7 @@ All parameters are stored in a JSON workspace file, editable through the applica
 
 **WorkSpace → Edit Parameters** is a tabbed dialog:
 
-- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *Logging* (minimum log level shown in the Log dock / console).
+- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag; RSA overlay; `rsp_source` — `icg` vs `accelerometer`, see [Supported channels](#supported-channels)), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *ICG Analysis* (PEP B-point guard `b_point_guard_ms`, see [Pre-ejection period](#pre-ejection-period-pep)), *Logging* (minimum log level shown in the Log dock / console).
 - **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
 - **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window (sec)`, `step (sec)`), and the optional `smooth_for_display` time-axis smoother.
 
@@ -682,15 +733,24 @@ Place the `.cfg` file in the **same directory** as the `.edf` file before openin
 | VU-AMS channel | Unit | Rate | spectHR role |
 |---|---|---|---|
 | ECG | mV | 1000 Hz | Primary ECG for R-peak detection and HRV |
-| MXR + MYR + MZR | g | 1000 Hz | Respiration surrogate via 3-axis PCA (preferred) |
-| DZ | Ω | 1000 Hz | Respiration fallback if no accelerometers |
-| DZDT | Ω/s | 1000 Hz | Respiration second fallback |
+| DZ | Ω | 1000 Hz | Respiration from the **ICG** signal (thoracic impedance) — the channel VU-AMS itself scores; **default** |
+| MXR + MYR + MZR | g | 1000 Hz | Respiration surrogate via 3-axis accelerometer PCA — selectable alternative |
+| DZDT | Ω/s | 1000 Hz | ICG-respiration fallback when DZ is absent |
 | Z0 | Ω | 250 Hz | Stored as auxiliary time series |
 | SCL | µS | 10 Hz | Stored as auxiliary time series |
 | BAT | V | 1 Hz | Stored as auxiliary time series |
 | MYA | g | 1 Hz | Stored as auxiliary time series |
 
-The respiration signal is derived from the three-axis accelerometers (MXR, MYR, MZR) when all three are exported: gravity is removed with a low-pass filter and the first principal component of the 0.1–0.7 Hz band is used as the breathing surrogate. When accelerometers are absent, DZ (raw thoracic impedance) is used instead, followed by DZDT (dZ/dt). The chosen signal is stored as `rsp-[vuams]` and linked to the ECG band for RSA and transfer-function analysis.
+The loader builds **both** respiration candidates when the channels are present and stores them as `rsp_icg-[vuams]` (the ICG / thoracic-impedance signal — DZ, or dZ/dt as a fallback) and `rsp_acc-[vuams]` (the accelerometer surrogate: gravity removed with a low-pass filter, then the first principal component of the 0.1–0.7 Hz band). The **active** respiration channel `rsp-[vuams]` — linked to the ECG band for RSA, transfer-function and `resp_rate` analysis — is selected by the workspace setting **`RespirationAnalysis.rsp_source`**:
+
+| `rsp_source` | Active channel | Use when |
+|---|---|---|
+| `icg` (default) | ICG / thoracic impedance | Stationary / lab protocols; matches VU-AMS RSA scoring |
+| `accelerometer` | 3-axis accelerometer PCA surrogate | Ambulatory / movement recordings, or devices with no ICG channel |
+
+Switching `rsp_source` re-points `rsp-[vuams]` and takes effect on the next reprocess — no re-import needed.
+
+> **Why ICG is the default.** The accelerometer-PCA surrogate captures *chest-wall motion*, whose relationship to breathing depends on posture: the gravity vector and the axis along which the chest expands change between supine, standing and sitting, and the surrogate can lock onto a non-respiratory body-motion component at the wrong rate. When that happens it detects breaths at roughly twice the true rate, so each inhalation/exhalation search window spans only half a real respiratory cycle and the peak-to-valley RSA comes out roughly halved relative to VU-AMS. Using the ICG signal avoids this and matches VU-AMS scoring (e.g. supine RSA0 ≈ 120 ms vs VU-AMS ≈ 115 ms; standing ≈ 10 ms vs ≈ 10 ms). The accelerometer remains available for ambulatory recordings where impedance electrodes are motion-contaminated.
 
 ---
 
@@ -777,6 +837,24 @@ When available, respiration data will be used. When a Polar H10 accelerometer st
 
 ---
 
+## Respiration-context HF
+
+HF-HRV amplitude depends not only on vagal tone but also on the **rate and depth of breathing** ([Grossman & Taylor, 2007](#ref-grossman2007)): the same vagal drive produces a smaller HF peak when breathing is fast or shallow, and a breathing frequency that drifts *out of* the HF band breaks the assumption that HF power indexes respiratory sinus arrhythmia at all. spectHR therefore exports, per epoch, the two quantities needed to judge — or statistically correct — whether an HF change is genuinely vagal.
+
+**`resp_rate`** — mean breathing frequency in Hz (multiply by 60 for breaths/min). The phase-segmented respiration signal gives an alternating sequence of $N$ phase boundaries at times $t_1 < t_2 < \dots < t_N$ (each inhalation→exhalation or exhalation→inhalation transition). Pairing successive boundaries into $N-1$ breath cycles, the rate is the mean of the per-cycle instantaneous frequencies:
+
+$$f_\text{resp} = \frac{1}{N-1} \sum_{k=1}^{N-1} \frac{1}{t_{k+1} - t_k}$$
+
+This matches CARSPAN's $1/\overline{\text{MeanIn}}$ for the `RespPeriod` profile. Blank when fewer than two phases fall inside the epoch.
+
+**`hf_resp_in_band`** — a validity flag: `1.0` when the mean breathing frequency lies inside the configured HF band $[f_\text{HF}^\text{low}, f_\text{HF}^\text{high}]$ (default 0.15–0.40 Hz, i.e. 9–24 breaths/min), `0.0` when it falls outside, blank when undeterminable. It is the band-membership indicator
+
+$$\mathbb{1}\!\left[\, f_\text{HF}^\text{low} \le f_\text{resp} \le f_\text{HF}^\text{high} \,\right]$$
+
+A `0.0` is a red flag that the epoch's HF power may not reflect RSA at all. The actual statistical correction (e.g. regressing HF on `resp_rate` across epochs or subjects) is deliberately left to your statistics package (R / JASP) — these two columns are the inputs that make it possible.
+
+---
+
 ## Blood Pressure
 
 When a recording carries a continuous blood-pressure waveform (for example the BP channel of a CARSPAN `.nff` file), spectHR calibrates it, derives beat-by-beat pressures, and makes the systolic / diastolic series available as a baroreflex transfer input.
@@ -798,6 +876,73 @@ A CARSPAN-faithful flat-line guard (a 300 ms / 10 ms-step sliding window flags b
 
 ---
 
+## Pre-ejection period (PEP)
+
+When the recording carries an impedance-cardiography (ICG) `dZ/dt` channel — VU-AMS EDF exports store it as `DZDT` — spectHR computes the **pre-ejection period** (`pep`, ms), the cleanest non-invasive index of *sympathetic* (beta-adrenergic) drive to the heart, the branch HRV alone cannot isolate ([Sherwood et al., 1990](#ref-sherwood1990); [Berntson et al., 2004](#ref-berntson2004)). PEP is the interval from the onset of left-ventricular depolarization (the ECG **Q-onset**) to the opening of the aortic valves (the **B-point** on the ICG `dZ/dt`):
+
+$$\text{PEP} = (\tau_B - \tau_Q)\times 1000 \;\text{ms}$$
+
+with $\tau_B$ and $\tau_Q$ both measured relative to the R-peak ($\tau = 0$). Single-beat `dZ/dt` is far too noisy for reliable inflection-point detection, so spectHR follows the VU-DAMS scoring recipe (manual §5.5) and **ensemble-averages** the waveform across the epoch before scoring.
+
+Alongside `pep`, the three scored landmark latencies are exported per epoch — `pep_b_ms` (B-point), `pep_c_ms` (C-point) and `pep_q_ms` (Q-onset), all in ms relative to the R-peak — together with `pep_n_beats` (the number of beats in the ensemble). These let you audit *which* landmark drives a given `pep` without re-running the detector, and the full ensemble complexes themselves are written to the HDF5 export (the [`/icg/` group](#contents-of-basenameh5)) for visual spot-checking.
+
+<details>
+<summary>PEP, scoring detail</summary>
+
+### PEP, scoring detail
+
+**1. Ensemble averaging.** For the $M$ R-peaks $r_1, \dots, r_M$ in the epoch, both the ICG and the ECG are averaged on a common time grid $\tau$ locked to the R-peak — the large-scale ensemble average that is standard VU practice ([Riese et al., 2004](#ref-riese2004)):
+
+<div align="center">
+
+$$\bar d(\tau) = \frac{1}{M}\sum_{m=1}^{M} d\!\left(r_m + \tau\right), \qquad \tau \in [-200, +400]\ \text{ms}$$
+
+</div>
+
+where $d(\cdot)$ is the `dZ/dt` waveform (and analogously $\bar e(\tau)$ for the ECG).
+
+**2. Filtering & polarity.** The averaged ICG complex is **low-pass filtered at 60 Hz** (the VU-DAMS default, *"necessary to overcome the noise confound and assure reliable detection of the inflection points"*). The polarity is auto-detected: the raw VU-AMS `dZ/dt` carries the C-point as a *minimum* (*"the dZ/dt minimum is shown as a maximum by the program"*), so the sign is corrected so the C-point reads as a maximum.
+
+**3. C- and B-points.** Within the early-systole window the **C-point** (peak ejection velocity) is the maximum and the **B-point** (aortic-valve opening) is the point of maximum upstroke acceleration before it — the maximum of the second derivative of `dZ/dt` ([Lozano et al., 2007](#ref-lozano2007)), searched up to a **30 ms guard** before the C-point:
+
+<div align="center">
+
+$$\tau_C = \arg\max_{\tau}\ \bar d(\tau), \qquad \tau_B = \arg\max_{\tau \le\, \tau_C - 30\,\text{ms}}\ \frac{d^2\bar d}{d\tau^2}$$
+
+</div>
+
+The guard matters: the B-point is anatomically never within a few dozen ms of peak ejection velocity, and on distorted morphologies (e.g. standing) the *global* 2nd-derivative maximum can otherwise latch onto a secondary acceleration bump adjacent to C, placing B too late. Excluding the 30 ms zone keeps detection on the true B inflection. The guard is dropped automatically when the upstroke is shorter than the zone.
+
+The guard width is the workspace setting **`IcgAnalysis.b_point_guard_ms`** (default `30.0`, edited under *General Settings → ICG Analysis*). Raise it if your B-points still read late on a given recording; lower it toward `0` (which disables the guard entirely) if a short upstroke is being clipped and B comes out too early. The default sits at the physiological floor of the C−B interval, so it is a safe starting point across postures.
+
+**4. Q-onset.** On the averaged ECG, $\tau_Q$ is the isoelectric-to-Q transition just before the R-peak (the last baseline sample preceding the Q trough). When no Q wave is resolvable, the VU-DAMS fallback of $\tau_Q = \tau_\text{Q-point} - 12\,\text{ms}$ is used (manual TIP17). With no ECG channel the R-peak is the reference ($\tau_Q = 0$), giving the slightly shorter R-to-B interval.
+
+Implausible values (outside 40–180 ms) are blanked.
+
+</details>
+
+<details>
+<summary>Validation against VU-DAMS</summary>
+
+### Validation against VU-DAMS
+
+On the VU-AMS 5fs example recording (39 conditions), spectHR's per-epoch `pep` was compared against the values VU-DAMS produces from the same data:
+
+| landmark | mean Δ (spectHR − VU-DAMS) | MAE |
+|---|---|---|
+| **Q-onset** (`pep_q_ms`) | −1.1 ms | 1.1 ms |
+| **C-point** (`pep_c_ms`) | −0.3 ms | 0.9 ms |
+| **B-point** (`pep_b_ms`) | +2.0 ms | ~5 ms |
+| **PEP** | +2.0 ms | 5.2 ms (r = 0.90) |
+
+The Q-onset and C-point match VU-DAMS to ~1 ms; essentially all of the residual sits in the **B-point**, which is exactly the landmark the manual flags as needing visual correction. The 30 ms B-point guard (above) was tuned on this comparison — it halves the bias and pulls the worst (standing) deviation from 17 ms down to 13 ms — but was deliberately kept conservative (the physiological floor of the C−B interval) rather than over-fitted to a single subject.
+
+</details>
+
+> **Note.** The VU-DAMS manual is explicit that automated B-point detection *"simply will not work for all signals"* — every ensemble complex is normally visually inspected and manually corrected. spectHR's automated `pep` should likewise be spot-checked against the `dZ/dt` waveform in demanding applications; posture-dependent morphology changes (e.g. supine vs standing) are where it most often needs a manual nudge. The HDF5 [`/icg/` group](#contents-of-basenameh5) stores the ensemble `dzdt_ens` complex and the scored `b_point_ms` / `c_point_ms` for each epoch, so this spot-check is a single plot per epoch.
+
+---
+
 ## Poincaré Metrics
 
 **SD1**, beat-to-beat variability, equal to $\text{RMSSD}/\sqrt{2}$:
@@ -813,6 +958,72 @@ $$\text{SD2} = \sqrt{2 \cdot \mathrm{Var}(\text{IBI}_i) - \tfrac{1}{2} \mathrm{V
 **Ellipse area** $= \pi \cdot \text{SD1} \cdot \text{SD2}$, total HRV.
 
 See the note in Step 4 above: SD1 and SD2 add no statistical information beyond RMSSD and SDNN ([van Roon et al., 2025](#ref-vanroon2025)).
+
+---
+
+## Non-linear and stationarity metrics
+
+Two columns probe structure in the IBI series that the time-domain, Poincaré and spectral measures miss: the *fractal scaling* of the fluctuations and whether the epoch is *statistically stationary* in the first place (a precondition the whole-epoch spectral estimates quietly assume).
+
+**`dfa_a1`** — the short-term **detrended-fluctuation-analysis** scaling exponent $\alpha_1$ ([Peng et al., 1995](#ref-peng1995)), computed over box sizes of 4–16 beats. It captures the long-range correlation structure of the IBI series: $\alpha_1 \approx 1.0$ indicates healthy "1/f" correlation, $\alpha_1 \to 0.5$ uncorrelated (white-noise-like) variability, and $\alpha_1 \to 1.5$ a Brownian/random-walk regime. Needs at least $2 \cdot \text{scale}_\max = 32$ beats, otherwise blank.
+
+<details>
+<summary>DFA-α1, algorithm detail</summary>
+
+### DFA-α1, algorithm detail
+
+For an IBI series $x_1, \dots, x_N$ (ms), first form the integrated, mean-removed profile:
+
+<div align="center">
+
+$$y(k) = \sum_{i=1}^{k}\big(x_i - \bar{x}\big), \qquad k = 1, \dots, N$$
+
+</div>
+
+For each box size $n$, split $y$ into $\lfloor N/n \rfloor$ non-overlapping windows, fit a local linear trend $\hat y_n$ in each window, and take the root-mean-square residual across the whole profile:
+
+<div align="center">
+
+$$F(n) = \sqrt{\frac{1}{N}\sum_{k=1}^{N}\big(y(k) - \hat y_n(k)\big)^2}$$
+
+</div>
+
+A self-similar series obeys $F(n) \propto n^{\alpha}$, so $\alpha_1$ is the slope of a least-squares line through $\log F(n)$ versus $\log n$ over the short-term scales $n \in [4, 16]$ beats.
+
+</details>
+
+**`stationarity_z`** — the **reverse-arrangements** test statistic ([Bendat & Piersol, 2010](#ref-bendat2010)). Whereas the plain `stationarity` column is just a linear IBI-vs-time correlation (it catches monotone drift only), `stationarity_z` is a distribution-free z-score sensitive to *any* trend. Under stationarity it is $\sim \mathcal{N}(0, 1)$, so **$|z| > 1.96$ flags a non-stationary epoch** at the 5 % level — a warning that the whole-epoch spectral estimates should be read with care. It pairs naturally with the optional [detrending](#practical-considerations) setting. Blank for epochs shorter than 10 valid intervals.
+
+<details>
+<summary>Reverse-arrangements z-score, detail</summary>
+
+### Reverse-arrangements z-score, detail
+
+Count the *reverse arrangements* $A$ — the number of ordered pairs in which a later interval exceeds an earlier one:
+
+<div align="center">
+
+$$A = \bigl|\{(i, j) : i < j,\ x_j > x_i\}\bigr|$$
+
+</div>
+
+Under the null hypothesis of a stationary (exchangeable) series, $A$ has known moments:
+
+<div align="center">
+
+$$\mu_A = \frac{N(N-1)}{4}, \qquad \sigma_A^2 = \frac{2N^3 + 3N^2 - 5N}{72}$$
+
+</div>
+
+and the standardised statistic is asymptotically normal:
+
+<div align="center">
+
+$$z = \frac{A - \mu_A}{\sigma_A} \;\sim\; \mathcal{N}(0, 1)$$
+
+</div>
+
+</details>
 
 ---
 
@@ -1462,6 +1673,15 @@ spectHR is released under the GNU GPL-3.0 license. See the [LICENSE](LICENSE) fi
 <a id="ref-arutyunova2024"></a>
 Arutyunova, K.R., Bakhchina, A.V., Konovalov, D.I., Margaryan, M., Filimonov, A.V., & Shishalov, I.S. (2024). Heart rate dynamics for cognitive load estimation in a driving simulation task. *Scientific Reports*, 14, 31656. https://doi.org/10.1038/s41598-024-79728-x
 
+<a id="ref-bendat2010"></a>
+Bendat, J.S., & Piersol, A.G. (2010). *Random Data: Analysis and Measurement Procedures* (4th ed.). Hoboken, NJ: Wiley. (Reverse-arrangements test for stationarity.)
+
+<a id="ref-berntson2004"></a>
+Berntson, G.G., Norman, G.J., Hawkley, L.C., & Cacioppo, J.T. (2004). Cardiac autonomic balance versus cardiac regulatory capacity. *Psychophysiology*, 45(4), 643–652. https://doi.org/10.1111/j.1469-8986.2008.00652.x
+
+<a id="ref-billman2013"></a>
+Billman, G.E. (2013). The LF/HF ratio does not accurately measure cardiac sympatho-vagal balance. *Frontiers in Physiology*, 4, 26. https://doi.org/10.3389/fphys.2013.00026
+
 <a id="ref-buron2026"></a>
 Buron, J., & Menuet, C. (2026). Respiratory heart rate variability: Insights into mechanisms, measurements and interpretations. *Biological Psychology*, 208, 109299. https://doi.org/10.1016/j.biopsycho.2026.109299
 
@@ -1470,6 +1690,12 @@ de Geus, E.J.C., Gianaros, P.J., Brindle, R.C., Jennings, J.R., & Berntson, G.G.
 
 <a id="ref-grossman1990"></a>
 Grossman, P., van Beek, J., & Wientjes, C. (1990). A comparison of three quantification methods for estimation of respiratory sinus arrhythmia. *Psychophysiology*, 27(6), 702–714. https://doi.org/10.1111/j.1469-8986.1990.tb03198.x
+
+<a id="ref-grossman2007"></a>
+Grossman, P., & Taylor, E.W. (2007). Toward understanding respiratory sinus arrhythmia: Relations to cardiac vagal tone, evolution and biobehavioral functions. *Biological Psychology*, 74(2), 263–285. https://doi.org/10.1016/j.biopsycho.2005.11.014
+
+<a id="ref-lozano2007"></a>
+Lozano, D.L., Norman, G., Knox, D., Wood, B.L., Miller, B.D., Emery, C.F., & Berntson, G.G. (2007). Where to B in dZ/dt. *Psychophysiology*, 44(1), 113–119. https://doi.org/10.1111/j.1469-8986.2006.00468.x
 
 <a id="ref-carspan-manual"></a>
 Mulder, B., Hofstetter, H., & van Roon, A. (2009). *CARSPAN for Windows: User's manual* (Version 0.0.1.36). University of Groningen. [docs/Carspan_Manual_VERSION_36.pdf](docs/Carspan_Manual_VERSION_36.pdf)
@@ -1492,17 +1718,32 @@ Mulder, L.J.M., de Waard, D., & Brookhuis, K.A. (2004). Estimating mental effort
 <a id="ref-peabody2023"></a>
 Peabody, J.E., Ryznar, R., Ziesmann, M.T., & Gillman, L. (2023). A systematic review of heart rate variability as a measure of stress in medical professionals. *Cureus*, 15(1), e34345. https://doi.org/10.7759/cureus.34345
 
+<a id="ref-peng1995"></a>
+Peng, C.-K., Havlin, S., Stanley, H.E., & Goldberger, A.L. (1995). Quantification of scaling exponents and crossover phenomena in nonstationary heartbeat time series. *Chaos*, 5(1), 82–87. https://doi.org/10.1063/1.166141
+
 <a id="ref-derivecourt2008"></a>
 De Rivecourt, M., Kuperus, M.N., Post, W.J., & Mulder, L.J.M. (2008). Cardiovascular and eye activity measures as indices for momentary changes in mental effort during simulated flight. *Ergonomics*, 51, 1295–1319. https://doi.org/10.1080/00140130802120267
 
+<a id="ref-riese2004"></a>
+Riese, H., Groot, P.F.C., van den Berg, M., Kupper, N.H.M., Magnee, E.H.B., Rohaan, E.J., Vrijkotte, T.G.M., Willemsen, G., & de Geus, E.J.C. (2004). Large-scale ensemble averaging of ambulatory impedance cardiograms. *Behavior Research Methods, Instruments, & Computers*, 36(3), 467–477. https://doi.org/10.3758/BF03195597
+
+<a id="ref-robbe1987"></a>
+Robbe, H.W.J., Mulder, L.J.M., Rüddel, H., Langewitz, W.A., Veldman, J.B.P., & Mulder, G. (1987). Assessment of baroreceptor reflex sensitivity by means of spectral analysis. *Hypertension*, 10(5), 538–543. https://doi.org/10.1161/01.HYP.10.5.538
+
 <a id="ref-rompelman1985"></a>
 Rompelman, O. (1985). Spectral analysis of heart-rate variability. In J.F. Orlebeke, G. Mulder, & L.J.P. van Doornen (Eds.), *Psychophysiology of Cardiovascular Control* (pp. 315–331). New York: Plenum Press.
+
+<a id="ref-sherwood1990"></a>
+Sherwood, A., Allen, M.T., Fahrenberg, J., Kelsey, R.M., Lovallo, W.R., & van Doornen, L.J.P. (1990). Methodological guidelines for impedance cardiography. *Psychophysiology*, 27(1), 1–23. https://doi.org/10.1111/j.1469-8986.1990.tb02171.x
 
 <a id="ref-vanroon2025"></a>
 van Roon, A.M., Span, M.M., Lefrandt, J.D., & Riese, H. (2025). Overview of mathematical relations between Poincaré plot measures and time and frequency domain measures of heart rate variability. *Entropy*, 27(8), 861. https://doi.org/10.3390/e27080861
 
 <a id="ref-stuiver2014"></a>
 Stuiver, A., & Mulder, L.J.M. (2014). Cardiovascular state changes in simulated work environments. *Frontiers in Neuroscience*, 8, 399. https://doi.org/10.3389/fnins.2014.00399
+
+<a id="ref-tarvainen2002"></a>
+Tarvainen, M.P., Ranta-aho, P.O., & Karjalainen, P.A. (2002). An advanced detrending method with application to HRV analysis. *IEEE Transactions on Biomedical Engineering*, 49(2), 172–175. https://doi.org/10.1109/10.979357
 
 <a id="ref-taskforce1996"></a>
 Task Force of the European Society of Cardiology and the North American Society of Pacing and Electrophysiology (1996). Heart rate variability: standards of measurement, physiological interpretation and clinical use. *Circulation*, 93(5), 1043–1065. https://doi.org/10.1161/01.CIR.93.5.1043

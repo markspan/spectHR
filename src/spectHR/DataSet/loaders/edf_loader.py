@@ -293,13 +293,22 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
 
     Channel mapping
     ---------------
-    ECG               → ``ecg-[vuams]``  (primary ECG for HRV)
-    MXR + MYR + MZR   → ``rsp-[vuams]``  (PCA respiration surrogate; preferred)
-    DZ                → ``rsp-[vuams]``  (fallback if no accelerometers)
-    DZDT              → ``rsp-[vuams]``  (second fallback)
+    ECG               → ``ecg-[vuams]``      (primary ECG for HRV)
+    DZ                → ``rsp_icg-[vuams]``   (ICG / thoracic-impedance
+                                              respiration candidate — what
+                                              VU-AMS scores RSA from)
+    MXR + MYR + MZR   → ``rsp_acc-[vuams]``   (PCA respiration-surrogate candidate)
+    one of the above  → ``rsp-[vuams]``       (the *active* respiration channel)
     DZ, DZDT, Z0      → also stored as ``dz-[vuams]`` etc. for inspection
     MXR, MYR, MZR     → also stored as ``mxr-[vuams]`` etc.
     SCL, BAT, MYA     → auxiliary time series
+
+    Both respiration candidates are stored so the active ``rsp-[vuams]``
+    channel can be switched after load (workspace
+    ``RespirationAnalysis.rsp_source`` = ``"icg"`` | ``"accelerometer"``,
+    applied by ``spectUI.preProcessFile.apply_rsp_source``).  The
+    ``rsp_source`` keyword argument overrides the default at load time for
+    headless use.  The default is ICG / thoracic impedance (matches VU-AMS).
 
     EDF+C annotations with duration ``onset\x15dur\x14label`` are converted
     to ``"start <label>"`` / ``"stop <label>"`` events so spectHR's epoch
@@ -358,10 +367,36 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
         logger.info(f"Loaded ECG → {ecg_name}  ({n} samples @ {fs_ecg:.0f} Hz)")
 
     # ------------------------------------------------------------------
-    # Respiration: accelerometer PCA → DZ → DZDT
+    # Respiration: store BOTH candidate sources, then pick one for the
+    # active rsp-[vuams] channel.
+    #
+    # VU-AMS / VU-DAMS scores respiration and RSA from the thoracic
+    # impedance (dZ): it is the physiological respiration signal and is
+    # posture-independent.  The accelerometer-PCA surrogate (chest-wall
+    # motion) varies strongly with posture (the gravity vector and the axis
+    # capturing chest expansion change between supine / standing / sitting)
+    # and can lock onto non-respiratory body-motion components, detecting
+    # breaths at the wrong rate and roughly halving RSA relative to VU-AMS —
+    # but it is useful for ambulatory/movement recordings or devices without
+    # an impedance channel.
+    #
+    # Both candidates are stored so the choice is reconfigurable after load
+    # (workspace ``RespirationAnalysis.rsp_source``, applied by the UI via
+    # ``apply_rsp_source``).  The active rsp-[vuams] defaults to the ICG
+    # (impedance) signal → accelerometer → DZDT.  The ``rsp_source`` kwarg,
+    # when given, overrides the default at load time without the UI.
     # ------------------------------------------------------------------
-    rsp_done = False
+    rsp_acc_name = f"rsp_acc-[{band_id}]"   # accelerometer-PCA candidate
+    rsp_icg_name = f"rsp_icg-[{band_id}]"   # thoracic-impedance (ICG) candidate
 
+    # ICG candidate (dZ thoracic impedance, or dZ/dt as a fallback).
+    icg_sig = dz_sig if dz_sig is not None else dzdt_sig
+    if icg_sig is not None:
+        n = len(icg_sig["data"])
+        times = _timestamps(icg_sig["n_samples_per_rec"], n)
+        physiodata.timeseries[rsp_icg_name] = TimeSeries(times, icg_sig["data"].copy())
+
+    # Accelerometer-PCA candidate.
     if all(k in acc_sigs for k in ("mxr", "myr", "mzr")):
         try:
             xs, ys, zs = (acc_sigs[k]["data"] for k in ("mxr", "myr", "mzr"))
@@ -371,27 +406,31 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
             fs = n_per_rec / rec_dur if rec_dur > 0 else 1000.0
             rsp_signal = _acc_to_rsp(acc_mat, fs)
             times = _timestamps(n_per_rec, n_common)
-            physiodata.timeseries[rsp_name] = TimeSeries(times, rsp_signal)
-            logger.info(f"Loaded RSP (acc-PCA) → {rsp_name}  ({n_common} samples @ {fs:.0f} Hz)")
-            rsp_done = True
+            physiodata.timeseries[rsp_acc_name] = TimeSeries(times, rsp_signal)
         except Exception as exc:
-            logger.warning(f"ACC→RSP failed: {exc}; falling back to DZ/DZDT")
+            logger.warning(f"ACC→RSP failed: {exc}")
 
-    if not rsp_done and dz_sig is not None:
-        n = len(dz_sig["data"])
-        times = _timestamps(dz_sig["n_samples_per_rec"], n)
-        physiodata.timeseries[rsp_name] = TimeSeries(times, dz_sig["data"].copy())
-        fs_dz = dz_sig["n_samples_per_rec"] / rec_dur if rec_dur > 0 else 1000.0
-        logger.info(f"Loaded RSP (DZ) → {rsp_name}  ({n} samples @ {fs_dz:.0f} Hz)")
-        rsp_done = True
+    # Pick the active respiration channel.  The kwarg overrides the default;
+    # "accelerometer" only wins when that candidate was actually built.
+    requested = str(kwargs.get("rsp_source", "icg")).lower()
+    icg_ts = physiodata.timeseries.get(rsp_icg_name)
+    acc_ts = physiodata.timeseries.get(rsp_acc_name)
 
-    if not rsp_done and dzdt_sig is not None:
-        n = len(dzdt_sig["data"])
-        times = _timestamps(dzdt_sig["n_samples_per_rec"], n)
-        physiodata.timeseries[rsp_name] = TimeSeries(times, dzdt_sig["data"].copy())
-        fs_dzdt = dzdt_sig["n_samples_per_rec"] / rec_dur if rec_dur > 0 else 1000.0
-        logger.info(f"Loaded RSP (DZDT) → {rsp_name}  ({n} samples @ {fs_dzdt:.0f} Hz)")
-        rsp_done = True
+    chosen, chosen_lbl = None, ""
+    if requested == "accelerometer" and acc_ts is not None:
+        chosen, chosen_lbl = acc_ts, "accelerometer-PCA"
+    elif icg_ts is not None:
+        chosen, chosen_lbl = icg_ts, "ICG (DZ thoracic impedance)"
+    elif acc_ts is not None:
+        chosen, chosen_lbl = acc_ts, "accelerometer-PCA (no ICG channel)"
+
+    if chosen is not None:
+        physiodata.timeseries[rsp_name] = TimeSeries(
+            chosen.times.copy(), chosen.values.copy()
+        )
+        logger.info(
+            f"Loaded RSP ({chosen_lbl}) → {rsp_name}  ({chosen.times.size} samples)"
+        )
 
     # ------------------------------------------------------------------
     # Store raw physiological channels as named auxiliary time series
