@@ -294,8 +294,10 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
     Channel mapping
     ---------------
     ECG               → ``ecg-[vuams]``  (primary ECG for HRV)
-    MXR + MYR + MZR   → ``rsp-[vuams]``  (PCA respiration surrogate; preferred)
-    DZ                → ``rsp-[vuams]``  (fallback if no accelerometers)
+    DZ                → ``rsp-[vuams]``  (thoracic impedance; preferred — the
+                                          channel VU-AMS itself scores RSA from)
+    MXR + MYR + MZR   → ``rsp-[vuams]``  (PCA respiration surrogate; fallback if
+                                          no impedance channel)
     DZDT              → ``rsp-[vuams]``  (second fallback)
     DZ, DZDT, Z0      → also stored as ``dz-[vuams]`` etc. for inspection
     MXR, MYR, MZR     → also stored as ``mxr-[vuams]`` etc.
@@ -358,11 +360,29 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
         logger.info(f"Loaded ECG → {ecg_name}  ({n} samples @ {fs_ecg:.0f} Hz)")
 
     # ------------------------------------------------------------------
-    # Respiration: accelerometer PCA → DZ → DZDT
+    # Respiration: DZ (thoracic impedance) → accelerometer PCA → DZDT
+    #
+    # VU-AMS / VU-DAMS scores respiration and RSA from the thoracic
+    # impedance (dZ): it is the physiological respiration signal and is
+    # posture-independent.  The accelerometer-PCA surrogate (chest-wall
+    # motion) is only a fallback for devices without an impedance channel —
+    # its quality varies strongly with posture (the gravity vector and the
+    # axis capturing chest expansion change between supine / standing /
+    # sitting) and it can lock onto non-respiratory body-motion components,
+    # detecting breaths at the wrong rate and roughly halving RSA relative
+    # to VU-AMS.  Preferring dZ makes spectHR's RSA match VU-AMS scoring.
     # ------------------------------------------------------------------
     rsp_done = False
 
-    if all(k in acc_sigs for k in ("mxr", "myr", "mzr")):
+    if dz_sig is not None:
+        n = len(dz_sig["data"])
+        times = _timestamps(dz_sig["n_samples_per_rec"], n)
+        physiodata.timeseries[rsp_name] = TimeSeries(times, dz_sig["data"].copy())
+        fs_dz = dz_sig["n_samples_per_rec"] / rec_dur if rec_dur > 0 else 1000.0
+        logger.info(f"Loaded RSP (DZ thoracic impedance) → {rsp_name}  ({n} samples @ {fs_dz:.0f} Hz)")
+        rsp_done = True
+
+    if not rsp_done and all(k in acc_sigs for k in ("mxr", "myr", "mzr")):
         try:
             xs, ys, zs = (acc_sigs[k]["data"] for k in ("mxr", "myr", "mzr"))
             n_common = min(len(xs), len(ys), len(zs))
@@ -372,18 +392,10 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
             rsp_signal = _acc_to_rsp(acc_mat, fs)
             times = _timestamps(n_per_rec, n_common)
             physiodata.timeseries[rsp_name] = TimeSeries(times, rsp_signal)
-            logger.info(f"Loaded RSP (acc-PCA) → {rsp_name}  ({n_common} samples @ {fs:.0f} Hz)")
+            logger.info(f"Loaded RSP (acc-PCA fallback) → {rsp_name}  ({n_common} samples @ {fs:.0f} Hz)")
             rsp_done = True
         except Exception as exc:
-            logger.warning(f"ACC→RSP failed: {exc}; falling back to DZ/DZDT")
-
-    if not rsp_done and dz_sig is not None:
-        n = len(dz_sig["data"])
-        times = _timestamps(dz_sig["n_samples_per_rec"], n)
-        physiodata.timeseries[rsp_name] = TimeSeries(times, dz_sig["data"].copy())
-        fs_dz = dz_sig["n_samples_per_rec"] / rec_dur if rec_dur > 0 else 1000.0
-        logger.info(f"Loaded RSP (DZ) → {rsp_name}  ({n} samples @ {fs_dz:.0f} Hz)")
-        rsp_done = True
+            logger.warning(f"ACC→RSP failed: {exc}; falling back to DZDT")
 
     if not rsp_done and dzdt_sig is not None:
         n = len(dzdt_sig["data"])

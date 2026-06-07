@@ -400,6 +400,15 @@ The default of **1.0 s** is the value used in [Grossman et al. (1990)](#ref-gros
 
  **For children** (typical rate 20–30 bpm) the 1.0 s default could be too large; values of 0.3–0.5 s are more appropriate. Configure `rsa_lag_s` under **Settings → Edit Parameters → General Settings → Respiration Analysis**.
 
+#### `rsa` vs `rsa0`
+
+For each breath cycle the algorithm may either (a) find a valid positive RSA, (b) obtain a *negative* difference (the longest IBI came out shorter than the shortest — a sign of measurement error or weak coupling), or (c) fail to locate a qualifying shortest- or longest-IBI altogether. Following the VU-DAMS definition (manual §5.4.1, *Respiratory sinus arrhythmia*), spectHR reports two epoch means:
+
+- **`rsa`** — the mean over breaths with a **valid positive** RSA only. Discarding near-zero breaths that happen to dip negative biases this estimate *upward*.
+- **`rsa0`** — the recommended measure: breaths with a **negative** RSA are included as **zero**, while breaths where an IBI could **not be located at all** (truly missing) are excluded from the denominator entirely. This corrects the upward bias without diluting the mean with non-respiratory cycles.
+
+The distinction matters: zeroing *only* negative breaths (not all missing ones) is what reproduces VU-DAMS `RSA0`; treating every missing breath as zero would inflate the denominator and systematically underestimate RSA0.
+
 Click **Save** to export **two files** to the configured Output folder:
 
 | File | What it contains |
@@ -724,15 +733,17 @@ Place the `.cfg` file in the **same directory** as the `.edf` file before openin
 | VU-AMS channel | Unit | Rate | spectHR role |
 |---|---|---|---|
 | ECG | mV | 1000 Hz | Primary ECG for R-peak detection and HRV |
-| MXR + MYR + MZR | g | 1000 Hz | Respiration surrogate via 3-axis PCA (preferred) |
-| DZ | Ω | 1000 Hz | Respiration fallback if no accelerometers |
+| DZ | Ω | 1000 Hz | Respiration (thoracic impedance, **preferred** — the channel VU-AMS itself scores) |
+| MXR + MYR + MZR | g | 1000 Hz | Respiration surrogate via 3-axis PCA (fallback if no impedance) |
 | DZDT | Ω/s | 1000 Hz | Respiration second fallback |
 | Z0 | Ω | 250 Hz | Stored as auxiliary time series |
 | SCL | µS | 10 Hz | Stored as auxiliary time series |
 | BAT | V | 1 Hz | Stored as auxiliary time series |
 | MYA | g | 1 Hz | Stored as auxiliary time series |
 
-The respiration signal is derived from the three-axis accelerometers (MXR, MYR, MZR) when all three are exported: gravity is removed with a low-pass filter and the first principal component of the 0.1–0.7 Hz band is used as the breathing surrogate. When accelerometers are absent, DZ (raw thoracic impedance) is used instead, followed by DZDT (dZ/dt). The chosen signal is stored as `rsp-[vuams]` and linked to the ECG band for RSA and transfer-function analysis.
+The respiration signal is taken from **DZ (raw thoracic impedance)** when present, because that is the physiological respiration channel VU-AMS / VU-DAMS itself uses to segment breaths and score RSA. It is posture-independent and reproduces VU-AMS RSA values closely. When no impedance channel is exported, spectHR falls back to a surrogate derived from the three-axis accelerometers (MXR, MYR, MZR): gravity is removed with a low-pass filter and the first principal component of the 0.1–0.7 Hz band is used as the breathing signal, with DZDT (dZ/dt) as a final fallback. The chosen signal is stored as `rsp-[vuams]` and linked to the ECG band for RSA and transfer-function analysis.
+
+> **Why impedance is preferred for VU-AMS.** The accelerometer-PCA surrogate captures *chest-wall motion*, whose relationship to breathing depends on posture: the gravity vector and the axis along which the chest expands change between supine, standing and sitting, and the surrogate can lock onto a non-respiratory body-motion component at the wrong rate. When that happens it detects breaths at roughly twice the true rate, so each inhalation/exhalation search window spans only half a real respiratory cycle and the peak-to-valley RSA comes out roughly halved relative to VU-AMS. Using DZ avoids this and matches VU-AMS scoring (e.g. supine RSA0 ≈ 120 ms vs VU-AMS ≈ 115 ms; standing ≈ 12 ms vs ≈ 10 ms).
 
 ---
 
