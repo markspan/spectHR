@@ -56,7 +56,7 @@ class EpochContext:
 
     def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None,
                  rsp_phases=None, rsa_lag_s: float = 1.0,
-                 rsa_max_extrema_span=None, rsa_max_cycle_ratio=None,
+                 rsa_max_ibi_deviation=None, rsa_max_rate_deviation=None,
                  icg_ts=None, ecg_ts=None, b_point_guard_ms: float = 30.0):
         self.view = view
         self.psd_method = psd_method
@@ -64,8 +64,8 @@ class EpochContext:
         self.rsp_ts = rsp_ts
         self.rsp_phases = rsp_phases  # RespirationSeriesView for this epoch
         self.rsa_lag_s = rsa_lag_s
-        self.rsa_max_extrema_span = rsa_max_extrema_span  # None = disabled
-        self.rsa_max_cycle_ratio = rsa_max_cycle_ratio    # None = disabled
+        self.rsa_max_ibi_deviation = rsa_max_ibi_deviation   # None = disabled
+        self.rsa_max_rate_deviation = rsa_max_rate_deviation  # None = disabled
         self.icg_ts = icg_ts          # ICG dZ/dt TimeSeries (for PEP), or None
         self.ecg_ts = ecg_ts          # ECG waveform for Q-onset detection, or None
         self.b_point_guard_ms = b_point_guard_ms  # PEP B-point guard zone (ms)
@@ -176,8 +176,8 @@ class EpochContext:
                 np.asarray(self.labels,      dtype=object),
                 self.rsp_phases,
                 lag_s=self.rsa_lag_s,
-                max_extrema_span=self.rsa_max_extrema_span,
-                max_cycle_ratio=self.rsa_max_cycle_ratio,
+                max_ibi_deviation=self.rsa_max_ibi_deviation,
+                max_rate_deviation=self.rsa_max_rate_deviation,
             )
         except Exception:
             return None

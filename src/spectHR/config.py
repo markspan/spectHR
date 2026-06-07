@@ -125,26 +125,29 @@ def rsp_source_from_workspace(workspace: "Dict[str, Any] | None") -> str:
 #:
 #: * ``"none"``   — no extra rejection; all valid INH→EXH pairs are scored
 #:                  (default, preserves the legacy spectHR behaviour).
-#: * ``"strict"`` — apply two VU-AMS-style guards: irregular-IBI (extrema too
-#:                  far apart) and irregular-respiration-rate (cycle > 1.5×
-#:                  median).  Brings RSA0 closer to VU-AMS output on sitting
-#:                  recordings.
+#: * ``"strict"`` — apply the two automatic rejection guards that VU-DAMS runs
+#:                  by default (Appendix A, DAMS 5.0 manual):
+#:                  - code -5: exclude IBIs that deviate >50 % from the
+#:                    preceding IBI from the shortest/longest candidate pool.
+#:                  - code -6: reject a whole breath whose respiration rate
+#:                    deviates >50 % from the running average of the 20
+#:                    preceding breaths.
 RSA_REJECTION_MODES = ("none", "strict")
 _DEFAULT_RSA_REJECTION_MODE = "none"
 
-# Guard parameters used in "strict" mode.  These were determined empirically
-# against a three-posture VU-AMS reference dataset (supine/standing/sitting).
-_STRICT_SPAN: float = 1.0    # extrema gap > span × breath duration → reject
-_STRICT_CYC_TOL: float = 1.5 # cycle > cyc_tol × median duration → reject
+# VU-DAMS default thresholds — both 50 % (Appendix A).
+# Imported by bp_metrics too; kept here as the single source of truth.
+_STRICT_IBI_DEV: float = 0.50   # code -5: max fractional IBI-to-IBI deviation
+_STRICT_RATE_DEV: float = 0.50  # code -6: max fractional rate deviation from 20-breath avg
 
 
 def rsa_rejection_from_workspace(
     workspace: "Dict[str, Any] | None",
 ) -> "tuple[float | None, float | None]":
-    """Return ``(max_extrema_span, max_cycle_ratio)`` for the configured rejection mode.
+    """Return ``(max_ibi_deviation, max_rate_deviation)`` for the configured mode.
 
     Returns ``(None, None)`` for mode ``"none"`` (no rejection guards).
-    Returns ``(_STRICT_SPAN, _STRICT_CYC_TOL)`` for mode ``"strict"``.
+    Returns ``(_STRICT_IBI_DEV, _STRICT_RATE_DEV)`` for mode ``"strict"``.
     Falls back to ``"none"`` when the workspace key is absent or unrecognised.
     """
     if workspace is None:
@@ -154,7 +157,7 @@ def rsa_rejection_from_workspace(
     if mode not in RSA_REJECTION_MODES:
         mode = _DEFAULT_RSA_REJECTION_MODE
     if mode == "strict":
-        return _STRICT_SPAN, _STRICT_CYC_TOL
+        return _STRICT_IBI_DEV, _STRICT_RATE_DEV
     return None, None
 
 

@@ -299,10 +299,10 @@ class ParametersPlotWidget(QWidget):
             ((workspace or {}).get("IcgAnalysis") or {})
             .get("b_point_guard_ms", 30.0)
         )
-        rsa_span, rsa_cyc = rsa_rejection_from_workspace(workspace)
+        rsa_ibi_dev, rsa_rate_dev = rsa_rejection_from_workspace(workspace)
         return dataset.epoched_parameters_table(
             psd_method=psd_method, rsa_lag_s=float(rsa_lag_s),
-            rsa_max_extrema_span=rsa_span, rsa_max_cycle_ratio=rsa_cyc,
+            rsa_max_ibi_deviation=rsa_ibi_dev, rsa_max_rate_deviation=rsa_rate_dev,
             b_point_guard_ms=float(b_guard),
         )
 
@@ -486,7 +486,7 @@ class ParametersPlotWidget(QWidget):
         _ra_cfg     = ((self.workspace or {}).get("RespirationAnalysis") or {})
         rsa_lag_s   = float(_ra_cfg.get("rsa_lag_s", 1.0))
         from spectHR.config import rsa_rejection_from_workspace
-        _rsa_span, _rsa_cyc = rsa_rejection_from_workspace(self.workspace)
+        _rsa_ibi_dev, _rsa_rate_dev = rsa_rejection_from_workspace(self.workspace)
         b_guard_ms  = float(
             ((self.workspace or {}).get("IcgAnalysis") or {})
             .get("b_point_guard_ms", 30.0)
@@ -722,8 +722,8 @@ class ParametersPlotWidget(QWidget):
                             np.asarray(view.labels, dtype=object),
                             rsp_phases,
                             lag_s=rsa_lag_s,
-                            max_extrema_span=_rsa_span,
-                            max_cycle_ratio=_rsa_cyc,
+                            max_ibi_deviation=_rsa_ibi_dev,
+                            max_rate_deviation=_rsa_rate_dev,
                         )
                         if rsa_raw.size > 0:
                             p_starts = np.asarray(rsp_phases.starts, dtype=float)

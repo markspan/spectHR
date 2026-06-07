@@ -232,8 +232,8 @@ class PhysioData:
         self,
         psd_method=None,
         rsa_lag_s: float = 1.0,
-        rsa_max_extrema_span=None,
-        rsa_max_cycle_ratio=None,
+        rsa_max_ibi_deviation=None,
+        rsa_max_rate_deviation=None,
         b_point_guard_ms: float = 30.0,
     ) -> "tuple[np.ndarray, list[str], np.ndarray]":
         """Compute every per-epoch parameter for every active epoch.
@@ -325,8 +325,8 @@ class PhysioData:
                 ctx = EpochContext(
                     view, psd_method=psd_method, bp_ts=bp_ts, rsp_ts=rsp_ts,
                     rsp_phases=rsp_phases, rsa_lag_s=rsa_lag_s,
-                    rsa_max_extrema_span=rsa_max_extrema_span,
-                    rsa_max_cycle_ratio=rsa_max_cycle_ratio,
+                    rsa_max_ibi_deviation=rsa_max_ibi_deviation,
+                    rsa_max_rate_deviation=rsa_max_rate_deviation,
                     icg_ts=icg_ts, ecg_ts=ecg_ts_for_pep,
                     b_point_guard_ms=b_point_guard_ms,
                 )
