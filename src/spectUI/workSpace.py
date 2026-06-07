@@ -99,6 +99,22 @@ _DEFAULT_WORKSPACE = {
         "bp_zero": 0.0,
     },
     # ------------------------------------------------------------------
+    # Impedance cardiography (ICG) — pre-ejection period (PEP)
+    # ------------------------------------------------------------------
+    # ``b_point_guard_ms`` is the width (ms) of the guard zone immediately
+    # before the dZ/dt C-point (peak ejection velocity) that is excluded
+    # from the B-point search. The B-point (aortic-valve opening) is
+    # anatomically never within a few dozen ms of the C-point; without the
+    # guard the global 2nd-derivative maximum can latch onto a secondary
+    # acceleration bump adjacent to C on distorted morphologies (e.g.
+    # standing), placing the B-point — and hence PEP — too late. The
+    # default 30 ms sits at the physiological floor of the C-B interval;
+    # raise it if your B-points still read late, lower it (toward 0, which
+    # disables the guard) if a short upstroke is being clipped.
+    "IcgAnalysis": {
+        "b_point_guard_ms": 30.0,
+    },
+    # ------------------------------------------------------------------
     # Logging
     # ------------------------------------------------------------------
     # Minimum severity a log record must have to be shown (in the Log dock

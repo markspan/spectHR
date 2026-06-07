@@ -56,7 +56,7 @@ class EpochContext:
 
     def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None,
                  rsp_phases=None, rsa_lag_s: float = 1.0, icg_ts=None,
-                 ecg_ts=None):
+                 ecg_ts=None, b_point_guard_ms: float = 30.0):
         self.view = view
         self.psd_method = psd_method
         self.bp_ts = bp_ts
@@ -65,11 +65,12 @@ class EpochContext:
         self.rsa_lag_s = rsa_lag_s
         self.icg_ts = icg_ts          # ICG dZ/dt TimeSeries (for PEP), or None
         self.ecg_ts = ecg_ts          # ECG waveform for Q-onset detection, or None
+        self.b_point_guard_ms = b_point_guard_ms  # PEP B-point guard zone (ms)
         self._psd = _UNSET
         self._bp_beats = _UNSET
         self._resp_beats = _UNSET
         self._rsa_beats = _UNSET
-        self._pep_value = _UNSET
+        self._pep_detail = _UNSET
 
     # ------------------------------------------------------------------ #
     # Series-interface delegation                                         #
@@ -177,14 +178,16 @@ class EpochContext:
             return None
 
     @property
-    def pep_value(self):
-        """Epoch pre-ejection period (ms, cached) from the ensemble-averaged
-        ICG/ECG complex, or ``None`` when no ICG channel is present."""
-        if self._pep_value is _UNSET:
-            self._pep_value = self._compute_pep_value()
-        return self._pep_value
+    def pep_detail(self):
+        """Ensemble-PEP detail dict (cached) — the scored Q/B/C landmarks plus
+        the ensemble-averaged ICG/ECG complexes (see
+        :func:`spectHR.analysis.icg_metrics.pep_ensemble`).  ``None`` when no ICG
+        channel is present or no scorable ensemble could be formed."""
+        if self._pep_detail is _UNSET:
+            self._pep_detail = self._compute_pep_detail()
+        return self._pep_detail
 
-    def _compute_pep_value(self):
+    def _compute_pep_detail(self):
         if self.icg_ts is None:
             return None
         try:
@@ -199,7 +202,16 @@ class EpochContext:
                 np.asarray(self.icg_ts.times, dtype=float),
                 np.asarray(self.icg_ts.values, dtype=float),
                 np.asarray(self.rpeak_times, dtype=float),
+                b_guard_ms=self.b_point_guard_ms,
+                return_detail=True,
                 **ecg_kw,
             )
         except Exception:
             return None
+
+    @property
+    def pep_value(self):
+        """Epoch pre-ejection period (ms, cached) from the ensemble-averaged
+        ICG/ECG complex, or ``None`` when no ICG channel is present."""
+        detail = self.pep_detail
+        return None if detail is None else detail.get("pep")

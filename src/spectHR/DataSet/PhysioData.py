@@ -232,6 +232,7 @@ class PhysioData:
         self,
         psd_method=None,
         rsa_lag_s: float = 1.0,
+        b_point_guard_ms: float = 30.0,
     ) -> "tuple[np.ndarray, list[str], np.ndarray]":
         """Compute every per-epoch parameter for every active epoch.
 
@@ -249,6 +250,9 @@ class PhysioData:
             read by the band-power metrics (and the dynamic non-standard-band
             loop) so the table values match what the PSD plot displays.  When
             ``None`` the band-power columns are ``NaN``.
+        b_point_guard_ms : float
+            Width (ms) of the guard zone before the ICG C-point excluded from the
+            PEP B-point search (default 30; workspace ``IcgAnalysis``).
 
         Returns
         -------
@@ -319,7 +323,7 @@ class PhysioData:
                 ctx = EpochContext(
                     view, psd_method=psd_method, bp_ts=bp_ts, rsp_ts=rsp_ts,
                     rsp_phases=rsp_phases, rsa_lag_s=rsa_lag_s, icg_ts=icg_ts,
-                    ecg_ts=ecg_ts_for_pep,
+                    ecg_ts=ecg_ts_for_pep, b_point_guard_ms=b_point_guard_ms,
                 )
                 row: dict[str, float] = {}
 

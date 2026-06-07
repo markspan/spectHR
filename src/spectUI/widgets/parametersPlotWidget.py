@@ -291,8 +291,13 @@ class ParametersPlotWidget(QWidget):
             ((workspace or {}).get("RespirationAnalysis") or {})
             .get("rsa_lag_s", 1.0)
         )
+        b_guard = (
+            ((workspace or {}).get("IcgAnalysis") or {})
+            .get("b_point_guard_ms", 30.0)
+        )
         return dataset.epoched_parameters_table(
-            psd_method=psd_method, rsa_lag_s=float(rsa_lag_s)
+            psd_method=psd_method, rsa_lag_s=float(rsa_lag_s),
+            b_point_guard_ms=float(b_guard),
         )
 
     def _start_loading(self) -> None:
@@ -322,8 +327,10 @@ class ParametersPlotWidget(QWidget):
         else:
             psd_method = psd_method_from_workspace(workspace)
             rsa_lag_s = ((workspace or {}).get("RespirationAnalysis") or {}).get("rsa_lag_s", 1.0)
+            b_guard = ((workspace or {}).get("IcgAnalysis") or {}).get("b_point_guard_ms", 30.0)
             labels, cols, values = self.dataset.epoched_parameters_table(
-                psd_method=psd_method, rsa_lag_s=float(rsa_lag_s)
+                psd_method=psd_method, rsa_lag_s=float(rsa_lag_s),
+                b_point_guard_ms=float(b_guard),
             )
 
         # Re-order columns: known metrics first, then extras alphabetically.
@@ -470,6 +477,24 @@ class ParametersPlotWidget(QWidget):
             ((self.workspace or {}).get("RespirationAnalysis") or {})
             .get("rsa_lag_s", 1.0)
         )
+        b_guard_ms  = float(
+            ((self.workspace or {}).get("IcgAnalysis") or {})
+            .get("b_point_guard_ms", 30.0)
+        )
+
+        # ICG dZ/dt + ECG for the per-epoch pre-ejection-period ensemble curves.
+        # Same channel resolution as PhysioData.epoched_parameters_table: locate
+        # the ICG derivative by name prefix; ECG by the standard accessor.
+        icg_ts = None
+        for _name, _ts in getattr(self.dataset, "timeseries", {}).items():
+            _nl = _name.lower()
+            if _nl.startswith("dzdt") or _nl.startswith("dz/dt"):
+                icg_ts = _ts
+                break
+        try:
+            ecg_ts = self.dataset["ecg"].timeseries
+        except (KeyError, AttributeError, TypeError):
+            ecg_ts = None
 
         result: dict[str, dict] = {}
 
@@ -481,7 +506,7 @@ class ParametersPlotWidget(QWidget):
 
             epoch: dict = {"scalars": {}, "psd": None, "profile": None,
                            "transfer": None, "transfer_profile": None,
-                           "respiration": None}
+                           "respiration": None, "icg": None}
 
             # ---- PSD -------------------------------------------------
             try:
@@ -718,6 +743,30 @@ class ParametersPlotWidget(QWidget):
                 except Exception as exc:
                     logger.debug("RSA export failed for epoch %r: %s", label, exc)
 
+            # ---- ICG ensemble complex (PEP) ------------------------
+            if icg_ts is not None:
+                try:
+                    from spectHR.analysis.icg_metrics import pep_ensemble
+                    ecg_kw = {}
+                    if ecg_ts is not None:
+                        ecg_kw = dict(
+                            ecg_times=np.asarray(ecg_ts.times,  dtype=float),
+                            ecg_values=np.asarray(ecg_ts.values, dtype=float),
+                        )
+                    detail = pep_ensemble(
+                        np.asarray(icg_ts.times,  dtype=float),
+                        np.asarray(icg_ts.values, dtype=float),
+                        np.asarray(view.times,    dtype=float),
+                        b_guard_ms=b_guard_ms,
+                        return_detail=True,
+                        **ecg_kw,
+                    )
+                    if detail is not None:
+                        epoch["icg"] = detail
+                except Exception as exc:
+                    logger.debug("ICG ensemble export failed for epoch %r: %s",
+                                 label, exc)
+
             result[label] = epoch
 
         return result
@@ -915,6 +964,24 @@ class ParametersPlotWidget(QWidget):
                     _h5write(rg, "rsa",          rsp_h5["rsa"])
                     _h5write(rg, "rsa0",         rsp_h5["rsa0"])
                     _h5write(rg, "breath_times", rsp_h5["breath_times"])
+
+                # ---- ICG ensemble complex (PEP) -----------------
+                icg_h5 = ed.get("icg")
+                if icg_h5:
+                    ig = eg.require_group("icg")
+                    # Scored landmark latencies (ms, relative to the R-peak) and
+                    # ensemble metadata, mirroring the pep_* CSV columns.
+                    ig.attrs["pep_ms"]    = float(icg_h5["pep"])
+                    ig.attrs["q_onset_ms"] = float(icg_h5["t_q_ms"])
+                    ig.attrs["b_point_ms"] = float(icg_h5["t_b_ms"])
+                    ig.attrs["c_point_ms"] = float(icg_h5["t_c_ms"])
+                    ig.attrs["n_beats"]   = int(icg_h5["n_beats"])
+                    ig.attrs["polarity"]  = float(icg_h5["polarity"])
+                    # Ensemble-averaged complexes on the common R-locked grid.
+                    _h5write(ig, "rel_ms",   icg_h5["rel_ms"])
+                    _h5write(ig, "dzdt_ens", icg_h5["icg_ens"])
+                    if icg_h5.get("ecg_ens") is not None:
+                        _h5write(ig, "ecg_ens", icg_h5["ecg_ens"])
 
                 # ---- Transfer profile ---------------------------
                 tfp = ed.get("transfer_profile")

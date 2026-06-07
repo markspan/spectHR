@@ -31,7 +31,9 @@ same recipe per epoch:
 4. **C-point** = ``dZ/dt`` maximum (peak ejection velocity).
 5. **B-point** (aortic-valve opening) = point of maximum upstroke
    acceleration before C — the maximum of the second derivative of
-   ``dZ/dt`` (Lozano et al., 2007).
+   ``dZ/dt`` (Lozano et al., 2007), with a 30 ms guard zone before C
+   excluded so detection cannot latch onto a secondary acceleration bump
+   adjacent to the C peak.
 6. **Q-onset** = on the ensemble ECG, the isoelectric-to-Q transition just
    before the R-peak. When no Q wave is resolvable, the VU-DAMS fallback of
    Q-point − 12 ms is used (manual TIP17).
@@ -65,7 +67,10 @@ import numpy as np
 from spectHR.analysis.registry import epoch_metric
 
 
-__all__ = ["pep_per_beat", "pep_ensemble", "pep"]
+__all__ = [
+    "pep_per_beat", "pep_ensemble", "pep",
+    "pep_b_ms", "pep_c_ms", "pep_q_ms", "pep_n_beats",
+]
 
 
 # ----------------------------------------------------------------------------
@@ -165,13 +170,36 @@ def _ensemble_average(
     return mean, n_used
 
 
-def _b_point_index(rel: np.ndarray, ens: np.ndarray, c_idx: int, lo_idx: int) -> int | None:
+def _b_point_index(
+    rel: np.ndarray, ens: np.ndarray, c_idx: int, lo_idx: int,
+    *, guard_ms: float = 30.0,
+) -> int | None:
     """Index of the B-point: max 2nd-derivative of ``dZ/dt`` on the upstroke
-    ``[lo_idx, c_idx]`` before the C-point (Lozano et al., 2007)."""
+    before the C-point (Lozano et al., 2007).
+
+    A small ``guard_ms`` zone immediately before the C-point is excluded from
+    the search. The B-point (aortic-valve opening) is anatomically never within
+    a few dozen ms of peak ejection velocity; without the guard the global
+    2nd-derivative maximum can latch onto a *secondary* acceleration bump close
+    to C on distorted morphologies (e.g. standing), placing B too late. Excluding
+    the guard zone keeps detection on the true B inflection. Validated against
+    VU-DAMS-scored PEP on the 5fs example recording: PEP bias +3.5 ms → +2.0 ms,
+    MAE 5.95 ms → 5.18 ms, r 0.87 → 0.90, with the worst (standing) deviation
+    falling from 17 ms to 13 ms. The default 30 ms sits at the physiological
+    floor of the C−B interval (the tightest VU-DAMS-scored coupling observed),
+    safely short of the ≈40 ms point where the guard begins clipping genuine
+    B-points. The guard is relaxed automatically when the upstroke is shorter
+    than the zone.
+    """
     if c_idx - lo_idx < 4:
         return None
-    up_t = rel[lo_idx : c_idx + 1]
-    up = ens[lo_idx : c_idx + 1]
+    # Pull the search ceiling back from C by the guard, but never so far that
+    # fewer than 4 samples remain (then the guard is dropped for this beat).
+    hi_idx = int(np.searchsorted(rel, rel[c_idx] - guard_ms / 1000.0, side="right")) - 1
+    if hi_idx - lo_idx < 4:
+        hi_idx = c_idx
+    up_t = rel[lo_idx : hi_idx + 1]
+    up = ens[lo_idx : hi_idx + 1]
     d1 = np.gradient(up, up_t)
     d2 = np.gradient(d1, up_t)
     return lo_idx + int(np.argmax(d2))
@@ -241,7 +269,9 @@ def pep_ensemble(
     min_beats: int = 5,
     pep_min_ms: float = 40.0,
     pep_max_ms: float = 180.0,
-) -> float:
+    b_guard_ms: float = 30.0,
+    return_detail: bool = False,
+):
     """Single epoch PEP (ms) from the ensemble-averaged ICG/ECG complex.
 
     Parameters
@@ -259,64 +289,104 @@ def pep_ensemble(
         ICG low-pass cut-off (Hz); VU-DAMS default 60.
     min_beats : int
         Minimum beats required to form an ensemble; otherwise ``NaN``.
+    b_guard_ms : float
+        Width of the guard zone immediately before the C-point that is excluded
+        from the B-point search (default 30 ms). See :func:`_b_point_index`.
+    return_detail : bool
+        When ``True`` return a dict with the scored landmarks and the
+        ensemble-averaged complexes (see *Returns*) instead of the bare PEP
+        scalar — used to populate the diagnostic CSV/H5 columns and the per-epoch
+        ensemble curves in the H5 export.
 
     Returns
     -------
     float
-        Epoch PEP in ms, or ``NaN`` when no plausible B-point/ensemble exists.
+        Epoch PEP in ms, or ``NaN`` when no plausible B-point/ensemble exists
+        (default).
+    dict
+        When ``return_detail`` is ``True``: ``pep`` (gated, ms), ``t_q_ms``,
+        ``t_b_ms``, ``t_c_ms`` (landmark latencies relative to the R-peak, ms;
+        ``t_q_ms`` ≤ 0), ``n_beats`` (ensemble size), ``polarity`` (±1),
+        ``rel_ms`` (ensemble time grid, ms), ``icg_ens`` (polarity-corrected
+        ensemble ``dZ/dt``) and ``ecg_ens`` (ensemble ECG, or ``None``).
+        ``None`` when there is no scorable ensemble at all.
     """
     icg_times = np.asarray(icg_times, dtype=float)
     dzdt = np.asarray(dzdt_values, dtype=float)
     rt = np.asarray(rpeak_times, dtype=float)
 
+    def _fail():
+        return None if return_detail else float("nan")
+
     fs = _sampling_rate(icg_times)
     if fs <= 0 or rt.size < min_beats or dzdt.size < 8:
-        return float("nan")
+        return _fail()
 
     dt = 1.0 / fs
     rel = np.arange(-pre_ms / 1000.0, post_ms / 1000.0 + dt, dt)
 
     ens, n_used = _ensemble_average(icg_times, dzdt, rt, rel)
     if n_used < min_beats or not np.isfinite(ens).any():
-        return float("nan")
+        return _fail()
 
     # Fill any residual gaps before filtering, then 60 Hz low-pass.
     ens = np.interp(rel, rel[np.isfinite(ens)], ens[np.isfinite(ens)])
     ens = _lowpass(ens, fs, cutoff=lp_cutoff)
 
     # Orient so the C-point is a maximum (raw VU-AMS dZ/dt has C as a min).
-    ens = ens * _detect_polarity(
+    polarity = _detect_polarity(
         icg_times, dzdt, rt,
         search_start_ms=search_start_ms, search_max_ms=search_max_ms,
     )
+    ens = ens * polarity
+
+    # Ensemble ECG (for Q-onset and the H5 curve) — computed up front so the
+    # detail dict always carries it when an ECG channel is supplied.
+    ecg_ens = None
+    if ecg_times is not None and ecg_values is not None and np.asarray(ecg_times).size:
+        ecg_t = np.asarray(ecg_times, dtype=float)
+        ecg_v = np.asarray(ecg_values, dtype=float)
+        ee, n_ecg = _ensemble_average(ecg_t, ecg_v, rt, rel)
+        if n_ecg >= min_beats and np.isfinite(ee).any():
+            ecg_ens = np.interp(rel, rel[np.isfinite(ee)], ee[np.isfinite(ee)])
+
+    def _detail(pep_val, t_q, t_b, t_c):
+        return {
+            "pep": pep_val,
+            "t_q_ms": t_q * 1000.0,
+            "t_b_ms": t_b * 1000.0 if np.isfinite(t_b) else float("nan"),
+            "t_c_ms": t_c * 1000.0 if np.isfinite(t_c) else float("nan"),
+            "n_beats": int(n_used),
+            "polarity": float(polarity),
+            "rel_ms": rel * 1000.0,
+            "icg_ens": ens,
+            "ecg_ens": ecg_ens,
+        }
 
     # C-point: dZ/dt maximum in the ejection window.
     ej = (rel >= search_start_ms / 1000.0) & (rel <= search_max_ms / 1000.0)
     ej_idx = np.where(ej)[0]
     if ej_idx.size < 5:
-        return float("nan")
+        return _detail(float("nan"), float("nan"), float("nan"), float("nan")) \
+            if return_detail else float("nan")
     c_idx = ej_idx[int(np.argmax(ens[ej_idx]))]
+    t_c = float(rel[c_idx])
 
-    # B-point: max upstroke acceleration before C.
-    b_idx = _b_point_index(rel, ens, c_idx, ej_idx[0])
+    # B-point: max upstroke acceleration before C (with guard zone before C).
+    b_idx = _b_point_index(rel, ens, c_idx, ej_idx[0], guard_ms=b_guard_ms)
     if b_idx is None:
-        return float("nan")
+        return _detail(float("nan"), float("nan"), float("nan"), t_c) \
+            if return_detail else float("nan")
     t_b = float(rel[b_idx])
 
     # Reference: Q-onset (ensemble ECG) when available, else R-peak (rel=0).
     t_ref = 0.0
-    if ecg_times is not None and ecg_values is not None and np.asarray(ecg_times).size:
-        ecg_t = np.asarray(ecg_times, dtype=float)
-        ecg_v = np.asarray(ecg_values, dtype=float)
-        ecg_ens, n_ecg = _ensemble_average(ecg_t, ecg_v, rt, rel)
-        if n_ecg >= min_beats and np.isfinite(ecg_ens).any():
-            ecg_ens = np.interp(
-                rel, rel[np.isfinite(ecg_ens)], ecg_ens[np.isfinite(ecg_ens)]
-            )
-            t_ref = _q_onset_rel(rel, ecg_ens, q_search_ms=q_search_ms)
+    if ecg_ens is not None:
+        t_ref = _q_onset_rel(rel, ecg_ens, q_search_ms=q_search_ms)
 
-    val = (t_b - t_ref) * 1000.0
-    return val if pep_min_ms <= val <= pep_max_ms else float("nan")
+    raw = (t_b - t_ref) * 1000.0
+    val = raw if pep_min_ms <= raw <= pep_max_ms else float("nan")
+    return _detail(val, t_ref, t_b, t_c) if return_detail else val
 
 
 # ----------------------------------------------------------------------------
@@ -450,3 +520,35 @@ def pep(ctx) -> float:
         # Bare-view call or no ICG: nothing to compute.
         return float("nan")
     return float(val)
+
+
+def _pep_detail_field(ctx, key: str) -> float:
+    """Read one scored-landmark field from the cached ensemble PEP detail."""
+    detail = getattr(ctx, "pep_detail", None)
+    if not detail:
+        return float("nan")
+    return float(detail.get(key, float("nan")))
+
+
+@epoch_metric
+def pep_b_ms(ctx) -> float:
+    """B-point (aortic-valve opening) latency relative to the R-peak, ms (needs ICG dZ/dt)."""
+    return _pep_detail_field(ctx, "t_b_ms")
+
+
+@epoch_metric
+def pep_c_ms(ctx) -> float:
+    """C-point (peak ejection velocity) latency relative to the R-peak, ms (needs ICG dZ/dt)."""
+    return _pep_detail_field(ctx, "t_c_ms")
+
+
+@epoch_metric
+def pep_q_ms(ctx) -> float:
+    """Q-onset latency relative to the R-peak, ms (≤ 0; needs ICG dZ/dt + ECG)."""
+    return _pep_detail_field(ctx, "t_q_ms")
+
+
+@epoch_metric
+def pep_n_beats(ctx) -> float:
+    """Number of beats in the PEP ensemble average for the epoch (needs ICG dZ/dt)."""
+    return _pep_detail_field(ctx, "n_beats")

@@ -423,7 +423,7 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 | **Non-linear / stationarity** | `dfa_a1`, `stationarity_z` |
 | **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default), `lf_hf_ratio` |
 | **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `resp_rate`, `hf_resp_in_band`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
-| **Sympathetic (ICG)** | `pep` (always present; blank when no ICG `dZ/dt` channel) |
+| **Sympathetic (ICG)** | `pep`, plus the scored landmarks `pep_b_ms` (B-point), `pep_c_ms` (C-point), `pep_q_ms` (Q-onset; all latencies in ms relative to the R-peak) and `pep_n_beats` (ensemble size). All present; blank when no ICG `dZ/dt` channel |
 | **Profile summaries** | `{band}_prof_mean/std/min/max/t_max` per band; `prof_method`, `prof_unit`, `prof_window_s`, `prof_step_s`, `prof_n_windows` |
 | **Transfer summaries** | `{band}_tf_modulus`, `_tf_phase_w`, `_tf_phase_u`, `_tf_coherence`, `_tf_n_points`, `_tf_n_coherent` per band; `tf_method`, `tf_freq_resolution`, `tf_smooth`, `tf_min_coherence`; written only when a respiration channel is present |
 
@@ -442,7 +442,7 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
          {band}_power, lf_hf_ratio,                           ← band powers
          bp_sbp/bp_dbp/bp_pp/bp_map, resp_mvo/resp_svo,        ← BP / respiration
          resp_rate, hf_resp_in_band,                           ← respiration-context HF
-         pep,                                                  ← pre-ejection period (ICG)
+         pep, pep_b_ms, pep_c_ms, pep_q_ms, pep_n_beats,       ← pre-ejection period (ICG)
          rsa, rsa0,                                             ← Grossman RSA (epoch means)
          {band}_prof_mean/std/min/max/t_max,                  ← profile summaries
          prof_method, prof_unit, prof_window_s, prof_step_s,
@@ -489,9 +489,16 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
   /respiration/                (present only when INH/EXH phases were detected)
     attrs: lag_s, n_breaths, n_valid
     datasets: rsa [N_br], rsa0 [N_br], breath_times [N_br]
+
+  /icg/                        (present only when an ICG dZ/dt channel is loaded)
+    attrs: pep_ms, q_onset_ms, b_point_ms, c_point_ms, n_beats, polarity
+    datasets: rel_ms [N_e], dzdt_ens [N_e]
+              [, ecg_ens [N_e]]   (present only when an ECG channel is loaded)
 ```
 
 `N_br` = number of complete INH→EXH breath cycles in the epoch. `rsa` contains `NaN` for invalid cycles (negative peak-to-valley difference or missing IBI); `rsa0` has those replaced with 0. `breath_times` is the midpoint timestamp (seconds) of each cycle. `lag_s` is the configured search-window extension (default 1.0 s).
+
+`N_e` = samples on the R-locked ensemble grid (`rel_ms` runs from −200 ms to +400 ms relative to the R-peak). `dzdt_ens` is the polarity-corrected ensemble-averaged `dZ/dt` complex used to score the B- and C-points, and `ecg_ens` the matching ensemble ECG used for the Q-onset; the `*_ms` attributes are the scored landmark latencies (relative to the R-peak) that produce `pep`. Plotting `dzdt_ens` against `rel_ms` and marking `b_point_ms` / `c_point_ms` reproduces exactly what the PEP detector saw — the intended way to spot-check the automated B-point (see [Pre-ejection period](#pre-ejection-period-pep)).
 
 All datasets are `float64` (gzip-compressed, level 4); `n_coherent` is `int32`. Array lengths: `N_f` = full frequency grid; `N_b` = frequency bins inside the band's `[low, high]` range; `N_w` = number of sliding windows.
 
@@ -671,7 +678,7 @@ All parameters are stored in a JSON workspace file, editable through the applica
 
 **WorkSpace → Edit Parameters** is a tabbed dialog:
 
-- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *Logging* (minimum log level shown in the Log dock / console).
+- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *ICG Analysis* (PEP B-point guard `b_point_guard_ms`, see [Pre-ejection period](#pre-ejection-period-pep)), *Logging* (minimum log level shown in the Log dock / console).
 - **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
 - **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window (sec)`, `step (sec)`), and the optional `smooth_for_display` time-axis smoother.
 
@@ -859,6 +866,8 @@ $$\text{PEP} = (\tau_B - \tau_Q)\times 1000 \;\text{ms}$$
 
 with $\tau_B$ and $\tau_Q$ both measured relative to the R-peak ($\tau = 0$). Single-beat `dZ/dt` is far too noisy for reliable inflection-point detection, so spectHR follows the VU-DAMS scoring recipe (manual §5.5) and **ensemble-averages** the waveform across the epoch before scoring.
 
+Alongside `pep`, the three scored landmark latencies are exported per epoch — `pep_b_ms` (B-point), `pep_c_ms` (C-point) and `pep_q_ms` (Q-onset), all in ms relative to the R-peak — together with `pep_n_beats` (the number of beats in the ensemble). These let you audit *which* landmark drives a given `pep` without re-running the detector, and the full ensemble complexes themselves are written to the HDF5 export (the [`/icg/` group](#contents-of-basenameh5)) for visual spot-checking.
+
 <details>
 <summary>PEP, scoring detail</summary>
 
@@ -876,20 +885,43 @@ where $d(\cdot)$ is the `dZ/dt` waveform (and analogously $\bar e(\tau)$ for the
 
 **2. Filtering & polarity.** The averaged ICG complex is **low-pass filtered at 60 Hz** (the VU-DAMS default, *"necessary to overcome the noise confound and assure reliable detection of the inflection points"*). The polarity is auto-detected: the raw VU-AMS `dZ/dt` carries the C-point as a *minimum* (*"the dZ/dt minimum is shown as a maximum by the program"*), so the sign is corrected so the C-point reads as a maximum.
 
-**3. C- and B-points.** Within the early-systole window the **C-point** (peak ejection velocity) is the maximum and the **B-point** (aortic-valve opening) is the point of maximum upstroke acceleration before it — the maximum of the second derivative of `dZ/dt` ([Lozano et al., 2007](#ref-lozano2007)):
+**3. C- and B-points.** Within the early-systole window the **C-point** (peak ejection velocity) is the maximum and the **B-point** (aortic-valve opening) is the point of maximum upstroke acceleration before it — the maximum of the second derivative of `dZ/dt` ([Lozano et al., 2007](#ref-lozano2007)), searched up to a **30 ms guard** before the C-point:
 
 <div align="center">
 
-$$\tau_C = \arg\max_{\tau}\ \bar d(\tau), \qquad \tau_B = \arg\max_{\tau < \tau_C}\ \frac{d^2\bar d}{d\tau^2}$$
+$$\tau_C = \arg\max_{\tau}\ \bar d(\tau), \qquad \tau_B = \arg\max_{\tau \le\, \tau_C - 30\,\text{ms}}\ \frac{d^2\bar d}{d\tau^2}$$
 
 </div>
+
+The guard matters: the B-point is anatomically never within a few dozen ms of peak ejection velocity, and on distorted morphologies (e.g. standing) the *global* 2nd-derivative maximum can otherwise latch onto a secondary acceleration bump adjacent to C, placing B too late. Excluding the 30 ms zone keeps detection on the true B inflection. The guard is dropped automatically when the upstroke is shorter than the zone.
+
+The guard width is the workspace setting **`IcgAnalysis.b_point_guard_ms`** (default `30.0`, edited under *General Settings → ICG Analysis*). Raise it if your B-points still read late on a given recording; lower it toward `0` (which disables the guard entirely) if a short upstroke is being clipped and B comes out too early. The default sits at the physiological floor of the C−B interval, so it is a safe starting point across postures.
+
 **4. Q-onset.** On the averaged ECG, $\tau_Q$ is the isoelectric-to-Q transition just before the R-peak (the last baseline sample preceding the Q trough). When no Q wave is resolvable, the VU-DAMS fallback of $\tau_Q = \tau_\text{Q-point} - 12\,\text{ms}$ is used (manual TIP17). With no ECG channel the R-peak is the reference ($\tau_Q = 0$), giving the slightly shorter R-to-B interval.
 
 Implausible values (outside 40–180 ms) are blanked.
 
 </details>
 
-> **Note.** The VU-DAMS manual is explicit that automated B-point detection *"simply will not work for all signals"* — every ensemble complex is normally visually inspected and manually corrected. spectHR's automated `pep` should likewise be spot-checked against the `dZ/dt` waveform in demanding applications; posture-dependent morphology changes (e.g. supine vs standing) are where it most often needs a manual nudge.
+<details>
+<summary>Validation against VU-DAMS</summary>
+
+### Validation against VU-DAMS
+
+On the VU-AMS 5fs example recording (39 conditions), spectHR's per-epoch `pep` was compared against the values VU-DAMS produces from the same data:
+
+| landmark | mean Δ (spectHR − VU-DAMS) | MAE |
+|---|---|---|
+| **Q-onset** (`pep_q_ms`) | −1.1 ms | 1.1 ms |
+| **C-point** (`pep_c_ms`) | −0.3 ms | 0.9 ms |
+| **B-point** (`pep_b_ms`) | +2.0 ms | ~5 ms |
+| **PEP** | +2.0 ms | 5.2 ms (r = 0.90) |
+
+The Q-onset and C-point match VU-DAMS to ~1 ms; essentially all of the residual sits in the **B-point**, which is exactly the landmark the manual flags as needing visual correction. The 30 ms B-point guard (above) was tuned on this comparison — it halves the bias and pulls the worst (standing) deviation from 17 ms down to 13 ms — but was deliberately kept conservative (the physiological floor of the C−B interval) rather than over-fitted to a single subject.
+
+</details>
+
+> **Note.** The VU-DAMS manual is explicit that automated B-point detection *"simply will not work for all signals"* — every ensemble complex is normally visually inspected and manually corrected. spectHR's automated `pep` should likewise be spot-checked against the `dZ/dt` waveform in demanding applications; posture-dependent morphology changes (e.g. supine vs standing) are where it most often needs a manual nudge. The HDF5 [`/icg/` group](#contents-of-basenameh5) stores the ensemble `dzdt_ens` complex and the scored `b_point_ms` / `c_point_ms` for each epoch, so this spot-check is a single plot per epoch.
 
 ---
 
