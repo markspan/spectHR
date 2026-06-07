@@ -730,18 +730,24 @@ class ParametersPlotWidget(QWidget):
                                             (p_starts[i] + p_ends[i + 1]) / 2.0
                                         )
                                     pair_idx += 1
+                            # rsa0: negative-RSA breaths → 0; truly missing
+                            # (NaN) remain NaN so the denominator in the
+                            # scalar mean excludes them (VU-DAMS RSA0 def).
+                            rsa0_arr = np.where(
+                                np.isfinite(rsa_raw),
+                                np.maximum(rsa_raw, 0.0),
+                                np.nan,
+                            )
                             epoch["respiration"] = {
                                 "rsa":          rsa_raw,
-                                "rsa0":         np.where(
-                                                    np.isfinite(rsa_raw),
-                                                    rsa_raw, 0.0),
+                                "rsa0":         rsa0_arr,
                                 "breath_times": np.array(x_pts, dtype=float),
                                 "lag_s":        rsa_lag_s,
                                 "n_breaths":    int(rsa_raw.size),
                                 "n_valid":      int(
                                                     np.sum(
                                                         np.isfinite(rsa_raw)
-                                                        & (rsa_raw >= 0)
+                                                        & (rsa_raw > 0)
                                                     )
                                                 ),
                             }

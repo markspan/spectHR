@@ -526,10 +526,13 @@ def grossman_rsa_per_breath(
                     longest = float(ibi_ms[j])
 
         if shortest is None or longest is None:
+            # Truly missing (no qualifying IBI found) → excluded from both RSA and RSA0.
             results.append(np.nan)
         else:
-            diff = longest - shortest
-            results.append(diff if diff >= 0.0 else np.nan)
+            # Keep the raw difference, including negatives.  RSA will discard
+            # negatives; RSA0 will include them as zero (VU-DAMS RSA0 definition:
+            # only negative-RSA breaths are zeroed, not truly-missing ones).
+            results.append(float(longest - shortest))
 
     return np.asarray(results, dtype=float)
 
@@ -539,10 +542,15 @@ def _rsa_metric(ctx, key: str) -> float:
     if beats is None or beats.size == 0:
         return float("nan")
     if key == "rsa":
-        valid = beats[np.isfinite(beats)]
+        # Mean of positive-only values (VU-DAMS RSA: excludes negative and missing).
+        valid = beats[np.isfinite(beats) & (beats > 0)]
         return float(np.mean(valid)) if valid.size > 0 else float("nan")
-    # rsa0: invalid breaths count as zero
-    return float(np.mean(np.where(np.isfinite(beats), beats, 0.0)))
+    # RSA0 (VU-DAMS): negative-RSA breaths count as zero; truly-missing (NaN)
+    # breaths are excluded from the denominator entirely.
+    finite = beats[np.isfinite(beats)]
+    if finite.size == 0:
+        return float("nan")
+    return float(np.mean(np.where(finite > 0, finite, 0.0)))
 
 
 @epoch_metric
