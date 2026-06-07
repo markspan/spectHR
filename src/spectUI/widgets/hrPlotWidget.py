@@ -322,15 +322,17 @@ class HRPlotWidget(TimelinePlotWidget):
 
         try:
             from spectHR.analysis.bp_metrics import grossman_rsa_per_breath
-            lag_s = float(
-                ((self.workspace or {}).get("RespirationAnalysis") or {})
-                .get("rsa_lag_s", 1.0)
-            )
+            from spectHR.config import rsa_rejection_from_workspace
+            _ra = ((self.workspace or {}).get("RespirationAnalysis") or {})
+            lag_s = float(_ra.get("rsa_lag_s", 1.0))
+            _rsa_span, _rsa_cyc = rsa_rejection_from_workspace(self.workspace)
             rsa_values = grossman_rsa_per_breath(
                 np.asarray(hrv.times,  dtype=float),
                 np.asarray(hrv.labels, dtype=object),
                 rsp_phases,
                 lag_s=lag_s,
+                max_extrema_span=_rsa_span,
+                max_cycle_ratio=_rsa_cyc,
             )
         except Exception:
             return

@@ -184,6 +184,11 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     # impedance (ICG) signal — what VU-AMS scores RSA from — or the
     # accelerometer chest-wall surrogate.
     "RespirationAnalysis.rsp_source": ["icg", "accelerometer"],
+    # Breath rejection guards for the Grossman peak-to-valley RSA algorithm:
+    #   none   - no extra rejection (default; legacy spectHR behaviour).
+    #   strict - VU-AMS-style irregular-IBI + irregular-rate guards; brings
+    #            RSA0 closer to VU-AMS output on noisy/sitting recordings.
+    "RespirationAnalysis.rsa_rejection_mode": ["none", "strict"],
 }
 
 def _label(key: str) -> str:

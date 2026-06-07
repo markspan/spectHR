@@ -291,17 +291,18 @@ class ParametersPlotWidget(QWidget):
         :meth:`display_parameters` so the main thread only handles
         the fast Qt table-widget population step.
         """
+        from spectHR.config import rsa_rejection_from_workspace
         psd_method = psd_method_from_workspace(workspace)
-        rsa_lag_s = (
-            ((workspace or {}).get("RespirationAnalysis") or {})
-            .get("rsa_lag_s", 1.0)
-        )
+        ra_cfg = ((workspace or {}).get("RespirationAnalysis") or {})
+        rsa_lag_s = ra_cfg.get("rsa_lag_s", 1.0)
         b_guard = (
             ((workspace or {}).get("IcgAnalysis") or {})
             .get("b_point_guard_ms", 30.0)
         )
+        rsa_span, rsa_cyc = rsa_rejection_from_workspace(workspace)
         return dataset.epoched_parameters_table(
             psd_method=psd_method, rsa_lag_s=float(rsa_lag_s),
+            rsa_max_extrema_span=rsa_span, rsa_max_cycle_ratio=rsa_cyc,
             b_point_guard_ms=float(b_guard),
         )
 
@@ -330,11 +331,15 @@ class ParametersPlotWidget(QWidget):
         if _precomputed is not None:
             labels, cols, values = _precomputed
         else:
+            from spectHR.config import rsa_rejection_from_workspace
             psd_method = psd_method_from_workspace(workspace)
-            rsa_lag_s = ((workspace or {}).get("RespirationAnalysis") or {}).get("rsa_lag_s", 1.0)
+            ra_cfg = ((workspace or {}).get("RespirationAnalysis") or {})
+            rsa_lag_s = ra_cfg.get("rsa_lag_s", 1.0)
             b_guard = ((workspace or {}).get("IcgAnalysis") or {}).get("b_point_guard_ms", 30.0)
+            rsa_span, rsa_cyc = rsa_rejection_from_workspace(workspace)
             labels, cols, values = self.dataset.epoched_parameters_table(
                 psd_method=psd_method, rsa_lag_s=float(rsa_lag_s),
+                rsa_max_extrema_span=rsa_span, rsa_max_cycle_ratio=rsa_cyc,
                 b_point_guard_ms=float(b_guard),
             )
 
@@ -478,10 +483,10 @@ class ParametersPlotWidget(QWidget):
 
         active_band = getattr(self.dataset, "active_band", None)
         rsp_series  = getattr(self.dataset, "rsp_map", {}).get(active_band)
-        rsa_lag_s   = float(
-            ((self.workspace or {}).get("RespirationAnalysis") or {})
-            .get("rsa_lag_s", 1.0)
-        )
+        _ra_cfg     = ((self.workspace or {}).get("RespirationAnalysis") or {})
+        rsa_lag_s   = float(_ra_cfg.get("rsa_lag_s", 1.0))
+        from spectHR.config import rsa_rejection_from_workspace
+        _rsa_span, _rsa_cyc = rsa_rejection_from_workspace(self.workspace)
         b_guard_ms  = float(
             ((self.workspace or {}).get("IcgAnalysis") or {})
             .get("b_point_guard_ms", 30.0)
@@ -717,6 +722,8 @@ class ParametersPlotWidget(QWidget):
                             np.asarray(view.labels, dtype=object),
                             rsp_phases,
                             lag_s=rsa_lag_s,
+                            max_extrema_span=_rsa_span,
+                            max_cycle_ratio=_rsa_cyc,
                         )
                         if rsa_raw.size > 0:
                             p_starts = np.asarray(rsp_phases.starts, dtype=float)

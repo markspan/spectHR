@@ -40,6 +40,10 @@ __all__ = [
     "spectrogram_settings_from_workspace",
     "transfer_settings_from_workspace",
     "psd_method_from_workspace",
+    "RSP_SOURCES",
+    "rsp_source_from_workspace",
+    "RSA_REJECTION_MODES",
+    "rsa_rejection_from_workspace",
 ]
 
 
@@ -113,6 +117,45 @@ def rsp_source_from_workspace(workspace: "Dict[str, Any] | None") -> str:
     ra = workspace.get("RespirationAnalysis", {}) or {}
     src = str(ra.get("rsp_source", _DEFAULT_RSP_SOURCE)).lower()
     return src if src in RSP_SOURCES else _DEFAULT_RSP_SOURCE
+
+
+#: Accepted RSA breath-rejection modes for the ``RespirationAnalysis`` workspace
+#: section.  Also the choice list the workspace editor offers for
+#: ``RespirationAnalysis.rsa_rejection_mode``.
+#:
+#: * ``"none"``   — no extra rejection; all valid INH→EXH pairs are scored
+#:                  (default, preserves the legacy spectHR behaviour).
+#: * ``"strict"`` — apply two VU-AMS-style guards: irregular-IBI (extrema too
+#:                  far apart) and irregular-respiration-rate (cycle > 1.5×
+#:                  median).  Brings RSA0 closer to VU-AMS output on sitting
+#:                  recordings.
+RSA_REJECTION_MODES = ("none", "strict")
+_DEFAULT_RSA_REJECTION_MODE = "none"
+
+# Guard parameters used in "strict" mode.  These were determined empirically
+# against a three-posture VU-AMS reference dataset (supine/standing/sitting).
+_STRICT_SPAN: float = 1.0    # extrema gap > span × breath duration → reject
+_STRICT_CYC_TOL: float = 1.5 # cycle > cyc_tol × median duration → reject
+
+
+def rsa_rejection_from_workspace(
+    workspace: "Dict[str, Any] | None",
+) -> "tuple[float | None, float | None]":
+    """Return ``(max_extrema_span, max_cycle_ratio)`` for the configured rejection mode.
+
+    Returns ``(None, None)`` for mode ``"none"`` (no rejection guards).
+    Returns ``(_STRICT_SPAN, _STRICT_CYC_TOL)`` for mode ``"strict"``.
+    Falls back to ``"none"`` when the workspace key is absent or unrecognised.
+    """
+    if workspace is None:
+        return None, None
+    ra = workspace.get("RespirationAnalysis", {}) or {}
+    mode = str(ra.get("rsa_rejection_mode", _DEFAULT_RSA_REJECTION_MODE)).lower()
+    if mode not in RSA_REJECTION_MODES:
+        mode = _DEFAULT_RSA_REJECTION_MODE
+    if mode == "strict":
+        return _STRICT_SPAN, _STRICT_CYC_TOL
+    return None, None
 
 
 #: Accepted log-level names, most verbose first. Also the choice list the

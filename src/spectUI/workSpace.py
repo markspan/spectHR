@@ -14,6 +14,7 @@ from spectHR.Tools.Logger import logger
 # compatibility with the many ``from spectUI.workSpace import ...`` call sites.
 from spectHR.config import (  # noqa: F401  (re-export)
     LOG_LEVELS,
+    RSA_REJECTION_MODES,
     RSP_SOURCES,
     bp_calibration_from_workspace,
     display_bands_from_workspace,
@@ -22,6 +23,7 @@ from spectHR.config import (  # noqa: F401  (re-export)
     psd_ci_alpha,
     psd_method_from_workspace,
     resolved_profile_bands,
+    rsa_rejection_from_workspace,
     rsp_source_from_workspace,
     spectrogram_settings_from_workspace,
     transfer_settings_from_workspace,
@@ -334,6 +336,11 @@ _DEFAULT_WORKSPACE = {
         #                     devices without an ICG channel.
         # Only affects EDF recordings that carry both candidate channels.
         "rsp_source": "icg",
+        # Breath rejection mode for the Grossman peak-to-valley RSA algorithm:
+        #   "none"   - no extra rejection (default; legacy behaviour).
+        #   "strict" - VU-AMS-style guards (irregular IBI + irregular rate);
+        #              brings RSA0 closer to VU-AMS output on noisy recordings.
+        "rsa_rejection_mode": "none",
     },
 }
 

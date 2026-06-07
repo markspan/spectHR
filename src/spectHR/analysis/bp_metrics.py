@@ -442,6 +442,10 @@ def resp_svo(ctx) -> float:
 
 _DEFAULT_RSA_LAG_S: float = 1.0  # dZ-HR phase shift; VU-DAMS default 1000 ms
 
+# Rejection-guard defaults for "strict" mode (matched against VU-AMS output).
+_STRICT_RSA_SPAN: float = 1.0    # reject if extrema gap > span × breath duration
+_STRICT_RSA_CYC_TOL: float = 1.5 # reject if cycle > cyc_tol × median duration
+
 
 def grossman_rsa_per_breath(
     rpeak_times: np.ndarray,
@@ -449,6 +453,8 @@ def grossman_rsa_per_breath(
     rsp_phases,
     *,
     lag_s: float = _DEFAULT_RSA_LAG_S,
+    max_extrema_span: Optional[float] = None,
+    max_cycle_ratio: Optional[float] = None,
 ) -> np.ndarray:
     """Per-breath RSA in ms using the Grossman et al. (1990) peak-to-valley method.
 
@@ -475,6 +481,15 @@ def grossman_rsa_per_breath(
         Phase-shift applied to the end of each INH and EXH window (default
         1.0 s, matching VU-DAMS).  Increasing this helps at low respiratory
         rates; the VU-DAMS manual suggests adjusting it for children.
+    max_extrema_span : float or None
+        Rejection guard: if the time between the shortest IBI onset and longest
+        IBI onset exceeds ``max_extrema_span × breath_duration``, the breath is
+        rejected (counted as NaN → zero in RSA0).  Mirrors VU-AMS irregular-IBI
+        rejection.  ``None`` disables this guard (default).
+    max_cycle_ratio : float or None
+        Rejection guard: if the breath cycle duration exceeds
+        ``max_cycle_ratio × median_cycle_duration``, the breath is rejected.
+        Mirrors VU-AMS irregular-respiration-rate rejection.  ``None`` disables.
 
     Returns
     -------
@@ -496,6 +511,13 @@ def grossman_rsa_per_breath(
     ends = np.asarray(rsp_phases.ends, dtype=float)
     labels = np.asarray(rsp_phases.labels, dtype=object)
 
+    # Pre-compute cycle durations for the median-ratio guard.
+    cycle_durations: list[float] = []
+    for i in range(len(starts) - 1):
+        if labels[i] == "INH" and labels[i + 1] == "EXH":
+            cycle_durations.append(float(ends[i + 1]) - float(starts[i]))
+    median_cycle = float(np.median(cycle_durations)) if cycle_durations else None
+
     results: list[float] = []
 
     for i in range(len(starts) - 1):
@@ -504,6 +526,17 @@ def grossman_rsa_per_breath(
 
         inh_s, inh_e = float(starts[i]), float(ends[i])
         exh_s, exh_e = float(starts[i + 1]), float(ends[i + 1])
+        breath_dur = exh_e - inh_s
+
+        # Cycle-ratio guard: reject irregular breaths.
+        if (
+            max_cycle_ratio is not None
+            and median_cycle is not None
+            and median_cycle > 0
+            and breath_dur > max_cycle_ratio * median_cycle
+        ):
+            results.append(np.nan)
+            continue
 
         wi_lo, wi_hi = inh_s, inh_e + lag_s
         we_lo, we_hi = exh_s, exh_e + lag_s
@@ -513,28 +546,43 @@ def grossman_rsa_per_breath(
 
         # Shortest IBI on an accelerating slope (IBI[j] < IBI[j-1])
         shortest: float | None = None
+        shortest_t: float | None = None
         for j in inh_idx:
             if j > 0 and ibi_ms[j] < ibi_ms[j - 1]:
                 if shortest is None or ibi_ms[j] < shortest:
                     shortest = float(ibi_ms[j])
+                    shortest_t = float(clean_t[j])
 
         # Longest IBI on a decelerating slope (IBI[j] > IBI[j-1])
         longest: float | None = None
+        longest_t: float | None = None
         for j in exh_idx:
             if j > 0 and ibi_ms[j] > ibi_ms[j - 1]:
                 if longest is None or ibi_ms[j] > longest:
                     longest = float(ibi_ms[j])
+                    longest_t = float(clean_t[j])
 
         if shortest is None or longest is None:
             # Undetectable IBI (no qualifying accelerating/decelerating beat).
             # NaN here is excluded from the positive-only RSA mean but counts
             # as zero in RSA0 (which divides by the total breath count).
             results.append(np.nan)
-        else:
-            # Keep the raw difference, including negatives, so the per-breath
-            # export stays informative.  RSA discards negatives; RSA0 counts
-            # them (and the NaN above) as zero over the total breath count.
-            results.append(float(longest - shortest))
+            continue
+
+        # Extrema-span guard: reject if shortest and longest IBI are too far
+        # apart in time relative to the breath duration (irregular-IBI guard).
+        if (
+            max_extrema_span is not None
+            and breath_dur > 0
+            and abs(longest_t - shortest_t) > max_extrema_span * breath_dur  # type: ignore[operator]
+        ):
+            results.append(np.nan)
+            continue
+
+        # Keep the raw difference, including negatives, so the per-breath
+        # export stays informative.  RSA discards negatives; RSA0 counts
+        # them (and the NaN above) as zero over the total breath count.
+        results.append(float(longest - shortest))
 
     return np.asarray(results, dtype=float)
 
