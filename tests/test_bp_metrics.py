@@ -270,26 +270,26 @@ def test_grossman_rsa_negative_kept_not_nan():
         assert result.dtype == float
 
 
-def test_rsa_excludes_negative_rsa0_zeros_negative():
-    """RSA = mean of positive values only; RSA0 zeros negatives but keeps NaN
-    excluded from denominator (VU-DAMS RSA0 definition)."""
+def test_rsa_positive_only_rsa0_zeros_all_invalid():
+    """RSA = mean of positive values only; RSA0 counts *every* invalid breath
+    (negative or missing) as zero over the total breath count (VU-DAMS def)."""
     from spectHR.analysis.bp_metrics import _rsa_metric
 
     class _Ctx:
         pass
 
     ctx = _Ctx()
-    # 3 breaths: 60 ms (valid), -20 ms (negative RSA), NaN (truly missing)
+    # 3 breaths: 60 ms (valid), -20 ms (negative RSA), NaN (undetectable IBI)
     ctx.rsa_beats = np.array([60.0, -20.0, np.nan])
 
     # RSA: mean of positives only → 60.0
     rsa_val = _rsa_metric(ctx, "rsa")
     assert abs(rsa_val - 60.0) < 1e-9, f"RSA should be 60.0, got {rsa_val}"
 
-    # RSA0: mean over finite values with negatives zeroed → (60 + 0) / 2 = 30.0
-    # NaN (truly missing) is excluded from the denominator.
+    # RSA0: negative AND missing both count as zero, denominator = total (3):
+    # mean([60, 0, 0]) = 20.0
     rsa0_val = _rsa_metric(ctx, "rsa0")
-    assert abs(rsa0_val - 30.0) < 1e-9, f"RSA0 should be 30.0, got {rsa0_val}"
+    assert abs(rsa0_val - 20.0) < 1e-9, f"RSA0 should be 20.0, got {rsa0_val}"
 
 
 def test_rsa0_all_nan_returns_nan():
@@ -298,27 +298,27 @@ def test_rsa0_all_nan_returns_nan():
     class _Ctx:
         rsa_beats = np.array([np.nan, np.nan])
 
+    # No breath was measurable at all → NaN (not 0).
     assert np.isnan(_rsa_metric(_Ctx(), "rsa0"))
 
 
-def test_rsa0_old_behaviour_would_differ():
-    """Demonstrate that the old RSA0 (zero ALL NaN) gives a different — lower —
-    answer than the VU-DAMS definition (zero only negative RSA)."""
+def test_rsa0_denominator_is_total_breath_count():
+    """RSA0 divides the sum of positive RSA by the *total* number of breath
+    cycles, so missing/negative breaths drag the mean down (VU-DAMS RSA0)."""
     from spectHR.analysis.bp_metrics import _rsa_metric
 
     class _Ctx:
         pass
 
     ctx = _Ctx()
-    # 2 valid breaths (60, 80 ms), 1 negative (-30 ms), 3 truly missing (NaN)
+    # 2 valid breaths (60, 80 ms), 1 negative (-30 ms), 3 missing (NaN)
     ctx.rsa_beats = np.array([60.0, 80.0, -30.0, np.nan, np.nan, np.nan])
 
-    rsa0_new = _rsa_metric(ctx, "rsa0")
-    # VU-DAMS: denominator is 3 (finite), negatives → 0
-    # mean([60, 80, 0]) / 3 = 140 / 3 ≈ 46.67
-    expected_new = (60.0 + 80.0 + 0.0) / 3.0
-    assert abs(rsa0_new - expected_new) < 1e-9, f"RSA0={rsa0_new}, expected {expected_new}"
+    # mean([60, 80, 0, 0, 0, 0]) = 140 / 6 ≈ 23.33
+    rsa0 = _rsa_metric(ctx, "rsa0")
+    assert abs(rsa0 - 140.0 / 6.0) < 1e-9, f"RSA0={rsa0}"
 
-    # Old behaviour would give: mean([60, 80, 0, 0, 0, 0]) / 6 ≈ 23.33 — wrong
-    old_rsa0 = float(np.mean(np.where(np.isfinite(ctx.rsa_beats), ctx.rsa_beats, 0.0)))
-    assert rsa0_new > old_rsa0, "new RSA0 should exceed old (larger denominator excluded missing)"
+    # RSA (positive-only) is much higher: mean([60, 80]) = 70.
+    rsa = _rsa_metric(ctx, "rsa")
+    assert abs(rsa - 70.0) < 1e-9
+    assert rsa0 < rsa, "RSA0 must be pulled below RSA by the zeroed invalid breaths"

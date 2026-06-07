@@ -405,9 +405,9 @@ The default of **1.0 s** is the value used in [Grossman et al. (1990)](#ref-gros
 For each breath cycle the algorithm may either (a) find a valid positive RSA, (b) obtain a *negative* difference (the longest IBI came out shorter than the shortest — a sign of measurement error or weak coupling), or (c) fail to locate a qualifying shortest- or longest-IBI altogether. Following the VU-DAMS definition (manual §5.4.1, *Respiratory sinus arrhythmia*), spectHR reports two epoch means:
 
 - **`rsa`** — the mean over breaths with a **valid positive** RSA only. Discarding near-zero breaths that happen to dip negative biases this estimate *upward*.
-- **`rsa0`** — the recommended measure: breaths with a **negative** RSA are included as **zero**, while breaths where an IBI could **not be located at all** (truly missing) are excluded from the denominator entirely. This corrects the upward bias without diluting the mean with non-respiratory cycles.
+- **`rsa0`** — the recommended measure: **every invalid breath** — whether it produced a *negative* RSA or had an *undetectable* IBI — is **included in the mean with value zero**. The denominator is therefore the **total number of breath cycles** in the epoch, so a label dominated by weak or undetectable breaths is correctly pulled toward zero.
 
-The distinction matters: zeroing *only* negative breaths (not all missing ones) is what reproduces VU-DAMS `RSA0`; treating every missing breath as zero would inflate the denominator and systematically underestimate RSA0.
+The distinction matters: `rsa0` is always ≤ `rsa`, and the two diverge precisely when an epoch contains invalid breaths. When respiratory coupling is strong and clean (e.g. supine rest) almost every breath is valid and positive, so `rsa0 ≈ rsa`; the gap widens under conditions that suppress or distort RSA (e.g. standing). This zero-inclusion is what reproduces VU-DAMS `RSA0` (e.g. standing `rsa` ≈ 16 ms but `rsa0` ≈ 10 ms, matching VU-AMS).
 
 Click **Save** to export **two files** to the configured Output folder:
 
@@ -750,7 +750,7 @@ The loader builds **both** respiration candidates when the channels are present 
 
 Switching `rsp_source` re-points `rsp-[vuams]` and takes effect on the next reprocess — no re-import needed.
 
-> **Why ICG is the default.** The accelerometer-PCA surrogate captures *chest-wall motion*, whose relationship to breathing depends on posture: the gravity vector and the axis along which the chest expands change between supine, standing and sitting, and the surrogate can lock onto a non-respiratory body-motion component at the wrong rate. When that happens it detects breaths at roughly twice the true rate, so each inhalation/exhalation search window spans only half a real respiratory cycle and the peak-to-valley RSA comes out roughly halved relative to VU-AMS. Using the ICG signal avoids this and matches VU-AMS scoring (e.g. supine RSA0 ≈ 120 ms vs VU-AMS ≈ 115 ms; standing ≈ 12 ms vs ≈ 10 ms). The accelerometer remains available for ambulatory recordings where impedance electrodes are motion-contaminated.
+> **Why ICG is the default.** The accelerometer-PCA surrogate captures *chest-wall motion*, whose relationship to breathing depends on posture: the gravity vector and the axis along which the chest expands change between supine, standing and sitting, and the surrogate can lock onto a non-respiratory body-motion component at the wrong rate. When that happens it detects breaths at roughly twice the true rate, so each inhalation/exhalation search window spans only half a real respiratory cycle and the peak-to-valley RSA comes out roughly halved relative to VU-AMS. Using the ICG signal avoids this and matches VU-AMS scoring (e.g. supine RSA0 ≈ 120 ms vs VU-AMS ≈ 115 ms; standing ≈ 10 ms vs ≈ 10 ms). The accelerometer remains available for ambulatory recordings where impedance electrodes are motion-contaminated.
 
 ---
 

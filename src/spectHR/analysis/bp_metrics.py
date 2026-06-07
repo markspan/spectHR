@@ -526,12 +526,14 @@ def grossman_rsa_per_breath(
                     longest = float(ibi_ms[j])
 
         if shortest is None or longest is None:
-            # Truly missing (no qualifying IBI found) → excluded from both RSA and RSA0.
+            # Undetectable IBI (no qualifying accelerating/decelerating beat).
+            # NaN here is excluded from the positive-only RSA mean but counts
+            # as zero in RSA0 (which divides by the total breath count).
             results.append(np.nan)
         else:
-            # Keep the raw difference, including negatives.  RSA will discard
-            # negatives; RSA0 will include them as zero (VU-DAMS RSA0 definition:
-            # only negative-RSA breaths are zeroed, not truly-missing ones).
+            # Keep the raw difference, including negatives, so the per-breath
+            # export stays informative.  RSA discards negatives; RSA0 counts
+            # them (and the NaN above) as zero over the total breath count.
             results.append(float(longest - shortest))
 
     return np.asarray(results, dtype=float)
@@ -545,12 +547,15 @@ def _rsa_metric(ctx, key: str) -> float:
         # Mean of positive-only values (VU-DAMS RSA: excludes negative and missing).
         valid = beats[np.isfinite(beats) & (beats > 0)]
         return float(np.mean(valid)) if valid.size > 0 else float("nan")
-    # RSA0 (VU-DAMS): negative-RSA breaths count as zero; truly-missing (NaN)
-    # breaths are excluded from the denominator entirely.
-    finite = beats[np.isfinite(beats)]
-    if finite.size == 0:
+    # RSA0 (VU-DAMS): every *invalid* breath — negative RSA OR an undetectable
+    # shortest/longest IBI — is **included** in the mean with value zero, i.e.
+    # the denominator is the total number of breath cycles in the label
+    # (manual §5.4.1: "included in the mean calculation with value zero").
+    # Returns NaN only when no breath was measurable at all.
+    if not np.any(np.isfinite(beats)):
         return float("nan")
-    return float(np.mean(np.where(finite > 0, finite, 0.0)))
+    contrib = np.where(np.isfinite(beats) & (beats > 0), beats, 0.0)
+    return float(np.mean(contrib))
 
 
 @epoch_metric
@@ -561,7 +566,7 @@ def rsa(ctx) -> float:
 
 @epoch_metric
 def rsa0(ctx) -> float:
-    """RSA with invalid breaths zeroed; reduces over-estimation bias (VU-DAMS RSA0, ms)."""
+    """RSA with every invalid breath (negative or undetectable) counted as zero over the total breath count; reduces over-estimation bias (VU-DAMS RSA0, ms)."""
     return _rsa_metric(ctx, "rsa0")
 
 
