@@ -423,7 +423,7 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 | **Non-linear / stationarity** | `dfa_a1`, `stationarity_z` |
 | **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default), `lf_hf_ratio` |
 | **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `resp_rate`, `hf_resp_in_band`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
-| **Sympathetic (ICG)** | `pep`, plus the scored landmarks `pep_b_ms` (B-point), `pep_c_ms` (C-point), `pep_q_ms` (Q-onset; all latencies in ms relative to the R-peak) and `pep_n_beats` (ensemble size). All present; blank when no ICG `dZ/dt` channel |
+| **Sympathetic (ICG)** | the scored landmarks `pep_q_ms` (Q-onset), `pep_b_ms` (B-point), `pep_c_ms` (C-point; all latencies in ms relative to the R-peak) and `pep_n_beats` (ensemble size), followed by `pep` itself. All present; blank when no ICG `dZ/dt` channel |
 | **Profile summaries** | `{band}_prof_mean/std/min/max/t_max` per band; `prof_method`, `prof_unit`, `prof_window_s`, `prof_step_s`, `prof_n_windows` |
 | **Transfer summaries** | `{band}_tf_modulus`, `_tf_phase_w`, `_tf_phase_u`, `_tf_coherence`, `_tf_n_points`, `_tf_n_coherent` per band; `tf_method`, `tf_freq_resolution`, `tf_smooth`, `tf_min_coherence`; written only when a respiration channel is present |
 

@@ -119,7 +119,12 @@ METRIC_ORDER = [
     "bp_dbp",
     "bp_pp",
     "bp_map",
-    # Pre-ejection period (ICG dZ/dt; sympathetic index).
+    # Pre-ejection period (ICG dZ/dt; sympathetic index) — scored landmarks
+    # first, then the PEP they produce.
+    "pep_q_ms",
+    "pep_b_ms",
+    "pep_c_ms",
+    "pep_n_beats",
     "pep",
     # Beat-by-beat respiratory-volume parameters (CARSPAN).
     "resp_mvo",
