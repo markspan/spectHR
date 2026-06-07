@@ -69,10 +69,8 @@ from spectUI import perspectives
 #   Windows: %APPDATA%\spectHR\spectHR.ini
 #   Linux  : ~/.config/spectHR/spectHR.ini
 #   macOS  : ~/Library/Application Support/spectHR/spectHR.ini
-# _ORG_NAME and _APP_NAME are kept around so the legacy registry
-# store can be detected and migrated once on startup.
-_ORG_NAME             = "spectHR"
-_APP_NAME             = "spectHR"
+_ORG_NAME = "spectHR"
+_APP_NAME = "spectHR"
 _SETTINGS_GEOMETRY    = "MainWindow/geometry"
 _SETTINGS_WINDOWSTATE = "MainWindow/windowState"
 _SETTINGS_DOCKSTATE   = "MainWindow/dockState"
@@ -92,34 +90,6 @@ def _make_settings() -> QSettings:
     where the file lives."""
     return QSettings(str(_settings_path()), QSettings.IniFormat)
 
-
-def _migrate_from_registry_if_needed() -> None:
-    """Copy any legacy registry-backed settings into the new INI store.
-
-    Runs once. If the INI already has content the migration is
-    skipped, so a user who deletes the INI deliberately is not
-    silently re-populated from the registry. The legacy registry
-    keys are left in place, deleting them is something a user can
-    do manually with regedit once they have confirmed the INI works
-    for them.
-    """
-    target = _settings_path()
-    try:
-        if target.exists() and target.stat().st_size > 0:
-            return
-    except OSError:
-        return
-    legacy = QSettings(_ORG_NAME, _APP_NAME)
-    keys = legacy.allKeys()
-    if not keys:
-        return
-    fresh = _make_settings()
-    for key in keys:
-        fresh.setValue(key, legacy.value(key))
-    fresh.sync()
-    logger.info(
-        "Migrated %d setting(s) from registry to %s", len(keys), target,
-    )
 
 # Dock objectName strings. CDockManager.saveState keys the saved layout
 # by objectName, so these are on-disk contract: do not change once shipped.
@@ -783,12 +753,7 @@ class MainWindow(QMainWindow):
         then the last-active dock state (restoreState). With no saved
         state the default captured in _capture_builtin_perspectives
         stands.
-
-        Runs the one-shot registry-to-INI migration first so a user
-        upgrading from a registry-backed build keeps their saved
-        layout and perspectives.
         """
-        _migrate_from_registry_if_needed()
         settings = _make_settings()
 
         # Named perspectives ------------------------------------------
