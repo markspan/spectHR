@@ -73,26 +73,10 @@ from PySide6.QtWidgets import (
 
 from spectHR.Tools.Logger import logger
 from spectHR.analysis.registry import get_metrics
-from spectHR.analysis.psd._band_power import band_power_rectangular
-from spectHR.analysis.psd._engine import PSDEngine
-from spectHR.analysis.profile import (
-    compute_band_power_profile,
-    profile_summary_scalars,
-    summarize_profile_band,
-)
-from spectHR.analysis.transfer import (
-    resolve_transfer_input,
-    transfer_summary_scalars,
-)
+from spectHR.analysis.exporter import EpochExporter
+from spectHR.config import WorkspaceView
 from spectUI.common import show_export_summary
-from spectUI.workSpace import (
-    display_bands_from_workspace,
-    get_export_dir,
-    profile_settings_from_workspace,
-    psd_method_from_workspace,
-    resolved_profile_bands,
-    transfer_settings_from_workspace,
-)
+from spectUI.workSpace import get_export_dir
 
 # Display order for HRV metrics in the parameters table and CSV export.
 # Columns not listed here are appended alphabetically after these.
@@ -280,6 +264,7 @@ class ParametersPlotWidget(QWidget):
         self.csvfile: Path | None = None
         self.h5file:  Path | None = None
         self.workspace: dict | None = None
+        self._contexts: dict = {}
 
     # ------------------------------------------------------------------
     # Background prefetch (call on a worker thread, pass result as _precomputed)
@@ -290,24 +275,17 @@ class ParametersPlotWidget(QWidget):
         """Compute the parameters table without touching any Qt object.
 
         Intended to be called on a background thread via
-        :class:`~spectUI.plot_worker.DockScheduler`.  Pass the tuple
-        ``(labels, cols, values)`` as ``_precomputed`` to
+        :class:`~spectUI.plot_worker.DockScheduler`.  Pass the 4-tuple
+        ``(labels, cols, values, contexts)`` as ``_precomputed`` to
         :meth:`display_parameters` so the main thread only handles
         the fast Qt table-widget population step.
         """
-        from spectHR.config import rsa_rejection_from_workspace
-        psd_method = psd_method_from_workspace(workspace)
-        ra_cfg = ((workspace or {}).get("RespirationAnalysis") or {})
-        rsa_lag_s = ra_cfg.get("rsa_lag_s", 1.0)
-        b_guard = (
-            ((workspace or {}).get("IcgAnalysis") or {})
-            .get("b_point_guard_ms", 30.0)
-        )
-        rsa_ibi_dev, rsa_rate_dev = rsa_rejection_from_workspace(workspace)
+        ws = WorkspaceView(workspace)
+        rsa_ibi_dev, rsa_rate_dev = ws.rsa_rejection
         return dataset.epoched_parameters_table(
-            psd_method=psd_method, rsa_lag_s=float(rsa_lag_s),
+            psd_method=ws.psd_method, rsa_lag_s=ws.rsa_lag_s,
             rsa_max_ibi_deviation=rsa_ibi_dev, rsa_max_rate_deviation=rsa_rate_dev,
-            b_point_guard_ms=float(b_guard),
+            b_point_guard_ms=ws.b_point_guard_ms,
         )
 
     def _start_loading(self) -> None:
@@ -333,18 +311,14 @@ class ParametersPlotWidget(QWidget):
         self.h5file   = output_dir / f"{dataset.basename}.h5"
 
         if _precomputed is not None:
-            labels, cols, values = _precomputed
+            labels, cols, values, self._contexts = _precomputed
         else:
-            from spectHR.config import rsa_rejection_from_workspace
-            psd_method = psd_method_from_workspace(workspace)
-            ra_cfg = ((workspace or {}).get("RespirationAnalysis") or {})
-            rsa_lag_s = ra_cfg.get("rsa_lag_s", 1.0)
-            b_guard = ((workspace or {}).get("IcgAnalysis") or {}).get("b_point_guard_ms", 30.0)
-            rsa_span, rsa_cyc = rsa_rejection_from_workspace(workspace)
-            labels, cols, values = self.dataset.epoched_parameters_table(
-                psd_method=psd_method, rsa_lag_s=float(rsa_lag_s),
-                rsa_max_extrema_span=rsa_span, rsa_max_cycle_ratio=rsa_cyc,
-                b_point_guard_ms=float(b_guard),
+            ws = WorkspaceView(workspace)
+            rsa_ibi_dev, rsa_rate_dev = ws.rsa_rejection
+            labels, cols, values, self._contexts = self.dataset.epoched_parameters_table(
+                psd_method=ws.psd_method, rsa_lag_s=ws.rsa_lag_s,
+                rsa_max_ibi_deviation=rsa_ibi_dev, rsa_max_rate_deviation=rsa_rate_dev,
+                b_point_guard_ms=ws.b_point_guard_ms,
             )
 
         # Re-order columns: known metrics first, then extras alphabetically.
@@ -404,7 +378,7 @@ class ParametersPlotWidget(QWidget):
 
         # Single computation pass: returns per-epoch dicts with both
         # scalar summaries (for the CSV) and full arrays (for HDF5).
-        epoch_data = self._collect_epoch_data()
+        epoch_data = EpochExporter(self.dataset, self.workspace, self._contexts).collect()
 
         # Inject the epoched_parameters_table scalars (RMSSD, SDNN, band
         # powers, Poincaré metrics, BP/RESP parameters, and any future
@@ -441,352 +415,6 @@ class ParametersPlotWidget(QWidget):
             summary += "\n  - " + "\n  - ".join(files_written)
         logger.info(summary)
         show_export_summary(self, context="Parameters", summary=summary)
-
-    # ------------------------------------------------------------------
-    # Computation pass
-    # ------------------------------------------------------------------
-
-    def _collect_epoch_data(self) -> dict[str, dict]:
-        """Compute all spectral data for every active epoch.
-
-        Returns a dict mapping epoch label → data dict with keys:
-
-        ``scalars``        Extra scalar columns to append to the CSV row.
-        ``psd``            Dict with freqs, power, unit, method, freq_res,
-                           bands (dict band → {freqs, power, integrated}).
-        ``profile``        Dict with timestamps, t_rel, unit, method, resp_freqs,
-                           settings, bands (dict band → {power, mean,std,min,max,t_max}).
-        ``transfer``       Dict or ``None`` (no rsp channel).
-        ``transfer_profile`` Dict or ``None``.
-        """
-        if self.workspace is None:
-            return {}
-
-        hrv = getattr(self.dataset, "hrv", None)
-        if hrv is None:
-            return {}
-
-        psd_method   = psd_method_from_workspace(self.workspace)
-        prof_cfg     = profile_settings_from_workspace(self.workspace)
-        tf_cfg       = transfer_settings_from_workspace(self.workspace)
-        emit_bands, adaptive_band_name = resolved_profile_bands(self.workspace)
-
-        # Band edges for transfer (FullRange excluded — meaningless as a
-        # 0.02–0.5 Hz single-number summary alongside the rest).
-        bands_dict = display_bands_from_workspace(self.workspace) or {}
-        tf_band_edges = {
-            name: (float(spec["low"]), float(spec["high"]))
-            for name, spec in bands_dict.items()
-            if name != "FullRange" and "low" in spec and "high" in spec
-        }
-
-        # Transfer input series (respiration or blood pressure) — shared
-        # across all epochs; the source is chosen in the workspace settings.
-        tf_input_signal = str(tf_cfg["input_signal"])
-        rsp_ts, _ = resolve_transfer_input(self.dataset, tf_input_signal)
-
-        active_band = getattr(self.dataset, "active_band", None)
-        rsp_series  = getattr(self.dataset, "rsp_map", {}).get(active_band)
-        _ra_cfg     = ((self.workspace or {}).get("RespirationAnalysis") or {})
-        rsa_lag_s   = float(_ra_cfg.get("rsa_lag_s", 1.0))
-        from spectHR.config import rsa_rejection_from_workspace
-        _rsa_ibi_dev, _rsa_rate_dev = rsa_rejection_from_workspace(self.workspace)
-        b_guard_ms  = float(
-            ((self.workspace or {}).get("IcgAnalysis") or {})
-            .get("b_point_guard_ms", 30.0)
-        )
-
-        # ICG dZ/dt + ECG for the per-epoch pre-ejection-period ensemble curves.
-        # Same channel resolution as PhysioData.epoched_parameters_table: locate
-        # the ICG derivative by name prefix; ECG by the standard accessor.
-        icg_ts = None
-        for _name, _ts in getattr(self.dataset, "timeseries", {}).items():
-            _nl = _name.lower()
-            if _nl.startswith("dzdt") or _nl.startswith("dz/dt"):
-                icg_ts = _ts
-                break
-        try:
-            ecg_ts = self.dataset["ecg"].timeseries
-        except (KeyError, AttributeError, TypeError):
-            ecg_ts = None
-
-        result: dict[str, dict] = {}
-
-        for label, _ep in self._iter_active_epochs():
-            try:
-                view = hrv[label]
-            except Exception:
-                continue
-
-            epoch: dict = {"scalars": {}, "psd": None, "profile": None,
-                           "transfer": None, "transfer_profile": None,
-                           "respiration": None, "icg": None}
-
-            # ---- PSD -------------------------------------------------
-            try:
-                psd_res  = PSDEngine(view).compute(psd_method, with_ci=False)
-                freqs    = np.asarray(psd_res.freqs)
-                power    = np.asarray(psd_res.power)
-                psd_unit = (psd_res.unit or "").replace("/Hz", "")
-                band_psd: dict = {}
-                for bname, bspec in psd_method.bands.items():
-                    mask = (freqs >= bspec.low) & (freqs <= bspec.high)
-                    band_psd[bname] = {
-                        "freqs":      freqs[mask],
-                        "power":      power[mask],
-                        "integrated": float(band_power_rectangular(
-                                          freqs, power, bspec.low, bspec.high)),
-                        "low":  bspec.low,
-                        "high": bspec.high,
-                    }
-                epoch["psd"] = {
-                    "freqs":    freqs,
-                    "power":    power,
-                    "unit":     psd_res.unit or "",
-                    "psd_unit": psd_unit,
-                    "method":   psd_res.method or "",
-                    "freq_res": float(freqs[1] - freqs[0]) if freqs.size > 1 else 0.0,
-                    "bands":    band_psd,
-                }
-            except Exception as exc:
-                logger.debug("PSD export failed for epoch %r: %s", label, exc)
-
-            # ---- Profile ---------------------------------------------
-            try:
-                prof_res  = compute_band_power_profile(
-                    view,
-                    window_s          = prof_cfg["window_s"],
-                    step_s            = prof_cfg["step_s"],
-                    psd_method        = psd_method,
-                    adaptive_source   = prof_cfg["adaptive_source"],
-                    smooth_breath_freq= prof_cfg["smooth_breath_freq"],
-                )
-                ts = np.asarray(prof_res.timestamps)
-                t_rel = (
-                    ts - (ts[0] - prof_cfg["window_s"] / 2.0)
-                    if ts.size else ts
-                )
-                band_prof: dict = {}
-                names_in = list(prof_res.band_names)
-                for bname in (emit_bands or names_in):
-                    if bname not in names_in:
-                        continue
-                    bp = prof_res.band_power[names_in.index(bname)]
-                    stats = summarize_profile_band(bp, t_rel)
-                    band_prof[bname] = {"power": bp, **stats}
-
-                # Scalar summary columns → CSV (column names defined in the
-                # analysis layer, see profile_summary_scalars).
-                epoch["scalars"].update(profile_summary_scalars(
-                    prof_res, t_rel,
-                    emit_bands=emit_bands,
-                    window_s=prof_cfg["window_s"],
-                    step_s=prof_cfg["step_s"],
-                    adaptive_band_name=adaptive_band_name,
-                    adaptive_source=prof_cfg["adaptive_source"],
-                ))
-
-                resp_freqs = (
-                    np.asarray(prof_res.resp_freqs, dtype=np.float64).ravel()
-                    if prof_res.resp_freqs is not None else None
-                )
-                epoch["profile"] = {
-                    "timestamps": ts,
-                    "t_rel":      t_rel,
-                    "unit":       prof_res.unit or "",
-                    "method":     prof_res.method or "",
-                    "window_s":   prof_cfg["window_s"],
-                    "step_s":     prof_cfg["step_s"],
-                    "adaptive_band":   adaptive_band_name or "",
-                    "adaptive_source": prof_cfg["adaptive_source"],
-                    "resp_freqs": resp_freqs,
-                    "bands":      band_prof,
-                }
-            except Exception as exc:
-                logger.debug("Profile export failed for epoch %r: %s", label, exc)
-
-            # ---- Transfer --------------------------------------------
-            if rsp_ts is not None and tf_band_edges:
-                try:
-                    from spectHR.analysis.transfer import compute_transfer
-                    tf_res = compute_transfer(
-                        view, rsp_ts,
-                        input_signal   = tf_input_signal,
-                        bands          = tf_band_edges,
-                        min_coherence  = float(tf_cfg["min_coherence"]),
-                        smooth         = bool(tf_cfg["smooth"]),
-                        f_max          = float(tf_cfg["f_max"]),
-                    )
-                    tf_freqs   = np.asarray(tf_res.freqs)
-                    tf_mod     = np.asarray(tf_res.modulus)
-                    tf_pw      = np.asarray(tf_res.phase_wrapped)
-                    tf_pu      = np.asarray(tf_res.phase_unwrapped)
-                    tf_coh     = np.asarray(tf_res.coherence)
-                    tf_freq_res= float(tf_res.freq_resolution)
-
-                    band_tf: dict = {}
-                    for bname, (blow, bhigh) in tf_band_edges.items():
-                        mask = (tf_freqs >= blow) & (tf_freqs <= bhigh)
-                        bt   = (tf_res.band_results or {}).get(bname)
-                        band_tf[bname] = {
-                            "freqs":              tf_freqs[mask],
-                            "modulus_raw":        tf_mod[mask],
-                            "phase_wrapped_raw":  tf_pw[mask],
-                            "phase_unwrapped_raw":tf_pu[mask],
-                            "coherence_raw":      tf_coh[mask],
-                            "low":   blow,
-                            "high":  bhigh,
-                            # band-summary scalars (from BandTransfer)
-                            "modulus":            float(bt.modulus)            if bt else np.nan,
-                            "phase_wrapped":      float(bt.phase)              if bt else np.nan,
-                            "phase_unwrapped":    float(bt.phase_unwrapped)    if bt else np.nan,
-                            "weighted_coherence": float(bt.weighted_coherence) if bt else np.nan,
-                            "n_points":           int(bt.n_points)             if bt else 0,
-                            "n_coherent":         int(bt.n_coherent)           if bt else 0,
-                        }
-
-                    # Scalar summary columns → CSV (column names defined in the
-                    # analysis layer, see transfer_summary_scalars).
-                    epoch["scalars"].update(transfer_summary_scalars(
-                        tf_res,
-                        smooth=bool(tf_cfg["smooth"]),
-                        min_coherence=float(tf_cfg["min_coherence"]),
-                        f_max=float(tf_cfg["f_max"]),
-                    ))
-
-                    epoch["transfer"] = {
-                        "freqs":          tf_freqs,
-                        "modulus":        tf_mod,
-                        "phase_wrapped":  tf_pw,
-                        "phase_unwrapped":tf_pu,
-                        "coherence":      tf_coh,
-                        "method":         tf_res.method or "",
-                        "freq_resolution":tf_freq_res,
-                        "smooth":         bool(tf_cfg["smooth"]),
-                        "min_coherence":  float(tf_cfg["min_coherence"]),
-                        "f_max":          float(tf_cfg["f_max"]),
-                        "bands":          band_tf,
-                    }
-                except Exception as exc:
-                    logger.debug("Transfer export failed for epoch %r: %s", label, exc)
-
-            # ---- Transfer profile ------------------------------------
-            if rsp_ts is not None and tf_band_edges:
-                try:
-                    from spectHR.analysis.transfer import compute_transfer_profile
-                    tfp_res = compute_transfer_profile(
-                        view, rsp_ts,
-                        input_signal  = tf_input_signal,
-                        bands         = tf_band_edges,
-                        window_s      = float(tf_cfg["window_s"]),
-                        step_s        = float(tf_cfg["step_s"]),
-                        min_coherence = float(tf_cfg["min_coherence"]),
-                        f_max         = float(tf_cfg["f_max"]),
-                        smooth        = bool(tf_cfg["smooth"]),
-                    )
-                    band_tfp: dict = {}
-                    for b, bname in enumerate(tfp_res.band_names):
-                        band_tfp[bname] = {
-                            "modulus":            np.asarray(tfp_res.modulus[b]),
-                            "phase":              np.asarray(tfp_res.phase[b]),
-                            "phase_unwrapped":    np.asarray(tfp_res.phase_unwrapped[b]),
-                            "weighted_coherence": np.asarray(tfp_res.weighted_coherence[b]),
-                            "n_coherent":         np.asarray(tfp_res.n_coherent[b], dtype=np.int32),
-                        }
-                    epoch["transfer_profile"] = {
-                        "timestamps": np.asarray(tfp_res.timestamps),
-                        "method":     tfp_res.method or "",
-                        "window_s":   float(tf_cfg["window_s"]),
-                        "step_s":     float(tf_cfg["step_s"]),
-                        "smooth":     bool(tf_cfg["smooth"]),
-                        "min_coherence": float(tf_cfg["min_coherence"]),
-                        "f_max":      float(tf_cfg["f_max"]),
-                        "bands":      band_tfp,
-                    }
-                except Exception as exc:
-                    logger.debug(
-                        "Transfer-profile export failed for epoch %r: %s", label, exc
-                    )
-
-            # ---- RSA per-breath ------------------------------------
-            if rsp_series is not None:
-                try:
-                    from spectHR.analysis.bp_metrics import grossman_rsa_per_breath
-                    rsp_phases = rsp_series.view(float(_ep.start), float(_ep.end))
-                    if len(rsp_phases) >= 2:
-                        rsa_raw = grossman_rsa_per_breath(
-                            np.asarray(view.times,  dtype=float),
-                            np.asarray(view.labels, dtype=object),
-                            rsp_phases,
-                            lag_s=rsa_lag_s,
-                            max_ibi_deviation=_rsa_ibi_dev,
-                            max_rate_deviation=_rsa_rate_dev,
-                        )
-                        if rsa_raw.size > 0:
-                            p_starts = np.asarray(rsp_phases.starts, dtype=float)
-                            p_ends   = np.asarray(rsp_phases.ends,   dtype=float)
-                            p_labels = np.asarray(rsp_phases.labels, dtype=object)
-                            x_pts, pair_idx = [], 0
-                            for i in range(len(p_starts) - 1):
-                                if p_labels[i] == "INH" and p_labels[i + 1] == "EXH":
-                                    if pair_idx < rsa_raw.size:
-                                        x_pts.append(
-                                            (p_starts[i] + p_ends[i + 1]) / 2.0
-                                        )
-                                    pair_idx += 1
-                            # rsa0: every invalid breath — negative RSA *or* an
-                            # undetectable IBI (NaN) — counts as zero over the
-                            # total breath count (VU-DAMS RSA0 def), so the
-                            # array's plain mean reproduces the scalar. The full
-                            # per-breath detail (negatives, NaN) is kept in `rsa`.
-                            rsa0_arr = np.where(
-                                np.isfinite(rsa_raw) & (rsa_raw > 0),
-                                rsa_raw,
-                                0.0,
-                            )
-                            epoch["respiration"] = {
-                                "rsa":          rsa_raw,
-                                "rsa0":         rsa0_arr,
-                                "breath_times": np.array(x_pts, dtype=float),
-                                "lag_s":        rsa_lag_s,
-                                "n_breaths":    int(rsa_raw.size),
-                                "n_valid":      int(
-                                                    np.sum(
-                                                        np.isfinite(rsa_raw)
-                                                        & (rsa_raw > 0)
-                                                    )
-                                                ),
-                            }
-                except Exception as exc:
-                    logger.debug("RSA export failed for epoch %r: %s", label, exc)
-
-            # ---- ICG ensemble complex (PEP) ------------------------
-            if icg_ts is not None:
-                try:
-                    from spectHR.analysis.icg_metrics import pep_ensemble
-                    ecg_kw = {}
-                    if ecg_ts is not None:
-                        ecg_kw = dict(
-                            ecg_times=np.asarray(ecg_ts.times,  dtype=float),
-                            ecg_values=np.asarray(ecg_ts.values, dtype=float),
-                        )
-                    detail = pep_ensemble(
-                        np.asarray(icg_ts.times,  dtype=float),
-                        np.asarray(icg_ts.values, dtype=float),
-                        np.asarray(view.times,    dtype=float),
-                        b_guard_ms=b_guard_ms,
-                        return_detail=True,
-                        **ecg_kw,
-                    )
-                    if detail is not None:
-                        epoch["icg"] = detail
-                except Exception as exc:
-                    logger.debug("ICG ensemble export failed for epoch %r: %s",
-                                 label, exc)
-
-            result[label] = epoch
-
-        return result
 
     # ------------------------------------------------------------------
     # CSV writer (scalars only)
@@ -1104,15 +732,6 @@ class ParametersPlotWidget(QWidget):
                     scalars[col] = str(val)
             result[label] = scalars
         return result
-
-    def _iter_active_epochs(self):
-        """Yield ``(label, epoch)`` for every active epoch in order."""
-        for label, epoch in self.dataset.epochs.items():
-            if getattr(epoch, "active", False):
-                yield label, epoch
-
-    def _resolve_export_dir(self) -> Path:
-        return get_export_dir(self.workspace, context="Parameters")
 
     def get_table_headers(self) -> list[str]:
         headers = []

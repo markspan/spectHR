@@ -16,6 +16,7 @@ from spectHR.config import (  # noqa: F401  (re-export)
     LOG_LEVELS,
     RSA_REJECTION_MODES,
     RSP_SOURCES,
+    WorkspaceView,
     bp_calibration_from_workspace,
     display_bands_from_workspace,
     log_level_from_workspace,

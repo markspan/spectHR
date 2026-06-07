@@ -228,6 +228,27 @@ class PhysioData:
             return None
         return self.hrv_map.get(self.active_band)
 
+    @property
+    def icg_timeseries(self):
+        """ICG dZ/dt TimeSeries, or ``None`` if not loaded.
+
+        VU-AMS EDF exports store the channel as ``dzdt-[vuams]``; locate it by
+        name prefix so PEP is available whenever an ICG derivative is present.
+        """
+        for name, ts in self.timeseries.items():
+            nl = name.lower()
+            if nl.startswith("dzdt") or nl.startswith("dz/dt"):
+                return ts
+        return None
+
+    @property
+    def ecg_timeseries(self):
+        """ECG waveform TimeSeries for Q-onset detection, or ``None``."""
+        try:
+            return self["ecg"].timeseries
+        except (KeyError, AttributeError, TypeError):
+            return None
+
     def epoched_parameters_table(
         self,
         psd_method=None,
@@ -235,7 +256,7 @@ class PhysioData:
         rsa_max_ibi_deviation=None,
         rsa_max_rate_deviation=None,
         b_point_guard_ms: float = 30.0,
-    ) -> "tuple[np.ndarray, list[str], np.ndarray]":
+    ) -> "tuple[np.ndarray, list[str], np.ndarray, dict]":
         """Compute every per-epoch parameter for every active epoch.
 
         Iterates over ``self.epochs`` and, for each active epoch, builds an
@@ -251,9 +272,8 @@ class PhysioData:
         ----------
         psd_method : PsdMethod or None
             Workspace-configured PSD method.  Carried on the EpochContext and
-            read by the band-power metrics (and the dynamic non-standard-band
-            loop) so the table values match what the PSD plot displays.  When
-            ``None`` the band-power columns are ``NaN``.
+            read by the band-power metrics so the table values match what the PSD
+            plot displays.  When ``None`` the band-power columns are ``NaN``.
         b_point_guard_ms : float
             Width (ms) of the guard zone before the ICG C-point excluded from the
             PEP B-point search (default 30; workspace ``IcgAnalysis``).
@@ -266,16 +286,22 @@ class PhysioData:
             Metric names, sorted alphabetically.
         values : np.ndarray, shape (n_epochs, n_metrics), dtype float64
             Metric values; NaN where a metric could not be computed.
+        contexts : dict[str, EpochContext]
+            Per-epoch context objects with lazily-cached PSD, RSA, and ICG
+            computations already populated by the metric pass.  Callers such as
+            the export path reuse these to avoid double-computing.
 
-        Returns three empty containers when no active epochs exist or no
+        Returns four empty containers when no active epochs exist or no
         active HRV series is loaded.
         """
         from spectHR.analysis.registry import get_metric_groups
         from spectHR.analysis.epoch_context import EpochContext
 
+        _empty = np.array([], dtype=object), [], np.empty((0, 0), dtype=float), {}
+
         hrv = self.hrv
         if hrv is None:
-            return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
+            return _empty
 
         # Every registered ``@epoch_metric``: time-domain HRV, the standard band
         # powers, and the beat-by-beat BP / RESP parameters.  Each is called with
@@ -297,26 +323,12 @@ class PhysioData:
         except (KeyError, AttributeError, TypeError):
             rsp_ts = None
         rsp_series = self.rsp_map.get(self.active_band) if self.active_band else None
-
-        # ICG dZ/dt channel for the pre-ejection-period metric. VU-AMS EDF
-        # exports store it as ``dzdt-[vuams]``; locate it by name prefix so
-        # PEP is computed whenever an ICG derivative is present (NaN otherwise).
-        icg_ts = None
-        for _name, _ts in self.timeseries.items():
-            _nl = _name.lower()
-            if _nl.startswith("dzdt") or _nl.startswith("dz/dt"):
-                icg_ts = _ts
-                break
-
-        # ECG waveform for Q-onset detection: improves PEP from R-to-B to the
-        # true clinical Q-onset-to-B interval.
-        try:
-            ecg_ts_for_pep = self["ecg"].timeseries
-        except (KeyError, AttributeError, TypeError):
-            ecg_ts_for_pep = None
+        icg_ts = self.icg_timeseries
+        ecg_ts = self.ecg_timeseries
 
         labels_list: list = []
         rows: list[dict[str, float]] = []
+        contexts: dict[str, EpochContext] = {}
 
         for label, ep in self.epochs.items():
             if ep.active:
@@ -331,9 +343,10 @@ class PhysioData:
                     rsp_phases=rsp_phases, rsa_lag_s=rsa_lag_s,
                     rsa_max_ibi_deviation=rsa_max_ibi_deviation,
                     rsa_max_rate_deviation=rsa_max_rate_deviation,
-                    icg_ts=icg_ts, ecg_ts=ecg_ts_for_pep,
+                    icg_ts=icg_ts, ecg_ts=ecg_ts,
                     b_point_guard_ms=b_point_guard_ms,
                 )
+                contexts[label] = ctx
                 row: dict[str, float] = {}
 
                 # ---- registered single-valued metrics -------------------
@@ -358,7 +371,7 @@ class PhysioData:
                 rows.append(row)
 
         if not rows:
-            return np.array([], dtype=object), [], np.empty((0, 0), dtype=float)
+            return _empty
 
         keys = set().union(*(d.keys() for d in rows))
         cols = sorted(keys)
@@ -370,7 +383,7 @@ class PhysioData:
                 j = col_idx.get(k)
                 values[i, j] = float(v)
 
-        return np.asarray(labels_list, dtype=object), cols, values
+        return np.asarray(labels_list, dtype=object), cols, values, contexts
 
     # ------------------------------------------------------------ #
     # ECG preprocessing                                             #

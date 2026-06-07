@@ -21,6 +21,7 @@ working unchanged.
 from __future__ import annotations
 
 import logging
+from functools import cached_property
 from typing import Any, Dict
 
 from spectHR.analysis.psd._config import BandSpec, PsdMethod
@@ -30,6 +31,7 @@ from spectHR.analysis.psd._carspan import CarspanOptions
 
 
 __all__ = [
+    "WorkspaceView",
     "display_bands_from_workspace",
     "psd_ci_alpha",
     "bp_calibration_from_workspace",
@@ -435,3 +437,124 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
         carspan=carspan_opts,
         detrend_lambda=float(fa.get("detrend_lambda", 0.0) or 0.0),
     )
+
+
+# ---------------------------------------------------------------------------
+# Typed workspace accessor
+# ---------------------------------------------------------------------------
+
+
+class WorkspaceView:
+    """Read-only typed view over a workspace configuration dict.
+
+    Build once from the raw workspace dict, then access all analysis settings
+    as typed attributes instead of repeated ``(workspace or {}).get(...)``
+    lookups.  Expensive settings (PSD method, profile/transfer/spectrogram
+    configs) are cached via ``cached_property`` so they are parsed at most once
+    per ``WorkspaceView`` instance regardless of how many call sites access them.
+
+    All existing ``*_from_workspace`` standalone functions remain unchanged and
+    are the implementation back-end of the matching properties here.  Either
+    interface works; ``WorkspaceView`` is preferred when multiple settings are
+    needed from the same workspace in the same call scope.
+
+    Example
+    -------
+    >>> ws = WorkspaceView(workspace)
+    >>> method = ws.psd_method         # PsdMethod
+    >>> lag, (idev, rdev) = ws.rsa_lag_s, ws.rsa_rejection
+    """
+
+    __slots__ = ("_ws", "__dict__")   # __dict__ needed for cached_property storage
+
+    def __init__(self, workspace: "Dict[str, Any] | None") -> None:
+        self._ws: Dict[str, Any] = workspace or {}
+
+    # ---- frequency analysis -----------------------------------------
+
+    @cached_property
+    def psd_method(self) -> PsdMethod:
+        """Workspace-configured :class:`~spectHR.analysis.psd._config.PsdMethod`."""
+        return psd_method_from_workspace(self._ws)
+
+    @property
+    def psd_ci_alpha(self) -> float:
+        """Confidence-interval alpha (default 0.05)."""
+        fa = self._ws.get("FrequencyAnalysis", {}) or {}
+        return float(fa.get("confidence_interval_alpha", 0.05))
+
+    @property
+    def display_bands(self) -> Dict[str, dict]:
+        """Raw ``{name: {low, high, color, …}}`` bands dict for plot rendering."""
+        return dict(
+            (self._ws.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
+        )
+
+    # ---- calibration ------------------------------------------------
+
+    @property
+    def bp_calibration(self) -> "tuple[float, float]":
+        """``(bp_scale, bp_zero)`` for manual BP calibration."""
+        cal = self._ws.get("Calibration", {}) or {}
+        return float(cal.get("bp_scale", 0.125)), float(cal.get("bp_zero", 0.0))
+
+    # ---- respiration / RSA ------------------------------------------
+
+    @property
+    def rsp_source(self) -> str:
+        """Respiration source: ``"icg"`` or ``"accelerometer"``."""
+        return rsp_source_from_workspace(self._ws)
+
+    @property
+    def rsa_lag_s(self) -> float:
+        """RSA window lag in seconds (default 1.0)."""
+        ra = self._ws.get("RespirationAnalysis", {}) or {}
+        return float(ra.get("rsa_lag_s", 1.0))
+
+    @property
+    def rsa_rejection(self) -> "tuple[float | None, float | None]":
+        """``(max_ibi_deviation, max_rate_deviation)`` for the configured mode."""
+        return rsa_rejection_from_workspace(self._ws)
+
+    @property
+    def rsa_overlay(self) -> str:
+        """RSA overlay choice (``"rsa"`` or ``"rsa0"``, default ``"rsa0"``)."""
+        ra = self._ws.get("RespirationAnalysis", {}) or {}
+        return str(ra.get("rsa_overlay", "rsa0"))
+
+    # ---- ICG --------------------------------------------------------
+
+    @property
+    def b_point_guard_ms(self) -> float:
+        """PEP B-point guard zone width in ms (default 30)."""
+        icg = self._ws.get("IcgAnalysis", {}) or {}
+        return float(icg.get("b_point_guard_ms", 30.0))
+
+    # ---- profile / spectrogram / transfer ---------------------------
+
+    @cached_property
+    def profile_settings(self) -> Dict[str, Any]:
+        """Flattened profile settings dict (window_s, step_s, bands, …)."""
+        return profile_settings_from_workspace(self._ws)
+
+    @cached_property
+    def resolved_profile_bands(self) -> "tuple[list[str], str | None]":
+        """``(effective_bands, adaptive_band_name)`` for profile display/export."""
+        return resolved_profile_bands(self._ws)
+
+    @cached_property
+    def spectrogram_settings(self) -> Dict[str, Any]:
+        """Flattened spectrogram settings dict."""
+        return spectrogram_settings_from_workspace(self._ws)
+
+    @cached_property
+    def transfer_settings(self) -> Dict[str, Any]:
+        """Flattened transfer-function settings dict."""
+        return transfer_settings_from_workspace(self._ws)
+
+    # ---- logging ----------------------------------------------------
+
+    @property
+    def log_level(self) -> int:
+        """Configured minimum log level as a ``logging`` constant."""
+        return log_level_from_workspace(self._ws)

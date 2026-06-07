@@ -12,17 +12,23 @@ time-domain metrics — which only ever touch the series interface — work
 unchanged whether they are handed a bare view or a context.
 
 On top of the series interface it adds the extra inputs the BP / RESP /
-band-power metrics need, each computed **lazily and cached** so the cost is
-paid at most once per epoch no matter how many metrics consult it:
+band-power metrics need, each computed **lazily and cached** via
+``functools.cached_property`` so the cost is paid at most once per epoch no
+matter how many metrics consult it:
 
 ``psd``
     The band-power PSD (:meth:`PSDEngine.for_band_power`) for the configured
-    ``psd_method``.  Shared by every standard band-power metric and by the
-    table's dynamic loop for non-standard bands.  ``None`` when no method is
-    configured or the PSD could not be computed.
+    ``psd_method``.  Shared by every standard band-power metric and the
+    ``band_powers`` group metric for non-standard bands.  ``None`` when no
+    method is configured or the PSD could not be computed.
 ``bp_beats`` / ``resp_beats``
     Per-beat blood-pressure / respiration parameter dicts gated on the epoch's
     R-peaks.  ``None`` when the corresponding waveform channel is absent.
+``rsa_beats``
+    Per-breath Grossman peak-to-valley RSA array (ms), or ``None``.
+``pep_detail``
+    Full ICG ensemble dict from :func:`~spectHR.analysis.icg_metrics.pep_ensemble`,
+    or ``None`` when no ICG channel is present.
 
 A bare ``CardioSeriesView`` carries none of these attributes, which is how the
 dual-mode band-power metrics tell a direct call (use the default PSD method)
@@ -31,10 +37,9 @@ apart from a table call (use ``ctx.psd_method``, or yield ``NaN`` when it is
 """
 from __future__ import annotations
 
-import numpy as np
+from functools import cached_property
 
-# Sentinel distinguishing "not computed yet" from a genuine ``None`` result.
-_UNSET = object()
+import numpy as np
 
 
 class EpochContext:
@@ -62,28 +67,23 @@ class EpochContext:
         self.psd_method = psd_method
         self.bp_ts = bp_ts
         self.rsp_ts = rsp_ts
-        self.rsp_phases = rsp_phases  # RespirationSeriesView for this epoch
+        self.rsp_phases = rsp_phases
         self.rsa_lag_s = rsa_lag_s
-        self.rsa_max_ibi_deviation = rsa_max_ibi_deviation   # None = disabled
-        self.rsa_max_rate_deviation = rsa_max_rate_deviation  # None = disabled
-        self.icg_ts = icg_ts          # ICG dZ/dt TimeSeries (for PEP), or None
-        self.ecg_ts = ecg_ts          # ECG waveform for Q-onset detection, or None
-        self.b_point_guard_ms = b_point_guard_ms  # PEP B-point guard zone (ms)
-        self._psd = _UNSET
-        self._bp_beats = _UNSET
-        self._resp_beats = _UNSET
-        self._rsa_beats = _UNSET
-        self._pep_detail = _UNSET
+        self.rsa_max_ibi_deviation = rsa_max_ibi_deviation
+        self.rsa_max_rate_deviation = rsa_max_rate_deviation
+        self.icg_ts = icg_ts
+        self.ecg_ts = ecg_ts
+        self.b_point_guard_ms = b_point_guard_ms
 
     # ------------------------------------------------------------------ #
     # Series-interface delegation                                         #
     # ------------------------------------------------------------------ #
 
     def __getattr__(self, name: str):
-        # Reached only for names not found as instance/class attributes, so the
-        # delegation never shadows ``view``/``psd_method``/the cached
-        # properties.  Guard against ``view`` being missing (e.g. during
-        # unpickling) to avoid infinite recursion.
+        # Reached only for names not found as instance/class attributes, so
+        # the delegation never shadows view/psd_method/cached_property results.
+        # Guard against view being missing (e.g. during unpickling) to avoid
+        # infinite recursion.
         try:
             view = object.__getattribute__(self, "view")
         except AttributeError as exc:                       # pragma: no cover
@@ -103,14 +103,9 @@ class EpochContext:
     # Lazily-cached spectral / waveform results                          #
     # ------------------------------------------------------------------ #
 
-    @property
+    @cached_property
     def psd(self):
         """Band-power PSD for ``psd_method`` (cached), or ``None``."""
-        if self._psd is _UNSET:
-            self._psd = self._compute_psd()
-        return self._psd
-
-    def _compute_psd(self):
         if self.psd_method is None:
             return None
         try:
@@ -119,14 +114,9 @@ class EpochContext:
         except Exception:
             return None
 
-    @property
+    @cached_property
     def bp_beats(self):
         """Per-beat BP parameter dict (cached), or ``None`` when no BP channel."""
-        if self._bp_beats is _UNSET:
-            self._bp_beats = self._compute_bp_beats()
-        return self._bp_beats
-
-    def _compute_bp_beats(self):
         if self.bp_ts is None:
             return None
         try:
@@ -139,14 +129,9 @@ class EpochContext:
         except Exception:
             return None
 
-    @property
+    @cached_property
     def resp_beats(self):
         """Per-beat respiration parameter dict (cached), or ``None``."""
-        if self._resp_beats is _UNSET:
-            self._resp_beats = self._compute_resp_beats()
-        return self._resp_beats
-
-    def _compute_resp_beats(self):
         if self.rsp_ts is None:
             return None
         try:
@@ -159,14 +144,9 @@ class EpochContext:
         except Exception:
             return None
 
-    @property
+    @cached_property
     def rsa_beats(self):
-        """Per-breath Grossman peak-to-valley RSA array (ms), or None."""
-        if self._rsa_beats is _UNSET:
-            self._rsa_beats = self._compute_rsa_beats()
-        return self._rsa_beats
-
-    def _compute_rsa_beats(self):
+        """Per-breath Grossman peak-to-valley RSA array (ms), or ``None``."""
         if self.rsp_phases is None or len(self.rsp_phases) < 2:
             return None
         try:
@@ -182,17 +162,11 @@ class EpochContext:
         except Exception:
             return None
 
-    @property
+    @cached_property
     def pep_detail(self):
-        """Ensemble-PEP detail dict (cached) — the scored Q/B/C landmarks plus
-        the ensemble-averaged ICG/ECG complexes (see
-        :func:`spectHR.analysis.icg_metrics.pep_ensemble`).  ``None`` when no ICG
-        channel is present or no scorable ensemble could be formed."""
-        if self._pep_detail is _UNSET:
-            self._pep_detail = self._compute_pep_detail()
-        return self._pep_detail
-
-    def _compute_pep_detail(self):
+        """Ensemble-PEP detail dict (cached) — scored Q/B/C landmarks plus the
+        ensemble-averaged ICG/ECG complexes.  ``None`` when no ICG channel is
+        present or no scorable ensemble could be formed."""
         if self.icg_ts is None:
             return None
         try:
@@ -216,7 +190,7 @@ class EpochContext:
 
     @property
     def pep_value(self):
-        """Epoch pre-ejection period (ms, cached) from the ensemble-averaged
-        ICG/ECG complex, or ``None`` when no ICG channel is present."""
+        """Epoch pre-ejection period (ms) from the ensemble-averaged ICG/ECG
+        complex, or ``None`` when no ICG channel is present."""
         detail = self.pep_detail
         return None if detail is None else detail.get("pep")

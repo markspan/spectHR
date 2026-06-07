@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from spectHR.analysis.registry import epoch_metric, epoch_metric_group
+from spectHR.analysis.registry import epoch_metric, epoch_metric_group, get_metrics
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
@@ -175,9 +175,10 @@ def band_powers(ctx) -> dict[str, float]:
     psd_res = getattr(ctx, "psd", None)
     if method is None or psd_res is None:
         return out
+    single_cols = set(get_metrics())  # snapshot; all metrics registered by call time
     for band_name, band_spec in method.bands.items():
         col = f"{band_name.lower()}_power"
-        if col in STANDARD_BAND_POWER_COLUMNS:
+        if col in single_cols:
             continue
         try:
             out[col] = float(band_power_rectangular(

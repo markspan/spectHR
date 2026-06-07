@@ -1611,33 +1611,24 @@ class MainWindow(QMainWindow):
 
         self._scheduler.submit(dock_name, compute, on_done, on_error)
 
-    def show_psd_plot(self, dataset) -> None:
+    def _show_async_dock(self, dock_name, layout, dataset, WidgetClass) -> None:
+        """Delegate to _async_swap_epoch_plot for a standard prefetch/build pair."""
         self._async_swap_epoch_plot(
-            _DOCK_PSD, self.psd_layout, dataset,
-            prefetch_fn=spQt.PSDPlotWidget.prefetch,
-            widget_fn=lambda v, l, w, pre: spQt.PSDPlotWidget(
+            dock_name, layout, dataset,
+            prefetch_fn=WidgetClass.prefetch,
+            widget_fn=lambda v, l, w, pre: WidgetClass(
                 v, l, workspace=w, _precomputed=pre,
             ),
         )
+
+    def show_psd_plot(self, dataset) -> None:
+        self._show_async_dock(_DOCK_PSD, self.psd_layout, dataset, spQt.PSDPlotWidget)
 
     def show_spectrogram_plot(self, dataset) -> None:
-        self._async_swap_epoch_plot(
-            _DOCK_SPECTROGRAM, self.spectrogram_layout, dataset,
-            prefetch_fn=spQt.SpectrogramPlotWidget.prefetch,
-            widget_fn=lambda v, l, w, pre: spQt.SpectrogramPlotWidget(
-                v, l, workspace=w, _precomputed=pre,
-            ),
-        )
+        self._show_async_dock(_DOCK_SPECTROGRAM, self.spectrogram_layout, dataset, spQt.SpectrogramPlotWidget)
 
     def show_spectrogram3d_plot(self, dataset) -> None:
-        """Refresh the Spectrogram 3D dock on a background thread."""
-        self._async_swap_epoch_plot(
-            _DOCK_SPECTROGRAM_3D, self.spectrogram3d_layout, dataset,
-            prefetch_fn=spQt.Spectrogram3DPlotWidget.prefetch,
-            widget_fn=lambda v, l, w, pre: spQt.Spectrogram3DPlotWidget(
-                v, l, workspace=w, _precomputed=pre,
-            ),
-        )
+        self._show_async_dock(_DOCK_SPECTROGRAM_3D, self.spectrogram3d_layout, dataset, spQt.Spectrogram3DPlotWidget)
 
     def _plot_cache_signature(self, dataset) -> tuple:
         """Signature of everything the computed plot docks depend on.
@@ -1717,34 +1708,16 @@ class MainWindow(QMainWindow):
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_layout)
             return
-        self._async_swap_epoch_plot(
-            _DOCK_TRANSFER, self.transfer_layout, dataset,
-            prefetch_fn=spQt.TransferPlotWidget.prefetch,
-            widget_fn=lambda v, l, w, pre: spQt.TransferPlotWidget(
-                v, l, workspace=w, _precomputed=pre,
-            ),
-        )
+        self._show_async_dock(_DOCK_TRANSFER, self.transfer_layout, dataset, spQt.TransferPlotWidget)
 
     def show_transfer_profile_plot(self, dataset) -> None:
         if not getattr(dataset, "rsp_map", None):
             self._clear_layout(self.transfer_profile_layout)
             return
-        self._async_swap_epoch_plot(
-            _DOCK_TRANSFER_PROFILE, self.transfer_profile_layout, dataset,
-            prefetch_fn=spQt.TransferProfilePlotWidget.prefetch,
-            widget_fn=lambda v, l, w, pre: spQt.TransferProfilePlotWidget(
-                v, l, workspace=w, _precomputed=pre,
-            ),
-        )
+        self._show_async_dock(_DOCK_TRANSFER_PROFILE, self.transfer_profile_layout, dataset, spQt.TransferProfilePlotWidget)
 
     def show_profile_plot(self, dataset) -> None:
-        self._async_swap_epoch_plot(
-            _DOCK_PROFILES, self.profile_layout, dataset,
-            prefetch_fn=spQt.ProfilePlotWidget.prefetch,
-            widget_fn=lambda v, l, w, pre: spQt.ProfilePlotWidget(
-                v, l, workspace=w, _precomputed=pre,
-            ),
-        )
+        self._show_async_dock(_DOCK_PROFILES, self.profile_layout, dataset, spQt.ProfilePlotWidget)
 
     def show_parameters_plot(self, data) -> None:
         if data is None:
