@@ -720,6 +720,13 @@ class ParametersEditorDialog(QDialog):
     # All members must be scalars in the same section; dicts, band-lists,
     # and adaptive-band widgets are never grouped horizontally.
     _HORIZONTAL_GROUPS: dict[str, list[str]] = {
+        # General Settings — keep each box compact (one row, except IBI
+        # Classification which has four fields and reads better as two rows).
+        "CardioParameters.IbiClassification.window_length": ["n_std"],
+        "CardioParameters.IbiClassification.max_ibi_sec":   ["min_peak_distance_ms"],
+        "CardioParameters.EcgPreprocessing.filter_type":    ["filter_cutoff"],
+        "RespirationAnalysis.per_epoch":                    ["rsa_lag_s", "rsa_overlay"],
+        "Calibration.bp_scale":                            ["bp_zero"],
         # Transfer
         "TransferAnalysis.f_min":                  ["f_max"],
         "TransferAnalysis.window (sec)":           ["step (sec)"],
