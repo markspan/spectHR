@@ -2,20 +2,28 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/session/_session.py
 """
-:class:`PhysioSession` — the modern root container for a physiological recording.
+:class:`Session` — the root container for one physiological recording.
 
-Design goals
+Architecture
 ------------
-* **No circular references.**  Data objects (:class:`~._data.Signal`,
-  :class:`~._data.Beats`, :class:`~._data.BreathPhases`) know nothing about
-  the session; the session owns them.
-* **Typed configuration.**  :class:`AnalysisConfig` replaces the flat
-  workspace-dict kwargs pattern with validated, documented fields.
-* **Functional epoch iteration.**  :meth:`PhysioSession.epochs_table` is a
-  pure function: same session + same config → same result.
-* **Bridge compatibility.**  :meth:`PhysioSession.from_physio_data` wraps an
-  existing :class:`~spectHR.DataSet.PhysioData.PhysioData` so all current
-  loaders work without modification.
+A ``Session`` owns three typed channel dicts (``samples``, ``events``,
+``intervals``) and an epoch table.  The channel types —
+:class:`~._core.Samples`, :class:`~._core.Events`,
+:class:`~._core.Intervals` — are pure data; they know nothing about the
+session.  The session is the sole owner; there are no circular references.
+
+Computation flows one way::
+
+    Session  →  AnalysisConfig  →  EpochContext  →  @epoch_metric
+
+:meth:`Session.scoped_to` collapses all channels to a single epoch window
+with zero copying and returns a ``Session`` with no epoch table — the
+epoch IS the session.  This makes all channel operations naturally
+epoch-scoped without any special casing in metric code.
+
+:meth:`Session.epochs_table` evaluates every registered ``@epoch_metric``
+and ``@epoch_metric_group`` for all active epochs and returns a
+:class:`MetricsTable`.
 """
 from __future__ import annotations
 
@@ -24,18 +32,17 @@ from typing import Any
 
 import numpy as np
 
-from spectHR.session._data import (
-    Beats, BeatSlice, BreathPhases, PhaseSlice, Signal, SignalSlice,
-)
+from spectHR.session._core import Events, Intervals, Samples
 
 
 # ---------------------------------------------------------------------------
-# Epoch — a labelled time window
+# Epoch
 # ---------------------------------------------------------------------------
 
 @dataclass
 class Epoch:
     """A labelled time window within a recording."""
+
     label:  str
     start:  float
     end:    float
@@ -57,9 +64,11 @@ class Epoch:
 class AnalysisConfig:
     """All parameters needed to run epoch metrics.
 
-    Replaces the scattered ``psd_method=..., rsa_lag_s=..., ...`` keyword
-    arguments passed to ``PhysioData.epoched_parameters_table``.
+    Replaces the scattered keyword arguments on
+    ``PhysioData.epoched_parameters_table``.  Build from a workspace dict
+    via :meth:`from_workspace`.
     """
+
     psd_method:             Any   = None
     rsa_lag_s:              float = 1.0
     rsa_max_ibi_deviation:  float | None = None
@@ -68,7 +77,7 @@ class AnalysisConfig:
 
     @classmethod
     def from_workspace(cls, workspace: dict | None) -> AnalysisConfig:
-        """Build from a workspace dict (bridges the old config path)."""
+        """Build from a raw workspace dict."""
         from spectHR.config import WorkspaceView
         ws = WorkspaceView(workspace)
         ibi_dev, rate_dev = ws.rsa_rejection
@@ -82,100 +91,128 @@ class AnalysisConfig:
 
 
 # ---------------------------------------------------------------------------
-# EpochsResult — structured return type for epochs_table
+# MetricsTable
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class EpochsResult:
-    """Return value of :meth:`PhysioSession.epochs_table`."""
-    labels:   np.ndarray          # shape (n_epochs,)
-    columns:  list[str]           # length n_metrics
-    values:   np.ndarray          # shape (n_epochs, n_metrics)
-    contexts: dict[str, Any]      # label → EpochContext (for export reuse)
+class MetricsTable:
+    """Result of :meth:`Session.epochs_table`.
+
+    Attributes
+    ----------
+    labels
+        Epoch label for each row.  Shape ``(n_epochs,)``.
+    columns
+        Metric name for each column.  Length ``n_metrics``.
+    values
+        Float matrix, shape ``(n_epochs, n_metrics)``.  ``NaN`` when a
+        metric could not be computed for an epoch.
+    contexts
+        ``label → EpochContext`` mapping.  Contexts carry cached PSD,
+        RSA, and ICG results so an :class:`~spectHR.analysis.exporter.EpochExporter`
+        can reuse them without recomputation.
+    """
+
+    labels:   np.ndarray
+    columns:  list[str]
+    values:   np.ndarray
+    contexts: dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
-# PhysioSession — the root container
+# Session
 # ---------------------------------------------------------------------------
 
 @dataclass
-class PhysioSession:
+class Session:
     """Root container for one physiological recording.
-
-    Owns all channels as typed, immutable data objects.  Epoch analysis
-    flows one-way: session → config → contexts → metrics.
 
     Parameters
     ----------
-    filename
-        Source file path (informational).
-    signals
-        Dict of continuous waveforms keyed by channel name
-        (e.g. ``"ecg"``, ``"resp"``, ``"icg"``).
-    beats
-        Dict of R-peak series keyed by band name.  ``"default"`` is the
-        primary band used when no band is specified.
-    phases
-        Dict of breath-phase series keyed by band name.
+    name
+        Recording identifier (file name or study label).
+    samples
+        Continuous waveforms keyed by channel name.
+        Conventional keys: ``"ecg"``, ``"resp"``, ``"bp"``, ``"icg"``.
+    events
+        Point-event series keyed by channel name.
+        Conventional key: ``"hrv"`` for the R-peak series.
+    intervals
+        Labelled segment series keyed by channel name.
+        Conventional key: ``"breath"`` for INH/EXH phases.
     epochs
-        Ordered dict of epoch windows.
-    active_band
-        Which key in *beats* / *phases* is the current analysis band.
+        Named time windows.  Only ``active=True`` epochs are included in
+        :meth:`epochs_table`.
     """
 
-    filename:    str
-    signals:     dict[str, Signal]       = field(default_factory=dict)
-    beats:       dict[str, Beats]        = field(default_factory=dict)
-    phases:      dict[str, BreathPhases] = field(default_factory=dict)
-    epochs:      dict[str, Epoch]        = field(default_factory=dict)
-    active_band: str                     = "default"
+    name:      str
+    samples:   dict[str, Samples]   = field(default_factory=dict)
+    events:    dict[str, Events]    = field(default_factory=dict)
+    intervals: dict[str, Intervals] = field(default_factory=dict)
+    epochs:    dict[str, Epoch]     = field(default_factory=dict)
 
-    # --- channel shortcuts ---
-
-    def signal(self, *names: str) -> Signal | None:
-        """Return the first named signal found, or ``None``."""
-        for n in names:
-            s = self.signals.get(n)
-            if s is not None:
-                return s
-        return None
+    # --- typed getters by convention ---
 
     @property
-    def ecg(self) -> Signal | None:
-        return self.signal("ecg")
+    def hrv(self) -> Events | None:
+        return self.events.get("hrv")
 
     @property
-    def resp(self) -> Signal | None:
-        return self.signal("resp", "respiration")
+    def breath(self) -> Intervals | None:
+        return self.intervals.get("breath")
 
     @property
-    def icg(self) -> Signal | None:
-        return self.signal("icg")
+    def ecg(self) -> Samples | None:
+        return self.samples.get("ecg")
 
     @property
-    def hrv(self) -> Beats | None:
-        return self.beats.get(self.active_band) or self.beats.get("default")
+    def resp(self) -> Samples | None:
+        return self.samples.get("resp") or self.samples.get("respiration")
 
     @property
-    def breath(self) -> BreathPhases | None:
-        return self.phases.get(self.active_band) or self.phases.get("default")
+    def bp(self) -> Samples | None:
+        return self.samples.get("bp") or self.samples.get("nibp")
 
-    # --- epoch analysis ---
+    @property
+    def icg(self) -> Samples | None:
+        return self.samples.get("icg")
 
-    def epochs_table(
-        self, config: AnalysisConfig | None = None
-    ) -> EpochsResult:
-        """Evaluate all registered epoch metrics for every active epoch.
+    # --- scoping ---
 
-        Replaces ``PhysioData.epoched_parameters_table``.  Returns an
-        :class:`EpochsResult` whose ``contexts`` dict can be passed directly
-        to :class:`~spectHR.analysis.exporter.EpochExporter`.
+    def scoped_to(self, epoch_label: str) -> Session:
+        """Return a new ``Session`` with every channel windowed to *epoch_label*.
+
+        The returned session has an empty epoch table — it *is* the epoch.
+        All windowing is zero-copy (O(log n) per channel).
+
+        Example — per-breath RSA within one epoch::
+
+            ep = session.scoped_to("A")
+            for t0, t1 in ep.intervals["breath"].windows_of("INH"):
+                phase_beats = ep.events["hrv"].window(t0, t1)
+                rsa = compute_rsa(phase_beats, ...)
+        """
+        ep = self.epochs[epoch_label]
+        return Session(
+            name=f"{self.name}[{epoch_label}]",
+            samples={k: v.window(ep.start, ep.end) for k, v in self.samples.items()},
+            events={k: v.window(ep.start, ep.end) for k, v in self.events.items()},
+            intervals={k: v.window(ep.start, ep.end) for k, v in self.intervals.items()},
+        )
+
+    # --- epoch metrics table ---
+
+    def epochs_table(self, config: AnalysisConfig | None = None) -> MetricsTable:
+        """Evaluate every registered ``@epoch_metric`` for all active epochs.
+
+        Reuses :class:`~spectHR.analysis.epoch_context.EpochContext` caching:
+        PSD, RSA, and ICG results are computed at most once per epoch regardless
+        of how many metrics request them.
 
         Parameters
         ----------
         config
-            Analysis parameters.  ``None`` uses :class:`AnalysisConfig`
-            defaults.
+            Analysis parameters.  ``None`` uses :class:`AnalysisConfig` defaults.
         """
         from spectHR.analysis.epoch_context import EpochContext
         from spectHR.analysis.registry import get_metrics, get_metric_groups
@@ -184,19 +221,12 @@ class PhysioSession:
         active = {k: v for k, v in self.epochs.items() if v.active}
 
         if not active or self.hrv is None:
-            return EpochsResult(
+            return MetricsTable(
                 labels=np.array(list(active), dtype=object),
                 columns=[],
                 values=np.empty((len(active), 0)),
                 contexts={},
             )
-
-        hrv    = self.hrv
-        breath = self.breath
-        bp_sig = self.signal("bp", "nibp")
-        rsp_sig = self.resp
-        icg_sig = self.icg
-        ecg_sig = self.ecg
 
         metrics = get_metrics()
         groups  = get_metric_groups()
@@ -204,37 +234,33 @@ class PhysioSession:
         rows: list[dict[str, float]] = []
 
         for label, epoch in active.items():
-            beat_sl: BeatSlice = hrv.slice(epoch.start, epoch.end)
+            s, e = epoch.start, epoch.end
 
-            rsp_phases: PhaseSlice | None = None
-            if breath is not None:
-                rsp_phases = breath.slice(epoch.start, epoch.end)
-
-            def _sig_slice(sig: Signal | None) -> SignalSlice | None:
-                return sig.slice(epoch.start, epoch.end) if sig is not None else None
+            def _win(ch: Samples | None) -> Samples | None:
+                return ch.window(s, e) if ch is not None else None
 
             ctx = EpochContext(
-                view=beat_sl,
+                view=self.events["hrv"].window(s, e),
                 psd_method=config.psd_method,
-                bp_ts=_sig_slice(bp_sig),
-                rsp_ts=_sig_slice(rsp_sig),
-                rsp_phases=rsp_phases,
+                bp_ts=_win(self.bp),
+                rsp_ts=_win(self.resp),
+                rsp_phases=(self.breath.window(s, e) if self.breath is not None else None),
                 rsa_lag_s=config.rsa_lag_s,
                 rsa_max_ibi_deviation=config.rsa_max_ibi_deviation,
                 rsa_max_rate_deviation=config.rsa_max_rate_deviation,
-                icg_ts=_sig_slice(icg_sig),
-                ecg_ts=_sig_slice(ecg_sig),
+                icg_ts=_win(self.icg),
+                ecg_ts=_win(self.ecg),
                 b_point_guard_ms=config.b_point_guard_ms,
             )
             contexts[label] = ctx
 
             row: dict[str, float] = {}
-            for name, fn in metrics.items():
+            for mname, fn in metrics.items():
                 try:
-                    row[name] = float(fn(ctx))
+                    row[mname] = float(fn(ctx))
                 except Exception:
-                    row[name] = np.nan
-            for name, fn in groups.items():
+                    row[mname] = np.nan
+            for _, fn in groups.items():
                 try:
                     extra = fn(ctx)
                     if isinstance(extra, dict):
@@ -243,74 +269,16 @@ class PhysioSession:
                     pass
             rows.append(row)
 
-        # Assemble rectangular matrix, preserving first-seen column order
         all_cols = list(dict.fromkeys(c for r in rows for c in r))
-        labels_arr = np.array(list(active), dtype=object)
-        matrix = np.full((len(rows), len(all_cols)), np.nan)
-        col_idx = {c: i for i, c in enumerate(all_cols)}
+        matrix   = np.full((len(rows), len(all_cols)), np.nan)
+        col_idx  = {c: i for i, c in enumerate(all_cols)}
         for i, row in enumerate(rows):
             for col, val in row.items():
                 matrix[i, col_idx[col]] = val
 
-        return EpochsResult(labels_arr, all_cols, matrix, contexts)
-
-    # --- bridge from legacy PhysioData ---
-
-    @classmethod
-    def from_physio_data(cls, pd) -> PhysioSession:
-        """Wrap a :class:`~spectHR.DataSet.PhysioData.PhysioData` instance.
-
-        Converts legacy ``TimeSeries``, ``CardioSeries``, and
-        ``RespirationSeries`` objects to the new immutable types so all
-        existing loaders work without modification.
-
-        The returned session shares array *data* with the original (zero
-        extra memory for large waveforms).
-        """
-        signals: dict[str, Signal] = {}
-        for name, ts in pd.timeseries.items():
-            signals[name] = Signal(
-                times=np.asarray(ts.times,  dtype=np.float64),
-                values=np.asarray(ts.values, dtype=np.float64),
-                name=name,
-            )
-
-        beats: dict[str, Beats] = {}
-        for band, cs in pd.hrv_map.items():
-            beats[band] = Beats(
-                times=np.asarray(cs.times,  dtype=np.float64),
-                labels=np.asarray(cs.labels, dtype=object),
-            )
-        if beats and "default" not in beats:
-            beats["default"] = next(iter(beats.values()))
-
-        phases: dict[str, BreathPhases] = {}
-        for band, rs in pd.rsp_map.items():
-            phases[band] = BreathPhases(
-                starts=np.asarray(rs.starts, dtype=np.float64),
-                ends=np.asarray(rs.ends,     dtype=np.float64),
-                labels=np.asarray(rs.labels, dtype=object),
-            )
-        if phases and "default" not in phases:
-            phases["default"] = next(iter(phases.values()))
-
-        epochs: dict[str, Epoch] = {
-            label: Epoch(
-                label=label,
-                start=float(ep.start),
-                end=float(ep.end),
-                active=bool(ep.active),
-            )
-            for label, ep in pd.epochs.items()
-        }
-
-        active_band: str = pd.active_band or "default"
-
-        return cls(
-            filename=str(pd.filename),
-            signals=signals,
-            beats=beats,
-            phases=phases,
-            epochs=epochs,
-            active_band=active_band,
+        return MetricsTable(
+            labels=np.array(list(active), dtype=object),
+            columns=all_cols,
+            values=matrix,
+            contexts=contexts,
         )

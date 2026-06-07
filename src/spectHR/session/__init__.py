@@ -3,60 +3,50 @@
 """
 spectHR.session — modern physiological data layer.
 
-Public surface
---------------
-Data primitives (immutable, read-only arrays)::
+Three immutable data primitives::
 
-    Signal, SignalSlice
-    Beats, BeatSlice
-    BreathPhases, PhaseSlice
+    Samples     continuous 1-D waveform (ECG, resp, BP, ICG)
+    Events      point process with labels (R-peaks, markers)
+    Intervals   labelled segments (INH/EXH phases, conditions)
+
+All three support zero-copy ``obj.window(start, end)`` that returns the
+same type — no separate slice class.
 
 Session layer::
 
-    Epoch, AnalysisConfig, EpochsResult
-    PhysioSession
-
-Bridge::
-
-    PhysioSession.from_physio_data(pd)   # wrap legacy PhysioData
+    Epoch           labelled time window
+    AnalysisConfig  typed analysis parameters
+    MetricsTable    structured result of epochs_table
+    Session         root container; owns channels and epoch table
 
 Protocols (for type annotations)::
 
-    SignalLike, BeatLike, PhaseLike
+    SamplesLike, EventsLike, IntervalsLike
 """
-from spectHR.session._data import (
-    Signal,
-    SignalSlice,
-    Beats,
-    BeatSlice,
-    BreathPhases,
-    PhaseSlice,
-    SignalLike,
-    BeatLike,
-    PhaseLike,
+from spectHR.session._core import (
+    Samples,
+    Events,
+    Intervals,
+    SamplesLike,
+    EventsLike,
+    IntervalsLike,
 )
 from spectHR.session._session import (
     Epoch,
     AnalysisConfig,
-    EpochsResult,
-    PhysioSession,
+    MetricsTable,
+    Session,
 )
 
 __all__ = [
-    # data primitives
-    "Signal",
-    "SignalSlice",
-    "Beats",
-    "BeatSlice",
-    "BreathPhases",
-    "PhaseSlice",
-    # protocols
-    "SignalLike",
-    "BeatLike",
-    "PhaseLike",
-    # session
+    "Samples",
+    "Events",
+    "Intervals",
+    "SamplesLike",
+    "EventsLike",
+    "IntervalsLike",
     "Epoch",
     "AnalysisConfig",
-    "EpochsResult",
-    "PhysioSession",
+    "MetricsTable",
+    "Session",
 ]
