@@ -124,7 +124,7 @@ _EXCLUDED_SECTIONS = {"Directories"}
 # future workspace additions stay editable even before they're explicitly
 # routed.
 _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration", "Logging")),
+    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration", "IcgAnalysis", "Logging")),
     ("PSD Settings",         ("FrequencyAnalysis",)),
     ("Profile Settings",     ("Profiles",)),
     ("Spectrogram Settings", ("Spectrogram",)),
@@ -495,13 +495,24 @@ class ParametersEditorDialog(QDialog):
         sections_per_tab: dict[str, list[str]] = {
             tab_label: [] for tab_label, _ in _TAB_LAYOUT
         }
-        for section_key in workspace:
-            if section_key in _EXCLUDED_SECTIONS:
-                continue
-            if not isinstance(workspace[section_key], dict):
-                continue
-            tab_label = explicit_routes.get(section_key, first_tab_label)
-            sections_per_tab.setdefault(tab_label, []).append(section_key)
+        # Sections valid for editing (dict-valued, not excluded).
+        present = [
+            k for k in workspace
+            if k not in _EXCLUDED_SECTIONS and isinstance(workspace[k], dict)
+        ]
+        present_set = set(present)
+        # Order within each tab follows the declared ``_TAB_LAYOUT`` sequence
+        # (not the workspace JSON key order), so the editor layout is stable
+        # regardless of how a saved workspace happens to order its keys.
+        for tab_label, sec_keys in _TAB_LAYOUT:
+            for sec in sec_keys:
+                if sec in present_set:
+                    sections_per_tab[tab_label].append(sec)
+        # Any section without an explicit route falls into the first tab, in
+        # workspace order, so future additions stay editable before routing.
+        for sec in present:
+            if sec not in explicit_routes:
+                sections_per_tab[first_tab_label].append(sec)
 
         # ---- one tab per group ------------------------------------------------
         tabs = QTabWidget()
