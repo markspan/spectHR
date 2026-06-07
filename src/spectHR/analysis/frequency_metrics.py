@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from spectHR.analysis.epoch_context import EpochContext
 from spectHR.analysis.registry import epoch_metric, epoch_metric_group, get_metrics
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.psd._band_power import band_power_rectangular
@@ -56,15 +57,15 @@ def _resolve_method(series, psd_method):
     2. An :class:`EpochContext` carries ``psd_method`` (possibly ``None``); the
        table path uses it, and a configured ``None`` means "no band powers"
        (the caller returns ``NaN``).
-    3. A bare series has no ``psd_method`` attribute → fall back to the default
-       method, matching the historical direct-call behaviour.
+    3. A bare ``CardioSeriesView`` → fall back to the default method,
+       matching the historical direct-call behaviour.
 
     Returns the method, or ``None`` to signal "configured but no method →
     yield NaN".
     """
     if psd_method is not None:
         return psd_method
-    if hasattr(series, "psd_method"):        # EpochContext
+    if isinstance(series, EpochContext):
         return series.psd_method             # may be None → caller yields NaN
     return _DEFAULT_PSD_METHOD               # bare series, standalone call
 

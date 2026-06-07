@@ -5,11 +5,10 @@
 Per-epoch evaluation context for ``@epoch_metric`` functions.
 
 ``PhysioData.epoched_parameters_table`` builds one :class:`EpochContext` per
-active epoch and passes it to every registered metric.  The context is a thin
-superset of the epoch's ``CardioSeriesView``: it **delegates** every unknown
-attribute (``times``, ``ibi``, ``labels`` …) to the underlying view, so the
-time-domain metrics — which only ever touch the series interface — work
-unchanged whether they are handed a bare view or a context.
+active epoch and passes it to every registered metric.  The context is a
+``@dataclass`` that satisfies :class:`CardioSeriesProtocol` via explicit
+``times`` / ``ibi`` / ``labels`` properties, so time-domain metrics written
+against a bare ``CardioSeriesView`` work unchanged when handed a context.
 
 On top of the series interface it adds the extra inputs the BP / RESP /
 band-power metrics need, each computed **lazily and cached** via
@@ -30,18 +29,46 @@ matter how many metrics consult it:
     Full ICG ensemble dict from :func:`~spectHR.analysis.icg_metrics.pep_ensemble`,
     or ``None`` when no ICG channel is present.
 
-A bare ``CardioSeriesView`` carries none of these attributes, which is how the
-dual-mode band-power metrics tell a direct call (use the default PSD method)
-apart from a table call (use ``ctx.psd_method``, or yield ``NaN`` when it is
-``None``).
+A bare ``CardioSeriesView`` has no ``psd_method`` attribute; the dual-mode
+band-power metrics distinguish the two call paths via ``isinstance(series,
+EpochContext)``.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from functools import cached_property
+from typing import Any, Protocol
 
 import numpy as np
 
 
+# ------------------------------------------------------------------ #
+# Protocol — documents the series interface @epoch_metric relies on  #
+# ------------------------------------------------------------------ #
+
+class CardioSeriesProtocol(Protocol):
+    """Minimal interface that ``@epoch_metric`` functions depend on.
+
+    Both :class:`~spectHR.DataSet.Series.CardioSeriesView.CardioSeriesView`
+    and :class:`EpochContext` satisfy this protocol, so metrics written
+    against a bare view continue to work when the table passes a context.
+    """
+
+    @property
+    def times(self) -> np.ndarray: ...
+
+    @property
+    def ibi(self) -> np.ndarray: ...
+
+    @property
+    def labels(self) -> np.ndarray: ...
+
+
+# ------------------------------------------------------------------ #
+# Context                                                             #
+# ------------------------------------------------------------------ #
+
+@dataclass
 class EpochContext:
     """Single argument handed to every ``@epoch_metric`` by the table.
 
@@ -49,8 +76,7 @@ class EpochContext:
     ----------
     view
         The epoch's ``CardioSeriesView`` (the active HRV series restricted to
-        the epoch bounds).  All series-interface attribute access is delegated
-        here.
+        the epoch bounds).
     psd_method
         Workspace-configured ``PsdMethod`` (or ``None``).  Drives :attr:`psd`
         and is read by the band-power metrics.
@@ -59,40 +85,36 @@ class EpochContext:
         ``.times`` and ``.values``).  ``None`` when the channel is not loaded.
     """
 
-    def __init__(self, view, *, psd_method=None, bp_ts=None, rsp_ts=None,
-                 rsp_phases=None, rsa_lag_s: float = 1.0,
-                 rsa_max_ibi_deviation=None, rsa_max_rate_deviation=None,
-                 icg_ts=None, ecg_ts=None, b_point_guard_ms: float = 30.0):
-        self.view = view
-        self.psd_method = psd_method
-        self.bp_ts = bp_ts
-        self.rsp_ts = rsp_ts
-        self.rsp_phases = rsp_phases
-        self.rsa_lag_s = rsa_lag_s
-        self.rsa_max_ibi_deviation = rsa_max_ibi_deviation
-        self.rsa_max_rate_deviation = rsa_max_rate_deviation
-        self.icg_ts = icg_ts
-        self.ecg_ts = ecg_ts
-        self.b_point_guard_ms = b_point_guard_ms
+    # Positional-only field — no default, must be supplied first
+    view: Any
+
+    # All remaining fields are keyword-only (mirrors the original * separator)
+    psd_method:              Any   = field(default=None,  kw_only=True)
+    bp_ts:                   Any   = field(default=None,  kw_only=True)
+    rsp_ts:                  Any   = field(default=None,  kw_only=True)
+    rsp_phases:              Any   = field(default=None,  kw_only=True)
+    rsa_lag_s:               float = field(default=1.0,   kw_only=True)
+    rsa_max_ibi_deviation:   Any   = field(default=None,  kw_only=True)
+    rsa_max_rate_deviation:  Any   = field(default=None,  kw_only=True)
+    icg_ts:                  Any   = field(default=None,  kw_only=True)
+    ecg_ts:                  Any   = field(default=None,  kw_only=True)
+    b_point_guard_ms:        float = field(default=30.0,  kw_only=True)
 
     # ------------------------------------------------------------------ #
-    # Series-interface delegation                                         #
+    # CardioSeriesProtocol — explicit forwarding to self.view            #
     # ------------------------------------------------------------------ #
 
-    def __getattr__(self, name: str):
-        # Reached only for names not found as instance/class attributes, so
-        # the delegation never shadows view/psd_method/cached_property results.
-        # Guard against view being missing (e.g. during unpickling) to avoid
-        # infinite recursion.
-        try:
-            view = object.__getattribute__(self, "view")
-        except AttributeError as exc:                       # pragma: no cover
-            raise AttributeError(name) from exc
-        return getattr(view, name)
+    @property
+    def times(self) -> np.ndarray:
+        return self.view.times
 
-    # ------------------------------------------------------------------ #
-    # R-peaks                                                             #
-    # ------------------------------------------------------------------ #
+    @property
+    def ibi(self) -> np.ndarray:
+        return self.view.ibi
+
+    @property
+    def labels(self) -> np.ndarray:
+        return self.view.labels
 
     @property
     def rpeak_times(self) -> np.ndarray:
@@ -122,9 +144,9 @@ class EpochContext:
         try:
             from spectHR.analysis.bp_metrics import bp_beat_parameters
             return bp_beat_parameters(
-                np.asarray(self.bp_ts.times, dtype=float),
+                np.asarray(self.bp_ts.times,  dtype=float),
                 np.asarray(self.bp_ts.values, dtype=float),
-                np.asarray(self.rpeak_times, dtype=float),
+                np.asarray(self.rpeak_times,  dtype=float),
             )
         except Exception:
             return None
@@ -137,9 +159,9 @@ class EpochContext:
         try:
             from spectHR.analysis.bp_metrics import resp_beat_parameters
             return resp_beat_parameters(
-                np.asarray(self.rsp_ts.times, dtype=float),
+                np.asarray(self.rsp_ts.times,  dtype=float),
                 np.asarray(self.rsp_ts.values, dtype=float),
-                np.asarray(self.rpeak_times, dtype=float),
+                np.asarray(self.rpeak_times,   dtype=float),
             )
         except Exception:
             return None
@@ -174,13 +196,13 @@ class EpochContext:
             ecg_kw: dict = {}
             if self.ecg_ts is not None:
                 ecg_kw = dict(
-                    ecg_times=np.asarray(self.ecg_ts.times, dtype=float),
+                    ecg_times=np.asarray(self.ecg_ts.times,  dtype=float),
                     ecg_values=np.asarray(self.ecg_ts.values, dtype=float),
                 )
             return pep_ensemble(
-                np.asarray(self.icg_ts.times, dtype=float),
+                np.asarray(self.icg_ts.times,  dtype=float),
                 np.asarray(self.icg_ts.values, dtype=float),
-                np.asarray(self.rpeak_times, dtype=float),
+                np.asarray(self.rpeak_times,   dtype=float),
                 b_guard_ms=self.b_point_guard_ms,
                 return_detail=True,
                 **ecg_kw,
