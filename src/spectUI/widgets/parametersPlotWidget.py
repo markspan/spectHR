@@ -77,9 +77,13 @@ from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.profile import (
     compute_band_power_profile,
+    profile_summary_scalars,
     summarize_profile_band,
 )
-from spectHR.analysis.transfer import resolve_transfer_input
+from spectHR.analysis.transfer import (
+    resolve_transfer_input,
+    transfer_summary_scalars,
+)
 from spectUI.common import show_export_summary
 from spectUI.workSpace import (
     display_bands_from_workspace,
@@ -571,18 +575,16 @@ class ParametersPlotWidget(QWidget):
                     stats = summarize_profile_band(bp, t_rel)
                     band_prof[bname] = {"power": bp, **stats}
 
-                    # Scalar summary → CSV
-                    for k, v in stats.items():
-                        epoch["scalars"][f"{bname}_prof_{k}"] = v
-
-                epoch["scalars"]["prof_method"]   = prof_res.method or ""
-                epoch["scalars"]["prof_unit"]     = prof_res.unit   or ""
-                epoch["scalars"]["prof_window_s"] = prof_cfg["window_s"]
-                epoch["scalars"]["prof_step_s"]   = prof_cfg["step_s"]
-                epoch["scalars"]["prof_n_windows"]= int(ts.size)
-                if adaptive_band_name:
-                    epoch["scalars"]["prof_adaptive_band"]   = adaptive_band_name
-                    epoch["scalars"]["prof_adaptive_source"] = prof_cfg["adaptive_source"]
+                # Scalar summary columns → CSV (column names defined in the
+                # analysis layer, see profile_summary_scalars).
+                epoch["scalars"].update(profile_summary_scalars(
+                    prof_res, t_rel,
+                    emit_bands=emit_bands,
+                    window_s=prof_cfg["window_s"],
+                    step_s=prof_cfg["step_s"],
+                    adaptive_band_name=adaptive_band_name,
+                    adaptive_source=prof_cfg["adaptive_source"],
+                ))
 
                 resp_freqs = (
                     np.asarray(prof_res.resp_freqs, dtype=np.float64).ravel()
@@ -642,20 +644,15 @@ class ParametersPlotWidget(QWidget):
                             "n_points":           int(bt.n_points)             if bt else 0,
                             "n_coherent":         int(bt.n_coherent)           if bt else 0,
                         }
-                        # Scalar summary → CSV
-                        if bt:
-                            epoch["scalars"][f"{bname}_tf_modulus"]   = float(bt.modulus)
-                            epoch["scalars"][f"{bname}_tf_phase_w"]   = float(bt.phase)
-                            epoch["scalars"][f"{bname}_tf_phase_u"]   = float(bt.phase_unwrapped)
-                            epoch["scalars"][f"{bname}_tf_coherence"] = float(bt.weighted_coherence)
-                            epoch["scalars"][f"{bname}_tf_n_points"]  = int(bt.n_points)
-                            epoch["scalars"][f"{bname}_tf_n_coherent"]= int(bt.n_coherent)
 
-                    epoch["scalars"]["tf_method"]        = tf_res.method or ""
-                    epoch["scalars"]["tf_freq_resolution"]= tf_freq_res
-                    epoch["scalars"]["tf_smooth"]        = int(tf_cfg["smooth"])
-                    epoch["scalars"]["tf_min_coherence"] = float(tf_cfg["min_coherence"])
-                    epoch["scalars"]["tf_f_max"]         = float(tf_cfg["f_max"])
+                    # Scalar summary columns → CSV (column names defined in the
+                    # analysis layer, see transfer_summary_scalars).
+                    epoch["scalars"].update(transfer_summary_scalars(
+                        tf_res,
+                        smooth=bool(tf_cfg["smooth"]),
+                        min_coherence=float(tf_cfg["min_coherence"]),
+                        f_max=float(tf_cfg["f_max"]),
+                    ))
 
                     epoch["transfer"] = {
                         "freqs":          tf_freqs,

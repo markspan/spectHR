@@ -82,6 +82,7 @@ __all__ = [
     "resolve_transfer_input",
     "compute_transfer",
     "compute_transfer_profile",
+    "transfer_summary_scalars",
 ]
 
 
@@ -944,6 +945,45 @@ def compute_transfer(
         method="carspan_transfer",
         band_results=band_out if bands else None,
     )
+
+
+def transfer_summary_scalars(
+    tf_res: "TransferResult",
+    *,
+    smooth: bool,
+    min_coherence: float,
+    f_max: float,
+) -> dict:
+    """Flatten a :class:`TransferResult` into the named scalar export columns.
+
+    For each band with a :class:`BandTransfer` summary, emits
+    ``{band}_tf_modulus``, ``{band}_tf_phase_w`` (wrapped), ``{band}_tf_phase_u``
+    (unwrapped), ``{band}_tf_coherence`` (weighted), ``{band}_tf_n_points`` and
+    ``{band}_tf_n_coherent``; plus the run-level metadata ``tf_method``,
+    ``tf_freq_resolution``, ``tf_smooth``, ``tf_min_coherence`` and ``tf_f_max``.
+
+    Centralising the column-naming here keeps the CSV/HDF5 column set defined in
+    the analysis layer rather than in the UI export code.  The settings
+    (*smooth*, *min_coherence*, *f_max*) are echoed into the metadata columns;
+    they are taken as arguments because the result object does not carry them.
+    """
+    scalars: dict = {}
+    for bname, bt in (tf_res.band_results or {}).items():
+        if bt is None:
+            continue
+        scalars[f"{bname}_tf_modulus"]    = float(bt.modulus)
+        scalars[f"{bname}_tf_phase_w"]    = float(bt.phase)
+        scalars[f"{bname}_tf_phase_u"]    = float(bt.phase_unwrapped)
+        scalars[f"{bname}_tf_coherence"]  = float(bt.weighted_coherence)
+        scalars[f"{bname}_tf_n_points"]   = int(bt.n_points)
+        scalars[f"{bname}_tf_n_coherent"] = int(bt.n_coherent)
+
+    scalars["tf_method"]          = tf_res.method or ""
+    scalars["tf_freq_resolution"] = float(tf_res.freq_resolution)
+    scalars["tf_smooth"]          = int(smooth)
+    scalars["tf_min_coherence"]   = float(min_coherence)
+    scalars["tf_f_max"]           = float(f_max)
+    return scalars
 
 
 def compute_transfer_profile(

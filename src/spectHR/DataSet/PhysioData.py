@@ -243,7 +243,9 @@ class PhysioData:
         ``CardioSeries`` (``self.hrv``) restricted to that epoch's bounds.
         Each registered ``@epoch_metric`` — time-domain HRV, standard band
         powers, and beat-by-beat BP / RESP parameters — contributes one scalar
-        column; the results are assembled into a rectangular matrix.
+        column, and each ``@epoch_metric_group`` (e.g. the non-standard band
+        powers) contributes a data-driven set of columns; the results are
+        assembled into a rectangular matrix.
 
         Parameters
         ----------
@@ -268,8 +270,7 @@ class PhysioData:
         Returns three empty containers when no active epochs exist or no
         active HRV series is loaded.
         """
-        from spectHR.analysis.psd._band_power import band_power_rectangular
-        from spectHR.analysis.frequency_metrics import STANDARD_BAND_POWER_COLUMNS
+        from spectHR.analysis.registry import get_metric_groups
         from spectHR.analysis.epoch_context import EpochContext
 
         hrv = self.hrv
@@ -280,6 +281,9 @@ class PhysioData:
         # powers, and the beat-by-beat BP / RESP parameters.  Each is called with
         # the per-epoch EpochContext and contributes one scalar column.
         metrics = get_metrics()
+        # Multi-column ``@epoch_metric_group`` functions (e.g. the non-standard
+        # band powers), each contributing a data-driven set of columns.
+        metric_groups = get_metric_groups()
 
         # Optional waveform channels for the beat-by-beat CARSPAN parameters.
         # Both are R-peak-gated; the EpochContext gates them on the per-epoch
@@ -339,23 +343,17 @@ class PhysioData:
                     except Exception:
                         row[name] = float("nan")
 
-                # ---- hybrid: dynamic band powers for non-standard bands -
-                # The standard bands (FullRange/VLF/LF/HF) are covered by the
-                # decorated metrics above; any extra or renamed band still gets
-                # its ``{name}_power`` column here, reusing the cached PSD.
-                if psd_method is not None and ctx.psd is not None:
-                    psd_res = ctx.psd
-                    for band_name, band_spec in psd_method.bands.items():
-                        col = f"{band_name.lower()}_power"
-                        if col in STANDARD_BAND_POWER_COLUMNS:
-                            continue
-                        try:
-                            row[col] = band_power_rectangular(
-                                psd_res.freqs, psd_res.power,
-                                band_spec.low, band_spec.high,
-                            )
-                        except Exception:
-                            pass   # leave absent → NaN in the matrix
+                # ---- registered multi-column metric groups --------------
+                # Data-driven column sets (e.g. ``{band}_power`` for any
+                # non-standard band).  A single-valued metric of the same name
+                # always wins, so groups never clobber the decorated columns.
+                for gname, gfn in metric_groups.items():
+                    try:
+                        for col, val in gfn(ctx).items():
+                            if col not in row:
+                                row[col] = float(val)
+                    except Exception:
+                        pass   # a failing group leaves its columns absent → NaN
 
                 rows.append(row)
 

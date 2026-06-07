@@ -17,7 +17,12 @@ Direct usage
 >>> hrv.get_metrics()        # {name: fn} dict of all registered metrics
 """
 
-from spectHR.analysis.registry import epoch_metric, get_metrics
+from spectHR.analysis.registry import (
+    epoch_metric,
+    epoch_metric_group,
+    get_metrics,
+    get_metric_groups,
+)
 
 # Importing the metric submodules populates _REGISTRY as a side effect.
 # The registry is filled on first access to spectHR.analysis.
@@ -30,7 +35,9 @@ from spectHR.analysis import icg_metrics        # noqa: F401  (pep)
 
 __all__ = [
     "epoch_metric",
+    "epoch_metric_group",
     "get_metrics",
+    "get_metric_groups",
     # Metric submodules are importable but not re-exported by name here;
     # call them as hrv.time_metrics.rmssd if you need the raw function.
 ]

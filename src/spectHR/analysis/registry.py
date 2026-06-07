@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import Callable, Dict
 
 _REGISTRY: Dict[str, Callable] = {}
+_GROUP_REGISTRY: Dict[str, Callable] = {}
 
 
 def epoch_metric(func: Callable) -> Callable:
@@ -65,6 +66,46 @@ def epoch_metric(func: Callable) -> Callable:
     return func
 
 
+def epoch_metric_group(func: Callable) -> Callable:
+    """Register *func* as a **multi-column** per-epoch metric group.
+
+    Unlike :func:`epoch_metric` (one function → one scalar column), a group
+    metric returns a ``dict[str, float]`` whose keys are column names and whose
+    values are the scalars for that epoch — used for parameters whose column
+    *set* is data-driven and cannot be known at import time.  The motivating
+    case is band power: the workspace lets the researcher rename or add
+    frequency bands, so the non-standard ``{band}_power`` columns only exist
+    once a method is configured.
+
+    A group metric is always called with an
+    :class:`~spectHR.analysis.epoch_context.EpochContext` (never a bare series)
+    because it relies on the context's cached PSD / channels.  It must return a
+    mapping; an empty dict means "no columns this epoch".  Keys that collide
+    with a single-valued :func:`epoch_metric` are dropped by the table so the
+    decorated metric always wins.
+
+    Registration happens at import time, exactly like :func:`epoch_metric`.
+
+    Raises
+    ------
+    ValueError
+        If a group with the same ``__name__`` is already registered.
+    """
+    name = func.__name__
+    if name in _GROUP_REGISTRY:
+        raise ValueError(
+            f"Epoch metric group '{name}' is already registered. "
+            "Rename the function or remove the duplicate decorator."
+        )
+    _GROUP_REGISTRY[name] = func
+    return func
+
+
 def get_metrics() -> Dict[str, Callable]:
     """Return a snapshot of the current metric registry (``name → function``)."""
     return dict(_REGISTRY)
+
+
+def get_metric_groups() -> Dict[str, Callable]:
+    """Return a snapshot of the multi-column group registry (``name → fn``)."""
+    return dict(_GROUP_REGISTRY)

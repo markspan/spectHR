@@ -32,7 +32,11 @@ from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis._smoothing import smooth3 as _ma3  # CARSPAN MAW kernel (T_AnaFunctions.pas:595-643)
 
 
-__all__ = ["compute_band_power_profile", "summarize_profile_band"]
+__all__ = [
+    "compute_band_power_profile",
+    "summarize_profile_band",
+    "profile_summary_scalars",
+]
 
 
 def summarize_profile_band(
@@ -61,6 +65,62 @@ def summarize_profile_band(
 
 
 
+
+
+def profile_summary_scalars(
+    prof_res,
+    t_rel: np.ndarray,
+    *,
+    emit_bands: Optional[list] = None,
+    window_s: float,
+    step_s: float,
+    adaptive_band_name: Optional[str] = None,
+    adaptive_source: Optional[str] = None,
+) -> dict:
+    """Flatten a :class:`ProfileResult` into the named scalar columns the
+    parameters export writes.
+
+    Produces, for each emitted band, ``{band}_prof_{mean,std,min,max,t_max}``
+    (via :func:`summarize_profile_band`), plus the run-level metadata columns
+    ``prof_method``, ``prof_unit``, ``prof_window_s``, ``prof_step_s``,
+    ``prof_n_windows`` and — when an adaptive band was used —
+    ``prof_adaptive_band`` / ``prof_adaptive_source``.
+
+    Centralising the column-naming here keeps the CSV/HDF5 column set defined in
+    the analysis layer rather than in the UI export code.
+
+    Parameters
+    ----------
+    prof_res
+        The ``ProfileResult`` from :func:`compute_band_power_profile`.
+    t_rel
+        Epoch-relative window-centre times (used for ``t_max``).
+    emit_bands
+        Band names to emit, in order; ``None`` emits every band in *prof_res*.
+        Names absent from *prof_res* are skipped.
+    window_s, step_s
+        The sliding-window settings, echoed into the metadata columns.
+    adaptive_band_name, adaptive_source
+        When set, recorded as ``prof_adaptive_band`` / ``prof_adaptive_source``.
+    """
+    scalars: dict = {}
+    names_in = list(prof_res.band_names)
+    for bname in (emit_bands or names_in):
+        if bname not in names_in:
+            continue
+        power = prof_res.band_power[names_in.index(bname)]
+        for k, v in summarize_profile_band(power, t_rel).items():
+            scalars[f"{bname}_prof_{k}"] = v
+
+    scalars["prof_method"]    = prof_res.method or ""
+    scalars["prof_unit"]      = prof_res.unit or ""
+    scalars["prof_window_s"]  = window_s
+    scalars["prof_step_s"]    = step_s
+    scalars["prof_n_windows"] = int(np.asarray(prof_res.timestamps).size)
+    if adaptive_band_name:
+        scalars["prof_adaptive_band"]   = adaptive_band_name
+        scalars["prof_adaptive_source"] = adaptive_source
+    return scalars
 
 
 def _strip_hz(unit_str: str) -> str:
