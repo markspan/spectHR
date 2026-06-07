@@ -35,6 +35,7 @@ from spectHR.analysis._smoothing import smooth3 as _ma3  # CARSPAN MAW kernel (T
 __all__ = [
     "compute_band_power_profile",
     "summarize_profile_band",
+    "profile_band_data",
     "profile_summary_scalars",
 ]
 
@@ -67,6 +68,29 @@ def summarize_profile_band(
 
 
 
+def profile_band_data(
+    prof_res,
+    t_rel: np.ndarray,
+    *,
+    emit_bands: Optional[list] = None,
+) -> dict:
+    """Per-band data dict: ``{band_name: {"power": array, **stats}}``.
+
+    Calls :func:`summarize_profile_band` once per band and bundles the raw
+    power array with the scalar stats.  Used by both :func:`profile_summary_scalars`
+    (flat CSV columns) and the HDF5 writer (array + attributes), so
+    ``summarize_profile_band`` is never called more than once per band per epoch.
+    """
+    out: dict = {}
+    names_in = list(prof_res.band_names)
+    for bname in (emit_bands or names_in):
+        if bname not in names_in:
+            continue
+        power = prof_res.band_power[names_in.index(bname)]
+        out[bname] = {"power": power, **summarize_profile_band(power, t_rel)}
+    return out
+
+
 def profile_summary_scalars(
     prof_res,
     t_rel: np.ndarray,
@@ -81,7 +105,7 @@ def profile_summary_scalars(
     parameters export writes.
 
     Produces, for each emitted band, ``{band}_prof_{mean,std,min,max,t_max}``
-    (via :func:`summarize_profile_band`), plus the run-level metadata columns
+    (via :func:`profile_band_data`), plus the run-level metadata columns
     ``prof_method``, ``prof_unit``, ``prof_window_s``, ``prof_step_s``,
     ``prof_n_windows`` and — when an adaptive band was used —
     ``prof_adaptive_band`` / ``prof_adaptive_source``.
@@ -104,13 +128,10 @@ def profile_summary_scalars(
         When set, recorded as ``prof_adaptive_band`` / ``prof_adaptive_source``.
     """
     scalars: dict = {}
-    names_in = list(prof_res.band_names)
-    for bname in (emit_bands or names_in):
-        if bname not in names_in:
-            continue
-        power = prof_res.band_power[names_in.index(bname)]
-        for k, v in summarize_profile_band(power, t_rel).items():
-            scalars[f"{bname}_prof_{k}"] = v
+    for bname, bd in profile_band_data(prof_res, t_rel, emit_bands=emit_bands).items():
+        for stat in ("mean", "std", "min", "max", "t_max"):
+            if stat in bd:
+                scalars[f"{bname}_prof_{stat}"] = bd[stat]
 
     scalars["prof_method"]    = prof_res.method or ""
     scalars["prof_unit"]      = prof_res.unit or ""
