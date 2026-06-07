@@ -14,6 +14,7 @@ from spectHR.Tools.Logger import logger
 # compatibility with the many ``from spectUI.workSpace import ...`` call sites.
 from spectHR.config import (  # noqa: F401  (re-export)
     LOG_LEVELS,
+    RSP_SOURCES,
     bp_calibration_from_workspace,
     display_bands_from_workspace,
     log_level_from_workspace,
@@ -21,6 +22,7 @@ from spectHR.config import (  # noqa: F401  (re-export)
     psd_ci_alpha,
     psd_method_from_workspace,
     resolved_profile_bands,
+    rsp_source_from_workspace,
     spectrogram_settings_from_workspace,
     transfer_settings_from_workspace,
 )
@@ -322,6 +324,16 @@ _DEFAULT_WORKSPACE = {
         "per_epoch": False,
         "rsa_lag_s": 1.0,
         "rsa_overlay": "rsa0",
+        # Respiration source for RSA / transfer / resp_rate on ICG-capable
+        # (VU-AMS) recordings:
+        #   "icg"           - thoracic-impedance (ICG / dZ) signal; the
+        #                     channel VU-AMS itself scores RSA from (default,
+        #                     matches VU-AMS).
+        #   "accelerometer" - 3-axis chest-wall accelerometer PCA surrogate;
+        #                     useful for ambulatory/movement recordings or
+        #                     devices without an ICG channel.
+        # Only affects EDF recordings that carry both candidate channels.
+        "rsp_source": "icg",
     },
 }
 

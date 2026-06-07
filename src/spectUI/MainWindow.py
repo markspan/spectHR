@@ -1270,6 +1270,9 @@ class MainWindow(QMainWindow):
                 # reloaded single-band file gets BP in mmHg, not raw counts
                 # (PreProcessFile does the same for the band-node path).
                 spQt.apply_bp_calibration(dataset, self.workspace)
+                # Select the respiration source (ICG impedance vs
+                # accelerometer) per the workspace; no-op otherwise.
+                spQt.apply_rsp_source(dataset, self.workspace)
                 if dataset.has_ecg:
                     dataset.preprocess_ecg(
                         respiration_per_epoch=self._respiration_per_epoch(),

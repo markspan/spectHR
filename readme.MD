@@ -687,7 +687,7 @@ All parameters are stored in a JSON workspace file, editable through the applica
 
 **WorkSpace → Edit Parameters** is a tabbed dialog:
 
-- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *ICG Analysis* (PEP B-point guard `b_point_guard_ms`, see [Pre-ejection period](#pre-ejection-period-pep)), *Logging* (minimum log level shown in the Log dock / console).
+- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag; RSA overlay; `rsp_source` — `icg` vs `accelerometer`, see [Supported channels](#supported-channels)), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *ICG Analysis* (PEP B-point guard `b_point_guard_ms`, see [Pre-ejection period](#pre-ejection-period-pep)), *Logging* (minimum log level shown in the Log dock / console).
 - **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
 - **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window (sec)`, `step (sec)`), and the optional `smooth_for_display` time-axis smoother.
 
@@ -733,17 +733,24 @@ Place the `.cfg` file in the **same directory** as the `.edf` file before openin
 | VU-AMS channel | Unit | Rate | spectHR role |
 |---|---|---|---|
 | ECG | mV | 1000 Hz | Primary ECG for R-peak detection and HRV |
-| DZ | Ω | 1000 Hz | Respiration (thoracic impedance, **preferred** — the channel VU-AMS itself scores) |
-| MXR + MYR + MZR | g | 1000 Hz | Respiration surrogate via 3-axis PCA (fallback if no impedance) |
-| DZDT | Ω/s | 1000 Hz | Respiration second fallback |
+| DZ | Ω | 1000 Hz | Respiration from the **ICG** signal (thoracic impedance) — the channel VU-AMS itself scores; **default** |
+| MXR + MYR + MZR | g | 1000 Hz | Respiration surrogate via 3-axis accelerometer PCA — selectable alternative |
+| DZDT | Ω/s | 1000 Hz | ICG-respiration fallback when DZ is absent |
 | Z0 | Ω | 250 Hz | Stored as auxiliary time series |
 | SCL | µS | 10 Hz | Stored as auxiliary time series |
 | BAT | V | 1 Hz | Stored as auxiliary time series |
 | MYA | g | 1 Hz | Stored as auxiliary time series |
 
-The respiration signal is taken from **DZ (raw thoracic impedance)** when present, because that is the physiological respiration channel VU-AMS / VU-DAMS itself uses to segment breaths and score RSA. It is posture-independent and reproduces VU-AMS RSA values closely. When no impedance channel is exported, spectHR falls back to a surrogate derived from the three-axis accelerometers (MXR, MYR, MZR): gravity is removed with a low-pass filter and the first principal component of the 0.1–0.7 Hz band is used as the breathing signal, with DZDT (dZ/dt) as a final fallback. The chosen signal is stored as `rsp-[vuams]` and linked to the ECG band for RSA and transfer-function analysis.
+The loader builds **both** respiration candidates when the channels are present and stores them as `rsp_icg-[vuams]` (the ICG / thoracic-impedance signal — DZ, or dZ/dt as a fallback) and `rsp_acc-[vuams]` (the accelerometer surrogate: gravity removed with a low-pass filter, then the first principal component of the 0.1–0.7 Hz band). The **active** respiration channel `rsp-[vuams]` — linked to the ECG band for RSA, transfer-function and `resp_rate` analysis — is selected by the workspace setting **`RespirationAnalysis.rsp_source`**:
 
-> **Why impedance is preferred for VU-AMS.** The accelerometer-PCA surrogate captures *chest-wall motion*, whose relationship to breathing depends on posture: the gravity vector and the axis along which the chest expands change between supine, standing and sitting, and the surrogate can lock onto a non-respiratory body-motion component at the wrong rate. When that happens it detects breaths at roughly twice the true rate, so each inhalation/exhalation search window spans only half a real respiratory cycle and the peak-to-valley RSA comes out roughly halved relative to VU-AMS. Using DZ avoids this and matches VU-AMS scoring (e.g. supine RSA0 ≈ 120 ms vs VU-AMS ≈ 115 ms; standing ≈ 12 ms vs ≈ 10 ms).
+| `rsp_source` | Active channel | Use when |
+|---|---|---|
+| `icg` (default) | ICG / thoracic impedance | Stationary / lab protocols; matches VU-AMS RSA scoring |
+| `accelerometer` | 3-axis accelerometer PCA surrogate | Ambulatory / movement recordings, or devices with no ICG channel |
+
+Switching `rsp_source` re-points `rsp-[vuams]` and takes effect on the next reprocess — no re-import needed.
+
+> **Why ICG is the default.** The accelerometer-PCA surrogate captures *chest-wall motion*, whose relationship to breathing depends on posture: the gravity vector and the axis along which the chest expands change between supine, standing and sitting, and the surrogate can lock onto a non-respiratory body-motion component at the wrong rate. When that happens it detects breaths at roughly twice the true rate, so each inhalation/exhalation search window spans only half a real respiratory cycle and the peak-to-valley RSA comes out roughly halved relative to VU-AMS. Using the ICG signal avoids this and matches VU-AMS scoring (e.g. supine RSA0 ≈ 120 ms vs VU-AMS ≈ 115 ms; standing ≈ 12 ms vs ≈ 10 ms). The accelerometer remains available for ambulatory recordings where impedance electrodes are motion-contaminated.
 
 ---
 

@@ -180,6 +180,10 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     # Minimum severity shown in the Log dock / console (most verbose first).
     "Logging.level": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     "RespirationAnalysis.rsa_overlay": ["rsa", "rsa0", "none"],
+    # Respiration source for ICG-capable (VU-AMS) recordings: the thoracic
+    # impedance (ICG) signal — what VU-AMS scores RSA from — or the
+    # accelerometer chest-wall surrogate.
+    "RespirationAnalysis.rsp_source": ["icg", "accelerometer"],
 }
 
 def _label(key: str) -> str:

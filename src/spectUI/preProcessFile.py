@@ -3,8 +3,12 @@
 from pathlib import Path
 
 from spectHR.DataSet.PhysioData import PhysioData
+from spectHR.DataSet.Series.TimeSeries import TimeSeries
 from spectHR.Tools.Logger import logger
-from spectUI.workSpace import bp_calibration_from_workspace
+from spectUI.workSpace import (
+    bp_calibration_from_workspace,
+    rsp_source_from_workspace,
+)
 
 
 def apply_bp_calibration(dataset, workspace):
@@ -41,6 +45,41 @@ def apply_bp_calibration(dataset, workspace):
         )
 
 
+def apply_rsp_source(dataset, workspace):
+    """Point the active respiration channel at the configured source.
+
+    For ICG-capable (VU-AMS) recordings the EDF loader stores both
+    respiration candidates — ``rsp_icg-[vuams]`` (ICG / thoracic impedance)
+    and ``rsp_acc-[vuams]`` (accelerometer-PCA surrogate) — and seeds
+    ``rsp-[vuams]`` with the ICG default.  This re-points ``rsp-[vuams]`` to
+    whichever the workspace selects (``RespirationAnalysis.rsp_source``), so
+    the choice can be changed and re-applied without re-reading the file.
+
+    No-op for datasets without these candidate channels and when the
+    requested candidate was not built.
+    """
+    src = rsp_source_from_workspace(workspace)
+    icg = dataset.timeseries.get("rsp_icg-[vuams]")
+    acc = dataset.timeseries.get("rsp_acc-[vuams]")
+
+    if src == "accelerometer":
+        chosen, label = acc, "accelerometer-PCA"
+    else:
+        chosen, label = icg, "ICG (DZ thoracic impedance)"
+
+    # Fall back to whichever candidate exists if the requested one is missing.
+    if chosen is None:
+        chosen = icg if icg is not None else acc
+        if chosen is None:
+            return
+        label += " (requested source unavailable; using fallback)"
+
+    dataset.timeseries["rsp-[vuams]"] = TimeSeries(
+        chosen.times.copy(), chosen.values.copy()
+    )
+    logger.info(f"Respiration source set to {label} (rsp-[vuams])")
+
+
 def PreProcessFile(workspace, file_path, reset=False, border=False):
     """
     Load and preprocess an ECG dataset from a given file path.
@@ -73,6 +112,10 @@ def PreProcessFile(workspace, file_path, reset=False, border=False):
     # lets the user enter scale/zero in the *Specify data* dialog; we read
     # them from the workspace (Calibration.bp_scale / bp_zero).
     apply_bp_calibration(dataset, workspace)
+
+    # Select the respiration source (ICG impedance vs accelerometer) per the
+    # workspace; no-op for datasets without both candidate channels.
+    apply_rsp_source(dataset, workspace)
 
     if not dataset.has_ecg:
         return dataset

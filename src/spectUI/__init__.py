@@ -2,7 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectUI/__init__.py
 from spectUI.common import LineHandler
-from spectUI.preProcessFile import PreProcessFile, apply_bp_calibration
+from spectUI.preProcessFile import (
+    PreProcessFile,
+    apply_bp_calibration,
+    apply_rsp_source,
+)
 from spectUI.widgets import (
     BPPlotWidget,
     DirectorySelectorDialog,
@@ -62,6 +66,7 @@ __all__ = [
     "PopulateTree",
     "PreProcessFile",
     "apply_bp_calibration",
+    "apply_rsp_source",
     "PrepPlotWidget",
     "PSDPlotWidget",
     "ProfilePlotWidget",

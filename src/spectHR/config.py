@@ -87,6 +87,34 @@ def bp_calibration_from_workspace(
     )
 
 
+#: Accepted respiration sources for ICG-capable (VU-AMS) recordings. Also
+#: the choice list the workspace editor offers for
+#: ``RespirationAnalysis.rsp_source``.
+RSP_SOURCES = ("icg", "accelerometer")
+_DEFAULT_RSP_SOURCE = "icg"
+
+
+def rsp_source_from_workspace(workspace: "Dict[str, Any] | None") -> str:
+    """Return the configured respiration source for ICG-capable recordings.
+
+    One of :data:`RSP_SOURCES`:
+
+    * ``"icg"`` (default) — the thoracic-impedance (ICG / dZ) signal, which
+      VU-AMS itself segments breaths and scores RSA from.
+    * ``"accelerometer"`` — the 3-axis chest-wall accelerometer PCA
+      surrogate (for ambulatory recordings or devices without an ICG
+      channel).
+
+    Falls back to ``"icg"`` when the workspace, section, or value is missing
+    or unrecognised.
+    """
+    if workspace is None:
+        return _DEFAULT_RSP_SOURCE
+    ra = workspace.get("RespirationAnalysis", {}) or {}
+    src = str(ra.get("rsp_source", _DEFAULT_RSP_SOURCE)).lower()
+    return src if src in RSP_SOURCES else _DEFAULT_RSP_SOURCE
+
+
 #: Accepted log-level names, most verbose first. Also the choice list the
 #: workspace editor offers for ``Logging.level``.
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
