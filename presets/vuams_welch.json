@@ -1,0 +1,24 @@
+{
+    "_description": "VU-DAMS 5.0 faithful Welch preset for spectHR. Deep-merged on top of the default workspace; only the keys that differ are listed here. See readme.MD §VU-DAMS Welch preset for a full explanation.",
+
+    "FrequencyAnalysis": {
+        "method": "welch",
+
+        "bands": {
+            "TP":  {"low": 0.0001, "high": 0.40, "color": "gray",      "alpha": 0.35},
+            "LF":  {"low": 0.04,   "high": 0.15, "color": "darkgreen"              },
+            "HF":  {"low": 0.15,   "high": 0.40, "color": "red"                    }
+        },
+
+        "welch": {
+            "fs":       4.0,
+            "nperseg":  1024,
+            "noverlap": 512,
+            "nfft":     1024,
+            "window":   "quadratic",
+            "units":    "ms²"
+        },
+
+        "detrend_lambda": 500.0
+    }
+}

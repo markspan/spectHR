@@ -135,7 +135,7 @@ _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
 _ENUM_CHOICES: dict[str, list[str]] = {
     # Leaf-key enumerations (apply wherever the key appears)
     "method": ["carspan", "carspan_strict", "welch", "lombscargle"],
-    "window": ["hamming", "hann", "blackman", "bartlett", "boxcar"],
+    "window": ["hamming", "hann", "blackman", "bartlett", "boxcar", "quadratic"],
     "filter_type": ["highpass", "lowpass", "bandpass"],
     # Path-specific enumerations (override the leaf entry above for that
     # one path; needed when the same key name takes different values in

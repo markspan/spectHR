@@ -37,13 +37,34 @@ class WelchOptions:
     """FFT length; falls through to ``nperseg`` when None."""
 
     window: str = "hann"
-    """``scipy.signal.get_window`` name."""
+    """``scipy.signal.get_window`` name, or ``"quadratic"`` for the
+    Welch/parabolic window used by VU-DAMS (see :func:`_quadratic_window`)."""
 
     units: str = "mMI²"
     """Output unit hint: ``"mMI²"`` (normalised) or ``"ms²"`` (raw)."""
 
 
 _DEFAULT_WELCH_OPTIONS = WelchOptions()
+
+
+def _quadratic_window(n: int) -> np.ndarray:
+    """Welch (parabolic / quadratic) window of length *n*.
+
+    .. math::
+
+        w[k] = 1 - \\left(\\frac{2k}{N-1} - 1\\right)^2, \\quad k = 0,\\dots,N-1
+
+    This is the window VU-DAMS applies per 1024-sample segment before the DFT
+    (DAMS manual §5.3.1 / Appendix A).  It is zero at both endpoints, reaches
+    its maximum of 1.0 at the centre, and tapers with a smooth parabolic
+    profile — identical to what P.D. Welch (1967) originally called "the
+    modified periodogram window."  scipy's ``signal.get_window`` does not
+    expose it by name, so it is constructed here as a NumPy array.
+    """
+    if n < 2:
+        return np.ones(n, dtype=float)
+    k = np.arange(n, dtype=float)
+    return 1.0 - (2.0 * k / (n - 1) - 1.0) ** 2
 
 
 def compute_welch_psd(
@@ -78,6 +99,11 @@ def compute_welch_psd(
         nperseg = n_samples
     if noverlap >= nperseg:
         noverlap = nperseg // 2
+
+    # Build the actual window array for "quadratic" (VU-DAMS parabolic window).
+    # For all other strings / tuples scipy resolves the name via get_window.
+    if isinstance(window, str) and window == "quadratic":
+        window = _quadratic_window(nperseg)
 
     freqs, power = signal.welch(
         ibi_resampled,
