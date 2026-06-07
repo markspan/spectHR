@@ -152,6 +152,11 @@ def lf_hf_ratio(series, psd_method=None) -> float:
         return np.nan
 
 
+# Frozen snapshot of all single-valued metric columns registered above.
+# Built once at import time; the registry is stable by this point.
+_REGISTERED_METRIC_COLS: frozenset[str] = frozenset(get_metrics())
+
+
 # ---------------------------------------------------------------------------
 # Registered multi-column band-power group
 # ---------------------------------------------------------------------------
@@ -175,7 +180,7 @@ def band_powers(ctx) -> dict[str, float]:
     psd_res = getattr(ctx, "psd", None)
     if method is None or psd_res is None:
         return out
-    single_cols = set(get_metrics())  # snapshot; all metrics registered by call time
+    single_cols = _REGISTERED_METRIC_COLS
     for band_name, band_spec in method.bands.items():
         col = f"{band_name.lower()}_power"
         if col in single_cols:

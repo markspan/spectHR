@@ -24,8 +24,8 @@ import numpy as np
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.profile import (
     compute_band_power_profile,
+    profile_band_data,
     profile_summary_scalars,
-    summarize_profile_band,
 )
 from spectHR.analysis.transfer import (
     compute_transfer,
@@ -160,14 +160,7 @@ class EpochExporter:
                     ts - (ts[0] - prof_cfg["window_s"] / 2.0)
                     if ts.size else ts
                 )
-                band_prof: dict = {}
-                names_in = list(prof_res.band_names)
-                for bname in (emit_bands or names_in):
-                    if bname not in names_in:
-                        continue
-                    bp = prof_res.band_power[names_in.index(bname)]
-                    stats = summarize_profile_band(bp, t_rel)
-                    band_prof[bname] = {"power": bp, **stats}
+                band_prof = profile_band_data(prof_res, t_rel, emit_bands=emit_bands)
 
                 epoch["scalars"].update(profile_summary_scalars(
                     prof_res, t_rel,
@@ -300,23 +293,10 @@ class EpochExporter:
                     rsa0_arr = np.where(
                         np.isfinite(rsa_raw) & (rsa_raw > 0), rsa_raw, 0.0,
                     )
-                    x_pts, pair_idx = [], 0
-                    rsp_phases = ctx.rsp_phases
-                    if rsp_phases is not None:
-                        p_starts = np.asarray(rsp_phases.starts, dtype=float)
-                        p_ends   = np.asarray(rsp_phases.ends,   dtype=float)
-                        p_labels = np.asarray(rsp_phases.labels, dtype=object)
-                        for i in range(len(p_starts) - 1):
-                            if p_labels[i] == "INH" and p_labels[i + 1] == "EXH":
-                                if pair_idx < rsa_raw.size:
-                                    x_pts.append(
-                                        (p_starts[i] + p_ends[i + 1]) / 2.0
-                                    )
-                                pair_idx += 1
                     epoch["respiration"] = {
                         "rsa":          rsa_raw,
                         "rsa0":         rsa0_arr,
-                        "breath_times": np.array(x_pts, dtype=float),
+                        "breath_times": ctx.breath_times[:rsa_raw.size],
                         "lag_s":        ctx.rsa_lag_s,
                         "n_breaths":    int(rsa_raw.size),
                         "n_valid":      int(

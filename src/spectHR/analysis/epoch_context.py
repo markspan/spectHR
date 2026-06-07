@@ -188,6 +188,21 @@ class EpochContext:
         except Exception:
             return None
 
+    @cached_property
+    def breath_times(self) -> np.ndarray:
+        """Midpoint timestamps of INH→EXH breath pairs, aligned with rsa_beats."""
+        rsp_phases = self.rsp_phases
+        if rsp_phases is None:
+            return np.array([], dtype=float)
+        p_starts = np.asarray(rsp_phases.starts, dtype=float)
+        p_ends   = np.asarray(rsp_phases.ends,   dtype=float)
+        p_labels = np.asarray(rsp_phases.labels, dtype=object)
+        x_pts: list[float] = []
+        for i in range(len(p_starts) - 1):
+            if p_labels[i] == "INH" and p_labels[i + 1] == "EXH":
+                x_pts.append((p_starts[i] + p_ends[i + 1]) / 2.0)
+        return np.array(x_pts, dtype=float)
+
     @property
     def pep_value(self):
         """Epoch pre-ejection period (ms) from the ensemble-averaged ICG/ECG
