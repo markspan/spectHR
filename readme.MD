@@ -171,6 +171,23 @@ The CARSPAN bands are sometimes written with the names **low / middle (mid) / hi
 
 > **The two conventions are not interchangeable.** CARSPAN LF (0.07–0.14 Hz) is **narrower and shifted** relative to Task Force LF (0.04–0.15 Hz), and the VLF edges differ too. Numeric LF or VLF values from spectHR's default bands cannot be compared directly with published Task Force values unless you reconfigure the band edges to match. HF (0.15–0.40 Hz) is identical in both conventions.
 
+**VU-DAMS preset.** If you are comparing spectHR output against VU-DAMS 5.0 (VU Ambulatory Monitoring System software), load the ready-made workspace preset `presets/vuams_welch.json` via **WorkSpace → Open Workspace**. It sets bands and Welch parameters to match what VU-DAMS computes by default:
+
+| Parameter | VU-DAMS (DAMS 5.0 manual §5.3.1) | preset value |
+|-----------|----------------------------------|--------------|
+| Method | Welch (averaged periodograms) | `method: "welch"` |
+| Resampling | Cubic spline → 4 Hz | `fs: 4.0` |
+| Segment length | 256 s = 1024 samples at 4 Hz | `nperseg: 1024` |
+| Overlap | 128 s = 512 samples (50 %) | `noverlap: 512` |
+| Window | Quadratic (Welch/parabolic) | `window: "quadratic"` |
+| Detrending | Tarvainen smoothness-prior (λ) | `detrend_lambda: 500` |
+| Output units | ms² | `units: "ms²"` |
+| TP band | 0.0001 – 0.40 Hz | TP: 0.0001–0.40 |
+| LF band | 0.04 – 0.15 Hz | LF: 0.04–0.15 |
+| HF band | 0.15 – 0.40 Hz | HF: 0.15–0.40 |
+
+Two minor differences remain. VU-DAMS applies the smoothness-prior detrending **per 256-second segment**, whereas spectHR applies it once to the full tachogram before segmentation — a common implementation choice (used by Kubios) that is mathematically nearly identical for recordings longer than a few minutes. VU-DAMS also discards segments that contain a gap of more than 5 seconds with no R-peaks and zero-pads the final segment; spectHR's cubic interpolation fills such gaps implicitly. Neither difference has a meaningful effect on band power for clean recordings.
+
 ### Practical considerations
 
 **Recording length.** Frequency resolution is $\Delta f = 1/T$. A 5-minute epoch gives $\Delta f \approx 0.003$ Hz, enough to resolve MF and HF cleanly. Shorter epochs give coarser resolution and wider confidence intervals (visible in spectHR's shaded CI band). Note that this applies to spectral measures only: [Tegegne et al. (2019)](#ref-tegegne2019) showed that a 10-second ECG can yield a valid RMSSD estimate in large samples.
@@ -1075,13 +1092,26 @@ For non-overlapping segments $\rho = 0$ and $\nu = 2K$. For a Hann window at 50 
 | Parameter | Default | JSON key |
 |-----------|---------|----------|
 | Resampling frequency | 4 Hz | `fs` |
-| Segment length | 256 samples | `nperseg` |
-| Overlap | 128 samples | `noverlap` |
+| Segment length | 256 samples (64 s at 4 Hz) | `nperseg` |
+| Overlap | 128 samples (32 s, 50 %) | `noverlap` |
 | FFT length | 1024 | `nfft` |
 | Window | Hann | `window` |
 | Output units | mMI² | `units` |
 
 **Note on resampling.** A 4 Hz resampling rate gives a frequency resolution of $f_s / \text{nperseg} = 4/256 = 0.0156~\text{Hz}$, which is adequate for the standard HRV bands. For short epochs where the available IBI samples are fewer than `nperseg`, the segment length is reduced to the available count and the overlap is halved automatically.
+
+**VU-DAMS Welch preset.** The `presets/vuams_welch.json` file ships with spectHR and reproduces the Welch pipeline that VU-DAMS 5.0 applies to each label (DAMS manual §5.3.1):
+
+| Parameter | VU-DAMS value | Rationale |
+|-----------|--------------|-----------|
+| `nperseg` | 1024 (= 256 s × 4 Hz) | VU-DAMS uses 256-second segments |
+| `noverlap` | 512 (50 %) | VU-DAMS uses 128-second overlap |
+| `window` | `"quadratic"` | VU-DAMS convolves each segment with a quadratic (parabolic) window before the DFT — the window $w[k] = 1-(2k/(N-1)-1)^2$ that P.D. Welch (1967) originally proposed. scipy does not expose it by name; spectHR builds it as a NumPy array. |
+| `detrend_lambda` | 500 | VU-DAMS applies the Tarvainen et al. (2002) smoothness-prior detrending matrix to each segment. spectHR applies the same λ=500 detrending to the whole tachogram before segmentation, which is the standard Kubios-style implementation. |
+| `units` | `"ms²"` | VU-DAMS reports band power in ms². |
+| Bands | TP 0.0001–0.40, LF 0.04–0.15, HF 0.15–0.40 | DAMS manual §5.3.1 |
+
+Load it with **WorkSpace → Open Workspace** and point to `presets/vuams_welch.json`. The file is a partial workspace (only the changed keys), so your directory settings and other preferences are preserved by the deep-merge.
 
 </details>
 
