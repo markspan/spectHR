@@ -324,7 +324,7 @@ def compute_band_power_profile(
             # Window span; timestamps were pre-filled by _setup_profile_grid.
             win_start = t0 + i * step_s
             win_end   = win_start + window_s
-            win_view  = series.view(win_start, win_end)
+            win_view  = series.window(win_start, win_end)
             if win_view.times.size < 4:
                 continue
             try:
@@ -336,7 +336,7 @@ def compute_band_power_profile(
                 unit = _strip_hz(psd_result.unit)
 
             if adaptive_source == "respiration_channel" and rsp_series is not None:
-                rsp_view = rsp_series.view(win_start, win_end)
+                rsp_view = rsp_series.window(win_start, win_end)
                 rf = mean_breath_frequency_hz(rsp_view)
                 if rf is not None and resp_freqs is not None:
                     resp_freqs[i] = rf
@@ -401,7 +401,7 @@ def compute_band_power_profile(
             # Window span; timestamps were pre-filled by _setup_profile_grid.
             win_start = t0 + i * step_s
             win_end   = win_start + window_s
-            win_view  = series.view(win_start, win_end)
+            win_view  = series.window(win_start, win_end)
             if win_view.times.size < 4:
                 continue
             try:

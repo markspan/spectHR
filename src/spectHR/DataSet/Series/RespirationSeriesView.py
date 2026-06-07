@@ -78,6 +78,10 @@ class RespirationSeriesView:
         sub._epoch = None
         return sub
 
+    def window(self, start: float, end: float) -> "RespirationSeriesView":
+        """Canonical windowing name; delegates to view()."""
+        return self.view(start, end)
+
     def __getitem__(self, epoch_label: str) -> "RespirationSeriesView":
         """
         Return an epoch-restricted view using PhysioData.epochs.

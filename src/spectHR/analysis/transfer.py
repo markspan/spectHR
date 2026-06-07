@@ -1096,7 +1096,7 @@ def compute_transfer_profile(
         win_start = t0 + i * step_s
         win_end   = win_start + window_s
 
-        win_view = series.view(win_start, win_end)
+        win_view = series.window(win_start, win_end)
         if win_view.times.size < 4:
             continue
 

@@ -123,3 +123,7 @@ class RespirationSeries:
         v._stream = self._stream
         v._epoch  = None
         return v
+
+    def window(self, start: float, end: float) -> "RespirationSeriesView":
+        """Canonical windowing name; delegates to view()."""
+        return self.view(start, end)

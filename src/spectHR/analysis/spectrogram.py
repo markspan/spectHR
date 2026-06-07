@@ -223,7 +223,7 @@ def fetch_spectrogram(
         for i in range(n_windows):
             win_start = t0 + i * step_s
             win_end   = win_start + window_s
-            win_view  = series.view(win_start, win_end)
+            win_view  = series.window(win_start, win_end)
 
             # Four beats is the minimum the PSD engine will accept.
             if win_view.times.size < 4:
@@ -248,7 +248,7 @@ def fetch_spectrogram(
             # and a series is actually loaded.
             if adaptive_source == "respiration_channel" and rsp_series is not None:
                 try:
-                    rsp_view = rsp_series.view(win_start, win_end)
+                    rsp_view = rsp_series.window(win_start, win_end)
                     rf = mean_breath_frequency_hz(rsp_view)
                     if rf is not None:
                         resp_freqs_arr[i] = float(rf)

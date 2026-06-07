@@ -178,6 +178,40 @@ class Events:
         out[-1]  = np.nan
         return out
 
+    # --- factory ---
+
+    @classmethod
+    def detect(
+        cls,
+        signal: Samples,
+        *,
+        min_peak_distance_ms: float = 300.0,
+        window_length: int = 20,
+        n_std: float = 3.0,
+        max_ibi_sec: float = 2.5,
+        classify: bool = True,
+    ) -> Events:
+        """Detect R-peaks in *signal* and return a labelled ``Events``.
+
+        Delegates to the existing peak-detector so all tuning parameters
+        and artefact-classification logic are preserved.
+        """
+        from spectHR.DataSet.Series.CardioSeries import CardioSeries
+        from spectHR.DataSet.Series.TimeSeries import TimeSeries as _TS
+        ts = _TS(
+            times=np.asarray(signal.times,  dtype=float),
+            values=np.asarray(signal.values, dtype=float),
+        )
+        cs = CardioSeries.from_timeseries(
+            ts,
+            min_peak_distance_ms=min_peak_distance_ms,
+            window_length=window_length,
+            n_std=n_std,
+            max_ibi_sec=max_ibi_sec,
+            classify=classify,
+        )
+        return cls(times=cs.times, labels=cs.labels)
+
     # --- zero-copy windowing and filtering ---
 
     def window(self, start: float, end: float) -> Events:
@@ -233,6 +267,34 @@ class Intervals:
 
     def __len__(self) -> int:
         return int(self.starts.size)
+
+    # --- factory ---
+
+    @classmethod
+    def detect_breath_phases(
+        cls,
+        signal: Samples,
+        events: Events,
+        *,
+        smooth_window: int = 5,
+    ) -> Intervals:
+        """Detect INH/EXH phases from a respiration *signal*.
+
+        Uses the existing ``RespirationSeries`` detector.  *events* is the
+        beat series used to set epoch boundaries for per-epoch segmentation.
+        """
+        from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
+        from spectHR.DataSet.Series.TimeSeries import TimeSeries as _TS
+        rsp_ts = _TS(
+            times=np.asarray(signal.times,  dtype=float),
+            values=np.asarray(signal.values, dtype=float),
+        )
+        rs = RespirationSeries.from_timeseries(rsp_ts, smooth_window=smooth_window)
+        return cls(
+            starts=np.asarray(rs.starts, dtype=np.float64),
+            ends=np.asarray(rs.ends,     dtype=np.float64),
+            labels=np.asarray(rs.labels, dtype=object),
+        )
 
     # --- zero-copy windowing and filtering ---
 

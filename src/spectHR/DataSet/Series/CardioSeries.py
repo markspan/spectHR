@@ -273,5 +273,9 @@ class CardioSeries:
         v._epoch = None
         return v
 
+    def window(self, start: float, end: float) -> "CardioSeriesView":
+        """Canonical windowing name; delegates to view()."""
+        return self.view(start, end)
+
     def __repr__(self) -> str:
         return f"CardioSeries(n={self.times.size}, stream={self._stream!r})"

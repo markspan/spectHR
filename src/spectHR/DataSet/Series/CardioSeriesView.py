@@ -82,6 +82,10 @@ class CardioSeriesView:
         sub._epoch = None
         return sub
 
+    def window(self, start: float, end: float) -> "CardioSeriesView":
+        """Zero-copy sub-view restricted to [start, end]. Canonical name; delegates to view()."""
+        return self.view(start, end)
+
     def __repr__(self) -> str:
         return (
             f"CardioSeriesView(n={self.times.size}, "

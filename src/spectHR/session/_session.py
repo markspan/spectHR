@@ -32,7 +32,7 @@ from typing import Any
 
 import numpy as np
 
-from spectHR.session._core import Events, Intervals, Samples
+from spectHR.session._core import Events, Intervals, Samples  # noqa: F401 (re-used in methods)
 
 
 # ---------------------------------------------------------------------------
@@ -281,4 +281,67 @@ class Session:
             columns=all_cols,
             values=matrix,
             contexts=contexts,
+        )
+
+    # --- preprocessing helpers (functional — return new Session) ---
+
+    def with_detected_beats(
+        self,
+        signal_key: str = "ecg",
+        *,
+        events_key: str = "hrv",
+        min_peak_distance_ms: float = 300.0,
+        window_length: int = 20,
+        n_std: float = 3.0,
+        max_ibi_sec: float = 2.5,
+        classify: bool = True,
+    ) -> Session:
+        """Return a new ``Session`` with R-peaks detected from *signal_key*.
+
+        The detected :class:`~._core.Events` is stored under *events_key*
+        (default ``"hrv"``).  All other channels and epochs are preserved.
+        """
+        sig = self.samples.get(signal_key)
+        if sig is None:
+            raise KeyError(f"No signal named {signal_key!r}")
+        hrv = Events.detect(
+            sig,
+            min_peak_distance_ms=min_peak_distance_ms,
+            window_length=window_length,
+            n_std=n_std,
+            max_ibi_sec=max_ibi_sec,
+            classify=classify,
+        )
+        return Session(
+            name=self.name,
+            samples=self.samples,
+            events={**self.events, events_key: hrv},
+            intervals=self.intervals,
+            epochs=self.epochs,
+        )
+
+    def with_detected_phases(
+        self,
+        signal_key: str = "resp",
+        *,
+        intervals_key: str = "breath",
+        smooth_window: int = 5,
+    ) -> Session:
+        """Return a new ``Session`` with breath phases detected from *signal_key*.
+
+        The detected :class:`~._core.Intervals` is stored under *intervals_key*
+        (default ``"breath"``).  R-peaks must already be present under ``"hrv"``.
+        """
+        sig = self.samples.get(signal_key)
+        if sig is None:
+            raise KeyError(f"No signal named {signal_key!r}")
+        if self.hrv is None:
+            raise RuntimeError("Detect beats first (with_detected_beats) before phases.")
+        phases = Intervals.detect_breath_phases(sig, self.hrv, smooth_window=smooth_window)
+        return Session(
+            name=self.name,
+            samples=self.samples,
+            events=self.events,
+            intervals={**self.intervals, intervals_key: phases},
+            epochs=self.epochs,
         )
