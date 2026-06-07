@@ -440,19 +440,21 @@ class MainWindow(QMainWindow):
         # Replaces the old on_tab_changed index dispatch, and refreshes
         # unconditionally so peak edits, epoch toggles and parameter
         # changes always show up next time the dock is brought forward.
+        # Each fn re-reads self.dataset at call time (a functools.partial would
+        # freeze the dataset captured here and break after a new file loads).
         self._refresh_fns = {
-            _DOCK_PREPROCESSING:    self._refresh_preprocessing,
-            _DOCK_IBI:              self._refresh_ibi,
-            _DOCK_BP:               self._refresh_bp,
-            _DOCK_POINCARE:         self._refresh_poincare,
-            _DOCK_EPOCHS:           self._refresh_epochs,
-            _DOCK_PSD:              self._refresh_psd,
-            _DOCK_SPECTROGRAM:      self._refresh_spectrogram,
-            _DOCK_SPECTROGRAM_3D:   self._refresh_spectrogram3d,
-            _DOCK_TRANSFER:         self._refresh_transfer,
-            _DOCK_TRANSFER_PROFILE: self._refresh_transfer_profile,
-            _DOCK_PROFILES:         self._refresh_profile,
-            _DOCK_PARAMETERS:       self._refresh_parameters,
+            _DOCK_PREPROCESSING:    lambda: self.show_preprocessing_plot(self.dataset),
+            _DOCK_IBI:              lambda: self.show_hr_plot(self.dataset),
+            _DOCK_BP:               lambda: self.show_bp_plot(self.dataset),
+            _DOCK_POINCARE:         lambda: self.show_poincare_plot(self.dataset),
+            _DOCK_EPOCHS:           lambda: self.show_epoch_plot(self.dataset),
+            _DOCK_PSD:              lambda: self.show_psd_plot(self.dataset),
+            _DOCK_SPECTROGRAM:      lambda: self.show_spectrogram_plot(self.dataset),
+            _DOCK_SPECTROGRAM_3D:   lambda: self.show_spectrogram3d_plot(self.dataset),
+            _DOCK_TRANSFER:         lambda: self.show_transfer_plot(self.dataset),
+            _DOCK_TRANSFER_PROFILE: lambda: self.show_transfer_profile_plot(self.dataset),
+            _DOCK_PROFILES:         lambda: self.show_profile_plot(self.dataset),
+            _DOCK_PARAMETERS:       lambda: self.show_parameters_plot(self.dataset),
         }
 
         for name, refresh_fn in self._refresh_fns.items():
@@ -998,42 +1000,6 @@ class MainWindow(QMainWindow):
                 self._refresh_dock(other_name, sig)
         finally:
             QApplication.restoreOverrideCursor()
-
-    def _refresh_preprocessing(self) -> None:
-        self.show_preprocessing_plot(self.dataset)
-
-    def _refresh_ibi(self) -> None:
-        self.show_hr_plot(self.dataset)
-
-    def _refresh_bp(self) -> None:
-        self.show_bp_plot(self.dataset)
-
-    def _refresh_poincare(self) -> None:
-        self.show_poincare_plot(self.dataset)
-
-    def _refresh_epochs(self) -> None:
-        self.show_epoch_plot(self.dataset)
-
-    def _refresh_psd(self) -> None:
-        self.show_psd_plot(self.dataset)
-
-    def _refresh_spectrogram(self) -> None:
-        self.show_spectrogram_plot(self.dataset)
-
-    def _refresh_spectrogram3d(self) -> None:
-        self.show_spectrogram3d_plot(self.dataset)
-
-    def _refresh_transfer(self) -> None:
-        self.show_transfer_plot(self.dataset)
-
-    def _refresh_transfer_profile(self) -> None:
-        self.show_transfer_profile_plot(self.dataset)
-
-    def _refresh_profile(self) -> None:
-        self.show_profile_plot(self.dataset)
-
-    def _refresh_parameters(self) -> None:
-        self.show_parameters_plot(self.dataset)
 
     # ------------------------------------------------------------------
     # Workspace menu actions
