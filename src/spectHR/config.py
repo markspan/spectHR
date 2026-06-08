@@ -14,7 +14,7 @@ The whole module is **Qt-free and UI-free**: it depends only on the
 standard library and ``spectHR.analysis``. It lives in ``spectHR`` (not
 ``spectUI``) precisely so that scripts, the test-suite, and any headless
 caller can build a ``PsdMethod`` from a config dict *without* importing the
-Qt UI. The ``spectUI`` layer exposes these via :class:`~spectUI.workspace.Workspace`
+Qt UI. The ``spectUI`` layer exposes these via :class:`~spectUI.parameters.Parameters`
 typed properties.
 """
 from __future__ import annotations
@@ -473,7 +473,7 @@ class WorkspaceView:
 
     @cached_property
     def psd_method(self) -> PsdMethod:
-        """Workspace-configured :class:`~spectHR.analysis.psd._config.PsdMethod`."""
+        """Parameters-configured :class:`~spectHR.analysis.psd._config.PsdMethod`."""
         return psd_method_from_workspace(self._ws)
 
     @property

@@ -8,7 +8,7 @@ from spectUI.widgets import (
     LogWidget,
     ParametersEditorDialog,
 )
-from spectUI.workspace import Workspace, populate_tree
+from spectUI.parameters import Parameters, populate_tree
 from spectUI.settings import AppSettings
 from spectHR.DataSet.loaders.code_selection import register_code_resolver
 
@@ -30,7 +30,7 @@ __all__ = [
     "LogWidget",
     "ParametersEditorDialog",
     "PreProcessFile",
-    "Workspace",
+    "Parameters",
     "apply_bp_calibration",
     "apply_rsp_source",
     "populate_tree",

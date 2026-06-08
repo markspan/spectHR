@@ -1,20 +1,20 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-Workspace — analysis configuration.
+Parameters — analysis configuration.
 
-A :class:`Workspace` is the single object that carries all analysis
+A :class:`Parameters` is the single object that carries all analysis
 parameters (PSD method, band definitions, RSA settings, calibration, …).
 It is stored in a user-managed JSON file and passed directly to every
 widget so widgets access typed properties instead of digging into dicts.
 
 Working-directory paths (DataDirectory, CacheDirectory, OutputDirectory)
 deliberately live in :class:`~spectUI.settings.AppSettings` (QSettings),
-not here.  Workspace files travel with the analysis; directory paths are
+not here.  Parameters files travel with the analysis; directory paths are
 machine-specific preferences.
 
 ``populate_tree`` lives here because it is the bridge between the file-
-system data directory and the workspace tree widget.
+system data directory and the file-browser dock.
 """
 from __future__ import annotations
 
@@ -116,11 +116,11 @@ _DEFAULT: dict = {
 }
 
 # ---------------------------------------------------------------------------
-# Workspace class
+# Parameters class
 # ---------------------------------------------------------------------------
 
 
-class Workspace(WorkspaceView):
+class Parameters(WorkspaceView):
     """Mutable analysis configuration with file I/O.
 
     Extends :class:`~spectHR.config.WorkspaceView` with creation helpers
@@ -129,11 +129,11 @@ class Workspace(WorkspaceView):
 
     Examples
     --------
-    >>> ws = Workspace.default()
-    >>> ws.save(Path("my_study.json"))
-    >>> ws = Workspace.load(Path("my_study.json"))
-    >>> ws.psd_method          # PsdMethod instance
-    >>> ws.rsa_lag_s           # 1.0
+    >>> p = Parameters.default()
+    >>> p.save(Path("my_study.json"))
+    >>> p = Parameters.load(Path("my_study.json"))
+    >>> p.psd_method          # PsdMethod instance
+    >>> p.rsa_lag_s           # 1.0
     """
 
     # ------------------------------------------------------------------
@@ -141,13 +141,13 @@ class Workspace(WorkspaceView):
     # ------------------------------------------------------------------
 
     @classmethod
-    def default(cls) -> Workspace:
-        """Return a fresh workspace with built-in defaults."""
+    def default(cls) -> Parameters:
+        """Return a fresh Parameters object with built-in defaults."""
         return cls(copy.deepcopy(_DEFAULT))
 
     @classmethod
-    def load(cls, path: Path | str) -> Workspace:
-        """Load a workspace from a JSON file."""
+    def load(cls, path: Path | str) -> Parameters:
+        """Load analysis parameters from a JSON file."""
         with open(path, "r", encoding="utf-8") as f:
             return cls(json.load(f))
 
@@ -156,7 +156,7 @@ class Workspace(WorkspaceView):
     # ------------------------------------------------------------------
 
     def save(self, path: Path | str) -> None:
-        """Write this workspace to *path* as pretty-printed JSON."""
+        """Write these parameters to *path* as pretty-printed JSON."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self._ws, f, indent=4, ensure_ascii=False)
@@ -166,8 +166,8 @@ class Workspace(WorkspaceView):
         return copy.deepcopy(self._ws)
 
     @classmethod
-    def from_dict(cls, data: dict) -> Workspace:
-        """Build a ``Workspace`` from an already-loaded dict."""
+    def from_dict(cls, data: dict) -> Parameters:
+        """Build a ``Parameters`` object from an already-loaded dict."""
         return cls(copy.deepcopy(data))
 
     # ------------------------------------------------------------------

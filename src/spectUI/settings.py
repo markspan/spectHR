@@ -3,9 +3,9 @@
 """
 Application settings — machine-specific preferences stored in QSettings.
 
-:class:`AppSettings` is separate from :class:`~spectUI.workspace.Workspace`
+:class:`AppSettings` is separate from :class:`~spectUI.parameters.Parameters`
 (analysis parameters) because directory paths and window geometry are
-per-machine preferences that should never travel inside a workspace file.
+per-machine preferences that should never travel inside a parameters file.
 
 QSettings uses the platform-conventional location:
   Windows : ``%APPDATA%\\spectHR\\spectHR.ini``

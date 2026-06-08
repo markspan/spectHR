@@ -21,7 +21,7 @@ PlotExportMixin
     * ``self._labels``         -- list[str] of epoch / subplot titles.
     * ``self._subplots``       -- list of subplot objects with ``.canvas``.
     * ``self._series_list``    -- list of series objects (for dataset name).
-    * ``self._workspace``      -- :class:`~spectUI.workspace.Workspace` or None.
+    * ``self._parameters``     -- :class:`~spectUI.parameters.Parameters` or None.
 """
 from __future__ import annotations
 

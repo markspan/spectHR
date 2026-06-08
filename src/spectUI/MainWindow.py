@@ -47,7 +47,7 @@ from spectUI.plot_worker import DockScheduler
 from spectUI.settings import AppSettings
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.log_widget import LogWidget
-from spectUI.workspace import Workspace, populate_tree
+from spectUI.parameters import Parameters, populate_tree
 
 # ---------------------------------------------------------------------------
 # Dock object-name constants
@@ -65,7 +65,7 @@ _DOCK_SPECTROGRAM3D   = "dock.spectrogram3d"
 _DOCK_TRANSFER        = "dock.transfer"
 _DOCK_TRANSFERPROFILE = "dock.transferprofile"
 _DOCK_PROFILES        = "dock.profiles"
-_DOCK_PARAMETERS      = "dock.parameters"
+_DOCK_RESULTS         = "dock.results"
 _DOCK_LOG             = "dock.log"
 
 _CENTRE_DOCKS: tuple[tuple[str, str], ...] = (
@@ -80,7 +80,7 @@ _CENTRE_DOCKS: tuple[tuple[str, str], ...] = (
     (_DOCK_TRANSFER,        "Transfer"),
     (_DOCK_TRANSFERPROFILE, "Transfer Profile"),
     (_DOCK_PROFILES,        "Profiles"),
-    (_DOCK_PARAMETERS,      "Parameters"),
+    (_DOCK_RESULTS,      "Results"),
 )
 
 _VIEW_LABELS: dict[str, str] = {
@@ -96,7 +96,7 @@ _VIEW_LABELS: dict[str, str] = {
     _DOCK_TRANSFER:        "Transfer",
     _DOCK_TRANSFERPROFILE: "Transfer Profile",
     _DOCK_PROFILES:        "Profiles",
-    _DOCK_PARAMETERS:      "Parameters",
+    _DOCK_RESULTS:      "Results",
     _DOCK_LOG:             "Log",
 }
 
@@ -135,8 +135,8 @@ class MainWindow(QMainWindow):
         self._dock_manager    = CDockManager(self)
         self._scheduler       = DockScheduler()
         self._settings        = AppSettings()
-        self._workspace       = Workspace.default()
-        self._workspace_path: Path | None = None
+        self._parameters       = Parameters.default()
+        self._parameters_path: Path | None = None
         self._session: Session | None     = None
 
         self._docks: dict[str, CDockWidget] = {}
@@ -301,39 +301,39 @@ class MainWindow(QMainWindow):
     def open_workspace(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Open workspace", str(self._settings.data_dir),
-            "Workspace (*.json);;All files (*)",
+            "Parameters (*.json);;All files (*)",
         )
         if not path:
             return
         try:
-            self._workspace      = Workspace.load(path)
-            self._workspace_path = Path(path)
+            self._parameters      = Parameters.load(path)
+            self._parameters_path = Path(path)
         except Exception as exc:
-            QMessageBox.critical(self, "Workspace error", str(exc))
+            QMessageBox.critical(self, "Parameters error", str(exc))
             return
         self._on_workspace_changed()
 
     def save_workspace(self) -> None:
-        if self._workspace_path is None:
+        if self._parameters_path is None:
             self._save_workspace_as()
         else:
-            self._workspace.save(self._workspace_path)
+            self._parameters.save(self._parameters_path)
 
     def _save_workspace_as(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
             self, "Save workspace", str(self._settings.data_dir),
-            "Workspace (*.json)",
+            "Parameters (*.json)",
         )
         if not path:
             return
-        self._workspace_path = Path(path)
-        self._workspace.save(self._workspace_path)
+        self._parameters_path = Path(path)
+        self._parameters.save(self._parameters_path)
 
     def edit_workspace(self) -> None:
-        dlg = ParametersEditorDialog(self._workspace.to_dict(), self)
+        dlg = ParametersEditorDialog(self._parameters.to_dict(), self)
         if dlg.exec():
-            self._workspace = Workspace.from_dict(
-                dlg.get_parameters(self._workspace.to_dict())
+            self._parameters = Parameters.from_dict(
+                dlg.get_parameters(self._parameters.to_dict())
             )
             self._on_workspace_changed()
 
@@ -345,7 +345,7 @@ class MainWindow(QMainWindow):
 
     def _on_workspace_changed(self) -> None:
         import logging
-        logging.getLogger("spectHR").setLevel(self._workspace.log_level)
+        logging.getLogger("spectHR").setLevel(self._parameters.log_level)
         # TODO: re-broadcast to plot docks once widgets are built
 
     # ------------------------------------------------------------------
@@ -375,8 +375,8 @@ class MainWindow(QMainWindow):
         ws_path = self._settings.workspace_path
         if ws_path:
             try:
-                self._workspace      = Workspace.load(ws_path)
-                self._workspace_path = ws_path
+                self._parameters      = Parameters.load(ws_path)
+                self._parameters_path = ws_path
             except Exception:
                 pass
         self._settings.restore_window(self, self._dock_manager)
@@ -384,8 +384,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self._settings.save_window(self, self._dock_manager)
-        if self._workspace_path is not None:
-            self._settings.workspace_path = self._workspace_path
+        if self._parameters_path is not None:
+            self._settings.workspace_path = self._parameters_path
         super().closeEvent(event)
 
 

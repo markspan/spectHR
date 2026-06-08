@@ -78,7 +78,7 @@ class EpochContext:
         The epoch's ``CardioSeriesView`` (the active HRV series restricted to
         the epoch bounds).
     psd_method
-        Workspace-configured ``PsdMethod`` (or ``None``).  Drives :attr:`psd`
+        Parameters-configured ``PsdMethod`` (or ``None``).  Drives :attr:`psd`
         and is read by the band-power metrics.
     bp_ts, rsp_ts
         Optional blood-pressure / respiration ``TimeSeries`` (objects exposing
