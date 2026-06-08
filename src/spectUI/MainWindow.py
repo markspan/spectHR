@@ -156,6 +156,7 @@ class MainWindow(QMainWindow):
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.itemDoubleClicked.connect(self._on_file_activated)
+        self._tree.itemClicked.connect(self._on_tree_item_clicked)
         self._add_dock(_DOCK_WORKSPACE, "Workspace", self._tree,
                        DockWidgetArea.LeftDockWidgetArea)
 
@@ -354,6 +355,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # File tree
     # ------------------------------------------------------------------
+
+    def _on_tree_item_clicked(self, item, _col: int) -> None:
+        if not (item.flags() & Qt.ItemIsSelectable):
+            self._tree.clearSelection()
 
     def _on_file_activated(self, item, _col: int = 0) -> None:
         data = item.data(0, Qt.UserRole)
