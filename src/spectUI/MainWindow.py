@@ -55,7 +55,7 @@ from spectUI.workspace import Workspace, populate_tree
 
 _DOCK_WORKSPACE       = "dock.workspace"
 _DOCK_PREPROCESSING   = "dock.preprocessing"
-_DOCK_IBI             = "dock.ibi"
+_DOCK_HR              = "dock.hr"
 _DOCK_BP              = "dock.bp"
 _DOCK_POINCARE        = "dock.poincare"
 _DOCK_EPOCHS          = "dock.epochs"
@@ -70,7 +70,7 @@ _DOCK_LOG             = "dock.log"
 
 _CENTRE_DOCKS: tuple[tuple[str, str], ...] = (
     (_DOCK_PREPROCESSING,   "Preprocessing"),
-    (_DOCK_IBI,             "HR Series"),
+    (_DOCK_HR,              "HR Series"),
     (_DOCK_BP,              "Blood Pressure"),
     (_DOCK_POINCARE,        "Poincaré"),
     (_DOCK_EPOCHS,          "Epochs"),
@@ -86,7 +86,7 @@ _CENTRE_DOCKS: tuple[tuple[str, str], ...] = (
 _VIEW_LABELS: dict[str, str] = {
     _DOCK_WORKSPACE:       "Workspace",
     _DOCK_PREPROCESSING:   "Preprocessing",
-    _DOCK_IBI:             "HR Series",
+    _DOCK_HR:              "HR Series",
     _DOCK_BP:              "Blood Pressure",
     _DOCK_POINCARE:        "Poincaré",
     _DOCK_EPOCHS:          "Epochs",
