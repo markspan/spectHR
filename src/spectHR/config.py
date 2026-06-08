@@ -14,9 +14,8 @@ The whole module is **Qt-free and UI-free**: it depends only on the
 standard library and ``spectHR.analysis``. It lives in ``spectHR`` (not
 ``spectUI``) precisely so that scripts, the test-suite, and any headless
 caller can build a ``PsdMethod`` from a config dict *without* importing the
-Qt UI. ``spectUI.workSpace`` re-exports every public name here, so existing
-``from spectUI.workSpace import psd_method_from_workspace`` call sites keep
-working unchanged.
+Qt UI. The ``spectUI`` layer exposes these via :class:`~spectUI.workspace.Workspace`
+typed properties.
 """
 from __future__ import annotations
 

@@ -5,9 +5,7 @@
 EpochExporter: collect per-epoch PSD, profile, transfer and respiration
 arrays for CSV / HDF5 export.
 
-This class is **Qt-free and UI-free**.  It is the computational counterpart
-of the ``ParametersPlotWidget`` export pass.  Moving the computation here
-means:
+This class is **Qt-free and UI-free**.  Moving the computation here means:
 
 * It is independently testable without a Qt environment.
 * The ``EpochContext`` objects produced by
@@ -70,8 +68,7 @@ class EpochExporter:
 
             ``scalars``
                 Profile / transfer scalar columns for the CSV.  (The
-                ``@epoch_metric`` scalars are added by the caller from
-                ``ParametersPlotWidget._table_scalars_by_epoch``.)
+                ``@epoch_metric`` scalars are added by the caller.)
             ``psd``
                 Dict with ``freqs``, ``power``, ``unit``, ``method``,
                 ``freq_res``, ``bands`` (per-band sub-dict).

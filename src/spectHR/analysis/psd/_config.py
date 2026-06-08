@@ -187,9 +187,8 @@ def _default_bands() -> Dict[str, BandSpec]:
 class PsdMethod:
     """Full PSD configuration: which algorithm, with which options.
 
-    Built by the spectUI layer from a workspace dict (see
-    ``spectUI.workSpace.psd_method_from_workspace``) and passed explicitly
-    to ``PSDEngine.compute`` or ``compute_band_power_profile``.
+    Built by the spectUI layer via :attr:`~spectUI.workspace.Workspace.psd_method`
+    and passed explicitly to ``PSDEngine.compute`` or ``compute_band_power_profile``.
     """
 
     algorithm: Algorithm = "carspan"
