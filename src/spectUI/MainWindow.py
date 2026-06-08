@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QToolButton,
     QTreeWidget,
     QVBoxLayout,
     QWidget,
@@ -44,7 +45,6 @@ from spectHR.Tools.Logger import logger
 from spectHR.config import WorkspaceView, log_level_from_workspace
 from spectHR.session import Session
 
-from spectUI.common.uitools import make_nav_button
 from spectUI.perspectives import (
     BUILTIN_COMPARE,
     BUILTIN_DEFAULT,
@@ -226,29 +226,29 @@ class MainWindow(QMainWindow):
         # ---- WorkSpace menu ----
         ws_menu = mb.addMenu("&WorkSpace")
 
-        open_act = QAction(qta.icon("fa5s.folder-open"), "&Open workspace…", self)
-        open_act.setShortcut(QKeySequence("Ctrl+O"))
-        open_act.triggered.connect(self.open_workspace)
-        ws_menu.addAction(open_act)
+        self._open_act = QAction(qta.icon("fa5s.folder-open"), "&Open workspace…", self)
+        self._open_act.setShortcut(QKeySequence("Ctrl+O"))
+        self._open_act.triggered.connect(self.open_workspace)
+        ws_menu.addAction(self._open_act)
 
         ws_menu.addSeparator()
 
-        edit_act = QAction(qta.icon("fa5s.edit"), "&Edit workspace…", self)
-        edit_act.setShortcut(QKeySequence("Ctrl+E"))
-        edit_act.triggered.connect(self.edit_workspace)
-        ws_menu.addAction(edit_act)
+        self._edit_act = QAction(qta.icon("fa5s.edit"), "&Edit workspace…", self)
+        self._edit_act.setShortcut(QKeySequence("Ctrl+E"))
+        self._edit_act.triggered.connect(self.edit_workspace)
+        ws_menu.addAction(self._edit_act)
 
-        save_act = QAction(qta.icon("fa5s.save"), "&Save workspace", self)
-        save_act.setShortcut(QKeySequence("Ctrl+S"))
-        save_act.triggered.connect(self.save_current_workspace)
-        ws_menu.addAction(save_act)
+        self._save_act = QAction(qta.icon("fa5s.save"), "&Save workspace", self)
+        self._save_act.setShortcut(QKeySequence("Ctrl+S"))
+        self._save_act.triggered.connect(self.save_current_workspace)
+        ws_menu.addAction(self._save_act)
 
         ws_menu.addSeparator()
 
-        settings_act = QAction(qta.icon("fa5s.cog"), "Directory &settings…", self)
-        settings_act.setShortcut(QKeySequence("Ctrl+Shift+S"))
-        settings_act.triggered.connect(self.open_directory_settings)
-        ws_menu.addAction(settings_act)
+        self._settings_act = QAction(qta.icon("fa5s.cog"), "Directory &settings…", self)
+        self._settings_act.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self._settings_act.triggered.connect(self.open_directory_settings)
+        ws_menu.addAction(self._settings_act)
 
         ws_menu.addSeparator()
 
@@ -263,10 +263,10 @@ class MainWindow(QMainWindow):
 
         # ---- Help menu ----
         help_menu = mb.addMenu("&Help")
-        doc_act = QAction(qta.icon("fa5s.question-circle"), "&Documentation", self)
-        doc_act.setShortcut(QKeySequence("Ctrl+D"))
-        doc_act.triggered.connect(self._open_docs)
-        help_menu.addAction(doc_act)
+        self._doc_act = QAction(qta.icon("fa5s.question-circle"), "&Documentation", self)
+        self._doc_act.setShortcut(QKeySequence("Ctrl+D"))
+        self._doc_act.triggered.connect(self._open_docs)
+        help_menu.addAction(self._doc_act)
 
         # ---- Toolbar ----
         tb = self.addToolBar("Main")
@@ -275,48 +275,42 @@ class MainWindow(QMainWindow):
         tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         tb.setIconSize(QSize(20, 20))
 
-        # Open workspace button
-        open_btn = make_nav_button("fa5s.folder-open", self.open_workspace,
-                                   tooltip="Open workspace (Ctrl+O)")
-        tb.addWidget(open_btn)
+        # Open workspace — addAction() creates a QToolButton that respects setToolButtonStyle
+        tb.addAction(self._open_act)
 
-        # Edit + Save stacked pair (half-height)
+        # Edit + Save stacked pair — QToolButton so we can set text explicitly
         pair = QWidget()
         pair_layout = QVBoxLayout(pair)
-        pair_layout.setContentsMargins(0, 0, 0, 0)
+        pair_layout.setContentsMargins(2, 2, 2, 2)
         pair_layout.setSpacing(0)
-        pair_layout.addWidget(
-            make_nav_button("fa5s.edit", self.edit_workspace,
-                            tooltip="Edit workspace (Ctrl+E)")
-        )
-        pair_layout.addWidget(
-            make_nav_button("fa5s.save", self.save_current_workspace,
-                            tooltip="Save workspace (Ctrl+S)")
-        )
+        for act, label in (
+            (self._edit_act, "Edit"),
+            (self._save_act, "Save"),
+        ):
+            btn = QToolButton()
+            btn.setDefaultAction(act)
+            btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            btn.setIconSize(QSize(16, 16))
+            btn.setText(label)
+            pair_layout.addWidget(btn)
         tb.addWidget(pair)
         tb.addSeparator()
 
         # Directory settings
-        tb.addWidget(
-            make_nav_button("fa5s.cog", self.open_directory_settings,
-                            tooltip="Directory settings (Ctrl+Shift+S)")
-        )
+        tb.addAction(self._settings_act)
         tb.addSeparator()
 
         # Add epoch (placeholder — no callback yet)
-        self._add_epoch_btn = make_nav_button(
-            "fa5s.plus-circle", lambda: None,
-            tooltip="Add epoch (Ctrl+N)"
+        self._add_epoch_act = QAction(
+            qta.icon("fa5s.plus-circle"), "Add Epoch", self
         )
-        self._add_epoch_btn.setEnabled(False)
-        tb.addWidget(self._add_epoch_btn)
+        self._add_epoch_act.setShortcut(QKeySequence("Ctrl+N"))
+        self._add_epoch_act.setEnabled(False)
+        tb.addAction(self._add_epoch_act)
         tb.addSeparator()
 
         # Documentation
-        tb.addWidget(
-            make_nav_button("fa5s.question-circle", self._open_docs,
-                            tooltip="Documentation (Ctrl+D)")
-        )
+        tb.addAction(self._doc_act)
 
     def _wire_view_menu(self, view_menu) -> None:
         """Add per-dock toggle actions and the Layout submenu."""
