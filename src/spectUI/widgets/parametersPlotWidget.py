@@ -75,6 +75,7 @@ from spectHR.Tools.Logger import logger
 from spectHR.analysis.registry import get_metrics
 from spectHR.analysis.exporter import EpochExporter
 from spectHR.config import WorkspaceView
+from spectHR.session import AnalysisConfig, MetricsTable, Session
 from spectUI.common import show_export_summary
 from spectUI.workSpace import get_export_dir
 
@@ -271,22 +272,17 @@ class ParametersPlotWidget(QWidget):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def prefetch_table(dataset, workspace):
+    def prefetch_table(session: Session, workspace: dict) -> MetricsTable:
         """Compute the parameters table without touching any Qt object.
 
         Intended to be called on a background thread via
-        :class:`~spectUI.plot_worker.DockScheduler`.  Pass the 4-tuple
-        ``(labels, cols, values, contexts)`` as ``_precomputed`` to
-        :meth:`display_parameters` so the main thread only handles
-        the fast Qt table-widget population step.
+        :class:`~spectUI.plot_worker.DockScheduler`.  Pass the
+        :class:`~spectHR.session.MetricsTable` as ``_precomputed`` to
+        :meth:`display_parameters` so the main thread only handles the
+        fast Qt table-widget population step.
         """
-        ws = WorkspaceView(workspace)
-        rsa_ibi_dev, rsa_rate_dev = ws.rsa_rejection
-        return dataset.epoched_parameters_table(
-            psd_method=ws.psd_method, rsa_lag_s=ws.rsa_lag_s,
-            rsa_max_ibi_deviation=rsa_ibi_dev, rsa_max_rate_deviation=rsa_rate_dev,
-            b_point_guard_ms=ws.b_point_guard_ms,
-        )
+        config = AnalysisConfig.from_workspace(workspace)
+        return session.epochs_table(config)
 
     def _start_loading(self) -> None:
         """Show a placeholder while the parameters are being computed."""
@@ -301,25 +297,30 @@ class ParametersPlotWidget(QWidget):
     # Population
     # ------------------------------------------------------------------
 
-    def display_parameters(self, dataset, workspace, *, _precomputed=None):
-        self.dataset   = dataset
+    def display_parameters(
+        self,
+        session:   Session,
+        workspace: dict,
+        *,
+        _precomputed: MetricsTable | None = None,
+    ) -> None:
+        self.session   = session
         self.workspace = workspace
         self.setFocus()
 
-        output_dir    = get_export_dir(workspace, context="Parameters")
-        self.csvfile  = output_dir / f"{dataset.basename}.csv"
-        self.h5file   = output_dir / f"{dataset.basename}.h5"
+        output_dir   = get_export_dir(workspace, context="Parameters")
+        self.csvfile = output_dir / f"{session.name}.csv"
+        self.h5file  = output_dir / f"{session.name}.h5"
 
         if _precomputed is not None:
-            labels, cols, values, self._contexts = _precomputed
+            table = _precomputed
         else:
-            ws = WorkspaceView(workspace)
-            rsa_ibi_dev, rsa_rate_dev = ws.rsa_rejection
-            labels, cols, values, self._contexts = self.dataset.epoched_parameters_table(
-                psd_method=ws.psd_method, rsa_lag_s=ws.rsa_lag_s,
-                rsa_max_ibi_deviation=rsa_ibi_dev, rsa_max_rate_deviation=rsa_rate_dev,
-                b_point_guard_ms=ws.b_point_guard_ms,
-            )
+            config = AnalysisConfig.from_workspace(workspace)
+            table  = session.epochs_table(config)
+
+        labels, cols, values, self._contexts = (
+            table.labels, table.columns, table.values, table.contexts
+        )
 
         # Re-order columns: known metrics first, then extras alphabetically.
         ordered = [c for c in METRIC_ORDER if c in cols]
@@ -330,7 +331,7 @@ class ParametersPlotWidget(QWidget):
             values    = values[:, new_order] if values.size else values
             cols      = ordered
 
-        subject     = getattr(dataset, "basename", None)
+        subject     = session.name
         n_rows      = int(labels.shape[0])
         n_metrics   = int(values.shape[1]) if values.size else 0
 
@@ -378,7 +379,7 @@ class ParametersPlotWidget(QWidget):
 
         # Single computation pass: returns per-epoch dicts with both
         # scalar summaries (for the CSV) and full arrays (for HDF5).
-        epoch_data = EpochExporter(self.dataset, self.workspace, self._contexts).collect()
+        epoch_data = EpochExporter(self.session, self.workspace, self._contexts).collect()
 
         # Inject the epoched_parameters_table scalars (RMSSD, SDNN, band
         # powers, Poincaré metrics, BP/RESP parameters, and any future
@@ -503,7 +504,8 @@ class ParametersPlotWidget(QWidget):
 
         import h5py
 
-        subject = getattr(self.dataset, "basename", "")
+        subject = getattr(self, "session", None)
+        subject = subject.name if subject is not None else ""
 
         with h5py.File(self.h5file, "w") as hf:
             # Root metadata

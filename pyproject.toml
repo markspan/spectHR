@@ -40,6 +40,9 @@ find = { where = ["src"] , include = ["spectUI*", "spectHR*"]}
 [tool.setuptools.dynamic]
 version = { attr = "spectHR._version.__version__" }
  
+[project.scripts]
+specthr = "spectUI.MainWindow:main"
+
 [project.urls]
 Homepage = "https://github.com/MarkSpan/spectHR"
 Repository = "https://github.com/MarkSpan/spectHR"
