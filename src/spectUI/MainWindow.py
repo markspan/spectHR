@@ -16,10 +16,12 @@ Plot-dock callbacks are stubs pending widget implementation.
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
+import numpy as np
 import qtawesome as qta
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QObject, QSize, QThread, Signal
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -35,8 +37,10 @@ from PySide6.QtWidgets import (
 from PySide6QtAds import CDockManager, CDockWidget, DockWidgetArea
 
 from spectHR._version import __version__
+from spectHR.DataSet.loaders import load as _load_session
 from spectHR.Tools.Logger import logger
 from spectHR.session import Session
+from spectUI.preProcessFile import apply_bp_calibration, apply_rsp_source
 
 from spectUI.perspectives import (
     BUILTIN_COMPARE,
@@ -103,6 +107,79 @@ _VIEW_LABELS: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
+# Background file loader
+# ---------------------------------------------------------------------------
+
+class _LoadWorker(QObject):
+    """Loads a recording file on a worker thread.
+
+    Emits ``finished`` with the ready ``Session`` on success, or
+    ``failed`` with a human-readable error string on failure.
+    The caller is responsible for moving this object to a ``QThread``
+    before calling ``run()``.
+    """
+
+    finished = Signal(object, float)   # (Session, elapsed_seconds)
+    failed   = Signal(str,   str)      # (path_str, error_message)
+
+    def __init__(self, path: Path, params_dict: dict) -> None:
+        super().__init__()
+        self._path        = path
+        self._params_dict = params_dict
+
+    def run(self) -> None:
+        t0 = time.monotonic()
+        try:
+            session = _load_session(self._path)
+            session = apply_rsp_source(session,      self._params_dict)
+            session = apply_bp_calibration(session,  self._params_dict)
+            self.finished.emit(session, time.monotonic() - t0)
+        except Exception as exc:
+            self.failed.emit(str(self._path), str(exc))
+
+
+def _session_summary(session: Session) -> str:
+    """Return a multi-line human-readable summary of *session*."""
+    lines: list[str] = []
+
+    # Duration — prefer the experiment epoch, fall back to sample axes
+    exp   = session.epochs.get("experiment")
+    dur_s = (exp.end - exp.start) if exp else max(
+        (s.times[-1] for s in session.samples.values() if len(s.times)),
+        default=0.0,
+    )
+    h, rem  = divmod(int(dur_s), 3600)
+    m, s    = divmod(rem, 60)
+    dur_str = (f"{h} h {m:02d} min" if h else
+               f"{m} min {s:02d} s"  if m else
+               f"{s} s")
+    lines.append(f"  Duration : {int(dur_s):,} s  ({dur_str})")
+
+    # Sample channels with sampling rate
+    if session.samples:
+        ch_parts = []
+        for name, sig in sorted(session.samples.items()):
+            rate = getattr(sig, "srate", None)
+            ch_parts.append(f"{name} ({rate:.0f} Hz)" if rate else name)
+        lines.append(f"  Samples  : {', '.join(ch_parts)}")
+
+    # R-peaks / mean HR
+    hrv = session.hrv
+    if hrv is not None and len(hrv.times):
+        ibi  = hrv.ibi
+        fin  = ibi[np.isfinite(ibi)]
+        hr   = f"  |  mean HR {60.0 / fin.mean():.1f} bpm" if len(fin) else ""
+        lines.append(f"  R-peaks  : {len(hrv.times):,}{hr}")
+
+    # Epochs
+    if session.epochs:
+        names = ", ".join(session.epochs)
+        lines.append(f"  Epochs   : {names}  ({len(session.epochs)} total)")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Placeholder
 # ---------------------------------------------------------------------------
 
@@ -138,7 +215,8 @@ class MainWindow(QMainWindow):
         self._settings        = AppSettings()
         self._parameters       = Parameters.default()
         self._parameters_path: Path | None = None
-        self._session: Session | None     = None
+        self._session:         Session | None = None
+        self._load_thread:     QThread | None = None
 
         self._docks: dict[str, CDockWidget] = {}
 
@@ -364,7 +442,44 @@ class MainWindow(QMainWindow):
         data = item.data(0, Qt.UserRole)
         if not data or data.get("type") != "dataset":
             return
-        logger.info(f"File selected: {data.get('filename')}  (loading not yet wired)")
+        self._load_file(Path(data["filename"]))
+
+    def _load_file(self, path: Path) -> None:
+        if self._load_thread is not None and self._load_thread.isRunning():
+            logger.warning(f"Still loading — ignoring {path.name}")
+            return
+
+        logger.info(f"Loading {path.name} …")
+        self.setCursor(Qt.WaitCursor)
+
+        params_snapshot = self._parameters.to_dict()
+
+        self._load_worker = _LoadWorker(path, params_snapshot)
+        self._load_thread = QThread(self)
+        self._load_worker.moveToThread(self._load_thread)
+
+        self._load_thread.started.connect(self._load_worker.run)
+        self._load_worker.finished.connect(self._on_session_loaded)
+        self._load_worker.failed.connect(self._on_load_failed)
+        self._load_worker.finished.connect(self._load_thread.quit)
+        self._load_worker.failed.connect(self._load_thread.quit)
+        self._load_thread.finished.connect(self._load_worker.deleteLater)
+
+        self._load_thread.start()
+
+    def _on_session_loaded(self, session: Session, elapsed: float) -> None:
+        self.unsetCursor()
+        self._session = session
+        logger.info(
+            f"Loaded {session.name}  ({elapsed:.2f} s)\n"
+            + _session_summary(session)
+        )
+        # TODO: broadcast to plot docks once widgets are built
+
+    def _on_load_failed(self, path: str, error: str) -> None:
+        self.unsetCursor()
+        logger.error(f"Failed to load {Path(path).name}: {error}")
+        QMessageBox.critical(self, "Load error", f"{Path(path).name}\n\n{error}")
 
     # ------------------------------------------------------------------
     # Misc
