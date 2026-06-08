@@ -13,24 +13,34 @@ import numpy as np
 from spectHR.session import Session, Samples
 from spectHR.config import WorkspaceView
 
+# Accept either a Parameters instance (spectUI) or a raw dict (headless / tests).
+_ParamsLike = "WorkspaceView | dict | None"
+
+
+def _as_view(params: _ParamsLike) -> WorkspaceView:
+    """Return a WorkspaceView regardless of whether *params* is already one."""
+    if isinstance(params, WorkspaceView):
+        return params
+    return WorkspaceView(params)
+
 
 # ---------------------------------------------------------------------------
 # BP calibration
 # ---------------------------------------------------------------------------
 
 
-def apply_bp_calibration(session: Session, workspace: dict | None) -> Session:
+def apply_bp_calibration(session: Session, params: _ParamsLike) -> Session:
     """Return a new ``Session`` with the ``bp`` channel scaled to mmHg.
 
-    Reads ``bp_scale`` and ``bp_zero`` from ``workspace["Calibration"]``
-    and applies ``mmHg = scale * raw + zero``.  When scale is zero (no
+    Reads ``bp_scale`` and ``bp_zero`` from the analysis parameters and
+    applies ``mmHg = scale * raw + zero``.  When scale is zero (no
     calibration available) the channel is left unchanged.
     """
     bp = session.bp
     if bp is None:
         return session
 
-    scale, zero = WorkspaceView(workspace).bp_calibration
+    scale, zero = _as_view(params).bp_calibration
     if scale == 0.0:
         return session
 
@@ -53,11 +63,11 @@ def apply_bp_calibration(session: Session, workspace: dict | None) -> Session:
 # ---------------------------------------------------------------------------
 
 
-def apply_rsp_source(session: Session, workspace: dict | None) -> Session:
+def apply_rsp_source(session: Session, params: _ParamsLike) -> Session:
     """Return a new ``Session`` with the canonical ``resp`` channel set.
 
-    Reads ``rsp_source`` from ``workspace["RespirationAnalysis"]`` and
-    copies the appropriate channel to ``session.samples["resp"]``.
+    Reads ``rsp_source`` from the analysis parameters and copies the
+    appropriate channel to ``session.samples["resp"]``.
 
     * ``"icg"`` — uses the ``icg`` channel if present (thoracic impedance).
     * ``"accelerometer"`` — uses ``accel_rsp`` if present (PCA surrogate).
@@ -65,7 +75,7 @@ def apply_rsp_source(session: Session, workspace: dict | None) -> Session:
     When the requested source is not available the session is returned
     unchanged.
     """
-    source = WorkspaceView(workspace).rsp_source
+    source = _as_view(params).rsp_source
     key = "icg" if source == "icg" else "accel_rsp"
 
     sig = session.samples.get(key)

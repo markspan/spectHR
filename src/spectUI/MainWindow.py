@@ -122,17 +122,17 @@ class _LoadWorker(QObject):
     finished = Signal(object, float)   # (Session, elapsed_seconds)
     failed   = Signal(str,   str)      # (path_str, error_message)
 
-    def __init__(self, path: Path, params_dict: dict) -> None:
+    def __init__(self, path: Path, params: "Parameters") -> None:
         super().__init__()
-        self._path        = path
-        self._params_dict = params_dict
+        self._path   = path
+        self._params = params
 
     def run(self) -> None:
         t0 = time.monotonic()
         try:
             session = _load_session(self._path)
-            session = apply_rsp_source(session,      self._params_dict)
-            session = apply_bp_calibration(session,  self._params_dict)
+            session = apply_rsp_source(session,     self._params)
+            session = apply_bp_calibration(session, self._params)
             self.finished.emit(session, time.monotonic() - t0)
         except Exception as exc:
             self.failed.emit(str(self._path), str(exc))
@@ -452,9 +452,7 @@ class MainWindow(QMainWindow):
         logger.info(f"Loading {path.name} …")
         self.setCursor(Qt.WaitCursor)
 
-        params_snapshot = self._parameters.to_dict()
-
-        self._load_worker = _LoadWorker(path, params_snapshot)
+        self._load_worker = _LoadWorker(path, self._parameters)
         self._load_thread = QThread(self)
         self._load_worker.moveToThread(self._load_thread)
 
@@ -464,6 +462,7 @@ class MainWindow(QMainWindow):
         self._load_worker.finished.connect(self._load_thread.quit)
         self._load_worker.failed.connect(self._load_thread.quit)
         self._load_thread.finished.connect(self._load_worker.deleteLater)
+        self._load_thread.finished.connect(self._load_thread.deleteLater)
 
         self._load_thread.start()
 

@@ -145,11 +145,13 @@ class LogWidget(QWidget):
         colour = _COLOURS.get(levelno, "#111111")
         bold   = levelno >= logging.CRITICAL
         style  = f"color:{colour};" + ("font-weight:bold;" if bold else "")
-        # HTML-escape the message to prevent tag injection from log content
+        # HTML-escape first, then restore newlines as <br> so multi-line
+        # log records display correctly inside a single <span>.
         safe = (message
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
-                .replace(">", "&gt;"))
+                .replace(">", "&gt;")
+                .replace("\n", "<br>"))
         self._text.appendHtml(f'<span style="{style}">{safe}</span>')
 
     def _on_level_changed(self, name: str) -> None:
