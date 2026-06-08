@@ -31,8 +31,7 @@ import types
 import numpy as np
 import pytest
 
-from spectHR.DataSet.Series.CardioSeries import CardioSeries
-from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
+from spectHR.session import Events, Intervals
 from spectHR.analysis.psd import BandSpec, PsdMethod, ProfileResult
 from spectHR.analysis.profile import compute_band_power_profile
 
@@ -77,15 +76,8 @@ def _adaptive_hf_method(
     return PsdMethod(algorithm=algorithm, bands=bands)
 
 
-def _make_respiration(freq_hz: float, duration_s: float) -> RespirationSeries:
-    """Build a RespirationSeries breathing at a constant *freq_hz*.
-
-    A full breath cycle lasts ``1 / freq_hz`` seconds and is split into
-    two equal alternating phases (INH, EXH), so each phase lasts
-    ``1 / (2 * freq_hz)``. With that construction
-    :meth:`RespirationSeriesView.mean_breath_frequency_hz` recovers
-    exactly *freq_hz* (mean adjacent-phase cycle period = ``1/freq_hz``).
-    """
+def _make_respiration(freq_hz: float, duration_s: float) -> Intervals:
+    """Build an Intervals breathing at a constant *freq_hz*."""
     half_period = 1.0 / (2.0 * freq_hz)
     n_phases = int(duration_s / half_period) + 1
     edges = np.arange(n_phases + 1) * half_period
@@ -95,22 +87,17 @@ def _make_respiration(freq_hz: float, duration_s: float) -> RespirationSeries:
         ["INH" if i % 2 == 0 else "EXH" for i in range(n_phases)],
         dtype=object,
     )
-    return RespirationSeries(starts, ends, labels)
+    return Intervals(starts, ends, labels)
 
 
-def _attach_respiration(cs: CardioSeries, freq_hz: float) -> RespirationSeries:
-    """Wire a constant-frequency respiration channel onto *cs*.
+def _attach_respiration(cs: Events, freq_hz: float) -> Intervals:
+    """Return a constant-frequency respiration Intervals for *cs*.
 
-    The profile code locates the breathing signal through
-    ``self._pd.rsp_map`` (the first registered band). We don't need a
-    full :class:`PhysioData` for that — a tiny stand-in carrying a
-    ``rsp_map`` dict is enough, which keeps the test free of the Qt /
-    dataset-loading machinery.
+    Returns the Intervals; callers pass it as ``rsp_phases=`` to
+    ``compute_band_power_profile`` rather than mutating the Events object.
     """
     duration_s = float(cs.times[-1] - cs.times[0])
-    rsp = _make_respiration(freq_hz, duration_s)
-    cs._pd = types.SimpleNamespace(rsp_map={"resp": rsp})
-    return rsp
+    return _make_respiration(freq_hz, duration_s)
 
 
 # ===========================================================================
@@ -231,7 +218,7 @@ class TestProfileValidation:
             compute_band_power_profile(cs,window_s=60.0, step_s=5.0)
 
     def test_single_rpeak_raises(self):
-        cs = CardioSeries(np.array([0.0]))
+        cs = Events(np.array([0.0]), np.full(1, "N", dtype=object))
         with pytest.raises(ValueError):
             compute_band_power_profile(cs,window_s=30.0, step_s=5.0)
 
@@ -379,10 +366,11 @@ class TestProfileAdaptiveRespiration:
         adjacent-phase cycle period exactly ``1 / 0.25`` s)."""
         method = _adaptive_hf_method()
         cs = make_spectral_cs(0.25)
-        _attach_respiration(cs, freq_hz=0.25)
+        rsp = _attach_respiration(cs, freq_hz=0.25)
 
         res = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=method,
+            rsp_phases=rsp,
             adaptive_source="respiration_channel",
         )
         assert res.resp_freqs is not None
@@ -395,10 +383,11 @@ class TestProfileAdaptiveRespiration:
         breathing — i.e. the shifted edges always land on grid."""
         method = _adaptive_hf_method()
         cs = make_spectral_cs(0.25)
-        _attach_respiration(cs, freq_hz=0.25)
+        rsp = _attach_respiration(cs, freq_hz=0.25)
 
         res = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=method,
+            rsp_phases=rsp,
             adaptive_source="respiration_channel",
         )
         hf = res.band_power[res.band_names.index("HF")]
@@ -411,10 +400,11 @@ class TestProfileAdaptiveRespiration:
         stays finite."""
         method = _adaptive_hf_method()
         cs = make_spectral_cs(0.25)
-        _attach_respiration(cs, freq_hz=0.25)
+        rsp = _attach_respiration(cs, freq_hz=0.25)
 
         res = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=method,
+            rsp_phases=rsp,
             adaptive_source="respiration_channel",
             smooth_breath_freq=True,
         )
@@ -428,10 +418,11 @@ class TestProfileAdaptiveRespiration:
         """Tracking breathing should give a different HF profile than the
         fixed-edge HF band (the adaptive window is narrower and moves)."""
         cs = make_spectral_cs(0.25)
-        _attach_respiration(cs, freq_hz=0.25)
+        rsp = _attach_respiration(cs, freq_hz=0.25)
 
         adaptive = compute_band_power_profile(cs,
             window_s=30.0, step_s=10.0, psd_method=_adaptive_hf_method(),
+            rsp_phases=rsp,
             adaptive_source="respiration_channel",
         )
         static = compute_band_power_profile(cs,

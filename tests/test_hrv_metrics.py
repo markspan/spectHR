@@ -20,7 +20,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spectHR.DataSet.Series.CardioSeries import CardioSeries
+from spectHR.session import Events
+
+def _ev(times):
+    """Build an Events from a times array with all-'N' labels."""
+    t = np.asarray(times, dtype=float)
+    return Events(t, np.full(t.shape, "N", dtype=object))
 from spectHR.analysis.psd import (
     BandSpec,
     PsdMethod,
@@ -97,11 +102,11 @@ class TestCount:
         assert count(cs) == 1
 
     def test_empty_series(self):
-        cs = CardioSeries(np.array([], dtype=float))
+        cs = _ev(np.array([], dtype=float))
         assert count(cs) == 0
 
     def test_one_beat_no_ibi(self):
-        cs = CardioSeries(np.array([0.0]))
+        cs = _ev(np.array([0.0]))
         assert count(cs) == 0
 
     def test_tl_excluded(self):
@@ -148,7 +153,7 @@ class TestMagnitudeStats:
             assert fn(cs) == pytest.approx(800.0)
 
     def test_empty_series_nan(self):
-        cs = CardioSeries(np.array([], dtype=float))
+        cs = _ev(np.array([], dtype=float))
         for fn in (mean, ibi_min, ibi_max, median):
             assert np.isnan(fn(cs))
 
@@ -180,7 +185,7 @@ class TestSdnn:
         assert sdnn(cs) == pytest.approx(0.0)
 
     def test_empty_returns_nan(self):
-        cs = CardioSeries(np.array([], dtype=float))
+        cs = _ev(np.array([], dtype=float))
         assert np.isnan(sdnn(cs))
 
 
@@ -204,7 +209,7 @@ class TestRmssd:
         assert np.isnan(rmssd(cs))
 
     def test_empty_nan(self):
-        cs = CardioSeries(np.array([], dtype=float))
+        cs = _ev(np.array([], dtype=float))
         assert np.isnan(rmssd(cs))
 
     def test_gap_safety_tl_breaks_chain(self):
@@ -272,7 +277,7 @@ class TestPoincare:
             assert ellipse_area(cs) == pytest.approx(np.pi * s1 * s2)
 
     def test_all_poincare_nan_on_empty(self):
-        cs = CardioSeries(np.array([], dtype=float))
+        cs = _ev(np.array([], dtype=float))
         assert np.isnan(sd1(cs))
         assert np.isnan(sd2(cs))
         assert np.isnan(sd_ratio(cs))
@@ -336,14 +341,14 @@ class TestEdgeCases:
     """No metric should raise on degenerate inputs."""
 
     def test_empty_returns_nan_everywhere(self):
-        cs = CardioSeries(np.array([], dtype=float))
+        cs = _ev(np.array([], dtype=float))
         for fn in (mean, ibi_min, ibi_max, median,
                    rmssd, sdnn, sdsd,
                    sd1, sd2, sd_ratio, ellipse_area):
             assert np.isnan(fn(cs))
 
     def test_one_beat_no_ibi(self):
-        cs = CardioSeries(np.array([0.0]))
+        cs = _ev(np.array([0.0]))
         assert count(cs) == 0
         assert np.isnan(mean(cs))
         assert np.isnan(rmssd(cs))
@@ -627,8 +632,8 @@ class TestFrequencyArtefactRobustness:
             assert np.isnan(fn(cs))
 
     def test_all_tl_frequency_metrics_nan(self):
-        cs = make_cs([800.0] * 20)
-        cs.labels[:] = "TL"
+        n = 21
+        cs = make_cs([800.0] * 20, labels=["TL"] * n)
         assert np.isnan(lf_power(cs))
         assert np.isnan(hf_power(cs))
         assert np.isnan(lf_hf_ratio(cs))
@@ -637,9 +642,10 @@ class TestFrequencyArtefactRobustness:
         rng = np.random.default_rng(3)
         ibi_ms = 800.0 + rng.normal(0.0, 25.0, 200)
         ibi_ms = np.clip(ibi_ms, 400.0, 1500.0)
-        cs = make_cs(ibi_ms)
-        for i in range(0, len(cs.labels), 15):
-            cs.labels[i] = "TL"
+        lbl = np.full(len(ibi_ms) + 1, "N", dtype=object)
+        for i in range(0, lbl.size, 15):
+            lbl[i] = "TL"
+        cs = make_cs(ibi_ms, labels=lbl.tolist())
         lf = lf_power(cs)
         assert np.isfinite(lf) and lf >= 0.0
 

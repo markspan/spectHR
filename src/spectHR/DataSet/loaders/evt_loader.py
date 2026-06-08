@@ -8,121 +8,105 @@ from typing import Any
 import numpy as np
 
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.DataSet.loaders.nff_loader import load_nff
+from spectHR.DataSet.loaders.nff_loader import _load_nff_samples
 from spectHR.DataSet.loaders.code_selection import resolve_epoch_codes
-from spectHR.DataSet.Series.EventSeries import EventSeries
-from spectHR.DataSet.Series.CardioSeries import CardioSeries
 from spectHR.Tools.Logger import logger
 
-# Picking which event codes mark epoch starts/stops (for .evt files with
-# >2 non-RTop codes) is a UI decision. The loader stays headless by asking
-# the resolver registered in ``code_selection``; the UI registers a
-# dialog-backed one at start-up, headless callers get a single epoch.
-
-# CARSPAN internal unit scale factors.
-# IBI is stored in units of 0.1 ms; divide by 10 000 to get seconds.
 _IBI_SCALE_TO_SECONDS = 10_000.0
-# BPSys (and any future BP channel) is stored in units of 0.1 mmHg;
-# divide by 10 to get mmHg.
 _BP_SCALE_TO_MMHG = 10.0
 
+
 @register_loader(".evt")
-def load_evt(physiodata, filename: str, **kwargs: Any) -> None:
-    """
-    Load a CARSPAN .evt file; if a matching .nff ECG file exists, load it too.
-    """
-    evt_path = Path(filename)
+def load_evt(path: Path, **kwargs: Any) -> "Session":
+    """Load a CARSPAN .evt file (+ paired .nff if present) as a Session."""
+    from spectHR.session import Session, Events, Samples
+    from spectHR.DataSet.loaders._epochs import build_epochs
+
+    evt_path = Path(path)
     logger.info(f"Loading EVT: {evt_path}")
-    _load_evt_data(physiodata, evt_path)
-    physiodata.has_ecg = False
 
-    nff_path = evt_path.with_suffix('.nff')
+    rtop_times, marker_times, marker_labels = _parse_evt(evt_path)
+
+    # ---- paired NFF? -------------------------------------------------------
+    samples: dict[str, Samples] = {}
+    nff_path = evt_path.with_suffix(".nff")
     if nff_path.exists():
-        load_nff(physiodata, nff_path)
-        logger.info(f"Loaded NFF ECG: {nff_path.name}")
-        # Lock R-peak times: the .evt timestamps are authoritative when an
-        # accompanying .nff ECG signal exists. Otherwise preprocess_ecg()
-        # would re-detect peaks from the ECG and overwrite the .evt times.
-        for cs in physiodata.hrv_map.values():
-            cs.rtops_locked = True
-    else:
-        logger.info(f"No NFF file found at: {nff_path}")
+        raw_samples, _cal = _load_nff_samples(nff_path)
+        # NFF timestamps are absolute; EVT timestamps are from recording start.
+        # Normalize by aligning to the minimum NFF timestamp.
+        if raw_samples:
+            t_min_nff = min(float(s.times[0]) for s in raw_samples.values() if s.times.size)
+            samples = {k: Samples(s.times - t_min_nff, s.values, s.name)
+                       for k, s in raw_samples.items()}
+        logger.info(f"Loaded paired NFF: {nff_path.name}")
+
+    # ---- R-peak events -----------------------------------------------------
+    labels = np.full(rtop_times.shape, "N", dtype=object)
+    hrv = Events(rtop_times, labels)
+
+    # ---- time bounds -------------------------------------------------------
+    all_times = rtop_times.tolist() + marker_times
+    t_start = float(min(all_times)) if all_times else 0.0
+    t_end   = float(max(all_times)) if all_times else 0.0
+
+    if samples:
+        t_end = max(t_end, max(
+            float(s.times[-1]) for s in samples.values() if s.times.size
+        ))
+
+    # ---- epochs -------------------------------------------------------------
+    epochs = build_epochs(marker_times, marker_labels, t_start=t_start, t_end=t_end)
+
+    return Session(
+        name=evt_path.stem,
+        samples=samples,
+        events={"hrv": hrv},
+        epochs=epochs,
+    )
 
 
-def _load_evt_data(physiodata, filename: Path) -> None:
-    """Load R-peak times and epoch markers from a CARSPAN .evt file.
-
-    Opens a GUI code-selector (EventCodeWindow) when the file contains
-    more than two distinct non-RTop event codes so the researcher can
-    identify which codes mark epoch starts and stops.
-    """
-
-    logger.info(f"Parsing EVT: {filename.name}")
-
-    # --------------------------------------------------
-    # Read file
-    # --------------------------------------------------
+def _parse_evt(filename: Path):
+    """Return ``(rtop_times, marker_times, marker_labels)``."""
     with filename.open("r") as f:
         lines = f.readlines()
 
-    # Section headers vary in case and spelling across CARSPAN exports
-    # (``[Data]``/``[DATA]``, ``[Event file]``/``[Event File]``), so every
-    # comparison below is done case-insensitively. Legacy exports may carry
-    # no ``[Data]`` header at all; in that case the whole file is data.
-    has_data_header = any(
-        line.strip().lower().startswith("[data") for line in lines
-    )
+    has_data_header = any(l.strip().lower().startswith("[data") for l in lines)
 
-    # --------------------------------------------------
-    # Phase 1 + 2: single pass over the file.
-    #   Phase 1 - header sections ([Events], [Timeseries]) before the data.
-    #   Phase 2 - the data rows themselves.
-    # --------------------------------------------------
     in_events = False
     in_timeseries = False
-    in_data = not has_data_header  # legacy: no header → treat everything as data
+    in_data = not has_data_header
 
-    rtop_code: int | None = None        # set from [Events] RPeak key if present
-    timeseries_cols: dict[str, int] = {}  # column name → 0-based data-row index
-
+    rtop_code: int | None = None
+    timeseries_cols: dict[str, int] = {}
     event_codes: list[int] = []
-    times: list[float] = []
-    data_rows: list[list[str]] = []     # raw split parts of each accepted data row
+    times_raw: list[float] = []
+    data_rows: list[list[str]] = []
 
     for line in lines:
         stripped = line.strip()
         low = stripped.lower()
 
-        # ``[End]`` marks end-of-data; stop reading entirely.
         if low.startswith("[end"):
             break
-
-        # Any other bracketed line switches the active section.
         if low.startswith("["):
-            in_events = low.startswith("[events")
+            in_events     = low.startswith("[events")
             in_timeseries = low.startswith("[timeseries")
-            in_data = low.startswith("[data")
+            in_data       = low.startswith("[data")
             continue
 
-        if in_events:
-            # Find the R-peak code. Match the key prefix ``rpeak``
-            # case-insensitively (``RPeak``, ``Rpeaks``, ``RPEAK`` all match).
-            if "=" in stripped:
-                key, _, val = stripped.partition("=")
-                if key.strip().lower().startswith("rpeak"):
-                    try:
-                        rtop_code = int(val.strip())
-                    except ValueError:
-                        pass
+        if in_events and "=" in stripped:
+            key, _, val = stripped.partition("=")
+            if key.strip().lower().startswith("rpeak"):
+                try:
+                    rtop_code = int(val.strip())
+                except ValueError:
+                    pass
             continue
 
-        if in_timeseries:
-            # Build the ordered extra-column map. Columns 0=code, 1=time;
-            # extra time-series columns start at index 2.
-            if "=" in stripped:
-                name = stripped.split("=", 1)[1].strip()
-                if name:
-                    timeseries_cols[name] = 2 + len(timeseries_cols)
+        if in_timeseries and "=" in stripped:
+            name = stripped.split("=", 1)[1].strip()
+            if name:
+                timeseries_cols[name] = 2 + len(timeseries_cols)
             continue
 
         if not in_data:
@@ -133,170 +117,63 @@ def _load_evt_data(physiodata, filename: Path) -> None:
             continue
         try:
             code = int(parts[0])
-            time = float(parts[1])
+            t    = float(parts[1])
         except ValueError:
             continue
 
         event_codes.append(code)
-        times.append(time)
+        times_raw.append(t)
         data_rows.append(parts)
 
-    if not times:
+    if not times_raw:
         raise ValueError("EVT file contains no valid data.")
 
-    event_codes = np.asarray(event_codes)
-    times = np.asarray(times)
+    event_codes_arr = np.asarray(event_codes)
+    times_arr       = np.asarray(times_raw)
 
-    # --------------------------------------------------
-    # Determine RTop code
-    # --------------------------------------------------
-    # Prefer the explicit [Events] RPeak code; fall back to the most
-    # frequent code when no [Events] section declared one.
     if rtop_code is None:
-        rtop_code = int(Counter(event_codes.tolist()).most_common(1)[0][0])
+        rtop_code = int(Counter(event_codes_arr.tolist()).most_common(1)[0][0])
         logger.info(f"RTop event code inferred by frequency: {rtop_code}")
     else:
         logger.info(f"RTop event code from [Events] section: {rtop_code}")
 
-    # --------------------------------------------------
-    # Extract extra time-series columns (IBI, BPSys, ...)
-    # --------------------------------------------------
-    # Only R-peak rows carry the extra columns; epoch-marker rows (e.g. code
-    # 11/21) have just code+time and are skipped by the width guard.
-    extra_cols: dict[str, list[float]] = {name: [] for name in timeseries_cols}
-    n_extra = len(timeseries_cols)
-    for parts in data_rows:
-        if int(parts[0]) != rtop_code:
-            continue
-        if len(parts) < 2 + n_extra:
-            continue
-        for name, idx in timeseries_cols.items():
-            try:
-                extra_cols[name].append(float(parts[idx]))
-            except (ValueError, IndexError):
-                pass
-
-    # Scale to physical units and stash for a follow-up task. These arrays are
-    # not yet wired into CardioSeries / a BPSeries (see deferral notes below);
-    # they are logged at DEBUG so their presence is visible during loading.
-    for name, raw in extra_cols.items():
-        if not raw:
-            continue
-        arr = np.asarray(raw, dtype=float)
-        upper = name.upper()
-        if upper.startswith("IBI"):
-            scaled = arr / _IBI_SCALE_TO_SECONDS  # 0.1 ms → seconds
-            logger.debug(
-                "EVT extra column %s: %d values, %.4f–%.4f s (deferred)",
-                name, arr.size, scaled.min(), scaled.max(),
-            )
-        elif upper.startswith("BP"):
-            scaled = arr / _BP_SCALE_TO_MMHG  # 0.1 mmHg → mmHg
-            logger.debug(
-                "EVT extra column %s: %d values, %.1f–%.1f mmHg (deferred)",
-                name, arr.size, scaled.min(), scaled.max(),
-            )
-        else:
-            logger.debug(
-                "EVT extra column %s: %d values, stored raw (deferred)",
-                name, arr.size,
-            )
-
-    rtop_mask = event_codes == rtop_code
-    rtop_times = times[rtop_mask]
+    rtop_mask  = event_codes_arr == rtop_code
+    rtop_times = times_arr[rtop_mask]
 
     if rtop_times.size == 0:
         raise ValueError("No RTops found in EVT file.")
 
-    # --------------------------------------------------
-    # Create CardioSeries
-    # --------------------------------------------------
-    # Seed a minimal band model when loading .evt without an accompanying
-    # .xdf. PhysioData always initialises band_map and active_band in
-    # __init__; we only fill them here when still empty (evt-only load).
-    if not physiodata.band_map:
-        physiodata.band_map = {"ecg": {"ecg": "ecg"}}
-    if physiodata.active_band is None:
-        physiodata.active_band = "ecg"
+    # ---- non-rtop markers for epoch building --------------------------------
+    other_codes = event_codes_arr[~rtop_mask]
+    other_times = times_arr[~rtop_mask]
 
-    band = physiodata.active_band
+    marker_times: list[float]  = []
+    marker_labels: list[str]   = []
 
-    cs = CardioSeries(rtop_times)
-    cs._pd = physiodata
-    physiodata.hrv_map[band] = cs
-
-    # --------------------------------------------------
-    # Determine epoch boundaries
-    # --------------------------------------------------
-    other_codes = event_codes[~rtop_mask]
-    other_times = times[~rtop_mask]
-
-    # Default: single epoch
-    start_times = [float(times[0])]
-    end_times = [float(times[-1])]
-
-    unique_other_codes = np.unique(other_codes)
-
-    if unique_other_codes.size > 2:
-        # ----------------------------------------------
-        # Code selection (UI-driven, headless-safe)
-        # ----------------------------------------------
-        # Delegate to the registered resolver. Headless callers get
-        # ([], []) and fall through to the single-epoch default below.
+    unique_other = np.unique(other_codes)
+    if unique_other.size > 2:
         start_codes, stop_codes = resolve_epoch_codes(other_codes, rtop_code)
-
         if start_codes and stop_codes:
-            start_times = other_times[np.isin(other_codes, start_codes)]
-            end_times = other_times[np.isin(other_codes, stop_codes)]
+            for t in other_times[np.isin(other_codes, start_codes)]:
+                marker_times.append(float(t)); marker_labels.append("start epoch")
+            for t in other_times[np.isin(other_codes, stop_codes)]:
+                marker_times.append(float(t)); marker_labels.append("stop epoch")
+    elif unique_other.size == 2:
+        for i, (t, _) in enumerate(zip(other_times[::2], other_times[1::2])):
+            marker_times.extend([float(other_times[i*2]), float(other_times[i*2+1])])
+            marker_labels.extend([f"start epoch {i+1}", f"stop epoch {i+1}"])
 
-            if start_times.size != end_times.size:
-                raise ValueError(
-                    "Selected start/stop codes produce mismatched epochs."
-                )
+    # Adjust epoch starts to last R-peak before marker (CARSPAN convention)
+    adjusted: list[float] = []
+    for i, (t, label) in enumerate(zip(marker_times, marker_labels)):
+        if label.startswith("start"):
+            preceding = rtop_times[rtop_times < t]
+            adjusted.append(float(preceding[-1]) if preceding.size > 0 else t)
         else:
-            logger.info("No codes selected - using full recording as single epoch")
+            adjusted.append(t)
+    marker_times = adjusted
 
-    elif unique_other_codes.size == 2:
-        # Deterministic pairing
-        start_times = other_times[::2]
-        end_times = other_times[1::2]
+    logger.info("EVT: loaded %d R-tops and %d epoch marker(s)",
+                rtop_times.size, len(marker_times) // 2)
 
-        if start_times.size != end_times.size:
-            raise ValueError(
-                "Mismatched start/stop events in EVT file."
-            )
-
-    # Epoch-start convention: replace each start-marker time with the
-    # timestamp of the last R-peak strictly before it. This matches the
-    # way CARSPAN counts the preceding beat as the first of an epoch.
-    # If no R-peak precedes a marker (e.g. the fallback single epoch),
-    # the original marker time is kept.
-    adjusted_start_times = []
-    for st in start_times:
-        preceding = rtop_times[rtop_times < st]
-        if preceding.size > 0:
-            adjusted = float(preceding[-1])
-            logger.debug(
-                f"Epoch start adjusted: {st:.3f} s → {adjusted:.3f} s "
-                f"(last R-peak before marker)"
-            )
-            adjusted_start_times.append(adjusted)
-        else:
-            # No R-peak before this marker; keep the original marker time.
-            adjusted_start_times.append(float(st))
-    start_times = np.asarray(adjusted_start_times)
-
-    # --------------------------------------------------
-    # Register epochs
-    # --------------------------------------------------
-    raw_times = np.concatenate((start_times, end_times))
-    n = len(start_times)
-    raw_labels = (
-        [f"Start Epoch #{i+1}" for i in range(n)] +
-        [f"End Epoch #{i+1}"   for i in range(n)]
-    )
-    
-    physiodata.events["TaskSeries"] = EventSeries(raw_times, raw_labels)
-    logger.info(
-        "EVT: loaded %d R-tops and %d epoch(s)", rtop_times.size, len(start_times),
-    )
+    return rtop_times, marker_times, marker_labels

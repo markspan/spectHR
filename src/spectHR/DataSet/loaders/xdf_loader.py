@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pyxdf
 
-from spectHR.DataSet.Series.TimeSeries import TimeSeries
-from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.DataSet.epoch_builders import build_keyboard_epoch_events
 from spectHR.Tools.Logger import logger
 
 # ------------------------------------------------------------
@@ -193,141 +192,119 @@ def _compute_RSP_signal(
 
 
 @register_loader(".xdf")
-def load_xdf(physiodata, filename: str, **kwargs) -> None:
-    """
-    Timeseries:
-        - *_ecg → ECG time series
-        - *_acc → compute RSP + store ACC raw
+def load_xdf(path: Path, **kwargs) -> "Session":
+    """Load a Polar/LSL .xdf file as a Session."""
+    from spectHR.session import Session, Samples
+    from spectHR.DataSet.loaders._epochs import build_epochs
 
-    Markers:
-        - stype contains "markers" or "event"
-        - skip if name starts with "cam"
-        - normalize "end <label>" → "stop <label>"
+    logger.info(f"Loading XDF: {path}")
+    streams, _ = pyxdf.load_xdf(str(path))
 
-    """
-
-    logger.info(f"Loading XDF: {filename}")
-    streams, _ = pyxdf.load_xdf(filename)
-
-    device_counter = {}  # device_prefix → index starting at 1
+    samples: dict[str, Samples] = {}
+    marker_times: list[float]  = []
+    marker_labels: list[str]   = []
+    keyboard_events: list[tuple[float, str]] = []
 
     for stream in streams:
-        info = stream.get("info", {})
-        name = str(info.get("name", [""])[0])
-        stype = str(info.get("type", [""])[0])
-        logger.debug(f"{name} (type={stype})")
+        info      = stream.get("info", {})
+        name      = str(info.get("name", [""])[0])
+        stype     = str(info.get("type", [""])[0])
+        name_lower = name.lower()
         try:
             srate = float(info.get("nominal_srate", [0])[0])
         except Exception:
             srate = 0.0
 
-        name_lower = name.lower()
-        is_polar = stype.upper() == "ECG" or stype.upper() == "ACCELEROMETER"
+        is_polar = stype.upper() in ("ECG", "ACCELEROMETER")
 
-        # ------------------------------------------------------------
-        # MARKER STREAMS
-        # ------------------------------------------------------------
-        if (
-            "event" in stype.lower() or "marker" in stype.lower()
-        ) and not name_lower.startswith("cam"):
+        # ---- MARKER STREAMS ------------------------------------------------
+        if ("event" in stype.lower() or "marker" in stype.lower()) and not name_lower.startswith("cam"):
             raw_times = np.asarray(stream["time_stamps"], dtype=float)
-            raw_labels = []
-
-            for row in stream["time_series"]:
+            for t, row in zip(raw_times, stream["time_series"]):
                 label = str(row[0])
-                # normalize
                 if label.lower().startswith("end "):
                     label = "stop " + label[4:]
-                raw_labels.append(label)
-
-            physiodata.events[name] = EventSeries(raw_times, raw_labels)
-            logger.info(f"Loaded EventSeries: {name}")
+                if name_lower == "keyboard":
+                    keyboard_events.append((float(t), label))
+                marker_times.append(float(t))
+                marker_labels.append(label)
             continue
 
-        # ------------------------------------------------------------
-        # NON-POLAR or NON-TIMESERIES
-        # ------------------------------------------------------------
         if not is_polar or srate <= 0:
             continue
 
-        # Now we know: this is POLAR data
+        # ---- POLAR STREAMS -------------------------------------------------
         times = np.asarray(stream["time_stamps"], dtype=float)
-        data = np.asarray(stream["time_series"], dtype=float)
-        physiodata.has_ecg = True
-        # Ensure 2-D shape
+        data  = np.asarray(stream["time_series"], dtype=float)
         if data.ndim == 1:
             data = data[:, None]
 
-        # Device prefix: everything before _ecg / _acc
         device_prefix = name.rsplit("_", 1)[0]
+        suffix        = f"-[{device_prefix[-8:]}]"
 
-        # Assign index
-        if device_prefix not in device_counter:
-            device_counter[device_prefix] = len(device_counter) + 1
-
-        # idx = device_counter[device_prefix]
-        # suffix = "" if idx == 1 else f"-{idx}"
-        suffix = f"-[{device_prefix[-8:]}]"
-
-        # ------------------------------------------------------------
-        # ECG STREAM
-        # ------------------------------------------------------------
         if not name_lower.endswith("_acc"):
-            values = data[:, 0] if data.ndim == 2 else data
+            values   = data[:, 0] if data.ndim == 2 else data
             ecg_name = f"ecg{suffix}"
-            physiodata.timeseries[ecg_name] = TimeSeries(times, values)
-            logger.info(f"Loaded ECG → {ecg_name} (polarity check deferred to PhysioData)")
-            continue
-
-        # ------------------------------------------------------------
-        # ACC STREAM → RSP
-        # ------------------------------------------------------------
-        if name_lower.endswith("_acc"):
+            samples[ecg_name] = Samples(times, values, name=ecg_name)
+            logger.info(f"Loaded ECG → {ecg_name}")
+        else:
             if data.shape[1] != 3:
                 logger.warning(f"ACC stream {name} does not have 3 channels. Skipped.")
                 continue
-
             diffs = np.diff(times)
             diffs = diffs[diffs > 0]
             if len(diffs) == 0:
                 logger.warning(f"ACC stream {name} has invalid timestamps.")
                 continue
+            fs  = 1.0 / np.mean(diffs)
+            rsp = _compute_RSP_signal(data, fs)
+            rsp_name = f"RSP{suffix}"
+            samples[rsp_name] = Samples(times, rsp, name=rsp_name)
+            logger.info(f"Loaded RSP → {rsp_name}")
 
-            fs = 1.0 / np.mean(diffs)
-
-            RSP = _compute_RSP_signal(data, fs)
-            bp_name = f"RSP{suffix}"
-            physiodata.timeseries[bp_name] = TimeSeries(times, RSP)
-            logger.info(f"Loaded Respiration signal → {bp_name}")
-
-    # ----------------------------------------------------------------
-    # KEYBOARD STREAM FALLBACK EPOCHS
-    # ----------------------------------------------------------------
-    # When an XDF file has no explicit epoch markers (no labels beginning
-    # with "start " or "stop "), but does contain a stream named "Keyboard",
-    # we derive consecutive, non-overlapping epochs from "<key> pressed"
-    # events.  See spectHR.DataSet.epoch_builders.keyboard for details.
-    build_keyboard_epoch_events(physiodata)
-
-    if not physiodata.timeseries:
+    if not samples:
         logger.warning("No usable Polar time series found.")
-    else:
-        _index_polar_bands(physiodata)
-        logger.info("indexed the bands")
 
+    # Normalize timestamps so the earliest sample starts at t=0
+    if samples:
+        t_min = min(float(s.times[0]) for s in samples.values() if s.times.size)
+        if t_min != 0.0:
+            samples = {k: Samples(s.times - t_min, s.values, s.name) for k, s in samples.items()}
+            marker_times = [t - t_min for t in marker_times]
+            keyboard_events = [(t - t_min, lbl) for t, lbl in keyboard_events]
 
-def _index_polar_bands(dataset):
-    bands = {}
+    # ---- Keyboard fallback ------------------------------------------------
+    has_epoch_markers = any(
+        lbl.lower().startswith(("start ", "stop "))
+        for lbl in marker_labels
+    )
+    if not has_epoch_markers and keyboard_events:
+        pressed = [(t, lbl) for t, lbl in keyboard_events if lbl.lower().endswith(" pressed")]
+        if pressed:
+            t_rec_end = max(
+                (float(s.times[-1]) for s in samples.values() if s.times.size),
+                default=pressed[-1][0],
+            )
+            from collections import Counter as _Counter
+            base_names = [lbl[:lbl.lower().rfind(" pressed")].strip() for _, lbl in pressed]
+            counts = _Counter(base_names)
+            seen: dict[str, int] = {}
+            for i, (t_press, _) in enumerate(pressed):
+                base = base_names[i]
+                t_stop = pressed[i+1][0] if i + 1 < len(pressed) else t_rec_end
+                if counts[base] == 1:
+                    name = base
+                else:
+                    seen[base] = seen.get(base, 0) + 1
+                    name = f"{base}#{seen[base]}"
+                marker_times.extend([t_press, t_stop])
+                marker_labels.extend([f"start {name}", f"stop {name}"])
 
-    for name in dataset.timeseries:
-        if name.startswith(("ecg-[", "RSP-[")):
-            band = name.split("[")[-1].rstrip("]")
-            bands.setdefault(band, {})
+    t_start = 0.0
+    t_end = max(
+        (float(s.times[-1]) for s in samples.values() if s.times.size),
+        default=0.0,
+    )
+    epochs = build_epochs(marker_times, marker_labels, t_start=t_start, t_end=t_end)
 
-            if name.startswith("ecg"):
-                bands[band]["ecg"] = name
-            elif name.startswith("RSP"):
-                bands[band]["rsp"] = name
-
-    dataset.band_map = bands
-    dataset.active_band = next(iter(bands), None)
+    return Session(name=Path(path).stem, samples=samples, epochs=epochs)

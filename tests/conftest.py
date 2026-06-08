@@ -1,5 +1,5 @@
 """
-tests/conftest.py — shared fixtures and CardioSeries factories.
+tests/conftest.py — shared fixtures and Events factories.
 
 Every test module imports the factories from here so the synthetic
 series stay consistent across the suite (same RNG seeds, same ramp
@@ -12,7 +12,7 @@ from typing import Sequence
 import numpy as np
 import pytest
 
-from spectHR.DataSet.Series.CardioSeries import CardioSeries
+from spectHR.session import Events
 from spectHR.analysis.psd import BandSpec, PsdMethod
 
 
@@ -29,12 +29,12 @@ WORKSPACE_BANDS = {
 
 
 # ---------------------------------------------------------------------------
-# CardioSeries factories
+# Events factories
 # ---------------------------------------------------------------------------
 
 
-def make_cs(ibi_ms: Sequence[float], labels: Sequence[str] | None = None) -> CardioSeries:
-    """Build a :class:`CardioSeries` from a list of IBI values in ms.
+def make_cs(ibi_ms: Sequence[float], labels: Sequence[str] | None = None) -> Events:
+    """Build an :class:`Events` from a list of IBI values in ms.
 
     Parameters
     ----------
@@ -46,14 +46,14 @@ def make_cs(ibi_ms: Sequence[float], labels: Sequence[str] | None = None) -> Car
     """
     ibi_ms_arr = np.asarray(ibi_ms, dtype=float)
     times = np.concatenate([[0.0], np.cumsum(ibi_ms_arr / 1000.0)])
-    cs = CardioSeries(times)
     if labels is not None:
-        if len(labels) != cs.labels.size:
+        lbl_arr = np.asarray(labels, dtype=object)
+        if lbl_arr.size != times.size:
             raise ValueError(
-                f"labels length {len(labels)} != number of beats {cs.labels.size}"
+                f"labels length {lbl_arr.size} != number of beats {times.size}"
             )
-        cs.labels[:] = np.asarray(labels, dtype=object)
-    return cs
+        return Events(times, lbl_arr)
+    return Events(times, np.full(times.shape, "N", dtype=object))
 
 
 def make_spectral_cs(
@@ -64,27 +64,9 @@ def make_spectral_cs(
     mod_depth: float = 0.20,
     noise_std_rel: float = 0.005,
     seed: int = 42,
-) -> CardioSeries:
-    """Build a :class:`CardioSeries` whose IBI series carries a sinusoidal
+) -> Events:
+    """Build an :class:`Events` whose IBI series carries a sinusoidal
     modulation at *dominant_freq_hz* Hz.
-
-    The recording is approximately ``duration_s / mean_ibi_s`` beats — long
-    enough for reliable spectral estimation in the standard HRV bands.
-
-    Parameters
-    ----------
-    dominant_freq_hz : float
-        Target frequency (Hz) of the sinusoidal IBI modulation.
-    duration_s : float
-        Approximate total recording length, in seconds.
-    mean_ibi_s : float
-        Mean IBI in seconds (default 0.8 s ≈ 75 bpm).
-    mod_depth : float
-        Fractional modulation amplitude relative to ``mean_ibi_s``.
-    noise_std_rel : float
-        Additive white-noise floor as a fraction of ``mean_ibi_s``.
-    seed : int
-        Random-number seed for reproducibility.
     """
     rng = np.random.default_rng(seed)
     n_beats = int(duration_s / mean_ibi_s) + 1
@@ -96,9 +78,9 @@ def make_spectral_cs(
         * np.sin(2.0 * np.pi * dominant_freq_hz * approx_times[:-1])
         + noise
     )
-    ibi_s = np.clip(ibi_s, 0.3, 2.0)  # physiological bounds
+    ibi_s = np.clip(ibi_s, 0.3, 2.0)
     beat_times = np.concatenate([[0.0], np.cumsum(ibi_s)])
-    return CardioSeries(beat_times)
+    return Events(beat_times, np.full(beat_times.shape, "N", dtype=object))
 
 
 def make_two_sinusoid_cs(
@@ -110,33 +92,9 @@ def make_two_sinusoid_cs(
     mod_depth_each: float = 0.10,
     noise_std_rel: float = 0.005,
     seed: int = 42,
-) -> CardioSeries:
-    """Build a :class:`CardioSeries` whose IBI modulation is the *sum* of
+) -> Events:
+    """Build an :class:`Events` whose IBI modulation is the *sum* of
     two sinusoids at *freq_a_hz* and *freq_b_hz*.
-
-    The IBI series is
-
-        ``ibi(t) = mean + mod_depth · mean · [sin(2π·f_a·t) + sin(2π·f_b·t)] + noise``
-
-    so each tone contributes a fractional amplitude ``mod_depth_each``
-    of the mean IBI. Use it to verify that PSD estimators recover
-    *both* peaks simultaneously (e.g. LF + HF).
-
-    Parameters
-    ----------
-    freq_a_hz, freq_b_hz : float
-        Target frequencies (Hz) of the two sinusoidal IBI modulations.
-    duration_s : float
-        Approximate total recording length, in seconds. Defaults to
-        300 s — long enough to resolve the LF band cleanly.
-    mean_ibi_s : float
-        Mean IBI in seconds (default 0.8 s ≈ 75 bpm).
-    mod_depth_each : float
-        Fractional modulation amplitude per tone, relative to ``mean_ibi_s``.
-    noise_std_rel : float
-        Additive white-noise floor as a fraction of ``mean_ibi_s``.
-    seed : int
-        Random-number seed for reproducibility.
     """
     rng = np.random.default_rng(seed)
     n_beats = int(duration_s / mean_ibi_s) + 1
@@ -148,9 +106,9 @@ def make_two_sinusoid_cs(
         + mod_depth_each * mean_ibi_s * np.sin(2.0 * np.pi * freq_b_hz * approx_times[:-1])
         + noise
     )
-    ibi_s = np.clip(ibi_s, 0.3, 2.0)  # physiological bounds
+    ibi_s = np.clip(ibi_s, 0.3, 2.0)
     beat_times = np.concatenate([[0.0], np.cumsum(ibi_s)])
-    return CardioSeries(beat_times)
+    return Events(beat_times, np.full(beat_times.shape, "N", dtype=object))
 
 
 # ---------------------------------------------------------------------------
@@ -173,16 +131,11 @@ def default_method(workspace_bands):
 
 @pytest.fixture
 def typical_cs():
-    """A realistic ~200-second series with mild broadband HRV.
-
-    Pre-configured with the default ``PsdMethod`` so all frequency
-    metrics work out of the box.
-    """
+    """A realistic ~200-second series with mild broadband HRV."""
     rng = np.random.default_rng(7)
     ibi_ms = 800.0 + rng.normal(0.0, 30.0, 250)
     ibi_ms = np.clip(ibi_ms, 400.0, 1500.0)
-    cs = make_cs(ibi_ms)
-    return cs
+    return make_cs(ibi_ms)
 
 
 @pytest.fixture

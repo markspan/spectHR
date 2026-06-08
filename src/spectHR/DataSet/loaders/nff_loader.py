@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-from spectHR.DataSet.Series.TimeSeries import TimeSeries
+from spectHR.DataSet.loaders.registry import register_loader
 from spectHR.Tools.Logger import logger
 
 
@@ -206,103 +206,75 @@ class TNFF:
         return struct.unpack("<" + str(sweep_size) + "h", buf)
 
 
-def load_nff(physiodata, filename: Path) -> None:
-    """Read **every** channel from a ``.nff`` file into *physiodata*.
+def _load_nff_samples(path: Path) -> tuple[dict[str, "Samples"], dict[str, bool]]:
+    """Parse a .nff file and return ``(samples_dict, channel_calibrated_dict)``.
 
-    Each channel is attached as ``physiodata.timeseries[key]``, where
-    *key* is the channel label lowercased and stripped (e.g. ``"ecg"``,
-    ``"resp"``, ``"bp"``). Time normalisation (subtracting the global
-    earliest timestamp) is handled later by
-    ``PhysioData._normalize_times_and_build_epochs`` for everything in
-    ``timeseries``, so this loader stores absolute NFF timestamps and
-    must not shift them itself.
-
-    The band model is wired so ECG and RESP share the single ``"ecg"``
-    band: ``band_map["ecg"]["rsp"] = "resp"`` is the hook that lets
-    ``PhysioData.__getitem__("rsp")`` resolve to ``timeseries["resp"]``,
-    which ``preprocess_ecg`` then feeds to
-    ``RespirationSeries.from_timeseries``.
-
-    Parameters
-    ----------
-    physiodata : PhysioData
-    filename : Path
+    This is the low-level parser called by the EVT loader.  For standalone
+    NFF loading use :func:`load_nff_session`.
     """
-    logger.info(f"Loading NFF: {filename.name}")
+    from spectHR.session import Samples
+    logger.info(f"Loading NFF: {path.name}")
 
-    # Records, per timeseries key, whether the channel carried a usable
-    # per-channel calibration in its NFF header. Consumed by
-    # ``spectUI.preProcessFile.PreProcessFile`` so a manual calibration
-    # (workspace ``Calibration.bp_scale`` / ``bp_zero``) is applied only to
-    # channels the header left uncalibrated - mirroring CARSPAN's "when not
-    # already included in the header" rule (manual sec. 8.1.2 / p. 70).
-    physiodata.channel_calibrated = {}
+    samples: dict[str, Samples] = {}
+    calibrated: dict[str, bool] = {}
 
     nff = TNFF()
-    nff.open_file(filename)
+    nff.open_file(path)
     try:
         nff.read_nff_header()
-
-        # The recording start time lives in the 512-byte top header and is
-        # shared by every channel, so it is read once outside the loop.
         start_time = nff.get_start_time() / 1000.0
 
         for chan in range(1, nff.num_channels + 1):
             raw_label = nff.labels[chan - 1]
-            # Derive the timeseries key from the channel label. Fall back to
-            # a positional name when a channel carries no usable label so no
-            # channel is silently dropped.
             key = raw_label.lower().strip() or f"chan{chan}"
 
-            # ``get_interval`` loads this channel's 256-byte header (setting
-            # ``current_channel``) so the subsequent ``read_channel_data``
-            # reads the correct per-channel sample count.
             interval = nff.get_interval(chan)
             sample_rate = 1_000_000.0 / interval
 
             data = nff.read_channel_data(chan)
             timestamps = start_time + np.arange(len(data)) / sample_rate
 
-            # Apply the per-channel calibration so amplitude channels (BP,
-            # respiration, ...) come out in physical units (mmHg, V, ...)
-            # rather than raw int16 ADC counts. CARSPAN:
-            #   physical = (ScaleFactor x 1e6) x raw + ZeroLevel
-            # The 1e6 reproduces ``ChanInfo.ScaleFactor := GetScaleFactor x 1e6``
-            # (T_EventFile.pas:761). A zero / non-finite scale means the channel
-            # carries no usable calibration (the case for the bundled example
-            # recordings, whose header calibration fields are empty); we then
-            # leave the raw counts untouched instead of multiplying the signal
-            # away to zero. R-peak-derived metrics (IBI/HR) are unaffected
-            # either way because they come from event timing, not amplitude.
             values = data.astype(float)
             scale = nff.get_scale_factor(chan) * 1_000_000.0
-            zero = nff.get_zero_level(chan)
-            calibrated = np.isfinite(scale) and scale != 0.0
-            if calibrated:
+            zero  = nff.get_zero_level(chan)
+            is_calibrated = np.isfinite(scale) and scale != 0.0
+            if is_calibrated:
                 values = scale * values + zero
 
-            physiodata.channel_calibrated[key] = calibrated
-            physiodata.timeseries[key] = TimeSeries(timestamps, values)
+            calibrated[key] = is_calibrated
+            samples[key] = Samples(timestamps, values, name=key)
             logger.info(
                 f"NFF channel loaded: label='{raw_label}' → key='{key}', "
                 f"samples={len(data)}, fs={sample_rate:.2f} Hz, "
-                f"calibrated={calibrated}"
-                + (f" (scale={scale:.6g}, zero={zero:.6g})" if calibrated else "")
+                f"calibrated={is_calibrated}"
+                + (f" (scale={scale:.6g}, zero={zero:.6g})" if is_calibrated else "")
             )
     finally:
         nff.close_file()
 
-    # Wire the single-band model. Only one band exists for NFF (there is no
-    # per-device suffix as in the XDF/Polar case), so ECG and RESP are
-    # indexed under the same ``"ecg"`` band key. Mirrors the pattern in
-    # ``xdf_loader._index_polar_bands``.
-    band_streams: dict[str, str] = {}
-    if "ecg" in physiodata.timeseries:
-        band_streams["ecg"] = "ecg"
-    if "resp" in physiodata.timeseries:
-        # Key is the band role ``"rsp"``; value is the timeseries key ``"resp"``.
-        band_streams["rsp"] = "resp"
+    return samples, calibrated
 
-    physiodata.band_map = {"ecg": band_streams}
-    physiodata.active_band = "ecg"
-    physiodata.has_ecg = "ecg" in physiodata.timeseries
+
+@register_loader(".nff")
+def load_nff_session(path: Path, **kwargs) -> "Session":
+    """Load a standalone .nff file as a :class:`~spectHR.session.Session`.
+
+    The resulting session has no epochs or events; call
+    ``session.with_detected_beats()`` to detect R-peaks.
+    """
+    from spectHR.session import Session, Samples
+    from spectHR.DataSet.loaders._epochs import build_epochs
+    samples, _calibrated = _load_nff_samples(path)
+
+    # Normalize: shift times so the earliest channel starts at 0
+    if samples:
+        t_min = min(float(s.times[0]) for s in samples.values() if s.times.size)
+        samples = {k: Samples(s.times - t_min, s.values, s.name) for k, s in samples.items()}
+
+    t_start = 0.0
+    t_end = max(
+        (float(s.times[-1]) for s in samples.values() if s.times.size),
+        default=0.0,
+    )
+    epochs = build_epochs([], [], t_start=t_start, t_end=t_end)
+    return Session(name=path.stem, samples=samples, epochs=epochs)

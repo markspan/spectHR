@@ -135,10 +135,12 @@ class Samples:
 
     def filtered(self, *, filter_type: str, cutoff, order: int = 4) -> Samples:
         """Return a new ``Samples`` with band-pass / low-pass filtered values."""
-        from spectHR.DataSet.Series.TimeSeries import TimeSeries as _TS
-        ts = _TS(times=self.times.copy(), values=self.values.copy())
-        ts.filter(filter_type, cutoff, order, inplace=True)
-        return Samples(self.times, ts.values, self.name)
+        from spectHR.Tools.SignalProcessing import butterworth_filter
+        if self.srate is None:
+            raise ValueError("Cannot filter Samples with unknown sampling rate.")
+        filtered = butterworth_filter(self.values, self.srate,
+                                      filter_type=filter_type, cutoff=cutoff, order=order)
+        return Samples(self.times, filtered, self.name)
 
 
 # ---------------------------------------------------------------------------
@@ -196,21 +198,16 @@ class Events:
         Delegates to the existing peak-detector so all tuning parameters
         and artefact-classification logic are preserved.
         """
-        from spectHR.DataSet.Series.CardioSeries import CardioSeries
-        from spectHR.DataSet.Series.TimeSeries import TimeSeries as _TS
-        ts = _TS(
-            times=np.asarray(signal.times,  dtype=float),
-            values=np.asarray(signal.values, dtype=float),
-        )
-        cs = CardioSeries.from_timeseries(
-            ts,
-            min_peak_distance_ms=min_peak_distance_ms,
-            window_length=window_length,
-            n_std=n_std,
-            max_ibi_sec=max_ibi_sec,
-            classify=classify,
-        )
-        return cls(times=cs.times, labels=cs.labels)
+        from spectHR.Tools.RPeakDetection import detect_rpeaks
+        from spectHR.Tools.IbiClassification import classify_ibi as _classify_ibi
+
+        peak_times = detect_rpeaks(signal, min_peak_distance_ms=min_peak_distance_ms)
+        labels = np.full(peak_times.shape, "N", dtype=object)
+        if classify and peak_times.size > 1:
+            ibi = np.concatenate([np.diff(peak_times), [np.nan]])
+            _classify_ibi(ibi, labels,
+                          window_length=window_length, n_std=n_std, max_ibi_sec=max_ibi_sec)
+        return cls(times=peak_times, labels=labels)
 
     # --- zero-copy windowing and filtering ---
 
@@ -283,17 +280,13 @@ class Intervals:
         Uses the existing ``RespirationSeries`` detector.  *events* is the
         beat series used to set epoch boundaries for per-epoch segmentation.
         """
-        from spectHR.DataSet.Series.RespirationSeries import RespirationSeries
-        from spectHR.DataSet.Series.TimeSeries import TimeSeries as _TS
-        rsp_ts = _TS(
-            times=np.asarray(signal.times,  dtype=float),
-            values=np.asarray(signal.values, dtype=float),
-        )
-        rs = RespirationSeries.from_timeseries(rsp_ts, smooth_window=smooth_window)
+        from spectHR.Tools.RespirationSegmentation import segment_respiration
+
+        starts, ends, labels = segment_respiration(signal, smoothing_window=smooth_window)
         return cls(
-            starts=np.asarray(rs.starts, dtype=np.float64),
-            ends=np.asarray(rs.ends,     dtype=np.float64),
-            labels=np.asarray(rs.labels, dtype=object),
+            starts=np.asarray(starts, dtype=np.float64),
+            ends=np.asarray(ends,     dtype=np.float64),
+            labels=np.asarray(labels, dtype=object),
         )
 
     # --- zero-copy windowing and filtering ---

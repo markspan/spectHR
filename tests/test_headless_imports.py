@@ -34,7 +34,7 @@ HEADLESS_MODULES = [
     "spectHR",
     "spectHR.config",
     "spectHR.analysis",
-    "spectHR.DataSet.PhysioData",
+    "spectHR.DataSet",
     "spectHR.DataSet.loaders",
     "spectHR.DataSet.loaders.edf_loader",
     "spectHR.DataSet.loaders.evt_loader",

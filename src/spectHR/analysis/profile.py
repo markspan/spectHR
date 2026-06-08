@@ -234,6 +234,7 @@ def compute_band_power_profile(
     window_s: float,
     step_s: float,
     psd_method: Optional[PsdMethod] = None,
+    rsp_phases=None,
     adaptive_source: str = "respiration_channel",
     smooth_breath_freq: bool = False,
 ) -> ProfileResult:
@@ -247,14 +248,17 @@ def compute_band_power_profile(
     Parameters
     ----------
     series : CardioSeriesLike
-        Must expose ``.times``, ``.ibi``, ``.labels``, ``.view()``,
-        and optionally ``._pd`` (for respiration channel access).
+        Must expose ``.times``, ``.ibi``, ``.labels``, and ``.window()``.
     window_s : float
         Window length in seconds.
     step_s : float
         Step between successive windows in seconds.  Must be < ``window_s``.
     psd_method : PsdMethod, optional
         Explicit PSD configuration override.
+    rsp_phases : IntervalsLike, optional
+        Respiration phase intervals (INH/EXH) used when ``adaptive_source``
+        is ``"respiration_channel"``.  When provided, supersedes any
+        ``._pd.rsp_map`` back-reference on *series*.
     adaptive_source : {"respiration_channel", "psd_peak"}
         Where per-window breathing frequency comes from when an adaptive
         band is configured.
@@ -296,12 +300,15 @@ def compute_band_power_profile(
     )
 
     # Locate the respiration series once, before the window loop.
-    rsp_series = None
-    pd = getattr(series, "_pd", None)
-    if pd is not None:
-        rsp_map = getattr(pd, "rsp_map", None)
-        if rsp_map:
-            rsp_series = next(iter(rsp_map.values()))
+    # Explicit rsp_phases arg takes priority; fall back to the old
+    # ._pd.rsp_map back-reference for CardioSeries compatibility.
+    rsp_series = rsp_phases
+    if rsp_series is None:
+        pd = getattr(series, "_pd", None)
+        if pd is not None:
+            rsp_map = getattr(pd, "rsp_map", None)
+            if rsp_map:
+                rsp_series = next(iter(rsp_map.values()))
 
     if (
         has_adaptive_band

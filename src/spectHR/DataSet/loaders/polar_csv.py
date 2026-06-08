@@ -3,44 +3,34 @@
 from __future__ import annotations
 
 import csv
+from pathlib import Path
 
 import numpy as np
 
-from spectHR.DataSet.Series.TimeSeries import TimeSeries
-from spectHR.DataSet.Series.EventSeries import EventSeries
 from spectHR.DataSet.loaders.registry import register_loader
 from spectHR.Tools.Logger import logger
 
 
 @register_loader(".txt")
-def load_polar_raw_csv(
-    physiodata, filename: str, **kwargs
-) -> None:
-    """
-    Load raw Polar ECG CSV export.
+def load_polar_raw_csv(path: Path, **kwargs) -> "Session":
+    """Load a raw Polar ECG CSV export as a Session.
 
     Expected columns (semicolon-separated):
         - 'timestamp [ms]'
         - 'ecg [uV]'
-
-    Produces:
-        - One ECG TimeSeries
-        - One global EventSeries (start / stop)
-        - One implicit band
     """
+    from spectHR.session import Session, Samples
+    from spectHR.DataSet.loaders._epochs import build_epochs
 
-    logger.info(f"Loading Polar raw CSV: {filename}")
+    logger.info(f"Loading Polar raw CSV: {path}")
 
-    # ------------------------------------------------------------
-    # READ CSV
-    # ------------------------------------------------------------
     try:
-        with open(filename, newline="", encoding="utf-8") as f:
+        with open(path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f, delimiter=";")
             cols = reader.fieldnames or []
             rows = list(reader)
     except (IOError, OSError, UnicodeDecodeError, csv.Error) as exc:
-        raise IOError(f"Failed to read Polar CSV: {filename}") from exc
+        raise IOError(f"Failed to read Polar CSV: {path}") from exc
 
     if "ecg [uV]" not in cols or "timestamp [ms]" not in cols:
         raise ValueError("CSV does not look like a Polar raw ECG export")
@@ -48,30 +38,14 @@ def load_polar_raw_csv(
     times  = np.array([r["timestamp [ms]"] for r in rows], dtype=float) / 1000.0
     values = np.array([r["ecg [uV]"]       for r in rows], dtype=float)
 
-    physiodata.has_ecg = True
+    if times.size:
+        times = times - times[0]
 
-    # ------------------------------------------------------------
-    # TIMESERIES
-    # ------------------------------------------------------------
-    # Single implicit band
-    band_id = "polar_raw"
+    ecg_name = "ecg-[polar_raw]"
+    samples = {ecg_name: Samples(times, values, name=ecg_name)}
 
-    ecg_name = f"ecg-[{band_id}]"
-    physiodata.timeseries[ecg_name] = TimeSeries(times, values)
+    t_end = float(times[-1]) if times.size else 0.0
+    epochs = build_epochs([], [], t_start=0.0, t_end=t_end)
 
     logger.info(f"Loaded ECG → {ecg_name}")
-
-    # ------------------------------------------------------------
-    # EVENTS (global start / stop)
-    # ------------------------------------------------------------
-    ev_name = "markers"
-    physiodata.events[ev_name] = EventSeries(
-        times=np.array([times[0], times[-1]], dtype=float),
-        labels=["start experiment", "stop experiment"],
-    )
-
-    logger.info("Created global start/stop markers")
-
-    # ------------------------------------------------------------
-    # BAND MAP (same structure as XDF)
-    # ---------------------------------------------
+    return Session(name=Path(path).stem, samples=samples, epochs=epochs)

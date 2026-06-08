@@ -6,8 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 import numpy as np
 
-from spectHR.DataSet.Series.TimeSeries import TimeSeries
-from spectHR.DataSet.Series.EventSeries import EventSeries
+from spectHR.session import Session, Samples
+from spectHR.DataSet.loaders._epochs import build_epochs
 from spectHR.DataSet.loaders.registry import register_loader
 from spectHR.Tools.Logger import logger
 
@@ -287,7 +287,7 @@ def _vuams_label(code: str, cfg: dict[str, str]) -> str:
 # ---------------------------------------------------------------------------
 
 @register_loader(".edf")
-def load_edf(physiodata, filename: str, **kwargs) -> None:
+def load_edf(path: Path, **kwargs) -> Session:
     """
     Load a VU-AMS EDF / EDF+C export.
 
@@ -314,9 +314,9 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
     to ``"start <label>"`` / ``"stop <label>"`` events so spectHR's epoch
     builder can derive epochs automatically.
     """
-    logger.info(f"Loading EDF: {filename}")
+    logger.info(f"Loading EDF: {path}")
 
-    hdr, sigs, annotations = _read_edf_data(filename)
+    hdr, sigs, annotations = _read_edf_data(str(path))
     rec_dur = hdr["rec_dur"]
 
     def _timestamps(n_per_rec: int, total_samples: int) -> np.ndarray:
@@ -355,14 +355,15 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
     ecg_name = f"ecg-[{band_id}]"
     rsp_name = f"rsp-[{band_id}]"
 
+    samples: dict[str, Samples] = {}
+
     # ------------------------------------------------------------------
     # ECG
     # ------------------------------------------------------------------
     if ecg_sig is not None:
         n = len(ecg_sig["data"])
         times = _timestamps(ecg_sig["n_samples_per_rec"], n)
-        physiodata.timeseries[ecg_name] = TimeSeries(times, ecg_sig["data"].copy())
-        physiodata.has_ecg = True
+        samples[ecg_name] = Samples(times, ecg_sig["data"].copy(), name=ecg_name)
         fs_ecg = ecg_sig["n_samples_per_rec"] / rec_dur if rec_dur > 0 else 1000.0
         logger.info(f"Loaded ECG → {ecg_name}  ({n} samples @ {fs_ecg:.0f} Hz)")
 
@@ -394,7 +395,7 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
     if icg_sig is not None:
         n = len(icg_sig["data"])
         times = _timestamps(icg_sig["n_samples_per_rec"], n)
-        physiodata.timeseries[rsp_icg_name] = TimeSeries(times, icg_sig["data"].copy())
+        samples[rsp_icg_name] = Samples(times, icg_sig["data"].copy(), name=rsp_icg_name)
 
     # Accelerometer-PCA candidate.
     if all(k in acc_sigs for k in ("mxr", "myr", "mzr")):
@@ -406,15 +407,15 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
             fs = n_per_rec / rec_dur if rec_dur > 0 else 1000.0
             rsp_signal = _acc_to_rsp(acc_mat, fs)
             times = _timestamps(n_per_rec, n_common)
-            physiodata.timeseries[rsp_acc_name] = TimeSeries(times, rsp_signal)
+            samples[rsp_acc_name] = Samples(times, rsp_signal, name=rsp_acc_name)
         except Exception as exc:
             logger.warning(f"ACC→RSP failed: {exc}")
 
     # Pick the active respiration channel.  The kwarg overrides the default;
     # "accelerometer" only wins when that candidate was actually built.
     requested = str(kwargs.get("rsp_source", "icg")).lower()
-    icg_ts = physiodata.timeseries.get(rsp_icg_name)
-    acc_ts = physiodata.timeseries.get(rsp_acc_name)
+    icg_ts = samples.get(rsp_icg_name)
+    acc_ts = samples.get(rsp_acc_name)
 
     chosen, chosen_lbl = None, ""
     if requested == "accelerometer" and acc_ts is not None:
@@ -425,8 +426,8 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
         chosen, chosen_lbl = acc_ts, "accelerometer-PCA (no ICG channel)"
 
     if chosen is not None:
-        physiodata.timeseries[rsp_name] = TimeSeries(
-            chosen.times.copy(), chosen.values.copy()
+        samples[rsp_name] = Samples(
+            chosen.times.copy(), chosen.values.copy(), name=rsp_name
         )
         logger.info(
             f"Loaded RSP ({chosen_lbl}) → {rsp_name}  ({chosen.times.size} samples)"
@@ -441,34 +442,37 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
         (z0_sig,   f"z0-[{band_id}]"),
     ]
     for sig, ts_name in _raw_map:
-        if sig is not None and ts_name not in physiodata.timeseries:
+        if sig is not None and ts_name not in samples:
             n = len(sig["data"])
             times = _timestamps(sig["n_samples_per_rec"], n)
-            physiodata.timeseries[ts_name] = TimeSeries(times, sig["data"].copy())
+            samples[ts_name] = Samples(times, sig["data"].copy(), name=ts_name)
             logger.debug(f"Stored auxiliary → {ts_name}")
 
     for key, sig in acc_sigs.items():
         ts_name = f"{key}-[{band_id}]"
-        if ts_name not in physiodata.timeseries:
+        if ts_name not in samples:
             n = len(sig["data"])
             times = _timestamps(sig["n_samples_per_rec"], n)
-            physiodata.timeseries[ts_name] = TimeSeries(times, sig["data"].copy())
+            samples[ts_name] = Samples(times, sig["data"].copy(), name=ts_name)
             logger.debug(f"Stored auxiliary → {ts_name}")
 
     for sig in aux_sigs:
         ts_name = f"{sig['label'].lower()}-[{band_id}]"
         n = len(sig["data"])
         times = _timestamps(sig["n_samples_per_rec"], n)
-        physiodata.timeseries[ts_name] = TimeSeries(times, sig["data"].copy())
+        samples[ts_name] = Samples(times, sig["data"].copy(), name=ts_name)
         logger.debug(f"Stored auxiliary → {ts_name}")
 
     # ------------------------------------------------------------------
-    # EDF+C annotations → EventSeries
+    # EDF+C annotations → marker lists for epoch building
     # Duration-based annotations become start/stop epoch pairs so that
     # spectHR's epoch builder can derive epochs automatically.
     # A VU-AMS .cfg file (same dir) maps numeric codes to readable labels.
     # ------------------------------------------------------------------
-    cfg = _load_vuams_cfg(filename)
+    cfg = _load_vuams_cfg(str(path))
+
+    marker_times: list[float] = []
+    marker_labels: list[str] = []
 
     if annotations:
         ev_times:  list[float] = []
@@ -486,33 +490,27 @@ def load_edf(physiodata, filename: str, **kwargs) -> None:
                 ev_labels.append(label)
 
         sort_order = np.argsort(ev_times)
-        ev_times_arr  = np.array(ev_times, dtype=float)[sort_order]
-        ev_labels_arr = [ev_labels[i] for i in sort_order]
-        physiodata.events["annotations"] = EventSeries(ev_times_arr, ev_labels_arr)
-        logger.info(f"Loaded {len(annotations)} EDF annotations → {len(ev_times_arr)} events")
+        marker_times  = [ev_times[i] for i in sort_order]
+        marker_labels = [ev_labels[i] for i in sort_order]
+        logger.info(f"Loaded {len(annotations)} EDF annotations → {len(marker_times)} events")
 
     # Fallback global start/stop so there is always at least one epoch
-    if "annotations" not in physiodata.events and physiodata.timeseries:
-        ref_ts = next(iter(physiodata.timeseries.values()))
-        t0 = float(ref_ts.times[0])
-        t1 = float(ref_ts.times[-1])
-        physiodata.events["markers"] = EventSeries(
-            times=np.array([t0, t1], dtype=float),
-            labels=["start experiment", "stop experiment"],
-        )
+    if not annotations and samples:
+        ref_s = next(iter(samples.values()))
+        if ref_s.times.size:
+            marker_times  = [float(ref_s.times[0]), float(ref_s.times[-1])]
+            marker_labels = ["start experiment", "stop experiment"]
 
     # ------------------------------------------------------------------
-    # Band map
+    # Normalize so t=0 is the start of the earliest channel
     # ------------------------------------------------------------------
-    band: dict[str, str] = {}
-    if ecg_name in physiodata.timeseries:
-        band["ecg"] = ecg_name
-    if rsp_name in physiodata.timeseries:
-        band["rsp"] = rsp_name
+    if samples:
+        t_min = min(float(s.times[0]) for s in samples.values() if s.times.size)
+        if t_min != 0.0:
+            samples = {k: Samples(s.times - t_min, s.values, s.name) for k, s in samples.items()}
+            marker_times = [t - t_min for t in marker_times]
 
-    if band:
-        physiodata.band_map    = {band_id: band}
-        physiodata.active_band = band_id
-        logger.info(f"Band map: {physiodata.band_map}")
-    else:
-        logger.warning("EDF loader: no ECG or RSP channel found; band_map is empty")
+    t_start = 0.0
+    t_end = max((float(s.times[-1]) for s in samples.values() if s.times.size), default=0.0)
+    epochs = build_epochs(marker_times, marker_labels, t_start=t_start, t_end=t_end)
+    return Session(name=Path(path).stem, samples=samples, epochs=epochs)
