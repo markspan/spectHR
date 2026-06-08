@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
         # View > Layout (perspectives)
         view_menu = mb.addMenu("&View")
         self._perspective_menu = PerspectiveMenu(
-            view_menu.addMenu("&Layout"), self._dock_manager
+            self, self._dock_manager, view_menu.addMenu("&Layout")
         )
 
     def _setup_toolbar(self) -> None:
