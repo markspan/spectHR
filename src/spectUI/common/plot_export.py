@@ -21,7 +21,7 @@ PlotExportMixin
     * ``self._labels``         -- list[str] of epoch / subplot titles.
     * ``self._subplots``       -- list of subplot objects with ``.canvas``.
     * ``self._series_list``    -- list of series objects (for dataset name).
-    * ``self._workspace``      -- workspace dict or None.
+    * ``self._workspace``      -- :class:`~spectUI.workspace.Workspace` or None.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from typing import Optional, Dict, Any
 
 from spectHR.Tools.Logger import logger
 from spectUI.common.uitools import show_export_summary
-from spectUI.workSpace import get_export_dir
+from spectUI.settings import AppSettings
 
 _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
@@ -90,7 +90,7 @@ class PlotExportMixin:
         show_export_summary(self, context=ctx, summary=summary, failures=failures)
 
     def _resolve_export_dir(self) -> Path:
-        return get_export_dir(self._workspace, context=self._export_context)
+        return AppSettings().export_dir(context=self._export_context)
 
     def _dataset_prefix(self) -> str:
         for series in self._series_list:
