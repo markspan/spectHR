@@ -196,16 +196,16 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_menu_and_toolbar(self) -> None:
-        self._open_act     = self._action("fa5s.folder-open",      "&Open workspace…",      self.open_workspace,          "Ctrl+O")
-        self._edit_act     = self._action("fa5s.edit",             "&Edit workspace…",      self.edit_workspace,          "Ctrl+E")
-        self._save_act     = self._action("fa5s.save",             "&Save workspace",       self.save_workspace,          "Ctrl+S")
-        self._settings_act = self._action("fa5s.cog",              "Directory &settings…",  self.open_directory_settings, "Ctrl+Shift+S")
+        self._open_act     = self._action("fa5s.cog",               "&Open settings…",       self.open_workspace,          "Ctrl+O")
+        self._edit_act     = self._action("fa5s.edit",             "&Edit settings…",       self.edit_workspace,          "Ctrl+E")
+        self._save_act     = self._action("fa5s.save",             "&Save settings",        self.save_workspace,          "Ctrl+S")
+        self._settings_act = self._action("fa5s.folder-open",      "Directory &settings…",  self.open_directory_settings, "Ctrl+Shift+S")
         self._doc_act      = self._action("fa5s.question-circle",  "&Documentation",        self._open_docs,              "Ctrl+D")
         self._add_epoch_act= self._action("fa5s.plus-circle",      "Add &Epoch",            lambda: None,                 "Ctrl+N")
         self._add_epoch_act.setEnabled(False)
 
-        # ---- WorkSpace menu ----
-        ws_menu = self.menuBar().addMenu("&WorkSpace")
+        # ---- Settings menu ----
+        ws_menu = self.menuBar().addMenu("&Settings")
         ws_menu.addAction(self._open_act)
         ws_menu.addSeparator()
         ws_menu.addAction(self._edit_act)
@@ -244,6 +244,7 @@ class MainWindow(QMainWindow):
 
         # Edit + Save stacked (half-height)
         pair = QWidget()
+        pair.setStyleSheet("background: transparent;")
         vbox = QVBoxLayout(pair)
         vbox.setContentsMargins(2, 2, 2, 2)
         vbox.setSpacing(0)
@@ -253,6 +254,7 @@ class MainWindow(QMainWindow):
             btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
             btn.setIconSize(QSize(16, 16))
             btn.setText(label)
+            btn.setStyleSheet("QToolButton { background: transparent; }")
             vbox.addWidget(btn)
         tb.addWidget(pair)
         tb.addSeparator()
