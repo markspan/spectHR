@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6QtAds import CDockManager, CDockWidget, DockWidgetArea
 
+from spectHR._version import __version__
 from spectHR.Tools.Logger import logger
 from spectHR.session import Session
 
@@ -125,7 +126,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("spectHR")
+        self.setWindowTitle(f"spectHR  v{__version__}")
         self.resize(1400, 900)
 
         CDockManager.setConfigFlag(CDockManager.OpaqueSplitterResize,  True)
