@@ -5,35 +5,28 @@ spectUI main window.
 
 Dock layout
 -----------
-Left:   workspace file browser (QTreeWidget)
-Center: 12 tabified plot docks (placeholders until widgets are built)
-Bottom: log output (hidden by default)
+Left:   workspace file browser (QTreeWidget).
+Center: 12 tabified plot docks (placeholders until widgets are built).
+Bottom: log output (:class:`~spectUI.widgets.log_widget.LogWidget`,
+        hidden by default).
 
-Workspace callbacks
--------------------
-Only directory configuration is wired for now:
-  * Open / Save workspace  — JSON file I/O
-  * Settings               — DirectorySelectorDialog (DataDirectory /
-                             CacheDirectory / OutputDirectory)
-
-All plot-dock refresh callbacks are stubs; they will be connected as each
-widget is implemented.
+Only workspace I/O and directory settings are wired.
+Plot-dock callbacks are stubs pending widget implementation.
 """
 from __future__ import annotations
 
-import logging
 import sys
 from pathlib import Path
 
 import qtawesome as qta
-from PySide6.QtCore import Qt, QSettings, QSize
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
-    QPlainTextEdit,
     QToolButton,
     QTreeWidget,
     QVBoxLayout,
@@ -42,7 +35,6 @@ from PySide6.QtWidgets import (
 from PySide6QtAds import CDockManager, CDockWidget, DockWidgetArea
 
 from spectHR.Tools.Logger import logger
-from spectHR.config import WorkspaceView, log_level_from_workspace
 from spectHR.session import Session
 
 from spectUI.perspectives import (
@@ -52,74 +44,76 @@ from spectUI.perspectives import (
     PerspectiveMenu,
 )
 from spectUI.plot_worker import DockScheduler
+from spectUI.settings import AppSettings
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
-from spectUI.workSpace import (
-    PopulateTree,
-    default_workspace,
-    get_export_dir,
-    load_workspace,
-    save_workspace,
-)
+from spectUI.widgets.log_widget import LogWidget
+from spectUI.workspace import Workspace, populate_tree
 
 # ---------------------------------------------------------------------------
 # Dock object-name constants
 # ---------------------------------------------------------------------------
 
-_DOCK_WORKSPACE      = "dock.workspace"
-_DOCK_PREPROCESSING  = "dock.preprocessing"
-_DOCK_IBI            = "dock.ibi"
-_DOCK_BP             = "dock.bp"
-_DOCK_POINCARE       = "dock.poincare"
-_DOCK_EPOCHS         = "dock.epochs"
-_DOCK_PSD            = "dock.psd"
-_DOCK_SPECTROGRAM    = "dock.spectrogram"
-_DOCK_SPECTROGRAM3D  = "dock.spectrogram3d"
-_DOCK_TRANSFER       = "dock.transfer"
-_DOCK_TRANSFERPROFILE= "dock.transferprofile"
-_DOCK_PROFILES       = "dock.profiles"
-_DOCK_PARAMETERS     = "dock.parameters"
-_DOCK_LOG            = "dock.log"
+_DOCK_WORKSPACE       = "dock.workspace"
+_DOCK_PREPROCESSING   = "dock.preprocessing"
+_DOCK_IBI             = "dock.ibi"
+_DOCK_BP              = "dock.bp"
+_DOCK_POINCARE        = "dock.poincare"
+_DOCK_EPOCHS          = "dock.epochs"
+_DOCK_PSD             = "dock.psd"
+_DOCK_SPECTROGRAM     = "dock.spectrogram"
+_DOCK_SPECTROGRAM3D   = "dock.spectrogram3d"
+_DOCK_TRANSFER        = "dock.transfer"
+_DOCK_TRANSFERPROFILE = "dock.transferprofile"
+_DOCK_PROFILES        = "dock.profiles"
+_DOCK_PARAMETERS      = "dock.parameters"
+_DOCK_LOG             = "dock.log"
+
+_CENTRE_DOCKS: tuple[tuple[str, str], ...] = (
+    (_DOCK_PREPROCESSING,   "Preprocessing"),
+    (_DOCK_IBI,             "HR Series"),
+    (_DOCK_BP,              "Blood Pressure"),
+    (_DOCK_POINCARE,        "Poincaré"),
+    (_DOCK_EPOCHS,          "Epochs"),
+    (_DOCK_PSD,             "PSD"),
+    (_DOCK_SPECTROGRAM,     "Spectrogram"),
+    (_DOCK_SPECTROGRAM3D,   "Spectrogram 3D"),
+    (_DOCK_TRANSFER,        "Transfer"),
+    (_DOCK_TRANSFERPROFILE, "Transfer Profile"),
+    (_DOCK_PROFILES,        "Profiles"),
+    (_DOCK_PARAMETERS,      "Parameters"),
+)
+
+_VIEW_LABELS: dict[str, str] = {
+    _DOCK_WORKSPACE:       "Workspace",
+    _DOCK_PREPROCESSING:   "Preprocessing",
+    _DOCK_IBI:             "HR Series",
+    _DOCK_BP:              "Blood Pressure",
+    _DOCK_POINCARE:        "Poincaré",
+    _DOCK_EPOCHS:          "Epochs",
+    _DOCK_PSD:             "PSD",
+    _DOCK_SPECTROGRAM:     "Spectrogram",
+    _DOCK_SPECTROGRAM3D:   "Spectrogram 3D",
+    _DOCK_TRANSFER:        "Transfer",
+    _DOCK_TRANSFERPROFILE: "Transfer Profile",
+    _DOCK_PROFILES:        "Profiles",
+    _DOCK_PARAMETERS:      "Parameters",
+    _DOCK_LOG:             "Log",
+}
 
 
 # ---------------------------------------------------------------------------
-# Placeholder widget
+# Placeholder
 # ---------------------------------------------------------------------------
 
 class _Placeholder(QWidget):
-    """Greyed-out dock filler shown while the real widget is not yet built."""
-
     def __init__(self, name: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        layout = QVBoxLayout(self)
         lbl = QLabel(name)
         lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet("color: #aaa; font-size: 16pt;")
+        lbl.setStyleSheet("color:#bbb; font-size:16pt;")
+        layout = QVBoxLayout(self)
         layout.addWidget(lbl)
-        self.setStyleSheet("background: #f8f8f8;")
-
-
-# ---------------------------------------------------------------------------
-# Qt log handler
-# ---------------------------------------------------------------------------
-
-class _QtLogHandler(logging.Handler):
-    """Append log records to a QPlainTextEdit, thread-safe via invokeMethod."""
-
-    def __init__(self, widget: QPlainTextEdit) -> None:
-        super().__init__()
-        self._widget = widget
-        self.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-
-    def emit(self, record: logging.LogRecord) -> None:
-        msg = self.format(record)
-        # Qt widgets must only be touched from the main thread; use a
-        # queued invocation so worker-thread log calls are safe.
-        self._widget.metaObject().invokeMethod(
-            self._widget,
-            "appendPlainText",
-            Qt.QueuedConnection,
-            msg,
-        )
+        self.setStyleSheet("background:#f8f8f8;")
 
 
 # ---------------------------------------------------------------------------
@@ -129,66 +123,45 @@ class _QtLogHandler(logging.Handler):
 class MainWindow(QMainWindow):
     """Application main window."""
 
-    _ORG = "spectHR"
-    _APP = "spectHR"
-
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("spectHR")
         self.resize(1400, 900)
 
-        CDockManager.setConfigFlag(CDockManager.OpaqueSplitterResize,   True)
-        CDockManager.setConfigFlag(CDockManager.XmlCompressionEnabled,  False)
+        CDockManager.setConfigFlag(CDockManager.OpaqueSplitterResize,  True)
+        CDockManager.setConfigFlag(CDockManager.XmlCompressionEnabled, False)
         CDockManager.setAutoHideConfigFlags(CDockManager.DefaultAutoHideConfig)
 
-        self._dock_manager   = CDockManager(self)
-        self._scheduler      = DockScheduler()
-        self._session: Session | None = None
-        self._workspace: dict = default_workspace()
+        self._dock_manager    = CDockManager(self)
+        self._scheduler       = DockScheduler()
+        self._settings        = AppSettings()
+        self._workspace       = Workspace.default()
         self._workspace_path: Path | None = None
+        self._session: Session | None     = None
 
-        # dock name → CDockWidget (built in _build_docks)
         self._docks: dict[str, CDockWidget] = {}
 
         self._build_docks()
-        self._build_menubar()
+        self._build_menu_and_toolbar()
         self._capture_builtin_perspectives()
-        self._restore_session()
-        self._apply_log_level()
+        self._restore()
 
     # ------------------------------------------------------------------
     # Dock construction
     # ------------------------------------------------------------------
 
     def _build_docks(self) -> None:
-        """Create all 14 CDockWidgets and add them to the manager."""
-
-        # --- Workspace file browser (left) ---
+        # Left: workspace file browser
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.itemDoubleClicked.connect(self._on_file_activated)
-        ws_dock = self._make_dock(_DOCK_WORKSPACE, "Workspace", self._tree)
-        self._dock_manager.addDockWidget(DockWidgetArea.LeftDockWidgetArea, ws_dock)
+        self._add_dock(_DOCK_WORKSPACE, "Workspace", self._tree,
+                       DockWidgetArea.LeftDockWidgetArea)
 
-        # --- Centre tabified plot docks ---
-        centre_docks = [
-            (_DOCK_PREPROCESSING,   "Preprocessing"),
-            (_DOCK_IBI,             "HR Series"),
-            (_DOCK_BP,              "Blood Pressure"),
-            (_DOCK_POINCARE,        "Poincaré"),
-            (_DOCK_EPOCHS,          "Epochs"),
-            (_DOCK_PSD,             "PSD"),
-            (_DOCK_SPECTROGRAM,     "Spectrogram"),
-            (_DOCK_SPECTROGRAM3D,   "Spectrogram 3D"),
-            (_DOCK_TRANSFER,        "Transfer"),
-            (_DOCK_TRANSFERPROFILE, "Transfer Profile"),
-            (_DOCK_PROFILES,        "Profiles"),
-            (_DOCK_PARAMETERS,      "Parameters"),
-        ]
+        # Centre: tabified plot placeholders
         reference_area = None
-        for obj_name, title in centre_docks:
-            widget = _Placeholder(title)
-            dock   = self._make_dock(obj_name, title, widget)
+        for obj_name, title in _CENTRE_DOCKS:
+            dock = self._add_dock(obj_name, title, _Placeholder(title))
             if reference_area is None:
                 self._dock_manager.addDockWidget(
                     DockWidgetArea.CenterDockWidgetArea, dock
@@ -197,76 +170,68 @@ class MainWindow(QMainWindow):
             else:
                 self._dock_manager.addDockWidgetTabToArea(dock, reference_area)
 
-        # --- Log dock (bottom, hidden by default) ---
-        self._log_widget = QPlainTextEdit()
-        self._log_widget.setReadOnly(True)
-        self._log_widget.setMaximumBlockCount(2000)
-        log_dock = self._make_dock(_DOCK_LOG, "Log", self._log_widget)
-        self._dock_manager.addDockWidget(DockWidgetArea.BottomDockWidgetArea, log_dock)
+        # Bottom: log (hidden by default)
+        self._log_widget = LogWidget()
+        log_dock = self._add_dock(_DOCK_LOG, "Log", self._log_widget,
+                                  DockWidgetArea.BottomDockWidgetArea)
         log_dock.toggleView(False)
 
-        # Wire Python logging → log dock
-        handler = _QtLogHandler(self._log_widget)
-        logging.getLogger("spectHR").addHandler(handler)
-
-    def _make_dock(self, obj_name: str, title: str, widget: QWidget) -> CDockWidget:
+    def _add_dock(
+        self,
+        obj_name: str,
+        title:    str,
+        widget:   QWidget,
+        area:     DockWidgetArea | None = None,
+    ) -> CDockWidget:
         dock = CDockWidget(title)
         dock.setObjectName(obj_name)
         dock.setWidget(widget)
         self._docks[obj_name] = dock
+        if area is not None:
+            self._dock_manager.addDockWidget(area, dock)
         return dock
 
     # ------------------------------------------------------------------
-    # Menu bar and toolbar
+    # Menu bar + toolbar
     # ------------------------------------------------------------------
 
-    def _build_menubar(self) -> None:
-        mb = self.menuBar()
+    def _build_menu_and_toolbar(self) -> None:
+        self._open_act     = self._action("fa5s.folder-open",      "&Open workspace…",      self.open_workspace,          "Ctrl+O")
+        self._edit_act     = self._action("fa5s.edit",             "&Edit workspace…",      self.edit_workspace,          "Ctrl+E")
+        self._save_act     = self._action("fa5s.save",             "&Save workspace",       self.save_workspace,          "Ctrl+S")
+        self._settings_act = self._action("fa5s.cog",              "Directory &settings…",  self.open_directory_settings, "Ctrl+Shift+S")
+        self._doc_act      = self._action("fa5s.question-circle",  "&Documentation",        self._open_docs,              "Ctrl+D")
+        self._add_epoch_act= self._action("fa5s.plus-circle",      "Add &Epoch",            lambda: None,                 "Ctrl+N")
+        self._add_epoch_act.setEnabled(False)
 
         # ---- WorkSpace menu ----
-        ws_menu = mb.addMenu("&WorkSpace")
-
-        self._open_act = QAction(qta.icon("fa5s.folder-open"), "&Open workspace…", self)
-        self._open_act.setShortcut(QKeySequence("Ctrl+O"))
-        self._open_act.triggered.connect(self.open_workspace)
+        ws_menu = self.menuBar().addMenu("&WorkSpace")
         ws_menu.addAction(self._open_act)
-
         ws_menu.addSeparator()
-
-        self._edit_act = QAction(qta.icon("fa5s.edit"), "&Edit workspace…", self)
-        self._edit_act.setShortcut(QKeySequence("Ctrl+E"))
-        self._edit_act.triggered.connect(self.edit_workspace)
         ws_menu.addAction(self._edit_act)
-
-        self._save_act = QAction(qta.icon("fa5s.save"), "&Save workspace", self)
-        self._save_act.setShortcut(QKeySequence("Ctrl+S"))
-        self._save_act.triggered.connect(self.save_current_workspace)
         ws_menu.addAction(self._save_act)
-
         ws_menu.addSeparator()
-
-        self._settings_act = QAction(qta.icon("fa5s.cog"), "Directory &settings…", self)
-        self._settings_act.setShortcut(QKeySequence("Ctrl+Shift+S"))
-        self._settings_act.triggered.connect(self.open_directory_settings)
         ws_menu.addAction(self._settings_act)
-
         ws_menu.addSeparator()
-
-        quit_act = QAction("&Quit", self)
-        quit_act.setShortcut(QKeySequence("Ctrl+Q"))
+        quit_act = QAction("&Quit", self, shortcut=QKeySequence("Ctrl+Q"))
         quit_act.triggered.connect(QApplication.quit)
         ws_menu.addAction(quit_act)
 
         # ---- View menu ----
-        view_menu = mb.addMenu("&View")
-        self._wire_view_menu(view_menu)
+        view_menu = self.menuBar().addMenu("&View")
+        for obj_name, label in _VIEW_LABELS.items():
+            dock = self._docks.get(obj_name)
+            if dock:
+                act = dock.toggleViewAction()
+                act.setText(label)
+                view_menu.addAction(act)
+        view_menu.addSeparator()
+        self._perspective_menu = PerspectiveMenu(
+            self, self._dock_manager, view_menu.addMenu("&Layout")
+        )
 
         # ---- Help menu ----
-        help_menu = mb.addMenu("&Help")
-        self._doc_act = QAction(qta.icon("fa5s.question-circle"), "&Documentation", self)
-        self._doc_act.setShortcut(QKeySequence("Ctrl+D"))
-        self._doc_act.triggered.connect(self._open_docs)
-        help_menu.addAction(self._doc_act)
+        self.menuBar().addMenu("&Help").addAction(self._doc_act)
 
         # ---- Toolbar ----
         tb = self.addToolBar("Main")
@@ -275,85 +240,49 @@ class MainWindow(QMainWindow):
         tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         tb.setIconSize(QSize(20, 20))
 
-        # Open workspace — addAction() creates a QToolButton that respects setToolButtonStyle
         tb.addAction(self._open_act)
 
-        # Edit + Save stacked pair — QToolButton so we can set text explicitly
+        # Edit + Save stacked (half-height)
         pair = QWidget()
-        pair_layout = QVBoxLayout(pair)
-        pair_layout.setContentsMargins(2, 2, 2, 2)
-        pair_layout.setSpacing(0)
-        for act, label in (
-            (self._edit_act, "Edit"),
-            (self._save_act, "Save"),
-        ):
+        vbox = QVBoxLayout(pair)
+        vbox.setContentsMargins(2, 2, 2, 2)
+        vbox.setSpacing(0)
+        for act, label in ((self._edit_act, "Edit"), (self._save_act, "Save")):
             btn = QToolButton()
             btn.setDefaultAction(act)
             btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
             btn.setIconSize(QSize(16, 16))
             btn.setText(label)
-            pair_layout.addWidget(btn)
+            vbox.addWidget(btn)
         tb.addWidget(pair)
         tb.addSeparator()
 
-        # Directory settings
         tb.addAction(self._settings_act)
         tb.addSeparator()
-
-        # Add epoch (placeholder — no callback yet)
-        self._add_epoch_act = QAction(
-            qta.icon("fa5s.plus-circle"), "Add Epoch", self
-        )
-        self._add_epoch_act.setShortcut(QKeySequence("Ctrl+N"))
-        self._add_epoch_act.setEnabled(False)
         tb.addAction(self._add_epoch_act)
         tb.addSeparator()
-
-        # Documentation
         tb.addAction(self._doc_act)
 
-    def _wire_view_menu(self, view_menu) -> None:
-        """Add per-dock toggle actions and the Layout submenu."""
-        # Individual dock visibility toggles
-        display_names = {
-            _DOCK_WORKSPACE:      "Workspace",
-            _DOCK_PREPROCESSING:  "Preprocessing",
-            _DOCK_IBI:            "HR Series",
-            _DOCK_BP:             "Blood Pressure",
-            _DOCK_POINCARE:       "Poincaré",
-            _DOCK_EPOCHS:         "Epochs",
-            _DOCK_PSD:            "PSD",
-            _DOCK_SPECTROGRAM:    "Spectrogram",
-            _DOCK_SPECTROGRAM3D:  "Spectrogram 3D",
-            _DOCK_TRANSFER:       "Transfer",
-            _DOCK_TRANSFERPROFILE:"Transfer Profile",
-            _DOCK_PROFILES:       "Profiles",
-            _DOCK_PARAMETERS:     "Parameters",
-            _DOCK_LOG:            "Log",
-        }
-        for obj_name, label in display_names.items():
-            dock = self._docks.get(obj_name)
-            if dock is None:
-                continue
-            act = dock.toggleViewAction()
-            act.setText(label)
-            view_menu.addAction(act)
-
-        view_menu.addSeparator()
-
-        self._perspective_menu = PerspectiveMenu(
-            self, self._dock_manager, view_menu.addMenu("&Layout")
-        )
+    def _action(
+        self,
+        icon:     str,
+        text:     str,
+        slot,
+        shortcut: str | None = None,
+    ) -> QAction:
+        act = QAction(qta.icon(icon), text, self)
+        if shortcut:
+            act.setShortcut(QKeySequence(shortcut))
+        act.triggered.connect(slot)
+        return act
 
     # ------------------------------------------------------------------
     # Built-in perspectives
     # ------------------------------------------------------------------
 
     def _capture_builtin_perspectives(self) -> None:
-        """Snapshot the three factory layouts after all docks are placed."""
         self._dock_manager.addPerspective(BUILTIN_DEFAULT)
 
-        # Compare: Epochs dock moves to a bottom split
         epochs = self._docks.get(_DOCK_EPOCHS)
         if epochs:
             self._dock_manager.addDockWidget(
@@ -361,11 +290,8 @@ class MainWindow(QMainWindow):
             )
         self._dock_manager.addPerspective(BUILTIN_COMPARE)
 
-        # Restore default before PSD Focus snapshot
         self._dock_manager.openPerspective(BUILTIN_DEFAULT)
         self._dock_manager.addPerspective(BUILTIN_PSDFOCUS)
-
-        # Leave the default active
         self._dock_manager.openPerspective(BUILTIN_DEFAULT)
 
     # ------------------------------------------------------------------
@@ -373,116 +299,93 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def open_workspace(self) -> None:
-        from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open workspace",
-            str(self._workspace.get("Directories", {}).get("DataDirectory", Path.home())),
+            self, "Open workspace", str(self._settings.data_dir),
             "Workspace (*.json);;All files (*)",
         )
         if not path:
             return
         try:
-            self._workspace      = load_workspace(path)
+            self._workspace      = Workspace.load(path)
             self._workspace_path = Path(path)
         except Exception as exc:
             QMessageBox.critical(self, "Workspace error", str(exc))
             return
         self._on_workspace_changed()
 
-    def save_current_workspace(self) -> None:
+    def save_workspace(self) -> None:
         if self._workspace_path is None:
             self._save_workspace_as()
         else:
-            save_workspace(self._workspace, self._workspace_path)
+            self._workspace.save(self._workspace_path)
 
     def _save_workspace_as(self) -> None:
-        from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save workspace", str(Path.home()), "Workspace (*.json)"
+            self, "Save workspace", str(self._settings.data_dir),
+            "Workspace (*.json)",
         )
         if not path:
             return
         self._workspace_path = Path(path)
-        save_workspace(self._workspace, self._workspace_path)
+        self._workspace.save(self._workspace_path)
 
     def edit_workspace(self) -> None:
-        """Open the full parameters editor (all workspace sections)."""
-        dlg = ParametersEditorDialog(self._workspace, self)
+        dlg = ParametersEditorDialog(self._workspace.to_dict(), self)
         if dlg.exec():
-            self._workspace = dlg.get_parameters(self._workspace)
-            self._on_workspace_changed()
-
-    def open_directory_settings(self) -> None:
-        """Open the directory-only settings dialog."""
-        dirs = dict(self._workspace.get("Directories", {}))
-        dlg  = DirectorySelectorDialog(dirs, self)
-        if dlg.exec():
-            self._workspace.setdefault("Directories", {}).update(
-                dlg.get_directories()
+            self._workspace = Workspace.from_dict(
+                dlg.get_parameters(self._workspace.to_dict())
             )
             self._on_workspace_changed()
 
-    def _on_workspace_changed(self) -> None:
-        """Called after any workspace modification."""
-        self._apply_log_level()
-        PopulateTree(self._tree, self._workspace)
-        # TODO: re-broadcast session with new config when widgets are ready
+    def open_directory_settings(self) -> None:
+        dlg = DirectorySelectorDialog(self._settings.directories, self)
+        if dlg.exec():
+            self._settings.directories = dlg.get_directories()
+            populate_tree(self._tree, self._settings.data_dir)
 
-    def _apply_log_level(self) -> None:
-        level = log_level_from_workspace(self._workspace)
-        logging.getLogger("spectHR").setLevel(level)
+    def _on_workspace_changed(self) -> None:
+        import logging
+        logging.getLogger("spectHR").setLevel(self._workspace.log_level)
+        # TODO: re-broadcast to plot docks once widgets are built
 
     # ------------------------------------------------------------------
     # File tree
     # ------------------------------------------------------------------
 
-    def _on_file_activated(self, item, _column: int = 0) -> None:
-        """Double-click on a file item in the workspace tree."""
+    def _on_file_activated(self, item, _col: int = 0) -> None:
         data = item.data(0, Qt.UserRole)
         if not data or data.get("type") != "dataset":
             return
-        # TODO: load session and broadcast to docks
-        path = data.get("filename", "")
-        logger.info(f"File selected: {path}  (loading not yet wired)")
+        logger.info(f"File selected: {data.get('filename')}  (loading not yet wired)")
 
     # ------------------------------------------------------------------
     # Misc
     # ------------------------------------------------------------------
 
     def _open_docs(self) -> None:
-        from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
-        QDesktopServices.openUrl(
-            QUrl("https://github.com/markspan/spectHR")
-        )
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl("https://github.com/markspan/spectHR"))
 
     # ------------------------------------------------------------------
-    # QSettings persistence
+    # Persistence
     # ------------------------------------------------------------------
 
-    def _restore_session(self) -> None:
-        settings = QSettings(self._ORG, self._APP)
-        geometry = settings.value("MainWindow/geometry")
-        if geometry:
-            self.restoreGeometry(geometry)
-        dock_state = settings.value("MainWindow/dockState")
-        if dock_state:
-            self._dock_manager.restoreState(dock_state)
-        ws_path = settings.value("workspace/path")
-        if ws_path and Path(str(ws_path)).exists():
+    def _restore(self) -> None:
+        ws_path = self._settings.workspace_path
+        if ws_path:
             try:
-                self._workspace      = load_workspace(ws_path)
-                self._workspace_path = Path(str(ws_path))
+                self._workspace      = Workspace.load(ws_path)
+                self._workspace_path = ws_path
             except Exception:
                 pass
-        PopulateTree(self._tree, self._workspace)
+        self._settings.restore_window(self, self._dock_manager)
+        populate_tree(self._tree, self._settings.data_dir)
 
     def closeEvent(self, event) -> None:
-        settings = QSettings(self._ORG, self._APP)
-        settings.setValue("MainWindow/geometry",  self.saveGeometry())
-        settings.setValue("MainWindow/dockState", self._dock_manager.saveState())
+        self._settings.save_window(self, self._dock_manager)
         if self._workspace_path is not None:
-            settings.setValue("workspace/path", str(self._workspace_path))
+            self._settings.workspace_path = self._workspace_path
         super().closeEvent(event)
 
 
@@ -494,10 +397,8 @@ def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("spectHR")
     app.setOrganizationName("spectHR")
-
     window = MainWindow()
     window.show()
-
     sys.exit(app.exec())
 
 

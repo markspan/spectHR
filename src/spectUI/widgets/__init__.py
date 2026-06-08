@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from spectUI.widgets.EventCodeWindow import EventCodeWindow
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
-from spectUI.widgets.parametersPlotWidget import ParametersPlotWidget
+from spectUI.widgets.log_widget import LogWidget
 
 __all__ = [
     "DirectorySelectorDialog",
     "EventCodeWindow",
+    "LogWidget",
     "ParametersEditorDialog",
-    "ParametersPlotWidget",
 ]

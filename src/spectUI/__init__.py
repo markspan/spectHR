@@ -5,20 +5,11 @@ from spectUI.preProcessFile import PreProcessFile, apply_bp_calibration, apply_r
 from spectUI.widgets import (
     DirectorySelectorDialog,
     EventCodeWindow,
+    LogWidget,
     ParametersEditorDialog,
-    ParametersPlotWidget,
 )
-from spectUI.workSpace import (
-    WorkspaceView,
-    display_bands_from_workspace,
-    get_export_dir,
-    load_workspace,
-    log_level_from_workspace,
-    psd_method_from_workspace,
-    resolved_profile_bands,
-    save_workspace,
-    transfer_settings_from_workspace,
-)
+from spectUI.workspace import Workspace, populate_tree
+from spectUI.settings import AppSettings
 from spectHR.DataSet.loaders.code_selection import register_code_resolver
 
 
@@ -32,21 +23,15 @@ def _evt_code_resolver(other_codes, rtop_code):
 register_code_resolver(_evt_code_resolver)
 
 __all__ = [
+    "AppSettings",
     "DirectorySelectorDialog",
     "EventCodeWindow",
     "LineHandler",
+    "LogWidget",
     "ParametersEditorDialog",
-    "ParametersPlotWidget",
     "PreProcessFile",
+    "Workspace",
     "apply_bp_calibration",
     "apply_rsp_source",
-    "WorkspaceView",
-    "display_bands_from_workspace",
-    "get_export_dir",
-    "load_workspace",
-    "log_level_from_workspace",
-    "psd_method_from_workspace",
-    "resolved_profile_bands",
-    "save_workspace",
-    "transfer_settings_from_workspace",
+    "populate_tree",
 ]
