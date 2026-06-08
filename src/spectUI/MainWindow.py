@@ -183,7 +183,7 @@ class MainWindow(QMainWindow):
         widget:   QWidget,
         area:     DockWidgetArea | None = None,
     ) -> CDockWidget:
-        dock = CDockWidget(title)
+        dock = CDockWidget(self._dock_manager, title)
         dock.setObjectName(obj_name)
         dock.setWidget(widget)
         self._docks[obj_name] = dock
