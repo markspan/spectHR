@@ -40,7 +40,11 @@ from spectHR._version import __version__
 from spectHR.DataSet.loaders import load as _load_session
 from spectHR.Tools.Logger import logger
 from spectHR.session import Session
-from spectUI.preProcessFile import apply_bp_calibration, apply_rsp_source
+from spectUI.preProcessFile import (
+    apply_beat_detection,
+    apply_bp_calibration,
+    apply_rsp_source,
+)
 
 from spectUI.perspectives import (
     BUILTIN_COMPARE,
@@ -50,6 +54,7 @@ from spectUI.perspectives import (
 )
 from spectUI.plot_worker import DockScheduler
 from spectUI.settings import AppSettings
+from spectUI.widgets import PrepPlotWidget
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.parameters import Parameters, populate_tree
@@ -133,6 +138,7 @@ class _LoadWorker(QObject):
             session = _load_session(self._path)
             session = apply_rsp_source(session,     self._params)
             session = apply_bp_calibration(session, self._params)
+            session = apply_beat_detection(session, self._params)
             self.finished.emit(session, time.monotonic() - t0)
         except Exception as exc:
             self.failed.emit(str(self._path), str(exc))
@@ -217,6 +223,7 @@ class MainWindow(QMainWindow):
         self._parameters_path: Path | None = None
         self._session:         Session | None = None
         self._load_thread:     QThread | None = None
+        self._prep_widget:     PrepPlotWidget | None = None
 
         self._docks: dict[str, CDockWidget] = {}
 
@@ -238,10 +245,16 @@ class MainWindow(QMainWindow):
         self._add_dock(_DOCK_WORKSPACE, "Workspace", self._tree,
                        DockWidgetArea.LeftDockWidgetArea)
 
-        # Centre: tabified plot placeholders
+        # Centre: tabified plot docks (preprocessing is live; the rest are
+        # placeholders until their widgets are built).
         reference_area = None
         for obj_name, title in _CENTRE_DOCKS:
-            dock = self._add_dock(obj_name, title, _Placeholder(title))
+            if obj_name == _DOCK_PREPROCESSING:
+                self._prep_widget = PrepPlotWidget()
+                widget = self._prep_widget
+            else:
+                widget = _Placeholder(title)
+            dock = self._add_dock(obj_name, title, widget)
             if reference_area is None:
                 self._dock_manager.addDockWidget(
                     DockWidgetArea.CenterDockWidgetArea, dock
@@ -462,9 +475,22 @@ class MainWindow(QMainWindow):
         self._load_worker.finished.connect(self._load_thread.quit)
         self._load_worker.failed.connect(self._load_thread.quit)
         self._load_thread.finished.connect(self._load_worker.deleteLater)
-        self._load_thread.finished.connect(self._load_thread.deleteLater)
+        self._load_thread.finished.connect(self._on_load_thread_finished)
 
         self._load_thread.start()
+
+    def _on_load_thread_finished(self) -> None:
+        """Release the finished loader thread.
+
+        ``deleteLater`` destroys the underlying C++ QThread, so the Python
+        references must be dropped here as well — otherwise the next
+        ``_load_file`` call would touch a dead wrapper and raise
+        ``RuntimeError: Internal C++ object already deleted``.
+        """
+        if self._load_thread is not None:
+            self._load_thread.deleteLater()
+        self._load_thread = None
+        self._load_worker = None
 
     def _on_session_loaded(self, session: Session, elapsed: float) -> None:
         self.unsetCursor()
@@ -473,7 +499,23 @@ class MainWindow(QMainWindow):
             f"Loaded {session.name}  ({elapsed:.2f} s)\n"
             + _session_summary(session)
         )
-        # TODO: broadcast to plot docks once widgets are built
+        self._scheduler.invalidate()  # discard any stale background results
+        if self._prep_widget is not None:
+            self._prep_widget.set_session(session, self._parameters)
+            self._prep_widget.dataEdited.connect(
+                self._on_data_edited, Qt.UniqueConnection
+            )
+        self._add_epoch_act.setEnabled(True)
+
+    def _on_data_edited(self) -> None:
+        """React to a committed R-peak edit from the preprocessing dock.
+
+        The edit is already written into ``session.events["hrv"]`` (the prep
+        widget holds the same session reference).  Invalidate the background
+        scheduler so any derived dock recomputes from the updated peaks the
+        next time it is activated.
+        """
+        self._scheduler.invalidate()
 
     def _on_load_failed(self, path: str, error: str) -> None:
         self.unsetCursor()

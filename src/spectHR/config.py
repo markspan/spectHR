@@ -20,6 +20,7 @@ typed properties.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Dict
 
@@ -45,7 +46,71 @@ __all__ = [
     "rsp_source_from_workspace",
     "RSA_REJECTION_MODES",
     "rsa_rejection_from_workspace",
+    "CardioParams",
+    "cardio_params_from_workspace",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Cardio preprocessing / R-peak detection / IBI classification
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CardioParams:
+    """R-peak detection, ECG preprocessing and IBI-classification settings.
+
+    Mirrors the workspace ``CardioParameters`` section.  One object carries
+    everything the preprocessing pipeline needs — the ECG prefilter, the
+    peak-detector refractory period, and the rolling-window IBI classifier
+    thresholds — so detection and post-edit re-classification stay in lockstep.
+
+    Attributes
+    ----------
+    window_length, n_std, max_ibi_sec
+        Passed straight to :func:`~spectHR.Tools.IbiClassification.classify_ibi`.
+    min_peak_distance_ms
+        Refractory period for :func:`~spectHR.Tools.RPeakDetection.detect_rpeaks`.
+    ecg_filter_type
+        ``"highpass"`` / ``"lowpass"`` prefilter applied to the ECG before
+        detection, or ``None`` to skip filtering.
+    ecg_filter_cutoff
+        Prefilter cutoff in Hz.
+    """
+
+    window_length:        int   = 20
+    n_std:                float = 3.0
+    max_ibi_sec:          float = 2.5
+    min_peak_distance_ms: float = 300.0
+    ecg_filter_type:      str | None = "highpass"
+    ecg_filter_cutoff:    float = 0.5
+    display_filtered:     bool  = False
+
+    @property
+    def classify_kwargs(self) -> "Dict[str, Any]":
+        """Keyword args for :func:`classify_ibi` (window_length, n_std, max_ibi_sec)."""
+        return {
+            "window_length": self.window_length,
+            "n_std":         self.n_std,
+            "max_ibi_sec":   self.max_ibi_sec,
+        }
+
+
+def cardio_params_from_workspace(workspace: "Dict[str, Any] | None") -> CardioParams:
+    """Build a :class:`CardioParams` from a workspace dict (defaults when absent)."""
+    cp  = (workspace or {}).get("CardioParameters", {}) or {}
+    ibi = cp.get("IbiClassification", {}) or {}
+    ecg = cp.get("EcgPreprocessing", {}) or {}
+    filt = ecg.get("filter_type", "highpass")
+    return CardioParams(
+        window_length=int(ibi.get("window_length", 20)),
+        n_std=float(ibi.get("n_std", 3.0)),
+        max_ibi_sec=float(ibi.get("max_ibi_sec", 2.5)),
+        min_peak_distance_ms=float(ibi.get("min_peak_distance_ms", 300.0)),
+        ecg_filter_type=(str(filt) if filt else None),
+        ecg_filter_cutoff=float(ecg.get("filter_cutoff", 0.5)),
+        display_filtered=bool(ecg.get("display_filtered", False)),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -520,6 +585,13 @@ class WorkspaceView:
         """RSA overlay choice (``"rsa"`` or ``"rsa0"``, default ``"rsa0"``)."""
         ra = self._ws.get("RespirationAnalysis", {}) or {}
         return str(ra.get("rsa_overlay", "rsa0"))
+
+    # ---- cardio / R-peak detection ----------------------------------
+
+    @cached_property
+    def cardio_params(self) -> CardioParams:
+        """ECG preprocessing, R-peak detection and IBI-classification settings."""
+        return cardio_params_from_workspace(self._ws)
 
     # ---- ICG --------------------------------------------------------
 

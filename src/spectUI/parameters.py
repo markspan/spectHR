@@ -65,8 +65,9 @@ _DEFAULT: dict = {
             "min_peak_distance_ms": 300.0,
         },
         "EcgPreprocessing": {
-            "filter_type":   "highpass",
-            "filter_cutoff": 0.5,
+            "filter_type":      "highpass",
+            "filter_cutoff":    0.5,
+            "display_filtered": False,
         },
     },
     "Calibration": {
@@ -191,7 +192,7 @@ class Parameters(WorkspaceView):
     def _invalidate(self) -> None:
         """Clear all ``cached_property`` values so they recompute on access."""
         cached = {"psd_method", "profile_settings", "resolved_profile_bands",
-                  "spectrogram_settings", "transfer_settings"}
+                  "spectrogram_settings", "transfer_settings", "cardio_params"}
         for key in cached:
             self.__dict__.pop(key, None)
 

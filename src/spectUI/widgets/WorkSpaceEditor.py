@@ -777,6 +777,7 @@ class ParametersEditorDialog(QDialog):
     _LABEL_ALIASES: dict[str, str] = {
         "FrequencyAnalysis.welch.units":       "plot units",
         "FrequencyAnalysis.lombscargle.units": "plot units",
+        "CardioParameters.EcgPreprocessing.display_filtered": "show filtered ECG in plot",
     }
 
     # Path whose value is the adaptive-bands dict. Rendered by
