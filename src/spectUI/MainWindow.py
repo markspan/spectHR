@@ -40,9 +40,10 @@ from spectHR._version import __version__
 from spectHR.DataSet.loaders import load as _load_session
 from spectHR.Tools.Logger import logger
 from spectHR.session import Session
-from spectUI.preProcessFile import (
+from spectHR.DataSet.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
+    apply_ecg_polarity,
     apply_rsp_source,
 )
 
@@ -136,6 +137,7 @@ class _LoadWorker(QObject):
         t0 = time.monotonic()
         try:
             session = _load_session(self._path)
+            session = apply_ecg_polarity(session,   self._params)  # before detection
             session = apply_rsp_source(session,     self._params)
             session = apply_bp_calibration(session, self._params)
             session = apply_beat_detection(session, self._params)

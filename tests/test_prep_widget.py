@@ -139,38 +139,28 @@ after = s.events["hrv"]
 assert after is not before and after.times.size == 4
 
 
-# --- apply_beat_detection (load-worker step) -------------------------------
+# --- PrepModel.build (per-load bundle) -------------------------------------
+# (The Session→Session pre-processing transforms now live in spectHR and are
+#  covered headlessly in test_preprocessing.py; here we just need a loaded
+#  session with a device-suffixed ECG and an hrv channel.)
+from spectHR.config import CardioParams
 from spectHR.session import Samples
-from spectUI.preProcessFile import apply_beat_detection, resolve_ecg, resolve_resp
+from spectUI.widgets.prep.model import PrepModel
 
-# Device-suffixed XDF-style channels, no hrv: detection resolves + fills hrv.
 fs = 130.0
 tt = np.arange(0.0, 20.0, 1.0 / fs)
 ecg = np.zeros_like(tt)
 for bt in np.arange(0.5, 20.0, 0.8):
     ecg += np.exp(-0.5 * ((tt - bt) / 0.01) ** 2)
-xdf = Session(name="xdf", samples={"ecg-[Z9]": Samples(tt, ecg, "ecg-[Z9]")})
-assert xdf.ecg is None
-assert resolve_ecg(xdf).name == "ecg-[Z9]"
-out = apply_beat_detection(xdf, None)
-assert out is not xdf                       # new Session returned
-assert out.events.get("hrv") is not None    # beats detected
-assert out.events["hrv"].times.size > 10
-
-# A session that already has hrv is returned unchanged.
-have = session_with_peaks([0.0, 1.0, 2.0])
-assert apply_beat_detection(have, None) is have
-
-# No ECG at all -> unchanged, no crash.
-none_sess = Session(name="x")
-assert apply_beat_detection(none_sess, None) is none_sess
-
-
-# --- PrepModel.build (per-load bundle) -------------------------------------
-from spectHR.config import CardioParams
-from spectUI.widgets.prep.model import PrepModel
+peaks = np.arange(0.5, 20.0, 0.8)
+out = Session(
+    name="xdf",
+    samples={"ecg-[Z9]": Samples(tt, ecg, "ecg-[Z9]")},
+    events={"hrv": Events(peaks, np.full(peaks.shape, "N", dtype=object))},
+)
 
 mdl = PrepModel.build(out, CardioParams())
+assert mdl.ecg is not None and mdl.ecg.name == "ecg-[Z9]"   # resolved by prefix
 assert mdl.rtop_ctrl is not None                       # hrv present -> editable
 assert mdl.ecg is not None and mdl.ecg_display is mdl.ecg   # no display filter
 assert mdl.extent is not None and mdl.window.x_min == mdl.extent[0]

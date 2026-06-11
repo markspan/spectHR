@@ -48,7 +48,6 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QVBoxLayout, QWidget
 from spectHR.config import CardioParams, WorkspaceView
 from spectHR.session import Session
 from spectHR.Tools.Decimation import decimate_minmax
-from spectHR.Tools.IbiClassification import classify_ibi
 from spectUI.common import (
     OverviewWindow,
     make_nav_button,
@@ -868,34 +867,33 @@ class PrepPlotWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _classify_async(self) -> None:
-        """Re-classify IBIs on a pool thread, then commit labels and notify.
+        """Re-classify the edited beats on a pool thread, then commit and notify.
 
-        The structural edit is already drawn with stale labels.  Here the
-        IBI/label arrays are snapshotted on the main thread, classified on the
-        pool, and the result applied back on the main thread.  The scheduler's
-        generation counter discards a result that a later edit has superseded,
-        and a length check guards against applying labels to a peak set that
-        changed underneath us.
+        The structural edit is already drawn with stale labels.  The current
+        (immutable) :class:`Events` snapshot is handed to the pool, where
+        :meth:`Events.reclassified` recomputes labels off the main thread; the
+        result is applied back on the main thread.  Because the snapshot is
+        immutable, no locking is needed.  The scheduler's generation counter
+        discards a result a later edit has superseded, and a peak-count guard
+        protects against applying labels to a series that changed underneath us.
         """
         m = self._model
         if m is None or m.rtop_ctrl is None:
             return
         ctrl = m.rtop_ctrl
-        ibi_snap = ctrl.ibi.copy()
-        labels_snap = ctrl.labels.copy()
+        events_snap = ctrl.events                 # frozen — safe to cross threads
         classify_kwargs = m.cardio.classify_kwargs
 
         def compute():
-            classify_ibi(ibi_snap, labels_snap, **classify_kwargs)
-            return labels_snap
+            return events_snap.reclassified(**classify_kwargs)
 
-        def on_done(new_labels: np.ndarray) -> None:
+        def on_done(new_events) -> None:
             if self._model is None or self._model.rtop_ctrl is not ctrl:
                 return  # session was reloaded under us
-            if new_labels.shape[0] != ctrl.count:
-                return  # superseded by a later edit
+            if new_events.times.size != ctrl.count:
+                return  # superseded by a later structural edit
             try:
-                ctrl.labels = new_labels  # setter commits to session
+                ctrl.labels = new_events.labels   # setter commits to session
                 self.redraw()
             except RuntimeError:
                 return

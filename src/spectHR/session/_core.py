@@ -236,6 +236,77 @@ class Events:
         labels = np.concatenate([self.labels[:i], other.labels, self.labels[j:]])
         return Events(times, labels)
 
+    # --- single-beat editing (functional; used by interactive R-peak editors) ---
+
+    def added(self, t: float, label: str = "N") -> Events:
+        """Return a new ``Events`` with one beat inserted at *t* (kept sorted)."""
+        idx = int(np.searchsorted(self.times, t))
+        return Events(
+            np.insert(self.times, idx, float(t)),
+            np.insert(self.labels, idx, label),
+        )
+
+    def moved(self, old_t: float, new_t: float) -> Events:
+        """Return a new ``Events`` with the beat nearest *old_t* moved to *new_t*.
+
+        The series is re-sorted so times stay ascending; the moved beat keeps
+        its label.  Returns ``self`` unchanged when there are no beats.
+        """
+        if self.times.size == 0:
+            return self
+        times = self.times.copy()
+        idx = int(np.argmin(np.abs(times - old_t)))
+        times[idx] = float(new_t)
+        order = np.argsort(times, kind="stable")
+        return Events(times[order], self.labels[order])
+
+    def removed(self, t: float) -> Events:
+        """Return a new ``Events`` with the beat nearest *t* removed.
+
+        Returns ``self`` unchanged when there are no beats.
+        """
+        if self.times.size == 0:
+            return self
+        idx = int(np.argmin(np.abs(self.times - t)))
+        return Events(np.delete(self.times, idx), np.delete(self.labels, idx))
+
+    def reclassified(self, **classify_kwargs) -> Events:
+        """Return a new ``Events`` with labels recomputed by ``classify_ibi``.
+
+        Keyword args (``window_length`` / ``n_std`` / ``max_ibi_sec``) are
+        forwarded to :func:`~spectHR.Tools.IbiClassification.classify_ibi`;
+        omit them to use the classifier's own defaults.
+        """
+        from spectHR.Tools.IbiClassification import classify_ibi
+        labels = np.array(self.labels, dtype=object)        # writable copy
+        classify_ibi(np.array(self.ibi, dtype=float), labels, **classify_kwargs)
+        return Events(self.times, labels)
+
+    # --- abnormal-beat queries (for "jump to next/previous artefact") ---
+
+    def abnormal_mask(self) -> np.ndarray:
+        """Boolean mask of abnormal beats (label != ``"N"``).
+
+        The final beat is always excluded: its IBI is the trailing-``NaN``
+        sentinel, so :func:`classify_ibi` labels it ``"T"`` (degenerate) even
+        though it is not a real artefact — without this it would be a phantom
+        target at the very end of every recording.
+        """
+        mask = self.labels != "N"
+        if mask.size:
+            mask[-1] = False
+        return mask
+
+    def next_abnormal(self, after: float) -> float | None:
+        """Time of the first abnormal beat strictly after *after*, or ``None``."""
+        mask = self.abnormal_mask() & (self.times > after)
+        return float(self.times[mask][0]) if mask.any() else None
+
+    def prev_abnormal(self, before: float) -> float | None:
+        """Time of the last abnormal beat strictly before *before*, or ``None``."""
+        mask = self.abnormal_mask() & (self.times < before)
+        return float(self.times[mask][-1]) if mask.any() else None
+
 
 # ---------------------------------------------------------------------------
 # Intervals — labelled non-overlapping time segments

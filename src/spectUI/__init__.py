@@ -1,10 +1,10 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 from spectUI.common import LineHandler
-from spectUI.preProcessFile import (
-    PreProcessFile,
+from spectHR.DataSet.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
+    apply_ecg_polarity,
     apply_rsp_source,
 )
 from spectUI.widgets import (
@@ -48,10 +48,10 @@ __all__ = [
     "LineHandler",
     "LogWidget",
     "ParametersEditorDialog",
-    "PreProcessFile",
     "Parameters",
     "apply_beat_detection",
     "apply_bp_calibration",
+    "apply_ecg_polarity",
     "apply_rsp_source",
     "populate_tree",
     "run_in_gui_thread",

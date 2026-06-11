@@ -1,33 +1,30 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-Mutable R-peak editing on top of an immutable :class:`Events` channel.
+A mutable editing facade over the immutable ``"hrv"`` :class:`Events` channel.
 
-V2 edited R-peaks by mutating a ``CardioSeries`` in place; every widget
-held the same object, so an edit was instantly visible everywhere.  The
-development branch's :class:`~spectHR.session.Events` is a *frozen*
-dataclass (its read-only arrays are what make ``Events.ibi`` safely
-cacheable), so in-place mutation is no longer possible.
+The R-peak *algorithms* — insert / move / delete / re-classify, and the
+"jump to the next abnormal beat" queries — all live on
+:class:`spectHR.session.Events` as functional methods that return a new
+``Events``.  :class:`RTopController` adds the only thing the data model
+should not own: the *editing-session* state.  It holds the current
+``Events``, replaces it with the result of each edit, and commits that back
+into ``session.events["hrv"]``.
 
-:class:`RTopController` reconciles the two worlds.  It keeps private,
-writable copies of the peak times and beat labels, and after every
-structural edit it builds a fresh immutable :class:`Events` and assigns it
-back into ``session.events["hrv"]``.  Because :class:`~spectHR.session.Session`
-itself is an ordinary (non-frozen) dataclass, that assignment is seen
-immediately by every other holder of the same session — the same
-call-by-reference convenience V2 had, without giving up array immutability
-in the analysis layer.
+Because :class:`~spectHR.session.Session` is a plain (non-frozen) dataclass,
+that commit is seen immediately by every other holder of the same session —
+the call-by-reference convenience V2 had from its mutable ``CardioSeries``,
+without giving up array immutability in the analysis layer.
 
-Two tiers of edit are offered:
+Two tiers of edit are exposed:
 
 ``*_no_classify``
-    Apply the structural change and commit, leaving labels untouched.
-    The widget uses these for instant feedback during a drag and schedules
-    re-classification on a background thread.
+    Apply the structural change and commit, leaving labels untouched — used
+    for instant feedback during a drag, with re-classification scheduled on
+    a background thread.
 ``add`` / ``move`` / ``delete``
-    Apply the change *and* re-classify synchronously before returning —
-    convenient for scripted or test edits where labels must be correct on
-    the next read.
+    Apply the change *and* re-classify synchronously — for scripted or test
+    edits where labels must be correct on the next read.
 """
 from __future__ import annotations
 
@@ -37,16 +34,11 @@ from typing import Any
 import numpy as np
 
 from spectHR.session import Events, Session
-from spectHR.Tools.IbiClassification import classify_ibi
 
 
 @dataclass(frozen=True)
 class RTopView:
-    """An immutable slice of R-peaks for one time window.
-
-    Returned by :meth:`RTopController.window_view` for rendering.  Holds
-    numpy *views* of the controller's arrays (no copy), so it is cheap to
-    build on every redraw.
+    """An immutable slice of R-peaks for one time window (for rendering).
 
     Attributes
     ----------
@@ -73,18 +65,11 @@ class RTopController:
         The session to edit.  Must contain an ``events["hrv"]``
         :class:`Events`; a :class:`ValueError` is raised otherwise.
     classify_params
-        Keyword args forwarded to
-        :func:`~spectHR.Tools.IbiClassification.classify_ibi` by
-        :meth:`reclassify` (``window_length`` / ``n_std`` / ``max_ibi_sec``).
-        Defaults to the classifier's own defaults; the widget passes the
-        workspace ``CardioParameters`` so a post-edit re-classification uses
-        exactly the thresholds the initial detection used.
-
-    Notes
-    -----
-    The constructor copies the times and labels out of the frozen
-    ``Events`` so the working arrays are writable; the original frozen
-    object is never mutated.
+        Keyword args forwarded to :meth:`Events.reclassified`
+        (``window_length`` / ``n_std`` / ``max_ibi_sec``).  The widget passes
+        the workspace ``CardioParameters`` so a post-edit re-classification
+        uses exactly the thresholds the initial detection used; omit them to
+        use the classifier defaults.
     """
 
     EVENTS_KEY = "hrv"
@@ -98,130 +83,92 @@ class RTopController:
         if hrv is None:
             raise ValueError("Session has no 'hrv' Events channel to edit.")
         self._session = session
-        self._times: np.ndarray = np.array(hrv.times, dtype=float)
-        self._labels: np.ndarray = np.array(hrv.labels, dtype=object)
+        self._events: Events = hrv
         self._classify_params: dict[str, Any] = dict(classify_params or {})
 
     # ------------------------------------------------------------------
-    # Read access
+    # Read access (delegated to the current Events)
     # ------------------------------------------------------------------
 
     @property
+    def events(self) -> Events:
+        """The current (uncommitted-edit-free) :class:`Events`."""
+        return self._events
+
+    @property
     def times(self) -> np.ndarray:
-        """Peak times in seconds, ascending.  Treat as read-only."""
-        return self._times
+        """Peak times in seconds, ascending.  Read-only."""
+        return self._events.times
 
     @property
     def labels(self) -> np.ndarray:
         """Beat labels parallel to :attr:`times`.
 
-        Assigning a new array of the same length commits immediately, so
-        the background classifier can publish its result with a single
-        ``ctrl.labels = new_labels``.
+        Assigning a new array of the same length commits immediately, so the
+        background classifier can publish its result with one assignment.
         """
-        return self._labels
+        return self._events.labels
 
     @labels.setter
     def labels(self, value: np.ndarray) -> None:
         value = np.asarray(value, dtype=object)
-        if value.shape[0] != self._times.shape[0]:
+        if value.shape[0] != self._events.times.shape[0]:
             raise ValueError(
                 f"label array length {value.shape[0]} does not match "
-                f"{self._times.shape[0]} peaks"
+                f"{self._events.times.shape[0]} peaks"
             )
-        self._labels = value
+        self._events = self._events.with_labels(value)
         self._commit()
 
     @property
     def ibi(self) -> np.ndarray:
-        """Freshly computed inter-beat intervals, last entry ``NaN``.
-
-        Allocated on each access (it mirrors :attr:`Events.ibi` but the
-        controller's times change between reads) so callers may mutate the
-        returned array freely.
-        """
-        t = self._times
-        if t.size < 2:
-            return np.array([np.nan])
-        out = np.empty(t.size)
-        out[:-1] = np.diff(t)
-        out[-1] = np.nan
-        return out
+        """Inter-beat intervals (last entry ``NaN``) — from :attr:`Events.ibi`."""
+        return self._events.ibi
 
     @property
     def count(self) -> int:
         """Number of R-peaks currently held."""
-        return int(self._times.size)
+        return int(self._events.times.size)
 
     def window_view(self, x_min: float, x_max: float) -> RTopView:
         """Return an :class:`RTopView` of peaks within ``[x_min, x_max]``."""
-        mask = (self._times >= x_min) & (self._times <= x_max)
+        times = self._events.times
+        mask = (times >= x_min) & (times <= x_max)
         return RTopView(
-            times=self._times[mask],
-            labels=self._labels[mask],
-            ibi=self.ibi[mask],
+            times=times[mask],
+            labels=self._events.labels[mask],
+            ibi=self._events.ibi[mask],
         )
 
     # ------------------------------------------------------------------
-    # Navigation queries
+    # Navigation queries (delegated)
     # ------------------------------------------------------------------
-
-    def _abnormal_mask(self) -> np.ndarray:
-        """Boolean mask of beats worth navigating to (non-``"N"``).
-
-        Excludes the final beat: its IBI is the trailing ``NaN`` sentinel, so
-        :func:`classify_ibi` always labels it ``"T"`` (degenerate) even though
-        it is not a real artefact.  Without this it would be a phantom
-        "abnormal" target at the very end of every recording.
-        """
-        mask = self._labels != "N"
-        if mask.size:
-            mask[-1] = False
-        return mask
 
     def next_non_normal(self, after: float) -> float | None:
         """Time of the first abnormal beat strictly after *after*, or ``None``."""
-        mask = self._abnormal_mask() & (self._times > after)
-        return float(self._times[mask][0]) if mask.any() else None
+        return self._events.next_abnormal(after)
 
     def prev_non_normal(self, before: float) -> float | None:
         """Time of the last abnormal beat strictly before *before*, or ``None``."""
-        mask = self._abnormal_mask() & (self._times < before)
-        return float(self._times[mask][-1]) if mask.any() else None
+        return self._events.prev_abnormal(before)
 
     # ------------------------------------------------------------------
     # Structural edits — no re-classification
     # ------------------------------------------------------------------
 
     def move_no_classify(self, old_t: float, new_t: float) -> None:
-        """Move the peak nearest *old_t* to *new_t*, keeping its label.
-
-        Re-sorts so :attr:`times` stays ascending, then commits.  Labels
-        are left as-is; the caller is expected to re-classify if needed.
-        """
-        if self._times.size == 0:
-            return
-        idx = int(np.argmin(np.abs(self._times - old_t)))
-        self._times[idx] = float(new_t)
-        order = np.argsort(self._times, kind="stable")
-        self._times = self._times[order]
-        self._labels = self._labels[order]
+        """Move the peak nearest *old_t* to *new_t*, keeping its label."""
+        self._events = self._events.moved(old_t, new_t)
         self._commit()
 
     def add_no_classify(self, t: float, label: str = "N") -> None:
-        """Insert a peak at time *t* with *label*, keeping the array sorted."""
-        idx = int(np.searchsorted(self._times, t))
-        self._times = np.insert(self._times, idx, float(t))
-        self._labels = np.insert(self._labels, idx, label)
+        """Insert a peak at time *t* with *label*."""
+        self._events = self._events.added(t, label)
         self._commit()
 
     def delete_no_classify(self, t: float) -> None:
         """Delete the peak nearest *t*."""
-        if self._times.size == 0:
-            return
-        idx = int(np.argmin(np.abs(self._times - t)))
-        self._times = np.delete(self._times, idx)
-        self._labels = np.delete(self._labels, idx)
+        self._events = self._events.removed(t)
         self._commit()
 
     # ------------------------------------------------------------------
@@ -243,20 +190,9 @@ class RTopController:
         self.delete_no_classify(t)
         self.reclassify()
 
-    # ------------------------------------------------------------------
-    # Classification
-    # ------------------------------------------------------------------
-
     def reclassify(self) -> None:
-        """Re-run :func:`classify_ibi` over all beats and commit the labels.
-
-        The background path in the widget snapshots the arrays and calls
-        :func:`classify_ibi` off-thread instead; this synchronous variant
-        exists for scripted edits and tests.
-        """
-        labels = self._labels.copy()
-        classify_ibi(self.ibi, labels, **self._classify_params)
-        self._labels = labels
+        """Recompute all beat labels via :meth:`Events.reclassified` and commit."""
+        self._events = self._events.reclassified(**self._classify_params)
         self._commit()
 
     # ------------------------------------------------------------------
@@ -264,8 +200,5 @@ class RTopController:
     # ------------------------------------------------------------------
 
     def _commit(self) -> None:
-        """Publish the working arrays as a fresh ``Events`` on the session."""
-        self._session.events[self.EVENTS_KEY] = Events(
-            times=self._times.copy(),
-            labels=self._labels.copy(),
-        )
+        """Publish the current ``Events`` into ``session.events["hrv"]``."""
+        self._session.events[self.EVENTS_KEY] = self._events
