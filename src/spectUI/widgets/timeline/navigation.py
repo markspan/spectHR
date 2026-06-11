@@ -6,7 +6,7 @@ Pure timeline-navigation arithmetic.
 :class:`TimelineNavigator` turns the toolbar verbs — zoom in, zoom out,
 pan, jump to the ends — into new ``[x_min, x_max]`` windows, clamped to the
 signal extent.  It holds a reference to a
-:class:`~spectUI.widgets.prep.state.WindowState` and a zero-argument
+:class:`~spectUI.widgets.timeline.state.WindowState` and a zero-argument
 ``extent`` callable returning ``(t_first, t_last)`` of the underlying
 signal (or ``None`` when nothing is loaded).
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from spectUI.widgets.prep.state import WindowState
+from spectUI.widgets.timeline.state import WindowState
 
 # Window-width multipliers for the zoom buttons.  Matching V2: zooming in
 # keeps two-thirds of the current span, zooming out grows it by half.

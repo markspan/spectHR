@@ -26,19 +26,19 @@ from dataclasses import dataclass
 from spectHR.config import CardioParams
 from spectHR.DataSet.preprocessing import filter_ecg, resolve_ecg, resolve_resp
 from spectHR.session import Samples, Session
-from spectUI.widgets.prep.navigation import TimelineNavigator
 from spectUI.widgets.prep.rtop_controller import RTopController
-from spectUI.widgets.prep.state import WindowState
+from spectUI.widgets.timeline.model import TimelineModel
 
 
 @dataclass
-class PrepModel:
-    """Data and interaction state for one loaded session.
+class PrepModel(TimelineModel):
+    """Per-load state for the pre-processing dock.
+
+    Extends :class:`TimelineModel` (session + window + navigator + extent)
+    with the ECG/respiration channels and the R-peak editing controller.
 
     Attributes
     ----------
-    session
-        The loaded recording (edits are committed back into it).
     cardio
         Detection / classification / prefilter settings from the workspace.
     ecg
@@ -52,32 +52,20 @@ class PrepModel:
     rtop_ctrl
         R-peak editing controller, or ``None`` when the session has no
         ``"hrv"`` channel (editing is then disabled).
-    window
-        The visible time window and any in-progress overview drag.
-    navigator
-        Zoom / pan / goto arithmetic over :attr:`window`.
-    extent
-        ``(t_first, t_last)`` of the ECG, or ``None`` — the recording bounds
-        navigation clamps to.
     """
 
-    session: Session
     cardio: CardioParams
     ecg: Samples | None
     ecg_display: Samples | None
     resp: Samples | None
     rtop_ctrl: RTopController | None
-    window: WindowState
-    navigator: TimelineNavigator
-    extent: tuple[float, float] | None
 
     @classmethod
     def build(cls, session: Session, cardio: CardioParams) -> PrepModel:
         """Resolve channels, controller, window and navigator for *session*.
 
         R-peak detection has already happened on the load thread, so this is
-        purely view assembly: it never mutates *session*.  The window opens on
-        the full recording; the navigator clamps to the (immutable) ECG extent.
+        purely view assembly: it never mutates *session*.
         """
         ecg = resolve_ecg(session)
         ecg_display = filter_ecg(ecg, cardio) if cardio.display_filtered else ecg
@@ -91,23 +79,18 @@ class PrepModel:
         extent: tuple[float, float] | None = None
         if ecg is not None and ecg.times.size:
             extent = (float(ecg.times[0]), float(ecg.times[-1]))
-
-        t0, t1 = extent if extent is not None else (0.0, 1.0)
-        window = WindowState(x_min=t0, x_max=t1)
-        # The ECG never changes during a session, so the extent is constant —
-        # the navigator closes over it rather than re-reading the channel.
-        navigator = TimelineNavigator(window, lambda e=extent: e)
+        window, navigator = cls.open_window(extent)
 
         return cls(
             session=session,
+            window=window,
+            navigator=navigator,
+            extent=extent,
             cardio=cardio,
             ecg=ecg,
             ecg_display=ecg_display,
             resp=resp,
             rtop_ctrl=rtop_ctrl,
-            window=window,
-            navigator=navigator,
-            extent=extent,
         )
 
     def has_resp(self) -> bool:

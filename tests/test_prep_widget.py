@@ -24,9 +24,9 @@ _DRIVER = r"""
 import numpy as np
 
 from spectHR.session import Events, Session
-from spectUI.widgets.prep.navigation import TimelineNavigator
 from spectUI.widgets.prep.rtop_controller import RTopController
-from spectUI.widgets.prep.state import WindowState, YAxisState
+from spectUI.widgets.timeline.navigation import TimelineNavigator
+from spectUI.widgets.timeline.state import WindowState, YAxisState
 
 
 def session_with_peaks(times):

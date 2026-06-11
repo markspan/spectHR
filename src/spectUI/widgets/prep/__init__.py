@@ -3,40 +3,28 @@
 """
 ``spectUI.widgets.prep`` — interactive ECG pre-processing and R-peak editing.
 
-This package is the development-branch re-imagining of the V2
-``prepPlotWidget``.  Where V2 hung all of its state on a mutable
-``PhysioData`` object, the development branch keeps the data model
-(:class:`~spectHR.session.Session`) pure and immutable and pushes every
-piece of *interaction* state into small, single-purpose, Qt-free objects
-that can be unit-tested without a display:
+The ECG-specific layer on top of :mod:`spectUI.widgets.timeline`.  The
+generic scrolling-timeline machinery (window state, navigator, overview,
+gesture dispatch) lives in ``timeline``; this package adds only what is
+specific to ECG pre-processing:
 
-``state``
-    :class:`~spectUI.widgets.prep.state.WindowState` and
-    :class:`~spectUI.widgets.prep.state.YAxisState` — the visible time
-    window, the drag gesture in progress, and per-axis y-zoom state.
-``navigation``
-    :class:`~spectUI.widgets.prep.navigation.TimelineNavigator` — pure
-    zoom / pan / goto arithmetic over a ``WindowState`` and a signal extent.
 ``rtop_controller``
     :class:`~spectUI.widgets.prep.rtop_controller.RTopController` — the
-    mutable R-peak editing API that commits each edit back into
-    ``session.events["hrv"]`` as a fresh immutable ``Events``.
+    mutable R-peak editing facade that commits each edit back into
+    ``session.events["hrv"]``.
 ``model``
     :class:`~spectUI.widgets.prep.model.PrepModel` — the per-load bundle
-    (session + window + navigator + controller + channels) the widget holds
-    as a single ``PrepModel | None``.
+    (a :class:`~spectUI.widgets.timeline.model.TimelineModel` plus the ECG /
+    respiration channels and the editing controller).
 ``widget``
     :class:`~spectUI.widgets.prep.widget.PrepPlotWidget` — the docked Qt
-    widget that wires it all onto a matplotlib canvas.
+    widget (a :class:`~spectUI.widgets.timeline.base.TimelineView`).
 
 Only :class:`PrepPlotWidget` and :class:`RTopController` are part of the
-public surface; the rest are implementation detail re-exported here for
-tests.
+public surface; the rest are implementation detail re-exported for tests.
 """
 from spectUI.widgets.prep.model import PrepModel
-from spectUI.widgets.prep.navigation import TimelineNavigator
 from spectUI.widgets.prep.rtop_controller import RTopController, RTopView
-from spectUI.widgets.prep.state import WindowState, YAxisState
 from spectUI.widgets.prep.widget import PrepPlotWidget
 
 __all__ = [
@@ -44,7 +32,4 @@ __all__ = [
     "PrepPlotWidget",
     "RTopController",
     "RTopView",
-    "TimelineNavigator",
-    "WindowState",
-    "YAxisState",
 ]

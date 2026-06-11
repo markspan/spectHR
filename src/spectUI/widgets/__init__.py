@@ -11,6 +11,11 @@ Plot widgets
 PrepPlotWidget
     Interactive ECG pre-processing and R-peak annotation (see the
     :mod:`spectUI.widgets.prep` package).
+HRSeriesWidget
+    Instantaneous heart-rate (tachogram) timeline.
+
+Both are :class:`~spectUI.widgets.timeline.base.TimelineView` docks sharing
+the scrolling-window / overview / navigation machinery.
 
 Utility widgets
 ---------------
@@ -23,12 +28,20 @@ LogWidget
 """
 from spectUI.widgets.EventCodeWindow import EventCodeWindow
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
+from spectUI.widgets.analytic import PoincareWidget
+from spectUI.widgets.bp import BPSeriesWidget
+from spectUI.widgets.hr import HRSeriesWidget
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.prep import PrepPlotWidget, RTopController
+from spectUI.widgets.results import ResultsTableWidget
 
 __all__ = [
     # plot widgets
     "PrepPlotWidget",
+    "HRSeriesWidget",
+    "BPSeriesWidget",
+    "PoincareWidget",
+    "ResultsTableWidget",
     "RTopController",
     # utility widgets
     "DirectorySelectorDialog",

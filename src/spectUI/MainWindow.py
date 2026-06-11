@@ -55,9 +55,17 @@ from spectUI.perspectives import (
 )
 from spectUI.plot_worker import DockScheduler
 from spectUI.settings import AppSettings
-from spectUI.widgets import PrepPlotWidget
+from spectUI.coordinator import DataChange, DataCoordinator
+from spectUI.widgets import (
+    BPSeriesWidget,
+    HRSeriesWidget,
+    PoincareWidget,
+    PrepPlotWidget,
+    ResultsTableWidget,
+)
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.log_widget import LogWidget
+from spectUI.widgets.timeline.base import TimelineView
 from spectUI.parameters import Parameters, populate_tree
 
 # ---------------------------------------------------------------------------
@@ -220,6 +228,7 @@ class MainWindow(QMainWindow):
 
         self._dock_manager    = CDockManager(self)
         self._scheduler       = DockScheduler()
+        self._coordinator     = DataCoordinator(self)
         self._settings        = AppSettings()
         self._parameters       = Parameters.default()
         self._parameters_path: Path | None = None
@@ -228,6 +237,8 @@ class MainWindow(QMainWindow):
         self._prep_widget:     PrepPlotWidget | None = None
 
         self._docks: dict[str, CDockWidget] = {}
+        # Live data docks (those that take a Session), keyed by object name.
+        self._data_docks: dict[str, QWidget] = {}
 
         self._build_docks()
         self._build_menu_and_toolbar()
@@ -247,16 +258,32 @@ class MainWindow(QMainWindow):
         self._add_dock(_DOCK_WORKSPACE, "Workspace", self._tree,
                        DockWidgetArea.LeftDockWidgetArea)
 
-        # Centre: tabified plot docks (preprocessing is live; the rest are
-        # placeholders until their widgets are built).
+        # Which centre docks are live (take a Session) and what each derives
+        # from — the coordinator refreshes a dock when its dependencies change.
+        # Docks not listed here are still placeholders.
+        data_specs = {
+            _DOCK_PREPROCESSING: (PrepPlotWidget, DataChange.HRV | DataChange.EPOCHS),
+            _DOCK_HR:            (HRSeriesWidget, DataChange.HRV | DataChange.EPOCHS),
+            _DOCK_BP:            (BPSeriesWidget, DataChange.BP | DataChange.EPOCHS),
+            _DOCK_POINCARE:      (PoincareWidget, DataChange.HRV | DataChange.EPOCHS),
+            _DOCK_RESULTS:       (ResultsTableWidget, DataChange.ALL),
+        }
+
+        # Centre: tabified plot docks.
         reference_area = None
         for obj_name, title in _CENTRE_DOCKS:
-            if obj_name == _DOCK_PREPROCESSING:
-                self._prep_widget = PrepPlotWidget()
-                widget = self._prep_widget
+            spec = data_specs.get(obj_name)
+            if spec is not None:
+                factory, depends = spec
+                widget = factory()
+                self._register_data_dock(obj_name, widget, depends)
             else:
                 widget = _Placeholder(title)
             dock = self._add_dock(obj_name, title, widget)
+            if spec is not None:
+                dock.visibilityChanged.connect(
+                    lambda vis, w=widget: vis and self._coordinator.widget_shown(w)
+                )
             if reference_area is None:
                 self._dock_manager.addDockWidget(
                     DockWidgetArea.CenterDockWidgetArea, dock
@@ -285,6 +312,23 @@ class MainWindow(QMainWindow):
         if area is not None:
             self._dock_manager.addDockWidget(area, dock)
         return dock
+
+    def _register_data_dock(
+        self, obj_name: str, widget: QWidget, depends: DataChange
+    ) -> None:
+        """Track a live data dock and wire it into the coordinator.
+
+        Timeline docks also join the shared scrolling window.  The
+        pre-processing dock additionally drives the ``HRV`` change channel via
+        its ``dataEdited`` signal.
+        """
+        self._data_docks[obj_name] = widget
+        self._coordinator.register(widget, depends)
+        if isinstance(widget, TimelineView):
+            self._coordinator.register_timeline(widget)
+        if obj_name == _DOCK_PREPROCESSING:
+            self._prep_widget = widget
+            widget.dataEdited.connect(self._on_data_edited)
 
     # ------------------------------------------------------------------
     # Menu bar + toolbar
@@ -502,22 +546,21 @@ class MainWindow(QMainWindow):
             + _session_summary(session)
         )
         self._scheduler.invalidate()  # discard any stale background results
-        if self._prep_widget is not None:
-            self._prep_widget.set_session(session, self._parameters)
-            self._prep_widget.dataEdited.connect(
-                self._on_data_edited, Qt.UniqueConnection
-            )
+        for widget in self._data_docks.values():
+            widget.set_session(session, self._parameters)
         self._add_epoch_act.setEnabled(True)
 
     def _on_data_edited(self) -> None:
         """React to a committed R-peak edit from the preprocessing dock.
 
-        The edit is already written into ``session.events["hrv"]`` (the prep
-        widget holds the same session reference).  Invalidate the background
-        scheduler so any derived dock recomputes from the updated peaks the
-        next time it is activated.
+        The edit is already written into ``session.events["hrv"]`` (every dock
+        holds the same session reference).  Invalidate the background scheduler
+        so heavy derived docks recompute, and ask the coordinator to refresh
+        the docks that derive from the R-peaks — skipping the prep dock, which
+        has already repainted itself.
         """
         self._scheduler.invalidate()
+        self._coordinator.notify(DataChange.HRV, source=self._prep_widget)
 
     def _on_load_failed(self, path: str, error: str) -> None:
         self.unsetCursor()

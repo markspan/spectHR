@@ -55,7 +55,7 @@ assert m is not None and m.rtop_ctrl is not None and m.window is not None
 
 # 1a. Autoscale leaves headroom above the tallest visible sample (no clip).
 seg = m.ecg_display.window(m.window.x_min, m.window.x_max)
-y0, y1 = w.ax_ecg.get_ylim()
+y0, y1 = w.ax_main.get_ylim()
 assert y1 > float(seg.values.max())
 
 # 1b. A release that is not a drag must leave the R-peak markers intact
@@ -114,7 +114,7 @@ assert m.cardio.window_length == 20 and m.cardio.n_std == 3.0
 assert m.rtop_ctrl._classify_params == {
     "window_length": 20, "n_std": 3.0, "max_ibi_sec": 2.5}
 assert m.extent is not None                            # so goto/end work
-assert len(w.ax_ecg.lines) >= 1                        # ECG actually drawn
+assert len(w.ax_main.lines) >= 1                        # ECG actually drawn
 assert len(w.ax_overview.lines) >= 1                   # overview ECG drawn
 # Default: the displayed trace is the raw channel (no extra filtering).
 assert m.ecg_display is m.ecg and not m.cardio.display_filtered
