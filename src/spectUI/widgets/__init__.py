@@ -30,6 +30,7 @@ from spectUI.widgets.EventCodeWindow import EventCodeWindow
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.analytic import PoincareWidget
 from spectUI.widgets.bp import BPSeriesWidget
+from spectUI.widgets.grid import PSDPlotWidget
 from spectUI.widgets.hr import HRSeriesWidget
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.prep import PrepPlotWidget, RTopController
@@ -41,6 +42,7 @@ __all__ = [
     "HRSeriesWidget",
     "BPSeriesWidget",
     "PoincareWidget",
+    "PSDPlotWidget",
     "ResultsTableWidget",
     "RTopController",
     # utility widgets

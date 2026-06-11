@@ -61,6 +61,7 @@ from spectUI.widgets import (
     HRSeriesWidget,
     PoincareWidget,
     PrepPlotWidget,
+    PSDPlotWidget,
     ResultsTableWidget,
 )
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
@@ -266,6 +267,8 @@ class MainWindow(QMainWindow):
             _DOCK_HR:            (HRSeriesWidget, DataChange.HRV | DataChange.EPOCHS),
             _DOCK_BP:            (BPSeriesWidget, DataChange.BP | DataChange.EPOCHS),
             _DOCK_POINCARE:      (PoincareWidget, DataChange.HRV | DataChange.EPOCHS),
+            _DOCK_PSD:           (PSDPlotWidget,
+                                  DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS),
             _DOCK_RESULTS:       (ResultsTableWidget, DataChange.ALL),
         }
 

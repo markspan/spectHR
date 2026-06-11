@@ -14,13 +14,28 @@ import subprocess
 import sys
 
 _DRIVER = r"""
+import time
 import numpy as np
+from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication
 
 from spectHR.session import Epoch, Events, Samples, Session
-from spectUI.widgets import BPSeriesWidget, PoincareWidget, ResultsTableWidget
+from spectUI.parameters import Parameters
+from spectUI.widgets import (
+    BPSeriesWidget, PoincareWidget, PSDPlotWidget, ResultsTableWidget,
+)
 
 app = QApplication.instance() or QApplication([])
+
+
+def pump(predicate, timeout_s=10.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        QCoreApplication.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False
 
 
 def make_session():
@@ -73,6 +88,31 @@ assert res.table.columnCount() > 1                      # epoch + metrics
 headers = [res.table.horizontalHeaderItem(c).text()
            for c in range(res.table.columnCount())]
 assert headers[0] == "epoch"
+
+# --- PSD grid: per-epoch spectra computed off-thread, then gridded ---------
+def make_psd_session():
+    rng = np.random.default_rng(1)
+    ibi = 0.8 + 0.05 * np.sin(2 * np.pi * 0.1 * np.arange(260)) + rng.normal(0, 0.01, 260)
+    peaks = np.cumsum(np.clip(ibi, 0.4, 1.5))
+    labels = np.full(peaks.shape, "N", dtype=object)
+    end = float(peaks[-1])
+    return Session(
+        name="psd",
+        events={"hrv": Events(peaks, labels)},
+        epochs={"a": Epoch("a", 0.0, end / 2), "b": Epoch("b", end / 2, end)},
+    )
+
+psd = PSDPlotWidget()
+psd.show()
+psd.set_session(make_psd_session(), Parameters.default())
+assert pump(lambda: psd._content is not None), "PSD grid did not build"
+# Two active epochs -> two tiles, each with a spectrum line.
+tiles = psd._content.findChildren(type(psd._content))  # inner tile QWidgets
+canvases = psd._content.findChildren(__import__("matplotlib.backends.backend_qtagg",
+            fromlist=["FigureCanvasQTAgg"]).FigureCanvasQTAgg)
+assert len(canvases) == 2, f"expected 2 PSD tiles, got {len(canvases)}"
+drawn = sum(len(c.figure.axes[0].lines) for c in canvases if c.figure.axes)
+assert drawn >= 2, "PSD spectra not drawn"
 
 print("WIDGETS_OK")
 """
