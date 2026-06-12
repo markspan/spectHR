@@ -17,8 +17,10 @@ from spectHR.DataSet.preprocessing import (
     apply_ecg_polarity,
     apply_rsp_source,
     filter_ecg,
+    invert_ecg,
     resolve_ecg,
     resolve_resp,
+    retrigger_beats,
 )
 from spectHR.config import CardioParams
 
@@ -131,6 +133,27 @@ def test_beat_detection_skips_when_hrv_present():
 def test_beat_detection_no_ecg_is_noop():
     s = Session(name="x")
     assert apply_beat_detection(s) is s
+
+
+def test_retrigger_beats_forces_redetection():
+    t, v = _synth_ecg(20.0)
+    # A session whose hrv is bogus (one beat): retrigger must redetect properly.
+    bogus = Events(np.array([1.0]), np.array(["N"], dtype=object))
+    s = Session(name="r", samples={"ecg": Samples(t, v, "ecg")}, events={"hrv": bogus})
+    out = retrigger_beats(s)
+    assert out.events["hrv"].times.size > 10
+    # apply_beat_detection alone would leave the bogus hrv untouched:
+    assert apply_beat_detection(s).events["hrv"].times.size == 1
+
+
+def test_invert_ecg_flips_and_detects():
+    t, v = _synth_ecg(20.0)
+    # R-peaks negative -> only detectable as upright after inversion.
+    s = Session(name="i", samples={"ecg": Samples(t, -v, "ecg")})
+    out = invert_ecg(s)
+    assert np.allclose(out.samples["ecg"].values, v)         # flipped upright
+    assert out.events.get("hrv") is not None
+    assert out.events["hrv"].times.size > 10
 
 
 # ---------------------------------------------------------------------------

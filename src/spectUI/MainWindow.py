@@ -15,19 +15,21 @@ Plot-dock callbacks are stubs pending widget implementation.
 """
 from __future__ import annotations
 
+import pickle
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import qtawesome as qta
-from PySide6.QtCore import Qt, QObject, QSize, QThread, Signal
+from PySide6.QtCore import Qt, QObject, QSize, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QToolButton,
     QTreeWidget,
@@ -45,6 +47,8 @@ from spectHR.DataSet.preprocessing import (
     apply_bp_calibration,
     apply_ecg_polarity,
     apply_rsp_source,
+    invert_ecg,
+    retrigger_beats,
 )
 
 from spectUI.perspectives import (
@@ -146,10 +150,15 @@ class _LoadWorker(QObject):
         t0 = time.monotonic()
         try:
             session = _load_session(self._path)
-            session = apply_ecg_polarity(session,   self._params)  # before detection
-            session = apply_rsp_source(session,     self._params)
-            session = apply_bp_calibration(session, self._params)
-            session = apply_beat_detection(session, self._params)
+            # A cached ``.pkl`` is an already-processed Session (it may carry
+            # the user's R-peak edits) — re-running the pipeline would, e.g.,
+            # flip an already-corrected ECG a second time.  Only raw files get
+            # the conditioning pipeline.
+            if self._path.suffix.lower() != ".pkl":
+                session = apply_ecg_polarity(session,   self._params)  # before detection
+                session = apply_rsp_source(session,     self._params)
+                session = apply_bp_calibration(session, self._params)
+                session = apply_beat_detection(session, self._params)
             self.finished.emit(session, time.monotonic() - t0)
         except Exception as exc:
             self.failed.emit(str(self._path), str(exc))
@@ -236,10 +245,17 @@ class MainWindow(QMainWindow):
         self._session:         Session | None = None
         self._load_thread:     QThread | None = None
         self._prep_widget:     PrepPlotWidget | None = None
+        self._loaded_raw_path: Path | None = None  # the raw file behind the cache
 
         self._docks: dict[str, CDockWidget] = {}
         # Live data docks (those that take a Session), keyed by object name.
         self._data_docks: dict[str, QWidget] = {}
+
+        # Debounced "data changed → save edited Session to the cache" timer.
+        self._cache_timer = QTimer(self)
+        self._cache_timer.setSingleShot(True)
+        self._cache_timer.setInterval(1500)
+        self._cache_timer.timeout.connect(self._save_cache)
 
         self._build_docks()
         self._build_menu_and_toolbar()
@@ -256,6 +272,8 @@ class MainWindow(QMainWindow):
         self._tree.setHeaderHidden(True)
         self._tree.itemDoubleClicked.connect(self._on_file_activated)
         self._tree.itemClicked.connect(self._on_tree_item_clicked)
+        self._tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._on_tree_menu)
         self._add_dock(_DOCK_WORKSPACE, "Workspace", self._tree,
                        DockWidgetArea.LeftDockWidgetArea)
 
@@ -513,15 +531,67 @@ class MainWindow(QMainWindow):
             return
         self._load_file(Path(data["filename"]))
 
-    def _load_file(self, path: Path) -> None:
+    def _on_tree_menu(self, position) -> None:
+        """Right-click menu on a dataset: reload raw, invert ECG, retrigger."""
+        item = self._tree.itemAt(position)
+        if item is None:
+            return
+        data = item.data(0, Qt.UserRole)
+        if not data or data.get("type") != "dataset":
+            return
+
+        menu = QMenu(self)
+        act_reload = menu.addAction("Reload raw")        # discard cache, re-parse
+        act_invert = menu.addAction("Invert ECG polarity")
+        act_retrig = menu.addAction("Retrigger R-tops")  # re-detect from scratch
+        chosen = menu.exec(self._tree.viewport().mapToGlobal(position))
+
+        if chosen is act_reload:
+            self._load_file(Path(data["filename"]), ignore_cache=True)
+        elif chosen is act_invert:
+            self._reprocess(invert_ecg)
+        elif chosen is act_retrig:
+            self._reprocess(retrigger_beats)
+
+    def _reprocess(self, transform) -> None:
+        """Apply a headless ``Session → Session`` *transform* to the loaded data.
+
+        Used by the tree menu's invert / retrigger actions: run the transform,
+        re-broadcast the new session to every dock, invalidate caches and save.
+        """
+        if self._session is None:
+            return
+        self.setCursor(Qt.WaitCursor)
+        try:
+            self._session = transform(self._session, self._parameters)
+        except Exception:  # noqa: BLE001 — surface, never crash
+            logger.exception("Re-processing failed")
+            self.unsetCursor()
+            return
+        self.unsetCursor()
+        for widget in self._data_docks.values():
+            widget.set_session(self._session, self._parameters)
+        self._scheduler.invalidate()
+        self._save_cache()
+
+    def _load_file(self, path: Path, *, ignore_cache: bool = False) -> None:
         if self._load_thread is not None and self._load_thread.isRunning():
             logger.warning(f"Still loading — ignoring {path.name}")
             return
 
-        logger.info(f"Loading {path.name} …")
+        self._loaded_raw_path = path
+        self._cache_timer.stop()
+        cache = self._cache_path(path)
+        if ignore_cache and cache.exists():
+            cache.unlink()
+        actual = cache if (cache.exists() and not ignore_cache) else path
+        logger.info(
+            f"Loading {path.name} …"
+            + (" (from cache)" if actual is cache else "")
+        )
         self.setCursor(Qt.WaitCursor)
 
-        self._load_worker = _LoadWorker(path, self._parameters)
+        self._load_worker = _LoadWorker(actual, self._parameters)
         self._load_thread = QThread(self)
         self._load_worker.moveToThread(self._load_thread)
 
@@ -560,10 +630,33 @@ class MainWindow(QMainWindow):
             widget.set_session(session, self._parameters)
         self._add_epoch_act.setEnabled(True)
 
+    def _cache_path(self, raw_path: Path) -> Path:
+        """Cache pickle path for a raw recording: ``<cache_dir>/<name>.pkl``."""
+        return self._settings.cache_dir / (raw_path.name + ".pkl")
+
+    def _save_cache(self) -> None:
+        """Persist the current (edited) Session to the cache as a pickle.
+
+        Called debounced after a data change.  On the next load of the same
+        raw file the cached Session — with the user's edits — is loaded
+        instead of re-parsing and re-detecting the raw recording.
+        """
+        if self._session is None or self._loaded_raw_path is None:
+            return
+        cache = self._cache_path(self._loaded_raw_path)
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache, "wb") as f:
+                pickle.dump(self._session, f, protocol=pickle.HIGHEST_PROTOCOL)
+            logger.info("Cached edited dataset → %s", cache.name)
+        except Exception:  # noqa: BLE001 — caching is best-effort
+            logger.exception("Failed to write cache pickle %s", cache)
+
     def _on_epochs_changed(self, source) -> None:
         """An epoch's active state changed in *source* (e.g. Poincaré checkbox)."""
         self._scheduler.invalidate()
         self._coordinator.notify(DataChange.EPOCHS, source=source)
+        self._cache_timer.start()
 
     def _jump_to_prep_at(self, t: float) -> None:
         """Raise the pre-processing dock and zoom it onto the IBI at time *t*.
@@ -590,6 +683,7 @@ class MainWindow(QMainWindow):
         """
         self._scheduler.invalidate()
         self._coordinator.notify(DataChange.HRV, source=self._prep_widget)
+        self._cache_timer.start()  # debounced: save edited dataset to cache
 
     def _on_load_failed(self, path: str, error: str) -> None:
         self.unsetCursor()

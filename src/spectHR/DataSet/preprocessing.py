@@ -45,6 +45,8 @@ __all__ = [
     "apply_beat_detection",
     "apply_bp_calibration",
     "apply_rsp_source",
+    "retrigger_beats",
+    "invert_ecg",
 ]
 
 # Accept either a WorkspaceView, a raw dict, or None.
@@ -185,6 +187,48 @@ def filter_ecg(ecg: Samples | None, cardio: CardioParams) -> Samples | None:
     except Exception as exc:  # noqa: BLE001 — bad cutoff / too-short signal
         logger.warning("ECG prefilter skipped (%s).", exc)
         return ecg
+
+
+def _without_hrv(session: Session) -> Session:
+    """Return a copy of *session* with the ``"hrv"`` channel removed."""
+    return Session(
+        name=session.name,
+        samples=session.samples,
+        events={k: v for k, v in session.events.items() if k != "hrv"},
+        intervals=session.intervals,
+        epochs=session.epochs,
+    )
+
+
+def retrigger_beats(session: Session, params: _ParamsLike = None) -> Session:
+    """Re-detect R-peaks from the ECG, discarding any existing ``"hrv"``.
+
+    Unlike :func:`apply_beat_detection` (which leaves an already-detected
+    session untouched), this forces a fresh detection — the "retrigger
+    R-tops" action that throws away manual edits and redetects from scratch.
+    """
+    return apply_beat_detection(_without_hrv(session), params)
+
+
+def invert_ecg(session: Session, params: _ParamsLike = None) -> Session:
+    """Flip every ECG channel and re-detect R-peaks.
+
+    The manual-override counterpart to :func:`apply_ecg_polarity`: when the
+    automatic polarity decision was wrong, this inverts the ECG and triggers
+    a fresh detection on the corrected signal.
+    """
+    new_samples = dict(session.samples)
+    for key, sig in session.samples.items():
+        if key.lower().startswith("ecg"):
+            new_samples[key] = Samples(sig.times, -np.asarray(sig.values), sig.name)
+    flipped = Session(
+        name=session.name,
+        samples=new_samples,
+        events={k: v for k, v in session.events.items() if k != "hrv"},
+        intervals=session.intervals,
+        epochs=session.epochs,
+    )
+    return apply_beat_detection(flipped, params)
 
 
 def apply_beat_detection(session: Session, params: _ParamsLike = None) -> Session:
