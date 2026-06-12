@@ -139,6 +139,14 @@ class EpochGridView(QWidget):
     # Hooks
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _view(config):
+        """Return a :class:`WorkspaceView` from a Parameters / dict / None."""
+        from spectHR.config import WorkspaceView
+        if isinstance(config, WorkspaceView):
+            return config
+        return WorkspaceView(config if isinstance(config, dict) else None)
+
     def _resolve(self, config) -> None:
         """Cache settings the worker needs (main thread).  Default: nothing."""
 

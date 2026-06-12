@@ -29,7 +29,13 @@ LogWidget
 from spectUI.widgets.EventCodeWindow import EventCodeWindow
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.bp import BPSeriesWidget
-from spectUI.widgets.grid import PSDPlotWidget
+from spectUI.widgets.grid import (
+    ProfilePlotWidget,
+    PSDPlotWidget,
+    SpectrogramPlotWidget,
+    TransferPlotWidget,
+    TransferProfilePlotWidget,
+)
 from spectUI.widgets.hr import HRSeriesWidget
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.poincare import PoincareWidget
@@ -43,6 +49,10 @@ __all__ = [
     "BPSeriesWidget",
     "PoincareWidget",
     "PSDPlotWidget",
+    "ProfilePlotWidget",
+    "SpectrogramPlotWidget",
+    "TransferPlotWidget",
+    "TransferProfilePlotWidget",
     "ResultsTableWidget",
     "RTopController",
     # utility widgets

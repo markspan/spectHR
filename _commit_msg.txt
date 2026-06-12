@@ -1,21 +1,19 @@
-Add pickle cache and the workspace tree right-click menu
+Add Profiles, Spectrogram, Transfer and Transfer-profile grid docks
 
-Pickle cache (cache_dir/<rawname>.pkl)
-- After a data change (R-peak edit, epoch toggle) the edited Session is
-  saved to the cache, debounced 1.5 s.
-- On load, an existing cache pkl for a raw file is loaded in preference to
-  re-parsing the raw — so manual edits persist across sessions.
-- The load worker skips the conditioning pipeline for a .pkl (it is already
-  processed; re-running would, e.g., flip an already-corrected ECG again).
+Four more per-epoch docks on the EpochGridView base, each calling its
+verified spectHR analysis entry point with workspace settings (compute
+nothing in the UI):
 
-Tree right-click menu (as in V2)
-- Reload raw      : discard the cache pkl and re-parse the raw file.
-- Invert ECG polarity : flip the ECG and re-detect (manual override).
-- Retrigger R-tops    : re-detect from scratch, discarding manual edits.
+- ProfilePlotWidget          : compute_band_power_profile (band power vs time).
+- SpectrogramPlotWidget      : fetch_spectrogram (PSD grid as a heatmap).
+- TransferPlotWidget         : compute_transfer (|H| + coherence vs frequency).
+- TransferProfilePlotWidget  : compute_transfer_profile (per-band |H| vs time).
 
-spectHR (headless, tested): retrigger_beats and invert_ecg Session->Session
-transforms.
+The transfer docks select their input channel (respiration / BP) from
+TransferAnalysis.input_signal and depend additionally on BP/RESP changes.
+A shared _view() helper on EpochGridView resolves the WorkspaceView.
 
-399 passing.
+Wired into MainWindow data_specs.  Tested: each builds one tile per active
+epoch off-thread.  400 passing.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

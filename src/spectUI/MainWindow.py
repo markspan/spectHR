@@ -65,8 +65,12 @@ from spectUI.widgets import (
     HRSeriesWidget,
     PoincareWidget,
     PrepPlotWidget,
+    ProfilePlotWidget,
     PSDPlotWidget,
     ResultsTableWidget,
+    SpectrogramPlotWidget,
+    TransferPlotWidget,
+    TransferProfilePlotWidget,
 )
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.log_widget import LogWidget
@@ -280,13 +284,20 @@ class MainWindow(QMainWindow):
         # Which centre docks are live (take a Session) and what each derives
         # from — the coordinator refreshes a dock when its dependencies change.
         # Docks not listed here are still placeholders.
+        # Heavy spectral docks all derive from the R-peaks, the epoch table
+        # and the analysis parameters.
+        _HEAVY = DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS
         data_specs = {
             _DOCK_PREPROCESSING: (PrepPlotWidget, DataChange.HRV | DataChange.EPOCHS),
             _DOCK_HR:            (HRSeriesWidget, DataChange.HRV | DataChange.EPOCHS),
             _DOCK_BP:            (BPSeriesWidget, DataChange.BP | DataChange.EPOCHS),
             _DOCK_POINCARE:      (PoincareWidget, DataChange.HRV | DataChange.EPOCHS),
-            _DOCK_PSD:           (PSDPlotWidget,
-                                  DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS),
+            _DOCK_PSD:           (PSDPlotWidget, _HEAVY),
+            _DOCK_PROFILES:      (ProfilePlotWidget, _HEAVY),
+            _DOCK_SPECTROGRAM:   (SpectrogramPlotWidget, _HEAVY),
+            _DOCK_TRANSFER:      (TransferPlotWidget, _HEAVY | DataChange.BP | DataChange.RESP),
+            _DOCK_TRANSFERPROFILE: (TransferProfilePlotWidget,
+                                    _HEAVY | DataChange.BP | DataChange.RESP),
             _DOCK_RESULTS:       (ResultsTableWidget, DataChange.ALL),
         }
 
