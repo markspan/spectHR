@@ -1,18 +1,26 @@
-Transfer Bode tiles: band shading + phase axis in pi (V2)
+Surface RSA / resp / PEP metrics; canonical channels; header tooltips
 
-Brought the transfer (Bode) tiles up to V2's look:
+The per-epoch Results table left RSA, resp_rate, hf_resp_in_band and PEP
+blank even when the recording carried the data. Two headless gaps:
 
-* Vertical band shading (axvspan) across the phase and coherence panels,
-  coloured from the band table.
-* Phase panel reads in pi: wrapped phase plotted as coherence-gated
-  points (low-coherence bins faded by coherence_mask_alpha), y-axis
-  ticked at -pi .. pi with pi labels and a zero line.
-* Modulus keeps the PSD-style under-curve band fills and now labels its
-  y-axis with the input-dependent unit (modulus_unit); coherence shows
-  the min-coherence threshold line; top/right spines removed on all three.
-* TransferProfile lines are coloured by their band colour.
+* Breath phases were never detected. Added apply_breath_phases (resp +
+  R-peaks -> INH/EXH 'breath' Intervals) and ran it in the load pipeline
+  after beat detection. This lights up resp_rate / hf_resp_in_band and the
+  Grossman RSA / RSA0 metrics (verified on example1.EVT/NFF).
 
-All driven by the existing TransferAnalysis settings (phase_view,
-coherence_mask_alpha, show_coherence_threshold, min_coherence, f_min/f_max).
+* Device-suffixed channels were invisible to the metrics. The EpochContext
+  reads session.ecg / resp / bp / icg, which only match the canonical key,
+  so a VU-AMS EDF (ecg-[vuams], dzdt-[vuams], rsp-[vuams]) resolved to
+  nothing and PEP could never run. Added resolve_bp / resolve_icg (the
+  dZ/dt channel is the ICG) and apply_canonical_channels, run first in the
+  pipeline, aliasing each canonical channel to the same Samples object.
+  PEP now computes on the VU-AMS EDF and honours the B-point guard
+  (IcgAnalysis.b_point_guard_ms): guard 10/30/60 ms -> PEP 135/130/87 ms.
+
+* Restored docstring header tooltips on the Results table: each metric
+  column shows its calculation's docstring (ResultsTableWidget._metric_docs).
+
+Tests: breath-phase + canonical-channel transforms, a header-tooltip
+assertion, and an EpochContext b-point-guard flow test.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

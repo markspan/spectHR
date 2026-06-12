@@ -45,6 +45,8 @@ from spectHR.session import Session
 from spectHR.DataSet.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
+    apply_breath_phases,
+    apply_canonical_channels,
     apply_ecg_polarity,
     apply_rsp_source,
     invert_ecg,
@@ -160,10 +162,12 @@ class _LoadWorker(QObject):
             # flip an already-corrected ECG a second time.  Only raw files get
             # the conditioning pipeline.
             if self._path.suffix.lower() != ".pkl":
+                session = apply_canonical_channels(session)            # alias keys first
                 session = apply_ecg_polarity(session,   self._params)  # before detection
                 session = apply_rsp_source(session,     self._params)
                 session = apply_bp_calibration(session, self._params)
                 session = apply_beat_detection(session, self._params)
+                session = apply_breath_phases(session,  self._params)  # needs beats
             self.finished.emit(session, time.monotonic() - t0)
         except Exception as exc:
             self.failed.emit(str(self._path), str(exc))

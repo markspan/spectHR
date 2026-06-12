@@ -40,11 +40,15 @@ from spectHR.Tools.Logger import logger
 __all__ = [
     "resolve_ecg",
     "resolve_resp",
+    "resolve_bp",
+    "resolve_icg",
+    "apply_canonical_channels",
     "filter_ecg",
     "apply_ecg_polarity",
     "apply_beat_detection",
     "apply_bp_calibration",
     "apply_rsp_source",
+    "apply_breath_phases",
     "retrigger_beats",
     "invert_ecg",
 ]
@@ -81,12 +85,57 @@ def resolve_resp(session: Session) -> Samples | None:
     return session.resp or _first_with_prefix(session, ("resp", "rsp"))
 
 
+def resolve_bp(session: Session) -> Samples | None:
+    """Return the blood-pressure channel: canonical, or first ``bp*`` variant."""
+    return session.bp or _first_with_prefix(session, ("bp", "fbp", "abp", "finap", "nibp"))
+
+
+def resolve_icg(session: Session) -> Samples | None:
+    """Return the ICG (dZ/dt) channel: canonical ``"icg"`` or a ``dzdt*`` variant.
+
+    VU-AMS EDF recordings carry the impedance-cardiogram derivative under
+    ``dzdt-[device]`` rather than ``icg`` — that derivative *is* the ICG signal
+    PEP detection needs, so it resolves here.
+    """
+    return session.icg or _first_with_prefix(session, ("icg", "dzdt", "dz/dt"))
+
+
 def _first_with_prefix(session: Session, prefixes: tuple[str, ...]) -> Samples | None:
     """First sample channel whose key starts (case-insensitively) with a prefix."""
     for key, sig in session.samples.items():
         if key.lower().startswith(prefixes):
             return sig
     return None
+
+
+def apply_canonical_channels(session: Session, params: _ParamsLike = None) -> Session:  # noqa: ARG001
+    """Alias device-suffixed channels to their canonical keys.
+
+    Loaders keep raw keys (``ecg-[vuams]``, ``dzdt-[vuams]``, ``rsp-[…]``), but
+    the per-epoch metrics and docks read the canonical accessors
+    (``session.ecg`` / ``resp`` / ``bp`` / ``icg``), which only match the
+    canonical key.  This early step resolves each canonical channel once and
+    stores the *same* ``Samples`` object under the canonical key (no copy), so
+    BP / respiration / RSA / PEP metrics light up for suffixed recordings.
+    Returns the same session when every canonical channel already exists.
+    """
+    resolvers = {"ecg": resolve_ecg, "resp": resolve_resp,
+                 "bp": resolve_bp, "icg": resolve_icg}
+    additions = {
+        canon: ch
+        for canon, resolve in resolvers.items()
+        if session.samples.get(canon) is None and (ch := resolve(session)) is not None
+    }
+    if not additions:
+        return session
+    logger.info("Canonicalised channels: %s", ", ".join(sorted(additions)))
+    return Session(
+        name=session.name,
+        samples={**session.samples, **additions},
+        events=session.events,
+        intervals=session.intervals,
+        epochs=session.epochs,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -336,3 +385,36 @@ def apply_rsp_source(session: Session, params: _ParamsLike = None) -> Session:
         intervals=session.intervals,
         epochs=session.epochs,
     )
+
+
+# ---------------------------------------------------------------------------
+# Breath-phase segmentation
+# ---------------------------------------------------------------------------
+
+
+def apply_breath_phases(session: Session, params: _ParamsLike = None) -> Session:  # noqa: ARG001
+    """Return a new ``Session`` with INH/EXH breath phases detected.
+
+    The respiration channel is segmented into inhalation / exhalation
+    intervals (stored as the ``breath`` :class:`~spectHR.session.Intervals`),
+    which the per-epoch RSA, ``resp_rate`` and ``hf_resp_in_band`` metrics and
+    the HR-series breathing overlay all read.  Requires R-peaks (``hrv``) and a
+    respiration channel; returns the session unchanged when either is missing
+    or phases already exist.  Must run *after* :func:`apply_beat_detection`.
+    """
+    if session.breath is not None or session.hrv is None:
+        return session
+    # Prefer the canonical key, then any respiration-like channel
+    # ("resp", "respiration", "respi", "rsp-[device]", …).
+    keys = list(session.samples)
+    resp_key = next(
+        (k for k in ("resp", "respiration") if k in session.samples),
+        next((k for k in keys if k.lower().startswith(("resp", "rsp"))), None),
+    )
+    if resp_key is None:
+        return session
+    try:
+        return session.with_detected_phases(resp_key)
+    except Exception as exc:  # noqa: BLE001 — never abort a load
+        logger.warning("Breath-phase detection failed: %s", exc)
+        return session

@@ -79,11 +79,35 @@ class ResultsTableWidget(QWidget):
         )
         return AnalysisConfig.from_workspace(workspace)
 
+    @staticmethod
+    def _metric_docs() -> dict[str, str]:
+        """Map each registered metric name to its docstring (first paragraph).
+
+        Used to restore the V2 behaviour of showing the calculation's
+        docstring as the column-header tooltip.
+        """
+        from spectHR.analysis.registry import get_metric_groups, get_metrics
+
+        docs: dict[str, str] = {}
+        for src in (get_metrics(), get_metric_groups()):
+            for name, fn in src.items():
+                doc = (fn.__doc__ or "").strip()
+                if doc:
+                    docs[name] = doc.split("\n\n")[0].strip()
+        return docs
+
     def _populate(self, labels, columns: list[str], values: np.ndarray) -> None:
         self.table.clear()
         self.table.setRowCount(len(labels))
         self.table.setColumnCount(1 + len(columns))
         self.table.setHorizontalHeaderLabels(["epoch", *columns])
+
+        # Header tooltips: the docstring of each metric's calculation (V2).
+        docs = self._metric_docs()
+        for c, col in enumerate(columns):
+            header = self.table.horizontalHeaderItem(c + 1)
+            if header is not None and col in docs:
+                header.setToolTip(docs[col])
 
         for r, label in enumerate(labels):
             name_item = QTableWidgetItem(str(label))

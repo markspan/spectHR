@@ -14,6 +14,7 @@ from spectHR.session import Epoch, Events, Samples, Session
 from spectHR.DataSet.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
+    apply_breath_phases,
     apply_ecg_polarity,
     apply_rsp_source,
     filter_ecg,
@@ -187,3 +188,67 @@ def test_rsp_source_copies_icg_to_resp():
 def test_rsp_source_missing_channel_is_noop():
     s = Session(name="r")
     assert apply_rsp_source(s, {"RespirationAnalysis": {"rsp_source": "icg"}}) is s
+
+
+# ---------------------------------------------------------------------------
+# Breath-phase segmentation
+# ---------------------------------------------------------------------------
+
+
+def test_breath_phases_detected_from_resp():
+    """A resp channel + R-peaks yields a 'breath' Intervals (INH/EXH)."""
+    fs = 50.0
+    t = np.arange(0.0, 120.0, 1.0 / fs)
+    resp = np.sin(2 * np.pi * 0.25 * t)            # 0.25 Hz breathing
+    peaks = np.arange(0.5, 120.0, 0.8)             # ~75 bpm R-peaks
+    labels = np.full(peaks.shape, "N", dtype=object)
+    s = Session(
+        name="b",
+        samples={"resp": Samples(t, resp, "resp")},
+        events={"hrv": Events(peaks, labels)},
+    )
+    out = apply_breath_phases(s, None)
+    assert out.breath is not None
+    assert set(np.unique(out.breath.labels)) <= {"INH", "EXH"}
+    assert out.breath.labels.size > 4              # several breaths over 120 s
+
+
+def test_breath_phases_noop_without_resp():
+    peaks = np.arange(0.5, 30.0, 0.8)
+    s = Session(name="n", events={"hrv": Events(peaks, np.full(peaks.shape, "N", object))})
+    assert apply_breath_phases(s, None) is s
+
+
+def test_breath_phases_noop_without_beats():
+    t = np.arange(0.0, 30.0, 0.02)
+    s = Session(name="n", samples={"resp": Samples(t, np.sin(t), "resp")})
+    assert apply_breath_phases(s, None) is s
+
+
+# ---------------------------------------------------------------------------
+# Canonical channel aliasing
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_channels_alias_device_suffixed_and_icg():
+    """ecg-[dev]/dzdt-[dev]/rsp-[dev] become accessible as ecg/icg/resp."""
+    from spectHR.DataSet.preprocessing import apply_canonical_channels
+
+    t = np.arange(0.0, 5.0, 0.01)
+    s = Session(name="vu", samples={
+        "ecg-[vuams]":  Samples(t, np.sin(t),       "ecg-[vuams]"),
+        "dzdt-[vuams]": Samples(t, np.cos(t),       "dzdt-[vuams]"),
+        "rsp-[vuams]":  Samples(t, np.sin(0.3 * t), "rsp-[vuams]"),
+    })
+    assert s.ecg is None and s.icg is None and s.resp is None   # canonical misses
+    out = apply_canonical_channels(s)
+    assert out.ecg is not None and out.icg is not None and out.resp is not None
+    # Aliases reuse the same Samples object (no copy).
+    assert out.icg is out.samples["dzdt-[vuams]"]
+
+
+def test_canonical_channels_noop_when_canonical_present():
+    t = np.arange(0.0, 5.0, 0.01)
+    s = Session(name="c", samples={"ecg": Samples(t, np.sin(t), "ecg")})
+    from spectHR.DataSet.preprocessing import apply_canonical_channels
+    assert apply_canonical_channels(s) is s

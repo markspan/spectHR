@@ -86,6 +86,37 @@ def test_pep_no_ecg_uses_rpeak_reference():
     assert d["ecg_ens"] is None
 
 
+def test_b_point_guard_flows_through_epoch_context():
+    """``EpochContext.b_point_guard_ms`` reaches ``pep_ensemble`` (config path).
+
+    The guard is honoured by the per-epoch table, not just the bare
+    ``_b_point_index`` helper: building a context with two different guards
+    yields two different B-points / PEP values for the same ICG.
+    """
+    from types import SimpleNamespace
+
+    from spectHR.analysis.epoch_context import EpochContext
+
+    rpeaks, t, dz, ecg = _synthetic_icg()
+    view = SimpleNamespace(
+        times=rpeaks,
+        ibi=np.diff(rpeaks, prepend=rpeaks[0]),
+        labels=np.full(rpeaks.shape, "N", dtype=object),
+    )
+    icg_ts = SimpleNamespace(times=t, values=dz)
+    ecg_ts = SimpleNamespace(times=t, values=ecg)
+
+    def pep_for(guard):
+        ctx = EpochContext(view, icg_ts=icg_ts, ecg_ts=ecg_ts,
+                           b_point_guard_ms=guard)
+        return ctx.pep_value
+
+    near, far = pep_for(0.0), pep_for(60.0)
+    assert near is not None and far is not None
+    assert np.isfinite(near) and np.isfinite(far)
+    assert near != far          # the guard actually changes the result
+
+
 def test_b_point_guard_excludes_zone_before_c():
     """The 30 ms guard moves B earlier when a bump sits just before C.
 

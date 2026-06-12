@@ -150,6 +150,11 @@ assert res.table.columnCount() > 1                      # epoch + metrics
 headers = [res.table.horizontalHeaderItem(c).text()
            for c in range(res.table.columnCount())]
 assert headers[0] == "epoch"
+# Metric column headers carry their calculation's docstring as a tooltip.
+tips = {res.table.horizontalHeaderItem(c).text():
+        res.table.horizontalHeaderItem(c).toolTip()
+        for c in range(1, res.table.columnCount())}
+assert "rmssd" in tips and tips["rmssd"].strip(), "no docstring tooltip on header"
 
 # --- PSD grid: per-epoch spectra computed off-thread, then gridded ---------
 def make_psd_session():
