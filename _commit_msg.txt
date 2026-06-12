@@ -1,24 +1,12 @@
-Make the spectral tiles V2-faithful (PSD CI/band fills, Bode transfer)
+Epoch editor: V2-faithful y-axis, tab20 colours, rename/delete
 
-Port the V2 plotting routines into a shared display helper
-(spectUI/common/spectral_plots.py) and use them so the spectral docks match
-V2 in functionality and look:
+Re-style the epoch editor to match V2 and keep the development improvements:
+- Epoch names down the y-axis (clickable tick labels).
+- One tab20 colour per epoch (active full, inactive dimmed) with vertical
+  start/end labels at the bar edges.
+- Click a y-axis label to rename the epoch, or clear the name to delete it.
+- (Kept) edge-drag to resize, body-click to toggle active.
 
-- PSD       : confidence-interval shading, black PSD line, per-band
-  under-curve fills labelled with their integrated band power, a unit-bearing
-  y-axis (0..peak) and the band-table x-range.  Computes with CI now.
-- Profiles  : per-band lines in the configured band colours, unit y-axis,
-  epoch-relative time, y starting at 0.
-- Transfer  : a Bode triple per tile — |H| (with PSD-style band fills),
-  phase, and coherence with the min-coherence threshold line — sharing the
-  frequency axis.
-
-Band power for the legends uses spectHR.band_power_rectangular; the helper is
-display-only (matplotlib), the algorithms stay in spectHR.
-
-Combined with the workspace-change propagation, the spectral docks now
-recompute and redraw when the bands / PSD method / transfer settings change.
-
-401 passing (grid test asserts the Bode triple and the settings re-resolve).
+Every edit commits into session.epochs and emits epochsChanged.  401 passing.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

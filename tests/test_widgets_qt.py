@@ -109,6 +109,7 @@ ed.show()
 ed.set_session(session, None)
 ed.canvas.draw()
 assert len(ed.ax.patches) >= 1                          # one bar per epoch
+assert [t.get_text() for t in ed.ax.get_yticklabels()] == ["whole"]  # names on y-axis
 ed_changes = {"n": 0}
 ed.epochsChanged.connect(lambda: ed_changes.__setitem__("n", ed_changes["n"] + 1))
 
