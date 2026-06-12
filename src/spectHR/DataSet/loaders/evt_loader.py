@@ -28,17 +28,28 @@ def load_evt(path: Path, **kwargs: Any) -> "Session":
     rtop_times, marker_times, marker_labels = _parse_evt(evt_path)
 
     # ---- paired NFF? -------------------------------------------------------
+    #
+    # The NFF sample clock and the EVT event clock share one absolute time
+    # base (e.g. both start at ~286.7 s for example1).  We rebase the whole
+    # recording to start at 0 for display, which means shifting the NFF
+    # samples *and the EVT events by the same offset* — shifting only the
+    # samples (as an earlier version did) left the R-tops ~t_min_nff seconds
+    # adrift of the ECG.
     samples: dict[str, Samples] = {}
+    t_shift = 0.0
     nff_path = evt_path.with_suffix(".nff")
     if nff_path.exists():
         raw_samples, _cal = _load_nff_samples(nff_path)
-        # NFF timestamps are absolute; EVT timestamps are from recording start.
-        # Normalize by aligning to the minimum NFF timestamp.
         if raw_samples:
-            t_min_nff = min(float(s.times[0]) for s in raw_samples.values() if s.times.size)
-            samples = {k: Samples(s.times - t_min_nff, s.values, s.name)
+            t_shift = min(float(s.times[0]) for s in raw_samples.values() if s.times.size)
+            samples = {k: Samples(s.times - t_shift, s.values, s.name)
                        for k, s in raw_samples.items()}
         logger.info(f"Loaded paired NFF: {nff_path.name}")
+
+    # Rebase the EVT events into the same 0-based frame as the NFF samples.
+    if t_shift:
+        rtop_times = rtop_times - t_shift
+        marker_times = [t - t_shift for t in marker_times]
 
     # ---- R-peak events -----------------------------------------------------
     labels = np.full(rtop_times.shape, "N", dtype=object)

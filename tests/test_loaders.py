@@ -109,6 +109,28 @@ def test_nff_times_start_at_zero(stub_event_code_window):
         assert s.times[0] >= 0.0, f"channel '{name}' times do not start at 0"
 
 
+def test_evt_rtops_aligned_with_nff_ecg(stub_event_code_window):
+    """EVT R-tops and the NFF ECG share one time base after rebasing.
+
+    Regression: rebasing the NFF samples to start at 0 must also rebase the
+    EVT events by the same offset, or the R-tops drift ~t_min_nff seconds off
+    the ECG (example1's NFF clock starts at ~287 s).
+    """
+    session = load(DATA_DIR / "example1.EVT")
+    ecg = session.samples["ecg"]
+    hrv = session.events["hrv"]
+
+    # Every R-top falls inside the ECG span.
+    assert hrv.times[0] >= ecg.times[0] - 0.1
+    assert hrv.times[-1] <= ecg.times[-1] + 0.1
+
+    # R-tops sit on R-waves: the ECG sample at each R-top time is an extreme
+    # value (|z| well above baseline), not a mid-cycle sample.
+    idx = np.clip(np.searchsorted(ecg.times, hrv.times), 0, ecg.values.size - 1)
+    z = np.abs((ecg.values[idx] - ecg.values.mean()) / ecg.values.std())
+    assert float(np.median(z)) > 1.5
+
+
 # ---------------------------------------------------------------------------
 # NFF per-channel calibration (raw ADC counts -> physical units)
 # ---------------------------------------------------------------------------
