@@ -19,8 +19,8 @@ import numpy as np
 
 from spectHR.analysis.ibi_helpers import ibi_clean_pairs, ibi_ms_full_with_mask
 
-__all__ = ["heart_rate_series", "poincare_pairs", "PoincareDescriptors",
-           "poincare_descriptors"]
+__all__ = ["heart_rate_series", "poincare_pairs", "poincare_points",
+           "PoincareDescriptors", "poincare_descriptors"]
 
 
 def heart_rate_series(events) -> "tuple[np.ndarray, np.ndarray]":
@@ -63,11 +63,26 @@ def poincare_pairs(events) -> "tuple[np.ndarray, np.ndarray]":
         Aligned arrays of equal length; empty when fewer than two adjacent
         valid intervals exist.
     """
+    x, y, _t = poincare_points(events)
+    return x, y
+
+
+def poincare_points(events) -> "tuple[np.ndarray, np.ndarray, np.ndarray]":
+    """Like :func:`poincare_pairs`, but also return the beat time of each pair.
+
+    Returns
+    -------
+    (ibi_n_ms, ibi_n1_ms, time_s)
+        The IBI pair and the R-peak time of beat *n* (so a click on a cloud
+        point can be traced back to its place in the recording).
+    """
     ibi_ms, valid = ibi_ms_full_with_mask(events)
     if ibi_ms.size < 2:
-        return np.array([], dtype=float), np.array([], dtype=float)
+        empty = np.array([], dtype=float)
+        return empty, empty, empty
     pair_ok = valid[:-1] & valid[1:]
-    return ibi_ms[:-1][pair_ok], ibi_ms[1:][pair_ok]
+    times = np.asarray(events.times, dtype=float)
+    return ibi_ms[:-1][pair_ok], ibi_ms[1:][pair_ok], times[:-1][pair_ok]
 
 
 @dataclass(frozen=True)

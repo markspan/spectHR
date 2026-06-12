@@ -10,6 +10,7 @@ from spectHR.analysis.derived_series import (
     heart_rate_series,
     poincare_descriptors,
     poincare_pairs,
+    poincare_points,
 )
 
 
@@ -79,3 +80,16 @@ def test_poincare_descriptors_basic():
 
 def test_poincare_descriptors_none_for_short_series():
     assert poincare_descriptors(_events([800.0])) is None
+
+
+def test_poincare_points_returns_pair_times():
+    ev = _events([800.0, 820.0, 810.0])  # beats at 0, .8, 1.62, 2.43 s
+    x, y, t = poincare_points(ev)
+    assert np.allclose(x, [800.0, 820.0])
+    assert np.allclose(y, [820.0, 810.0])
+    # time is the R-peak time of beat n (start of the first interval of each pair)
+    assert t.size == x.size
+    assert np.all(np.diff(t) > 0)
+    # poincare_pairs is the first two of poincare_points
+    px, py = poincare_pairs(ev)
+    assert np.allclose(px, x) and np.allclose(py, y)

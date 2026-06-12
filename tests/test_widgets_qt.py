@@ -79,6 +79,29 @@ ax2 = poin.fig.axes[0]
 n_pts1 = sum(c.get_offsets().shape[0] for c in ax2.collections)
 assert n_pts1 == n_pts0 + 1                             # one more pair
 
+# Square axis starting at the origin.
+assert ax2.get_xlim()[0] == 0.0 and ax2.get_ylim()[0] == 0.0
+assert ax2.get_aspect() in (1.0, "equal")
+
+# Per-epoch checkbox ("epoch scheduling") toggles active + emits epochsChanged.
+toggled = {"n": 0}
+poin.epochsChanged.connect(lambda: toggled.__setitem__("n", toggled["n"] + 1))
+cb = next(iter(poin._checkboxes.values()))
+cb.setChecked(False)
+assert toggled["n"] >= 1
+assert session.epochs["whole"].active is False
+cb.setChecked(True)  # restore
+
+# Double-clicking a point emits annotationActivated with that beat's time.
+jumped = {"t": None}
+poin.annotationActivated.connect(lambda t: jumped.__setitem__("t", t))
+x, y, tt, _c = poin._clouds["whole"]
+px, py = poin.ax.transData.transform((x[3], y[3]))
+from matplotlib.backend_bases import MouseEvent
+poin._on_click(MouseEvent("button_press_event", poin.canvas, px, py,
+                          button=1, dblclick=True))
+assert jumped["t"] is not None and abs(jumped["t"] - tt[3]) < 1e-6
+
 # --- Results table: rows = epochs, columns include time-domain metrics -----
 res = ResultsTableWidget()
 res.show()

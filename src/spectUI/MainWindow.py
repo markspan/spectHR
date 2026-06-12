@@ -332,6 +332,13 @@ class MainWindow(QMainWindow):
         if obj_name == _DOCK_PREPROCESSING:
             self._prep_widget = widget
             widget.dataEdited.connect(self._on_data_edited)
+        # Optional cross-dock signals (Poincaré and future editors).
+        if hasattr(widget, "epochsChanged"):
+            widget.epochsChanged.connect(
+                lambda w=widget: self._on_epochs_changed(w)
+            )
+        if hasattr(widget, "annotationActivated"):
+            widget.annotationActivated.connect(self._jump_to_prep_at)
 
     # ------------------------------------------------------------------
     # Menu bar + toolbar
@@ -552,6 +559,25 @@ class MainWindow(QMainWindow):
         for widget in self._data_docks.values():
             widget.set_session(session, self._parameters)
         self._add_epoch_act.setEnabled(True)
+
+    def _on_epochs_changed(self, source) -> None:
+        """An epoch's active state changed in *source* (e.g. Poincaré checkbox)."""
+        self._scheduler.invalidate()
+        self._coordinator.notify(DataChange.EPOCHS, source=source)
+
+    def _jump_to_prep_at(self, t: float) -> None:
+        """Raise the pre-processing dock and zoom it onto the IBI at time *t*.
+
+        Wired to a dock's ``annotationActivated`` signal — double-clicking a
+        Poincaré point jumps to that beat in the editor.
+        """
+        dock = self._docks.get(_DOCK_PREPROCESSING)
+        if dock is not None:
+            dock.toggleView(True)
+            dock.setAsCurrentTab()
+        if self._prep_widget is not None:
+            half = 2.0  # a ~4 s window around the beat
+            self._prep_widget.apply_window(t - half, t + half)
 
     def _on_data_edited(self) -> None:
         """React to a committed R-peak edit from the preprocessing dock.
