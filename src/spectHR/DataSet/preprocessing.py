@@ -361,15 +361,24 @@ def apply_bp_calibration(session: Session, params: _ParamsLike = None) -> Sessio
 def apply_rsp_source(session: Session, params: _ParamsLike = None) -> Session:
     """Return a new ``Session`` with the canonical ``resp`` channel set.
 
-    Reads ``rsp_source`` from the analysis parameters and copies the
-    appropriate channel to ``session.samples["resp"]``.
+    A *native* respiration channel always wins: it is the actual breathing
+    trace, so it must not be replaced by a surrogate.  Only when the recording
+    carries no respiration channel of its own does this derive ``resp`` from
+    the configured ``rsp_source``:
 
     * ``"icg"`` — uses the ``icg`` channel if present (thoracic impedance).
     * ``"accelerometer"`` — uses ``accel_rsp`` if present (PCA surrogate).
 
-    When the requested source is not available the session is returned
-    unchanged.
+    This guard matters once :func:`apply_canonical_channels` has aliased a
+    device-suffixed impedance channel to ``icg`` (e.g. VU-AMS ``dzdt-[…]``):
+    without it, ``rsp_source="icg"`` would overwrite a perfectly good
+    respiration channel with the ICG derivative, which oscillates at the
+    heart rate rather than the breathing rate.  When the requested source is
+    unavailable the session is returned unchanged.
     """
+    if resolve_resp(session) is not None:
+        return session   # native respiration present — keep it
+
     source = _as_view(params).rsp_source
     key = "icg" if source == "icg" else "accel_rsp"
 

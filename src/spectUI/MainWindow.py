@@ -170,8 +170,10 @@ class _LoadWorker(QObject):
             session = _load_session(self._path)
             # A cached ``.pkl`` is an already-processed Session (it may carry
             # the user's R-peak edits) — re-running the pipeline would, e.g.,
-            # flip an already-corrected ECG a second time.  Only raw files get
-            # the conditioning pipeline.
+            # flip an already-corrected ECG a second time, and recomputing
+            # breath phases on every cache load would defeat the cache.  Only
+            # raw files get the conditioning pipeline; the ``.pkl`` is trusted
+            # to already hold the derived data (breath phases included).
             if self._path.suffix.lower() != ".pkl":
                 session = apply_canonical_channels(session)            # alias keys first
                 session = apply_ecg_polarity(session,   self._params)  # before detection

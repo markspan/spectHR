@@ -177,12 +177,29 @@ def test_bp_calibration_zero_scale_is_noop():
 
 
 def test_rsp_source_copies_icg_to_resp():
+    """With no native respiration, resp is derived from the ICG channel."""
     t = np.arange(0.0, 5.0, 0.01)
     icg = Samples(t, np.sin(t), "icg")
     s = Session(name="r", samples={"icg": icg})
     out = apply_rsp_source(s, {"RespirationAnalysis": {"rsp_source": "icg"}})
     assert "resp" in out.samples
     assert np.allclose(out.samples["resp"].values, icg.values)
+
+
+def test_rsp_source_keeps_native_resp_over_icg():
+    """A native respiration channel must not be overwritten by the ICG.
+
+    Regression: once apply_canonical_channels aliases a VU-AMS dzdt channel to
+    ``icg``, rsp_source="icg" would otherwise replace a real breathing trace
+    with the heart-rate-paced ICG derivative.
+    """
+    t = np.arange(0.0, 5.0, 0.01)
+    native = Samples(t, np.sin(0.3 * t), "resp")
+    icg = Samples(t, np.sin(5.0 * t), "icg")
+    s = Session(name="r", samples={"resp": native, "icg": icg})
+    out = apply_rsp_source(s, {"RespirationAnalysis": {"rsp_source": "icg"}})
+    assert out is s                                   # untouched
+    assert np.allclose(out.resp.values, native.values)
 
 
 def test_rsp_source_missing_channel_is_noop():

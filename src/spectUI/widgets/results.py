@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
 from spectHR.session import AnalysisConfig, Session
+from spectUI.plot_worker import DockScheduler
 
 
 class ResultsTableWidget(QWidget):
@@ -27,6 +28,10 @@ class ResultsTableWidget(QWidget):
         super().__init__(parent)
         self._session: Session | None = None
         self._config = None
+        # The table is heavy (PEP ensemble + RSA + PSD per epoch), so it is
+        # computed off the UI thread; a stale generation is discarded when a
+        # newer edit supersedes it.
+        self._scheduler = DockScheduler()
 
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -50,20 +55,30 @@ class ResultsTableWidget(QWidget):
         """No-op: the table always shows every active epoch."""
 
     def refresh(self) -> None:
-        """Recompute the metrics table and repopulate.
+        """Recompute the metrics table off-thread, then repopulate.
 
-        Heavy (it evaluates every metric per epoch); the coordinator only
-        calls this for the visible dock, lazily for hidden ones.
+        Evaluating every metric per epoch (PEP ensemble, RSA, PSD, …) can take
+        many seconds for a long recording with many epochs, so it runs on a
+        pool thread via :class:`DockScheduler`; the table fills in when the
+        result arrives instead of freezing the UI.
         """
-        if self._session is None:
+        session = self._session
+        if session is None:
             return
-        try:
-            table = self._session.epochs_table(self._analysis_config())
-        except Exception:  # noqa: BLE001 — never crash the UI over a metric
-            from spectHR.Tools.Logger import logger
-            logger.exception("epochs_table failed")
-            return
+        config = self._analysis_config()          # build on the UI thread
+
+        def compute():
+            return session.epochs_table(config)   # pool thread; pure / headless
+
+        self._scheduler.submit("results", compute, self._on_table, self._on_error)
+
+    def _on_table(self, table) -> None:
         self._populate(table.labels, table.columns, table.values)
+
+    @staticmethod
+    def _on_error(exc: Exception) -> None:
+        from spectHR.Tools.Logger import logger
+        logger.exception("epochs_table failed", exc_info=exc)
 
     # ------------------------------------------------------------------
     # Helpers
