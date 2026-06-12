@@ -1,26 +1,10 @@
-Surface RSA / resp / PEP metrics; canonical channels; header tooltips
+HR series: shade inhalation phases behind the trace (V2)
 
-The per-epoch Results table left RSA, resp_rate, hf_resp_in_band and PEP
-blank even when the recording carried the data. Two headless gaps:
-
-* Breath phases were never detected. Added apply_breath_phases (resp +
-  R-peaks -> INH/EXH 'breath' Intervals) and ran it in the load pipeline
-  after beat detection. This lights up resp_rate / hf_resp_in_band and the
-  Grossman RSA / RSA0 metrics (verified on example1.EVT/NFF).
-
-* Device-suffixed channels were invisible to the metrics. The EpochContext
-  reads session.ecg / resp / bp / icg, which only match the canonical key,
-  so a VU-AMS EDF (ecg-[vuams], dzdt-[vuams], rsp-[vuams]) resolved to
-  nothing and PEP could never run. Added resolve_bp / resolve_icg (the
-  dZ/dt channel is the ICG) and apply_canonical_channels, run first in the
-  pipeline, aliasing each canonical channel to the same Samples object.
-  PEP now computes on the VU-AMS EDF and honours the B-point guard
-  (IcgAnalysis.b_point_guard_ms): guard 10/30/60 ms -> PEP 135/130/87 ms.
-
-* Restored docstring header tooltips on the Results table: each metric
-  column shows its calculation's docstring (ResultsTableWidget._metric_docs).
-
-Tests: breath-phase + canonical-channel transforms, a header-tooltip
-assertion, and an EpochContext b-point-guard flow test.
+The HR tachogram now shades each inhalation interval (session.breath
+INH windows) in light blue behind the trace, as V2 did, so the
+respiratory sinus arrhythmia (HR rising on inhalation, falling on
+exhalation) is legible. The inhalation windows are carried on HRModel
+and clipped to the visible window when drawn. Relies on the breath
+phases now produced by apply_breath_phases during loading.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

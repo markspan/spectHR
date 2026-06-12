@@ -12,10 +12,11 @@ coordinator refreshes it whenever an R-peak edit changes that channel.
 
 The next/previous nav buttons jump to abnormal beats via
 :meth:`Events.next_abnormal` / :meth:`Events.prev_abnormal`, mirroring the
-pre-processing dock.
+pre-processing dock.  Inhalation phases (``session.breath``) are shaded behind
+the trace, as in V2, so the respiratory sinus arrhythmia is legible.
 
-Follow-ups to reach full V2 parity: the respiration twinx overlay and the
-per-breath RSA scatter (both already have ``spectHR`` support).
+Follow-up to reach full V2 parity: the per-breath RSA scatter (already has
+``spectHR`` support).
 """
 from __future__ import annotations
 
@@ -29,7 +30,8 @@ from spectUI.common import style_axis_clean
 from spectUI.widgets.timeline.base import TimelineView
 from spectUI.widgets.timeline.model import TimelineModel
 
-_C_HR = "#c0392b"   # deep red — heart rate
+_C_HR = "#c0392b"        # deep red — heart rate
+_C_INHALE = "#ADD8E6"    # light blue — inhalation shading (V2)
 
 
 @dataclass
@@ -49,6 +51,7 @@ class HRModel(TimelineModel):
     times: np.ndarray
     hr: np.ndarray
     events: Events | None
+    inhale: list[tuple[float, float]]   # (start, end) inhalation windows (s)
 
     @classmethod
     def build(cls, session: Session, config=None) -> "HRModel":
@@ -58,13 +61,16 @@ class HRModel(TimelineModel):
         else:
             times, hr = np.array([], dtype=float), np.array([], dtype=float)
 
+        breath = session.breath
+        inhale = list(breath.windows_of("INH")) if breath is not None else []
+
         extent: tuple[float, float] | None = None
         if times.size:
             extent = (float(times[0]), float(times[-1]))
         window, navigator = cls.open_window(extent)
         return cls(
             session=session, window=window, navigator=navigator, extent=extent,
-            times=times, hr=hr, events=hrv,
+            times=times, hr=hr, events=hrv, inhale=inhale,
         )
 
 
@@ -107,6 +113,13 @@ class HRSeriesWidget(TimelineView):
         x0, x1 = m.window.x_min, m.window.x_max
         mask = (m.times >= x0) & (m.times <= x1)
         t, hr = m.times[mask], m.hr[mask]
+
+        # Inhalation phases shaded behind the trace (V2): the RSA is read as
+        # HR rising during inhalation, falling during exhalation.
+        for s, e in m.inhale:
+            if e >= x0 and s <= x1:
+                ax.axvspan(max(s, x0), min(e, x1), color=_C_INHALE,
+                           alpha=0.25, zorder=0, linewidth=0)
 
         if t.size:
             ax.plot(t, hr, color=_C_HR, linewidth=1.5, alpha=1.0, zorder=2)
