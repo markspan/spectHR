@@ -24,8 +24,14 @@ import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import Ellipse
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QHBoxLayout,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from spectHR.analysis.derived_series import poincare_descriptors, poincare_points
 from spectHR.session import Session
@@ -53,19 +59,28 @@ class PoincareWidget(QWidget):
         self.canvas = FigureCanvas(self.fig)
         self.canvas.mpl_connect("button_press_event", self._on_click)
 
-        self._cb_row = QWidget()
-        self._cb_layout = QHBoxLayout(self._cb_row)
-        self._cb_layout.setContentsMargins(4, 0, 4, 0)
+        # Epoch checkboxes: a vertical column on the right (V2 layout), in a
+        # scroll area so a recording with many epochs stays usable.
+        self._cb_container = QWidget()
+        self._cb_layout = QVBoxLayout(self._cb_container)
+        self._cb_layout.setContentsMargins(4, 4, 4, 4)
+        self._cb_layout.setSpacing(2)
         self._checkboxes: dict[str, QCheckBox] = {}
+
+        cb_scroll = QScrollArea()
+        cb_scroll.setWidgetResizable(True)
+        cb_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        cb_scroll.setWidget(self._cb_container)
+        cb_scroll.setMaximumWidth(170)
 
         # name -> (x_ms, y_ms, time_s, color); annotations -> (artist, time_s)
         self._clouds: dict[str, tuple] = {}
         self._annotations: list[tuple] = []
 
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.canvas)
-        layout.addWidget(self._cb_row)
+        layout.addWidget(self.canvas, stretch=3)
+        layout.addWidget(cb_scroll, stretch=1)
         self.setVisible(False)
 
     # ------------------------------------------------------------------

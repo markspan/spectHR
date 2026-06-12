@@ -1,12 +1,9 @@
-Epoch editor: V2-faithful y-axis, tab20 colours, rename/delete
+Make Poincare epoch bar vertical and scrollable (V2 layout)
 
-Re-style the epoch editor to match V2 and keep the development improvements:
-- Epoch names down the y-axis (clickable tick labels).
-- One tab20 colour per epoch (active full, inactive dimmed) with vertical
-  start/end labels at the bar edges.
-- Click a y-axis label to rename the epoch, or clear the name to delete it.
-- (Kept) edge-drag to resize, body-click to toggle active.
-
-Every edit commits into session.epochs and emits epochsChanged.  401 passing.
+The epoch-scheduling checkboxes sat in a horizontal row below the
+scatter; with many epochs they overflowed off the edge.  Match V2's
+poincarePlotWidget: a horizontal split with the plot on the left
+(stretch 3) and a vertical checkbox column in a scroll area on the
+right (stretch 1), so a recording with many epochs stays usable.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

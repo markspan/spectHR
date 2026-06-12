@@ -70,6 +70,10 @@ poin.set_session(session, None)
 ax = poin.fig.axes[0]
 n_pts0 = sum(c.get_offsets().shape[0] for c in ax.collections)
 assert n_pts0 > 10                                      # scatter drawn
+# Epoch checkboxes form a vertical, scrollable column (V2 layout).
+from PySide6.QtWidgets import QScrollArea, QVBoxLayout
+assert isinstance(poin._cb_layout, QVBoxLayout)
+assert len(poin.findChildren(QScrollArea)) >= 1
 
 # Add a beat to hrv, then refresh: the cloud must change.
 from spectUI.widgets.prep.rtop_controller import RTopController
