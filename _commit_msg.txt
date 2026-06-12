@@ -1,19 +1,18 @@
-Add Profiles, Spectrogram, Transfer and Transfer-profile grid docks
+Add the epoch editor dock
 
-Four more per-epoch docks on the EpochGridView base, each calling its
-verified spectHR analysis entry point with workspace settings (compute
-nothing in the UI):
+EpochEditorWidget: a Gantt-style view of the recording's epochs, one
+draggable bar per epoch on a shared time axis.
 
-- ProfilePlotWidget          : compute_band_power_profile (band power vs time).
-- SpectrogramPlotWidget      : fetch_spectrogram (PSD grid as a heatmap).
-- TransferPlotWidget         : compute_transfer (|H| + coherence vs frequency).
-- TransferProfilePlotWidget  : compute_transfer_profile (per-band |H| vs time).
+- Drag a bar's left/right edge to move the epoch start/end.
+- Click a bar's body to toggle whether the epoch is active.
 
-The transfer docks select their input channel (respiration / BP) from
-TransferAnalysis.input_signal and depend additionally on BP/RESP changes.
-A shared _view() helper on EpochGridView resolves the WorkspaceView.
+Every edit mutates session.epochs in place and emits epochsChanged, so the
+coordinator refreshes every dock that depends on the epoch table.  Wired
+into MainWindow; this is the source of DataChange.EPOCHS.
 
-Wired into MainWindow data_specs.  Tested: each builds one tile per active
-epoch off-thread.  400 passing.
+With this, all 11 listed docks are live: preprocessing, HR, BP, Poincare,
+epochs, PSD, profiles, spectrogram, transfer, transfer-profile and results.
+
+Tested: bars render, edge-drag resizes, body-click toggles.  400 passing.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

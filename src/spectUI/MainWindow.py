@@ -62,6 +62,7 @@ from spectUI.settings import AppSettings
 from spectUI.coordinator import DataChange, DataCoordinator
 from spectUI.widgets import (
     BPSeriesWidget,
+    EpochEditorWidget,
     HRSeriesWidget,
     PoincareWidget,
     PrepPlotWidget,
@@ -292,6 +293,7 @@ class MainWindow(QMainWindow):
             _DOCK_HR:            (HRSeriesWidget, DataChange.HRV | DataChange.EPOCHS),
             _DOCK_BP:            (BPSeriesWidget, DataChange.BP | DataChange.EPOCHS),
             _DOCK_POINCARE:      (PoincareWidget, DataChange.HRV | DataChange.EPOCHS),
+            _DOCK_EPOCHS:        (EpochEditorWidget, DataChange.HRV | DataChange.EPOCHS),
             _DOCK_PSD:           (PSDPlotWidget, _HEAVY),
             _DOCK_PROFILES:      (ProfilePlotWidget, _HEAVY),
             _DOCK_SPECTROGRAM:   (SpectrogramPlotWidget, _HEAVY),

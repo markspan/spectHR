@@ -102,6 +102,32 @@ poin._on_click(MouseEvent("button_press_event", poin.canvas, px, py,
                           button=1, dblclick=True))
 assert jumped["t"] is not None and abs(jumped["t"] - tt[3]) < 1e-6
 
+# --- Epoch editor: bars render; edge-drag resizes; body-click toggles -------
+from spectUI.widgets import EpochEditorWidget
+ed = EpochEditorWidget()
+ed.show()
+ed.set_session(session, None)
+ed.canvas.draw()
+assert len(ed.ax.patches) >= 1                          # one bar per epoch
+ed_changes = {"n": 0}
+ed.epochsChanged.connect(lambda: ed_changes.__setitem__("n", ed_changes["n"] + 1))
+
+ep = session.epochs["whole"]
+end0 = float(ep.end)
+ex, ey = ed.ax.transData.transform((end0, 0))
+ed._on_press(MouseEvent("button_press_event", ed.canvas, ex, ey, button=1))
+assert ed._drag == ("whole", "end")                     # grabbed the end edge
+nx, ny = ed.ax.transData.transform((end0 - 10.0, 0))
+ed._on_motion(MouseEvent("motion_notify_event", ed.canvas, nx, ny, button=1))
+ed._on_release(MouseEvent("button_release_event", ed.canvas, nx, ny, button=1))
+assert abs(ep.end - (end0 - 10.0)) < 2.0 and ed_changes["n"] >= 1
+
+bx, by = ed.ax.transData.transform((5.0, 0))            # body click → toggle active
+ed._on_press(MouseEvent("button_press_event", ed.canvas, bx, by, button=1))
+ed._on_release(MouseEvent("button_release_event", ed.canvas, bx, by, button=1))
+assert session.epochs["whole"].active is False and ed_changes["n"] >= 2
+session.epochs["whole"].active = True  # restore for the results section
+
 # --- Results table: rows = epochs, columns include time-domain metrics -----
 res = ResultsTableWidget()
 res.show()

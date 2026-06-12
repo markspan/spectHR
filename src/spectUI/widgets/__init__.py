@@ -29,6 +29,7 @@ LogWidget
 from spectUI.widgets.EventCodeWindow import EventCodeWindow
 from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.bp import BPSeriesWidget
+from spectUI.widgets.epochs import EpochEditorWidget
 from spectUI.widgets.grid import (
     ProfilePlotWidget,
     PSDPlotWidget,
@@ -47,6 +48,7 @@ __all__ = [
     "PrepPlotWidget",
     "HRSeriesWidget",
     "BPSeriesWidget",
+    "EpochEditorWidget",
     "PoincareWidget",
     "PSDPlotWidget",
     "ProfilePlotWidget",
