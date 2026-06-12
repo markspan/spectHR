@@ -106,6 +106,15 @@ poin._on_click(MouseEvent("button_press_event", poin.canvas, px, py,
                           button=1, dblclick=True))
 assert jumped["t"] is not None and abs(jumped["t"] - tt[3]) < 1e-6
 
+# Left-click a point annotates it; right-clicking that annotation removes it.
+poin._on_click(MouseEvent("button_press_event", poin.canvas, px, py, button=1))
+n_ann = len(poin._annotations)
+assert n_ann >= 1
+ann_px, ann_py = poin.ax.transData.transform(poin._annotations[-1][0].xy)
+poin._on_click(MouseEvent("button_press_event", poin.canvas, ann_px, ann_py,
+                          button=3))
+assert len(poin._annotations) == n_ann - 1     # right-click deleted it
+
 # --- Epoch editor: bars render; edge-drag resizes; body-click toggles -------
 from spectUI.widgets import EpochEditorWidget
 ed = EpochEditorWidget()

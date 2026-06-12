@@ -13,6 +13,7 @@ widget only draws and handles interaction.
 Interaction
 -----------
 * Single-click a point → annotate it with its epoch, IBI pair and time.
+* Right-click an annotation → remove it.
 * Double-click → :attr:`annotationActivated` carries the beat time, which the
   host uses to jump to the pre-processing dock zoomed onto that IBI.
 * Toggling an epoch checkbox flips ``epoch.active`` and emits
@@ -186,6 +187,14 @@ class PoincareWidget(QWidget):
     def _on_click(self, event) -> None:
         if event.inaxes is not self.ax or event.xdata is None:
             return
+        # Right-click removes the annotation under the cursor.
+        if event.button == 3:
+            idx = self._annotation_index_near(event)
+            if idx is not None:
+                ann, _t = self._annotations.pop(idx)
+                ann.remove()
+                self.canvas.draw_idle()
+            return
         if event.dblclick:
             t = self._annotation_near(event)
             if t is not None:
@@ -220,12 +229,16 @@ class PoincareWidget(QWidget):
                 best_d, best = d[i], (name, i)
         return best
 
-    def _annotation_near(self, event) -> "float | None":
-        for ann, t in self._annotations:
+    def _annotation_index_near(self, event) -> "int | None":
+        for i, (ann, _t) in enumerate(self._annotations):
             ax_xy = self.ax.transData.transform(ann.xy)
             if np.hypot(ax_xy[0] - event.x, ax_xy[1] - event.y) < _ANNOT_PX:
-                return t
+                return i
         return None
+
+    def _annotation_near(self, event) -> "float | None":
+        idx = self._annotation_index_near(event)
+        return self._annotations[idx][1] if idx is not None else None
 
     @staticmethod
     def _color(i: int) -> str:
