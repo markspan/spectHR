@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, QStandardPaths
 from PySide6.QtWidgets import QMainWindow
 
 from PySide6QtAds import CDockManager
@@ -110,6 +110,30 @@ class AppSettings:
     @workspace_path.setter
     def workspace_path(self, path: Path | str | None) -> None:
         self._qs.setValue("workspace/path", str(path) if path else "")
+
+    @property
+    def config_dir(self) -> Path:
+        """Per-user app config directory (created if missing).
+
+        Uses Qt's ``AppConfigLocation`` so it is a real filesystem path on
+        every platform, independent of whether QSettings stores its own data
+        in an ini file or the Windows registry.
+        """
+        base = QStandardPaths.writableLocation(QStandardPaths.AppConfigLocation)
+        d = Path(base) if base else Path.home() / ".config" / _APP
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @property
+    def app_parameters_path(self) -> Path:
+        """App-managed parameters file — the auto-saved current settings.
+
+        Distinct from :attr:`workspace_path` (a user-named workspace file the
+        analyst chose to load): this is where the *live* analysis parameters
+        are persisted on every change so they survive a restart even when the
+        user never explicitly saved a workspace.
+        """
+        return self.config_dir / "parameters.json"
 
     # ------------------------------------------------------------------
     # Window state

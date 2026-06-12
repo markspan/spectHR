@@ -539,6 +539,23 @@ class MainWindow(QMainWindow):
             widget._config = self._parameters   # host owns these docks
         self._scheduler.invalidate()
         self._coordinator.notify(DataChange.PARAMS)
+        self._persist_parameters()
+
+    def _persist_parameters(self) -> None:
+        """Auto-save the live parameters so they survive a restart.
+
+        Written to the app-managed :attr:`AppSettings.app_parameters_path`
+        (not the user's named workspace file), so edits made through the
+        Edit-workspace dialog are remembered even when the analyst never runs
+        Save-workspace.  Failures are logged, not fatal.
+        """
+        try:
+            self._parameters.save(self._settings.app_parameters_path)
+        except Exception as exc:   # pragma: no cover - disk/permission errors
+            import logging
+            logging.getLogger("spectHR").warning(
+                "Could not persist parameters: %s", exc
+            )
 
     # ------------------------------------------------------------------
     # File tree
@@ -727,18 +744,33 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _restore(self) -> None:
+        # Settings priority: the user's last named workspace file if it still
+        # exists, otherwise the app-managed auto-saved parameters, otherwise
+        # the built-in defaults already in self._parameters.
+        loaded = False
         ws_path = self._settings.workspace_path
         if ws_path:
             try:
                 self._parameters      = Parameters.load(ws_path)
                 self._parameters_path = ws_path
+                loaded = True
             except Exception:
                 pass
+        if not loaded and self._settings.app_parameters_path.exists():
+            try:
+                self._parameters = Parameters.load(self._settings.app_parameters_path)
+                loaded = True
+            except Exception:
+                pass
+
         self._settings.restore_window(self, self._dock_manager)
         populate_tree(self._tree, self._settings.data_dir)
+        if loaded:
+            self._on_workspace_changed()   # apply restored parameters
 
     def closeEvent(self, event) -> None:
         self._settings.save_window(self, self._dock_manager)
+        self._persist_parameters()
         if self._parameters_path is not None:
             self._settings.workspace_path = self._parameters_path
         super().closeEvent(event)

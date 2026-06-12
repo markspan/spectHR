@@ -1,9 +1,19 @@
-Poincare: right-click an annotation to remove it
+Persist analysis parameters across restarts
 
-Single-click annotates a point; there was no way to clear an annotation
-short of redrawing. Right-clicking (button 3) over an annotation now
-removes that artist. Factored the proximity test into
-_annotation_index_near so both the right-click delete and the
-double-click jump share one hit-test.
+Settings were only saved when the user explicitly chose Save-workspace
+to a named JSON file; edits made through the Edit-workspace dialog were
+held in memory and lost on exit. Now the live parameters auto-save to an
+app-managed file and reload (and re-apply) at startup.
+
+* AppSettings.app_parameters_path — a parameters.json under the per-user
+  config dir, separate from the user's named workspace_path. config_dir
+  uses Qt's AppConfigLocation, a real filesystem path on every platform
+  (QSettings itself falls back to the Windows registry, whose fileName()
+  is not a directory).
+* MainWindow._persist_parameters writes it on every _on_workspace_changed
+  and on close; _restore loads it (after the named workspace, before the
+  built-in defaults) and calls _on_workspace_changed to apply it.
+
+Added an offscreen, config-isolated round-trip test.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
