@@ -1,20 +1,24 @@
-EVT epochs from [Events] declarations; settings propagate to docks
+Make the spectral tiles V2-faithful (PSD CI/band fills, Bode transfer)
 
-EVT loader
-- Read the [Events] Begin*/End* code declarations (BeginBlock/EndBlock,
-  Beginperiod/Enderiod, ...) and build one epoch per Begin/End couple,
-  numbered "epoch #1..#n" in declaration then time order, alongside the
-  whole-measurement "experiment" epoch.  example1.EVT now yields experiment
-  + epoch #1 (the 11/12 block) + epoch #2/#3 (the two 21/22 periods), with no
-  code-selection dialog.  Files without declared codes keep the old fallback.
+Port the V2 plotting routines into a shared display helper
+(spectUI/common/spectral_plots.py) and use them so the spectral docks match
+V2 in functionality and look:
 
-Settings propagation
-- _on_workspace_changed now refreshes every dock's workspace reference and
-  notifies DataChange.PARAMS, so PSD / profile / transfer / spectrogram /
-  results recompute when the analysis settings change.
+- PSD       : confidence-interval shading, black PSD line, per-band
+  under-curve fills labelled with their integrated band power, a unit-bearing
+  y-axis (0..peak) and the band-table x-range.  Computes with CI now.
+- Profiles  : per-band lines in the configured band colours, unit y-axis,
+  epoch-relative time, y starting at 0.
+- Transfer  : a Bode triple per tile — |H| (with PSD-style band fills),
+  phase, and coherence with the min-coherence threshold line — sharing the
+  frequency axis.
 
-Poincare: drop the legend (the per-epoch checkboxes already serve as one).
+Band power for the legends uses spectHR.band_power_rectangular; the helper is
+display-only (matplotlib), the algorithms stay in spectHR.
 
-401 passing.
+Combined with the workspace-change propagation, the spectral docks now
+recompute and redraw when the bands / PSD method / transfer settings change.
+
+401 passing (grid test asserts the Bode triple and the settings re-resolve).
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

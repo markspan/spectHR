@@ -13,6 +13,7 @@ from matplotlib.figure import Figure
 
 from spectHR.analysis.profile import compute_band_power_profile
 from spectHR.session import Session
+from spectUI.common.spectral_plots import band_color, strip_per_hz
 from spectUI.widgets.grid.base import EpochGridView
 
 
@@ -25,6 +26,7 @@ class ProfilePlotWidget(EpochGridView):
         view = self._view(config)
         self._psd_method = view.psd_method
         self._ps = view.profile_settings
+        self._bands = view.display_bands
 
     def _compute_epoch(self, events, scoped: Session):
         return compute_band_power_profile(
@@ -39,13 +41,16 @@ class ProfilePlotWidget(EpochGridView):
 
     def _render_tile(self, fig: Figure, label: str, result) -> None:
         ax = fig.add_subplot(111)
-        t = result.timestamps
+        # Epoch-relative time so every tile starts at 0.
+        t = result.timestamps - (float(result.timestamps[0]) if result.timestamps.size else 0.0)
         for i, name in enumerate(result.band_names):
-            ax.plot(t, result.band_power[i], linewidth=1.0, label=name)
+            ax.plot(t, result.band_power[i], linewidth=1.2,
+                    color=band_color(self._bands, name), label=name)
         ax.set_title(label, fontsize=9)
         ax.set_xlabel("Time (s)", fontsize=8)
-        ax.set_ylabel(result.unit or "power", fontsize=8)
+        ax.set_ylabel(strip_per_hz(result.unit) or "power", fontsize=8)
+        ax.set_ylim(bottom=0.0)
         ax.tick_params(labelsize=7)
         if result.band_names:
-            ax.legend(fontsize=6, loc="upper right")
+            ax.legend(fontsize=6, loc="upper right", framealpha=0.6)
         fig.tight_layout()

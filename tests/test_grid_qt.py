@@ -76,6 +76,23 @@ check(ProfilePlotWidget, "profiles")
 check(SpectrogramPlotWidget, "spectrogram")
 check(TransferPlotWidget, "transfer")
 check(TransferProfilePlotWidget, "transferprofile")
+
+# A Transfer tile is a Bode triple (modulus / phase / coherence).
+tw = TransferPlotWidget(); tw.show(); tw.set_session(session, params)
+assert pump(lambda: tw._content is not None)
+cv = tw._content.findChildren(FigureCanvas)[0]
+assert len(cv.figure.axes) == 3, f"Bode tile needs 3 panels, got {len(cv.figure.axes)}"
+
+# Editing the band table re-resolves settings on refresh (the path the
+# coordinator drives when the workspace changes).
+prof = ProfilePlotWidget(); prof.show(); prof.set_session(session, params)
+assert pump(lambda: prof._content is not None)
+params.update("FrequencyAnalysis",
+              {"bands": {"LF": {"low": 0.07, "high": 0.14, "color": "green", "alpha": 0.2}}})
+prof.refresh()
+assert pump(lambda: prof._content is not None)
+assert len(prof._bands) == 1, "profile did not re-read the edited band table"
+
 print("GRID_OK")
 """
 
