@@ -81,7 +81,13 @@ check(TransferProfilePlotWidget, "transferprofile")
 tw = TransferPlotWidget(); tw.show(); tw.set_session(session, params)
 assert pump(lambda: tw._content is not None)
 cv = tw._content.findChildren(FigureCanvas)[0]
-assert len(cv.figure.axes) == 3, f"Bode tile needs 3 panels, got {len(cv.figure.axes)}"
+ax_mod, ax_phase, ax_coh = cv.figure.axes
+assert len([ax_mod, ax_phase, ax_coh]) == 3, "Bode tile needs 3 panels"
+# Phase y-axis reads in pi.
+phase_labels = [t.get_text() for t in ax_phase.get_yticklabels()]
+assert any("\\pi" in lbl for lbl in phase_labels), phase_labels
+# Phase + coherence panels carry vertical band shading (axvspan -> patches).
+assert len(ax_phase.patches) >= 1 and len(ax_coh.patches) >= 1, "no band shading"
 
 # Editing the band table re-resolves settings on refresh (the path the
 # coordinator drives when the workspace changes).

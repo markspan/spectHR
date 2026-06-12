@@ -1,18 +1,18 @@
-PSD dock: y-zoom, method label, clean spines, A-series tiles
+Transfer Bode tiles: band shading + phase axis in pi (V2)
 
-Brings the per-epoch PSD grid up to V2's interaction and styling:
+Brought the transfer (Bode) tiles up to V2's look:
 
-* Up/Down arrows zoom a y-axis shared across all epoch tiles. Added the
-  YZoomMixin contract to EpochGridView (gated by Y_ZOOM): _build_grid
-  adopts one y-max over the tiles and _set_y_top rescales them together.
-* The PSD method name (e.g. "Welch", "Carspan strict") is drawn in the
-  upper-left corner of each tile, and the top/right spines are removed
-  (draw_psd_tile).
-* Tiles take a landscape A-series aspect (height = width/√2) via a
-  heightForWidth container (TILE_ASPECT), so they stay readable and the
-  grid scrolls vertically when they overflow.
+* Vertical band shading (axvspan) across the phase and coherence panels,
+  coloured from the band table.
+* Phase panel reads in pi: wrapped phase plotted as coherence-gated
+  points (low-coherence bins faded by coherence_mask_alpha), y-axis
+  ticked at -pi .. pi with pi labels and a zero line.
+* Modulus keeps the PSD-style under-curve band fills and now labels its
+  y-axis with the input-dependent unit (modulus_unit); coherence shows
+  the min-coherence threshold line; top/right spines removed on all three.
+* TransferProfile lines are coloured by their band colour.
 
-Only the PSD dock opts into Y_ZOOM / TILE_ASPECT; the profile, transfer
-and spectrogram grids are unchanged.
+All driven by the existing TransferAnalysis settings (phase_view,
+coherence_mask_alpha, show_coherence_threshold, min_coherence, f_min/f_max).
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
