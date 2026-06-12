@@ -190,21 +190,24 @@ def draw_psd_tile(
         for ci_line in (ci_lo, ci_hi):
             ax.plot(f, ci_line, color="gray", lw=0.7, ls="--", alpha=0.55, zorder=2)
 
-    # Band power from the raw spectrum; the fill/line use the display curve.
-    unit = strip_per_hz(result.unit)
+    # The curve is a spectral *density*: its y-axis carries the full PSD unit
+    # (e.g. "mMI²/Hz").  Band power is that density integrated over a band, so
+    # the legend values carry the per-Hz-stripped unit (e.g. "mMI²").
+    psd_unit = result.unit
+    band_unit = strip_per_hz(result.unit)
     values = {
         name: band_power_rectangular(f, p_raw, float(s["low"]), float(s["high"]))
         for name, s in bands.items() if "low" in s and "high" in s
     }
     draw_band_fills(
-        ax, f, p, bands, unit=unit,
-        value_fmt=lambda n: f"{values[n]:.1f} {unit}".strip(),
+        ax, f, p, bands, unit=band_unit,
+        value_fmt=lambda n: f"{values[n]:.1f} {band_unit}".strip(),
     )
     ax.plot(f, p, "k", linewidth=1.0, alpha=0.85, zorder=3)
 
     ymax = _scale_ymax(f, p, bands, ci_hi)
     ax.set_ylim(0.0, max(ymax * 1.1, 1e-12))
-    ax.set_ylabel(unit or "power", fontsize=8)
+    ax.set_ylabel(psd_unit or "power", fontsize=8)
     ax.set_xlabel("Frequency (Hz)", fontsize=8)
     ax.legend(fontsize=6, loc="upper right", framealpha=0.6)
 

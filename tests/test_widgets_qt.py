@@ -188,6 +188,11 @@ ax0 = canvases[0].figure.axes[0]
 assert not ax0.spines["top"].get_visible()
 assert not ax0.spines["right"].get_visible()
 assert any("carspan" in t.get_text().lower() for t in ax0.texts), "no method label"
+# Y-axis is a spectral density (keeps /Hz); band-power legend is integrated.
+assert ax0.get_ylabel().endswith("/Hz"), ax0.get_ylabel()
+leg = ax0.get_legend()
+band_lbls = [t.get_text() for t in leg.get_texts()] if leg else []
+assert any("/Hz" not in l for l in band_lbls if ":" in l), band_lbls
 
 # Up arrow shrinks the shared y-max (V2 y-zoom); Down grows it.
 y0 = psd._y_top
