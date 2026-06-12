@@ -153,18 +153,47 @@ def _ensemble_average(
 
     Returns ``(mean_complex, n_beats)``; samples falling outside the signal are
     ignored per beat, so edge beats contribute only where data exist.
+
+    ICG / ECG are uniformly sampled, so each beat's window is gathered by
+    integer indexing (``base ± offsets``) instead of ``np.interp`` over the
+    whole array per beat — the latter dominated the per-epoch cost (a full
+    binary search per beat).  A non-uniform axis falls back to ``np.interp``.
     """
+    times = np.asarray(times, dtype=float)
+    values = np.asarray(values, dtype=float)
+    rel_grid = np.asarray(rel_grid, dtype=float)
     acc = np.zeros_like(rel_grid)
     cnt = np.zeros_like(rel_grid)
     n_used = 0
-    for r in rpeak_times:
-        samp = np.interp(r + rel_grid, times, values, left=np.nan, right=np.nan)
-        ok = np.isfinite(samp)
-        if not ok.any():
-            continue
-        acc[ok] += samp[ok]
-        cnt[ok] += 1.0
-        n_used += 1
+    n = times.size
+
+    t0 = float(times[0]) if n else 0.0
+    dt = (float(times[-1]) - t0) / (n - 1) if n > 1 else 0.0
+    # Treat the axis as uniform when every step is within 1 % of the mean step.
+    uniform = dt > 0 and bool(
+        np.all(np.abs(np.diff(times) - dt) <= 0.01 * dt)
+    ) if n > 2 else (dt > 0)
+
+    if uniform:
+        offsets = np.round(rel_grid / dt).astype(np.int64)   # constant per beat
+        for r in rpeak_times:
+            idx = int(round((float(r) - t0) / dt)) + offsets
+            ok = (idx >= 0) & (idx < n)
+            if not ok.any():
+                continue
+            acc[ok] += values[idx[ok]]
+            cnt[ok] += 1.0
+            n_used += 1
+    else:
+        for r in rpeak_times:
+            samp = np.interp(r + rel_grid, times, values, left=np.nan, right=np.nan)
+            ok = np.isfinite(samp)
+            if not ok.any():
+                continue
+            acc[ok] += samp[ok]
+            cnt[ok] += 1.0
+            n_used += 1
+
     with np.errstate(invalid="ignore", divide="ignore"):
         mean = np.where(cnt > 0, acc / cnt, np.nan)
     return mean, n_used
