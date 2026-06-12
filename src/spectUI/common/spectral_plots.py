@@ -207,3 +207,13 @@ def draw_psd_tile(
     ax.set_ylabel(unit or "power", fontsize=8)
     ax.set_xlabel("Frequency (Hz)", fontsize=8)
     ax.legend(fontsize=6, loc="upper right", framealpha=0.6)
+
+    # PSD method name in the upper-left corner (V2's left-loc subtitle).
+    method_label = (result.method or "").replace("_", " ").strip().capitalize()
+    if method_label:
+        ax.text(0.02, 0.97, method_label, transform=ax.transAxes,
+                ha="left", va="top", fontsize=7, color="dimgray")
+
+    # Drop the top / right spines (V2 styling).
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)

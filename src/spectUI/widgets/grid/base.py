@@ -23,20 +23,53 @@ from __future__ import annotations
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from spectHR.session import Session
-from spectUI.common import build_epoch_grid
+from spectUI.common import (
+    Y_TOP_FLOOR,
+    YZoomMixin,
+    build_epoch_grid,
+    wire_y_zoom_shortcuts,
+)
 from spectUI.plot_worker import DockScheduler
 
 
-class EpochGridView(QWidget):
+class _AspectRatioWidget(QWidget):
+    """Container that keeps a fixed height/width ratio via ``heightForWidth``.
+
+    Used to give the per-epoch tiles a landscape A-series aspect (height =
+    width / √2) so they stay readable and the grid scrolls vertically when
+    they no longer fit.
+    """
+
+    def __init__(self, ratio: float, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._ratio = float(ratio)
+        sp = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        sp.setHeightForWidth(True)
+        self.setSizePolicy(sp)
+        self._lay = QVBoxLayout(self)
+        self._lay.setContentsMargins(0, 0, 0, 0)
+
+    def hasHeightForWidth(self) -> bool:   # noqa: N802 - Qt override
+        return True
+
+    def heightForWidth(self, w: int) -> int:   # noqa: N802 - Qt override
+        return int(round(w * self._ratio))
+
+
+class EpochGridView(YZoomMixin, QWidget):
     """Scrollable one-tile-per-epoch dock with background per-epoch compute."""
 
     #: Stable scheduler key (override per dock so generations don't collide).
     DOCK_NAME = "grid"
     #: Minimum beats in an epoch before its result is attempted.
     MIN_BEATS = 4
+    #: When True, Up/Down arrows zoom a y-axis shared across all tiles.
+    Y_ZOOM = False
+    #: Height/width ratio for each tile (None = let the figure decide).
+    TILE_ASPECT: float | None = None
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -50,6 +83,12 @@ class EpochGridView(QWidget):
         self._status = QLabel("")
         self._status.setStyleSheet("color:#999; padding:8px;")
         self._outer.addWidget(self._status)
+
+        # Y-zoom state (YZoomMixin contract): a shared y-max over tiles that
+        # expose ``.ax`` / ``.canvas``.
+        self._subplots: list[QWidget] = []
+        self._y_top: float = Y_TOP_FLOOR
+        self._yzoom_wired = False
         self.setVisible(False)
 
     # ------------------------------------------------------------------
@@ -108,17 +147,26 @@ class EpochGridView(QWidget):
         self._status.setText("")
 
         content = QWidget()
-        build_epoch_grid(content, results, self._make_tile, install_save_shortcut=False)
+        self._subplots = build_epoch_grid(
+            content, results, self._make_tile, install_save_shortcut=False
+        )
         self._content = content
         self._outer.addWidget(content)
+        if self.Y_ZOOM:
+            self._init_y_zoom()
 
     def _make_tile(self, record) -> QWidget:
         label, result = record
-        tile = QWidget()
-        fig = Figure(figsize=(3.2, 2.4), facecolor="white")
+        if self.TILE_ASPECT is not None:
+            tile: QWidget = _AspectRatioWidget(self.TILE_ASPECT)
+            layout = tile._lay
+            fig = Figure(figsize=(3.2, 3.2 * self.TILE_ASPECT), facecolor="white")
+        else:
+            tile = QWidget()
+            layout = QVBoxLayout(tile)
+            layout.setContentsMargins(0, 0, 0, 0)
+            fig = Figure(figsize=(3.2, 2.4), facecolor="white")
         canvas = FigureCanvas(fig)
-        layout = QVBoxLayout(tile)
-        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(canvas)
         if isinstance(result, _ComputeError):
             ax = fig.add_subplot(111)
@@ -133,7 +181,36 @@ class EpochGridView(QWidget):
         else:
             self._render_tile(fig, label, result)
         canvas.draw_idle()
+        # Expose the primary axis + canvas so YZoomMixin can drive a shared
+        # y-axis across all tiles.
+        tile.ax = fig.axes[0] if fig.axes else None
+        tile.canvas = canvas
         return tile
+
+    # ------------------------------------------------------------------
+    # Shared y-axis zoom (YZoomMixin contract)
+    # ------------------------------------------------------------------
+
+    def _init_y_zoom(self) -> None:
+        """Adopt one y-max across all tiles and wire Up/Down arrow zoom."""
+        tops = [t.ax.get_ylim()[1] for t in self._subplots
+                if getattr(t, "ax", None) is not None]
+        if tops:
+            self._y_top = max(max(tops), Y_TOP_FLOOR)
+            self._set_y_top(self._y_top)   # uniform y across epochs (V2)
+        if not self._yzoom_wired:
+            wire_y_zoom_shortcuts(self)
+            self._yzoom_wired = True
+
+    def _set_y_top(self, new_y_top: float) -> None:
+        """Apply *new_y_top* to every tile that carries a y-axis."""
+        new_y_top = max(float(new_y_top), Y_TOP_FLOOR)
+        self._y_top = new_y_top
+        for tile in self._subplots:
+            ax = getattr(tile, "ax", None)
+            if ax is not None:
+                ax.set_ylim(bottom=0.0, top=new_y_top)
+                tile.canvas.draw_idle()
 
     # ------------------------------------------------------------------
     # Hooks

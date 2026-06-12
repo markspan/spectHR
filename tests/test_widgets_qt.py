@@ -176,6 +176,23 @@ assert len(canvases) == 2, f"expected 2 PSD tiles, got {len(canvases)}"
 drawn = sum(len(c.figure.axes[0].lines) for c in canvases if c.figure.axes)
 assert drawn >= 2, "PSD spectra not drawn"
 
+# Tiles carry the A-series aspect; method name shows; top/right spines gone.
+import math as _math
+assert abs(psd.TILE_ASPECT - 1.0 / _math.sqrt(2.0)) < 1e-9
+ax0 = canvases[0].figure.axes[0]
+assert not ax0.spines["top"].get_visible()
+assert not ax0.spines["right"].get_visible()
+assert any("carspan" in t.get_text().lower() for t in ax0.texts), "no method label"
+
+# Up arrow shrinks the shared y-max (V2 y-zoom); Down grows it.
+y0 = psd._y_top
+assert y0 > 0.0
+psd._zoom_in()
+assert psd._y_top < y0
+psd._zoom_out(); psd._zoom_out()
+assert psd._y_top > y0
+assert canvases[0].figure.axes[0].get_ylim()[1] == psd._y_top   # tiles track it
+
 print("WIDGETS_OK")
 """
 

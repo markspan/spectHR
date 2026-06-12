@@ -1,12 +1,18 @@
-Poincare: delegate annotations to mplcursors (V2 behaviour)
+PSD dock: y-zoom, method label, clean spines, A-series tiles
 
-The dock hand-rolled annotations with ax.annotate plus custom click
-handling, so they could not be dragged and removal was unreliable. V2
-delegated this to mplcursors (multiple=True), which makes each
-annotation draggable and removes it on a right-click. Restored that:
-a cursor is (re)built over the per-epoch scatter clouds each redraw and
-an add-callback fills in the epoch / IBI pair / time. The double-click
-jump to the pre-processing dock is kept as a separate button_press
-handler.
+Brings the per-epoch PSD grid up to V2's interaction and styling:
+
+* Up/Down arrows zoom a y-axis shared across all epoch tiles. Added the
+  YZoomMixin contract to EpochGridView (gated by Y_ZOOM): _build_grid
+  adopts one y-max over the tiles and _set_y_top rescales them together.
+* The PSD method name (e.g. "Welch", "Carspan strict") is drawn in the
+  upper-left corner of each tile, and the top/right spines are removed
+  (draw_psd_tile).
+* Tiles take a landscape A-series aspect (height = width/√2) via a
+  heightForWidth container (TILE_ASPECT), so they stay readable and the
+  grid scrolls vertically when they overflow.
+
+Only the PSD dock opts into Y_ZOOM / TILE_ASPECT; the profile, transfer
+and spectrogram grids are unchanged.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
