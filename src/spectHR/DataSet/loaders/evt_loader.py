@@ -88,6 +88,11 @@ def _parse_evt(filename: Path):
     in_data = not has_data_header
 
     rtop_code: int | None = None
+    # Begin/End epoch-marker codes, in declaration order (BeginBlock/EndBlock,
+    # Beginperiod/Enderiod, …).  Paired by position: the k-th Begin* with the
+    # k-th End*.
+    begin_codes: list[int] = []
+    end_codes: list[int] = []
     timeseries_cols: dict[str, int] = {}
     event_codes: list[int] = []
     times_raw: list[float] = []
@@ -107,11 +112,17 @@ def _parse_evt(filename: Path):
 
         if in_events and "=" in stripped:
             key, _, val = stripped.partition("=")
-            if key.strip().lower().startswith("rpeak"):
-                try:
-                    rtop_code = int(val.strip())
-                except ValueError:
-                    pass
+            key_l = key.strip().lower()
+            try:
+                code = int(val.strip())
+            except ValueError:
+                continue
+            if key_l.startswith("rpeak"):
+                rtop_code = code
+            elif key_l.startswith("begin"):
+                begin_codes.append(code)
+            elif key_l.startswith("end"):
+                end_codes.append(code)
             continue
 
         if in_timeseries and "=" in stripped:
@@ -154,25 +165,41 @@ def _parse_evt(filename: Path):
     if rtop_times.size == 0:
         raise ValueError("No RTops found in EVT file.")
 
-    # ---- non-rtop markers for epoch building --------------------------------
-    other_codes = event_codes_arr[~rtop_mask]
-    other_times = times_arr[~rtop_mask]
-
+    # ---- epoch markers ------------------------------------------------------
     marker_times: list[float]  = []
     marker_labels: list[str]   = []
 
-    unique_other = np.unique(other_codes)
-    if unique_other.size > 2:
-        start_codes, stop_codes = resolve_epoch_codes(other_codes, rtop_code)
-        if start_codes and stop_codes:
-            for t in other_times[np.isin(other_codes, start_codes)]:
-                marker_times.append(float(t)); marker_labels.append("start epoch")
-            for t in other_times[np.isin(other_codes, stop_codes)]:
-                marker_times.append(float(t)); marker_labels.append("stop epoch")
-    elif unique_other.size == 2:
-        for i, (t, _) in enumerate(zip(other_times[::2], other_times[1::2])):
-            marker_times.extend([float(other_times[i*2]), float(other_times[i*2+1])])
-            marker_labels.extend([f"start epoch {i+1}", f"stop epoch {i+1}"])
+    pairs = list(zip(begin_codes, end_codes))
+    if pairs:
+        # One epoch per Begin/End *couple*, numbered across all declared pairs
+        # in declaration order then time order: e.g. one Block couple (11/12)
+        # then two period couples (21/22) → epoch #1, #2, #3.
+        k = 0
+        for bcode, ecode in pairs:
+            b_times = sorted(times_arr[event_codes_arr == bcode].tolist())
+            e_times = sorted(times_arr[event_codes_arr == ecode].tolist())
+            for bt, et in zip(b_times, e_times):
+                k += 1
+                marker_times.append(float(bt)); marker_labels.append(f"start epoch #{k}")
+                marker_times.append(float(et)); marker_labels.append(f"stop epoch #{k}")
+        logger.info("EVT: %d epoch couple(s) from [Events] declarations", k)
+    else:
+        # No declared Begin/End codes: fall back to resolving the non-rtop
+        # codes (single-pair heuristic, or the UI code-selection dialog).
+        other_codes = event_codes_arr[~rtop_mask]
+        other_times = times_arr[~rtop_mask]
+        unique_other = np.unique(other_codes)
+        if unique_other.size > 2:
+            start_codes, stop_codes = resolve_epoch_codes(other_codes, rtop_code)
+            if start_codes and stop_codes:
+                for t in other_times[np.isin(other_codes, start_codes)]:
+                    marker_times.append(float(t)); marker_labels.append("start epoch")
+                for t in other_times[np.isin(other_codes, stop_codes)]:
+                    marker_times.append(float(t)); marker_labels.append("stop epoch")
+        elif unique_other.size == 2:
+            for i in range(min(other_times[::2].size, other_times[1::2].size)):
+                marker_times.extend([float(other_times[i*2]), float(other_times[i*2+1])])
+                marker_labels.extend([f"start epoch #{i+1}", f"stop epoch #{i+1}"])
 
     # Adjust epoch starts to last R-peak before marker (CARSPAN convention)
     adjusted: list[float] = []

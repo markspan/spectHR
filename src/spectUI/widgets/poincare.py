@@ -162,8 +162,6 @@ class PoincareWidget(QWidget):
         self.ax.set_aspect("equal", adjustable="box")
         self.ax.set_xlabel("IBIₙ (ms)")
         self.ax.set_ylabel("IBIₙ₊₁ (ms)")
-        if self._clouds:
-            self.ax.legend(fontsize=7, loc="upper left", framealpha=0.6)
         self.fig.tight_layout()
 
     # ------------------------------------------------------------------

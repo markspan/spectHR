@@ -92,6 +92,21 @@ def test_evt_has_experiment_epoch(stub_event_code_window):
     assert "experiment" in session.epochs
 
 
+def test_evt_epochs_from_event_declarations(stub_event_code_window):
+    """[Events] Begin/End couples become one epoch each (plus 'experiment').
+
+    example1.EVT declares BeginBlock/EndBlock (one couple) and
+    Beginperiod/Enderiod (two couples) → experiment + epoch #1/#2/#3.
+    """
+    session = load(DATA_DIR / "example1.EVT")
+    assert set(session.epochs) == {"experiment", "epoch #1", "epoch #2", "epoch #3"}
+    # Each declared epoch is a real sub-window of the experiment.
+    exp = session.epochs["experiment"]
+    for name in ("epoch #1", "epoch #2", "epoch #3"):
+        ep = session.epochs[name]
+        assert exp.start <= ep.start < ep.end <= exp.end + 1.0
+
+
 def test_nff_uncalibrated_channel_stays_raw(stub_event_code_window):
     """example1.nff carries no BP calibration (header factors are zero), so
     the loaded BP channel must remain raw ADC counts."""

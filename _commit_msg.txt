@@ -1,18 +1,20 @@
-Add the epoch editor dock
+EVT epochs from [Events] declarations; settings propagate to docks
 
-EpochEditorWidget: a Gantt-style view of the recording's epochs, one
-draggable bar per epoch on a shared time axis.
+EVT loader
+- Read the [Events] Begin*/End* code declarations (BeginBlock/EndBlock,
+  Beginperiod/Enderiod, ...) and build one epoch per Begin/End couple,
+  numbered "epoch #1..#n" in declaration then time order, alongside the
+  whole-measurement "experiment" epoch.  example1.EVT now yields experiment
+  + epoch #1 (the 11/12 block) + epoch #2/#3 (the two 21/22 periods), with no
+  code-selection dialog.  Files without declared codes keep the old fallback.
 
-- Drag a bar's left/right edge to move the epoch start/end.
-- Click a bar's body to toggle whether the epoch is active.
+Settings propagation
+- _on_workspace_changed now refreshes every dock's workspace reference and
+  notifies DataChange.PARAMS, so PSD / profile / transfer / spectrogram /
+  results recompute when the analysis settings change.
 
-Every edit mutates session.epochs in place and emits epochsChanged, so the
-coordinator refreshes every dock that depends on the epoch table.  Wired
-into MainWindow; this is the source of DataChange.EPOCHS.
+Poincare: drop the legend (the per-epoch checkboxes already serve as one).
 
-With this, all 11 listed docks are live: preprocessing, HR, BP, Poincare,
-epochs, PSD, profiles, spectrogram, transfer, transfer-profile and results.
-
-Tested: bars render, edge-drag resizes, body-click toggles.  400 passing.
+401 passing.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

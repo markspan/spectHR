@@ -526,9 +526,19 @@ class MainWindow(QMainWindow):
             populate_tree(self._tree, self._settings.data_dir)
 
     def _on_workspace_changed(self) -> None:
+        """Apply edited analysis parameters: re-broadcast and recompute.
+
+        Every dock keeps a reference to the workspace; refresh the references
+        and ask the coordinator to refresh the parameter-dependent docks
+        (PSD / profile / transfer / spectrogram / results) so the new bands,
+        PSD method, RSA and transfer settings take effect immediately.
+        """
         import logging
         logging.getLogger("spectHR").setLevel(self._parameters.log_level)
-        # TODO: re-broadcast to plot docks once widgets are built
+        for widget in self._data_docks.values():
+            widget._config = self._parameters   # host owns these docks
+        self._scheduler.invalidate()
+        self._coordinator.notify(DataChange.PARAMS)
 
     # ------------------------------------------------------------------
     # File tree
