@@ -4,23 +4,26 @@
 :class:`PoincareWidget` — the IBI Poincaré scatter dock.
 
 All active epochs are overlaid on one square axis (origin at 0,0), each a
-colour-coded ``IBIₙ`` vs ``IBIₙ₊₁`` cloud with its SD1/SD2 ellipse and a row
-of per-epoch checkboxes to toggle visibility (V2's "epoch scheduling").  The
-point cloud, ellipse descriptors and per-point times all come from
-``spectHR`` (:func:`poincare_points` / :func:`poincare_descriptors`); the
-widget only draws and handles interaction.
+colour-coded ``IBIₙ`` vs ``IBIₙ₊₁`` cloud with its SD1/SD2 ellipse and a
+vertical column of per-epoch checkboxes to toggle visibility (V2's "epoch
+scheduling").  The point cloud, ellipse descriptors and per-point times all
+come from ``spectHR`` (:func:`poincare_points` / :func:`poincare_descriptors`);
+the widget only draws and handles interaction.
 
 Interaction
 -----------
-* Single-click a point → annotate it with its epoch, IBI pair and time.
-* Right-click an annotation → remove it.
-* Double-click → :attr:`annotationActivated` carries the beat time, which the
-  host uses to jump to the pre-processing dock zoomed onto that IBI.
+* Left-click a point → annotate it with its epoch, IBI pair and time.  The
+  annotation is **draggable** and is **removed by right-clicking** it — this is
+  delegated to :mod:`mplcursors` (``multiple=True``), exactly as V2 did, so the
+  drag/remove behaviour is the library's, not a hand-rolled re-implementation.
+* Double-click a point → :attr:`annotationActivated` carries the beat time,
+  which the host uses to jump to the pre-processing dock zoomed onto that IBI.
 * Toggling an epoch checkbox flips ``epoch.active`` and emits
   :attr:`epochsChanged` so the rest of the docks refresh.
 """
 from __future__ import annotations
 
+import mplcursors
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -40,12 +43,11 @@ from spectHR.session import Session
 # Qualitative palette cycled across epochs.
 _EPOCH_COLORS = ["#2980b9", "#c0392b", "#16a085", "#8e44ad",
                  "#e67e22", "#2c3e50", "#27ae60", "#d35400"]
-_PICK_PX = 12.0          # click tolerance for points (screen px)
-_ANNOT_PX = 22.0         # double-click tolerance for annotations (screen px)
+_PICK_PX = 12.0          # click tolerance for the double-click jump (screen px)
 
 
 class PoincareWidget(QWidget):
-    """Multi-epoch IBI Poincaré scatter with annotations."""
+    """Multi-epoch IBI Poincaré scatter with mplcursors annotations."""
 
     annotationActivated = Signal(float)   # beat time (s) of a double-clicked point
     epochsChanged = Signal()              # an epoch's active state was toggled
@@ -58,7 +60,9 @@ class PoincareWidget(QWidget):
         self.fig = Figure(facecolor="white")
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvas(self.fig)
-        self.canvas.mpl_connect("button_press_event", self._on_click)
+        # Double-click → jump to prep.  Annotation add/drag/remove is owned by
+        # mplcursors; this handler only carries the double-click gesture.
+        self.canvas.mpl_connect("button_press_event", self._on_press)
 
         # Epoch checkboxes: a vertical column on the right (V2 layout), in a
         # scroll area so a recording with many epochs stays usable.
@@ -74,9 +78,10 @@ class PoincareWidget(QWidget):
         cb_scroll.setWidget(self._cb_container)
         cb_scroll.setMaximumWidth(170)
 
-        # name -> (x_ms, y_ms, time_s, color); annotations -> (artist, time_s)
+        # name -> (x_ms, y_ms, time_s, color); scatter artists per epoch.
         self._clouds: dict[str, tuple] = {}
-        self._annotations: list[tuple] = []
+        self._scatters: dict[str, object] = {}
+        self._cursor = None     # the active mplcursors.Cursor
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -140,10 +145,11 @@ class PoincareWidget(QWidget):
     def _draw(self) -> None:
         self.ax.clear()
         self._clouds.clear()
-        self._annotations.clear()
+        self._scatters.clear()
 
         hrv = self._session.hrv if self._session else None
         if hrv is None:
+            self._teardown_cursor()
             self.ax.text(0.5, 0.5, "No R-peaks", ha="center", va="center",
                          transform=self.ax.transAxes, color="#999")
             self.ax.set_xticks([]); self.ax.set_yticks([])
@@ -158,9 +164,11 @@ class PoincareWidget(QWidget):
             if x.size < 2:
                 continue
             color = self._color(i)
-            self.ax.scatter(x, y, s=32, color=color, alpha=0.4,
-                            edgecolors="none", zorder=2, label=name)
+            scatter = self.ax.scatter(x, y, s=32, color=color, alpha=0.4,
+                                      edgecolors="none", zorder=2, label=name)
+            scatter.epoch = name           # looked up in the mplcursors callback
             self._clouds[name] = (x, y, t, color)
+            self._scatters[name] = scatter
             hi = max(hi, float(x.max()), float(y.max()))
 
             desc = poincare_descriptors(ev)
@@ -180,43 +188,64 @@ class PoincareWidget(QWidget):
         self.ax.set_ylabel("IBIₙ₊₁ (ms)")
         self.fig.tight_layout()
 
+        self._setup_cursor()
+
     # ------------------------------------------------------------------
-    # Interaction
+    # Annotations — delegated to mplcursors (draggable, right-click removes)
     # ------------------------------------------------------------------
 
-    def _on_click(self, event) -> None:
+    def _setup_cursor(self) -> None:
+        """(Re)create the mplcursors cursor over the current scatter clouds.
+
+        ``multiple=True`` lets several annotations coexist; mplcursors makes
+        each one draggable and removes it on a right-click — the V2 behaviour.
+        The cursor is rebuilt every redraw because ``ax.clear()`` discards the
+        old scatter artists it was bound to.
+        """
+        self._teardown_cursor()
+        artists = list(self._scatters.values())
+        if not artists:
+            return
+        self._cursor = mplcursors.cursor(artists, hover=False, multiple=True)
+        self._cursor.connect("add", self._on_cursor_add)
+
+    def _teardown_cursor(self) -> None:
+        if self._cursor is not None:
+            try:
+                self._cursor.remove()
+            except Exception:       # pragma: no cover - already-dead artists
+                pass
+            self._cursor = None
+
+    def _on_cursor_add(self, sel) -> None:
+        """Fill a freshly-added mplcursors selection with the point's details."""
+        name = getattr(sel.artist, "epoch", None)
+        if name is None or name not in self._clouds:
+            return
+        idx = int(np.round(np.ravel(sel.index)[0])) if np.ndim(sel.index) else int(sel.index)
+        sel.annotation.set_text(self._annotation_text(name, idx))
+        bbox = sel.annotation.get_bbox_patch()
+        if bbox is not None:
+            bbox.set_alpha(0.8)
+
+    def _annotation_text(self, name: str, idx: int) -> str:
+        x, y, t, _color = self._clouds[name]
+        idx = max(0, min(int(idx), len(t) - 1))
+        return f"{name}\nIBI {x[idx]:.0f}→{y[idx]:.0f} ms\nt = {t[idx]:.1f} s"
+
+    # ------------------------------------------------------------------
+    # Double-click → jump to the pre-processing dock
+    # ------------------------------------------------------------------
+
+    def _on_press(self, event) -> None:
         if event.inaxes is not self.ax or event.xdata is None:
             return
-        # Right-click removes the annotation under the cursor.
-        if event.button == 3:
-            idx = self._annotation_index_near(event)
-            if idx is not None:
-                ann, _t = self._annotations.pop(idx)
-                ann.remove()
-                self.canvas.draw_idle()
-            return
-        if event.dblclick:
-            t = self._annotation_near(event)
-            if t is not None:
-                self.annotationActivated.emit(t)
-                return
-        hit = self._nearest_point(event)
-        if hit is None:
-            return
-        name, idx = hit
-        x, y, t, _color = self._clouds[name]
-        ann = self.ax.annotate(
-            f"{name}\nIBI {x[idx]:.0f}→{y[idx]:.0f} ms\nt = {t[idx]:.1f} s",
-            xy=(x[idx], y[idx]), xytext=(12, 12), textcoords="offset points",
-            fontsize=7, zorder=10,
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
-            arrowprops=dict(arrowstyle="->", color="#555"),
-        )
-        self._annotations.append((ann, float(t[idx])))
-        # A double-click on a point both annotates and jumps to it.
-        if event.dblclick:
-            self.annotationActivated.emit(float(t[idx]))
-        self.canvas.draw_idle()
+        if event.dblclick and event.button == 1:
+            hit = self._nearest_point(event)
+            if hit is not None:
+                name, idx = hit
+                _x, _y, t, _c = self._clouds[name]
+                self.annotationActivated.emit(float(t[idx]))
 
     def _nearest_point(self, event) -> "tuple[str, int] | None":
         best: tuple[str, int] | None = None
@@ -228,17 +257,6 @@ class PoincareWidget(QWidget):
             if d[i] < best_d:
                 best_d, best = d[i], (name, i)
         return best
-
-    def _annotation_index_near(self, event) -> "int | None":
-        for i, (ann, _t) in enumerate(self._annotations):
-            ax_xy = self.ax.transData.transform(ann.xy)
-            if np.hypot(ax_xy[0] - event.x, ax_xy[1] - event.y) < _ANNOT_PX:
-                return i
-        return None
-
-    def _annotation_near(self, event) -> "float | None":
-        idx = self._annotation_index_near(event)
-        return self._annotations[idx][1] if idx is not None else None
 
     @staticmethod
     def _color(i: int) -> str:

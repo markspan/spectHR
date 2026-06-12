@@ -1,19 +1,12 @@
-Persist analysis parameters across restarts
+Poincare: delegate annotations to mplcursors (V2 behaviour)
 
-Settings were only saved when the user explicitly chose Save-workspace
-to a named JSON file; edits made through the Edit-workspace dialog were
-held in memory and lost on exit. Now the live parameters auto-save to an
-app-managed file and reload (and re-apply) at startup.
-
-* AppSettings.app_parameters_path — a parameters.json under the per-user
-  config dir, separate from the user's named workspace_path. config_dir
-  uses Qt's AppConfigLocation, a real filesystem path on every platform
-  (QSettings itself falls back to the Windows registry, whose fileName()
-  is not a directory).
-* MainWindow._persist_parameters writes it on every _on_workspace_changed
-  and on close; _restore loads it (after the named workspace, before the
-  built-in defaults) and calls _on_workspace_changed to apply it.
-
-Added an offscreen, config-isolated round-trip test.
+The dock hand-rolled annotations with ax.annotate plus custom click
+handling, so they could not be dragged and removal was unreliable. V2
+delegated this to mplcursors (multiple=True), which makes each
+annotation draggable and removes it on a right-click. Restored that:
+a cursor is (re)built over the per-epoch scatter clouds each redraw and
+an add-callback fills in the epoch / IBI pair / time. The double-click
+jump to the pre-processing dock is kept as a separate button_press
+handler.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

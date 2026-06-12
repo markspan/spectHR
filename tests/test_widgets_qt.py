@@ -102,18 +102,17 @@ poin.annotationActivated.connect(lambda t: jumped.__setitem__("t", t))
 x, y, tt, _c = poin._clouds["whole"]
 px, py = poin.ax.transData.transform((x[3], y[3]))
 from matplotlib.backend_bases import MouseEvent
-poin._on_click(MouseEvent("button_press_event", poin.canvas, px, py,
+poin._on_press(MouseEvent("button_press_event", poin.canvas, px, py,
                           button=1, dblclick=True))
 assert jumped["t"] is not None and abs(jumped["t"] - tt[3]) < 1e-6
 
-# Left-click a point annotates it; right-clicking that annotation removes it.
-poin._on_click(MouseEvent("button_press_event", poin.canvas, px, py, button=1))
-n_ann = len(poin._annotations)
-assert n_ann >= 1
-ann_px, ann_py = poin.ax.transData.transform(poin._annotations[-1][0].xy)
-poin._on_click(MouseEvent("button_press_event", poin.canvas, ann_px, ann_py,
-                          button=3))
-assert len(poin._annotations) == n_ann - 1     # right-click deleted it
+# Annotations are delegated to mplcursors (draggable + right-click removal):
+# the cursor is wired over the scatter clouds and our add-callback formats the
+# point's epoch / IBI pair / time.
+import mplcursors
+assert isinstance(poin._cursor, mplcursors.Cursor)
+txt = poin._annotation_text("whole", 3)
+assert "whole" in txt and "IBI" in txt and f"{tt[3]:.1f}" in txt
 
 # --- Epoch editor: bars render; edge-drag resizes; body-click toggles -------
 from spectUI.widgets import EpochEditorWidget
