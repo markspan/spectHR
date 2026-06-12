@@ -21,7 +21,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from spectHR.session import Epoch, Events, Samples, Session
 from spectUI.parameters import Parameters
 from spectUI.widgets import (
-    ProfilePlotWidget, SpectrogramPlotWidget,
+    ProfilePlotWidget, Spectrogram3DPlotWidget, SpectrogramPlotWidget,
     TransferPlotWidget, TransferProfilePlotWidget,
 )
 
@@ -74,8 +74,15 @@ def check(widget_cls, name):
 
 check(ProfilePlotWidget, "profiles")
 check(SpectrogramPlotWidget, "spectrogram")
+check(Spectrogram3DPlotWidget, "spectrogram3d")
 check(TransferPlotWidget, "transfer")
 check(TransferProfilePlotWidget, "transferprofile")
+
+# The 3-D spectrogram tile is an Axes3D surface.
+s3 = Spectrogram3DPlotWidget(); s3.show(); s3.set_session(session, params)
+assert pump(lambda: s3._content is not None)
+cv3 = s3._content.findChildren(FigureCanvas)[0]
+assert cv3.figure.axes[0].name == "3d", "spectrogram3d tile is not a 3-D axis"
 
 # A Transfer tile is a Bode triple (modulus / phase / coherence).
 tw = TransferPlotWidget(); tw.show(); tw.set_session(session, params)

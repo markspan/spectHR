@@ -33,6 +33,7 @@ from spectUI.widgets.epochs import EpochEditorWidget
 from spectUI.widgets.grid import (
     ProfilePlotWidget,
     PSDPlotWidget,
+    Spectrogram3DPlotWidget,
     SpectrogramPlotWidget,
     TransferPlotWidget,
     TransferProfilePlotWidget,

@@ -14,7 +14,10 @@ epoch) and ``_render_tile`` (how to draw it).
 from spectUI.widgets.grid.base import EpochGridView
 from spectUI.widgets.grid.profiles import ProfilePlotWidget
 from spectUI.widgets.grid.psd import PSDPlotWidget
-from spectUI.widgets.grid.spectrogram import SpectrogramPlotWidget
+from spectUI.widgets.grid.spectrogram import (
+    Spectrogram3DPlotWidget,
+    SpectrogramPlotWidget,
+)
 from spectUI.widgets.grid.transfer import (
     TransferPlotWidget,
     TransferProfilePlotWidget,
@@ -24,6 +27,7 @@ __all__ = [
     "EpochGridView",
     "PSDPlotWidget",
     "ProfilePlotWidget",
+    "Spectrogram3DPlotWidget",
     "SpectrogramPlotWidget",
     "TransferPlotWidget",
     "TransferProfilePlotWidget",
