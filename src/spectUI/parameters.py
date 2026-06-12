@@ -45,7 +45,7 @@ _DEFAULT: dict = {
             "signal":             "events",
             "window":             "10% cosine bell",
             "plot_units":         "mMI²/Hz",
-            "smooth_for_display": False,
+            "smooth_for_display": True,
             "dc_removal":         True,
         },
         "welch": {

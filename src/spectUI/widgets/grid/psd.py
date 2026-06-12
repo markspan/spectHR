@@ -31,6 +31,12 @@ class PSDPlotWidget(EpochGridView):
         self._method: PsdMethod = view.psd_method
         self._bands: dict = view.display_bands
         self._ci_alpha: float = view.psd_ci_alpha
+        # CARSPAN carries a plot-only 3-point display smoother (V2's
+        # PSDPlotWidget._wants_smoothing); Welch / Lomb-Scargle never smooth.
+        self._smooth: bool = (
+            self._method.algorithm in ("carspan", "carspan_strict")
+            and bool(self._method.carspan.smooth_for_display)
+        )
 
     def _compute_epoch(self, events, scoped: Session) -> PSDResult:
         # Pool thread; PSDEngine + numpy are GIL-safe.  with_ci=True so the
@@ -39,7 +45,8 @@ class PSDPlotWidget(EpochGridView):
 
     def _render_tile(self, fig: Figure, label: str, result: PSDResult) -> None:
         ax = fig.add_subplot(111)
-        draw_psd_tile(ax, result, self._bands, ci_alpha=self._ci_alpha)
+        draw_psd_tile(ax, result, self._bands, ci_alpha=self._ci_alpha,
+                      smooth=self._smooth)
         ax.set_title(label, fontsize=9)
         ax.tick_params(labelsize=7)
         fig.tight_layout()

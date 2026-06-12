@@ -157,7 +157,7 @@ class PoincareWidget(QWidget):
             if x.size < 2:
                 continue
             color = self._color(i)
-            self.ax.scatter(x, y, s=8, color=color, alpha=0.4,
+            self.ax.scatter(x, y, s=32, color=color, alpha=0.4,
                             edgecolors="none", zorder=2, label=name)
             self._clouds[name] = (x, y, t, color)
             hi = max(hi, float(x.max()), float(y.max()))

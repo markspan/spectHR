@@ -1,9 +1,24 @@
-Make Poincare epoch bar vertical and scrollable (V2 layout)
+Match V2 PSD display: connected band fills + CARSPAN smoothing
 
-The epoch-scheduling checkboxes sat in a horizontal row below the
-scatter; with many epochs they overflowed off the edge.  Match V2's
-poincarePlotWidget: a horizontal split with the plot on the left
-(stretch 3) and a vertical checkbox column in a scroll area on the
-right (stretch 1), so a recording with many epochs stays usable.
+Two display-layer regressions made the dev PSD tiles differ from V2,
+even though the carspan / carspan_strict compute path is byte-identical
+to V2 (the engine, _carspan.py and _smoothing.py are unchanged):
+
+* Band fills left gaps. V2 extends each band's fill polygon to the
+  midpoint shared with its neighbour so the coloured bands connect at
+  the boundaries, while still integrating band power over the
+  configured edges. Ported V2's _band_draw_extents into draw_band_fills
+  (interpolated endpoints, FullRange keeps its own range).
+
+* CARSPAN spectra were drawn unsmoothed. V2 applies the plot-only
+  3-point moving average (smooth3) to the displayed curve and CI when
+  smooth_for_display is set; the dev tile skipped it, so carspan_strict
+  plots looked jagged versus V2's. draw_psd_tile now smooths the display
+  curve/CI (band power still integrated on the raw periodogram), the PSD
+  dock passes the flag for carspan/carspan_strict, and the dev default
+  smooth_for_display is restored to True to match V2.
+
+Also added V2's dashed CI edge lines and CI-aware y-scaling (CI lifts
+the limit up to 3x the peak) so the tiles read like V2's.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
