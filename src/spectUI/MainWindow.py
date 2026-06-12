@@ -131,6 +131,16 @@ _VIEW_LABELS: dict[str, str] = {
     _DOCK_LOG:             "Log",
 }
 
+# Docks that need a particular source channel to be meaningful.  When the
+# predicate is False for the loaded session the dock is hidden and its
+# View-menu entry greyed out.  Docks not listed here are always available
+# (they derive from the R-peaks, which every loaded session has).
+_DOCK_REQUIRES: dict[str, "Callable[[Session], bool]"] = {
+    _DOCK_BP:              lambda s: s.bp is not None,
+    _DOCK_TRANSFER:        lambda s: s.resp is not None or s.bp is not None,
+    _DOCK_TRANSFERPROFILE: lambda s: s.resp is not None or s.bp is not None,
+}
+
 
 # ---------------------------------------------------------------------------
 # Background file loader
@@ -403,12 +413,14 @@ class MainWindow(QMainWindow):
 
         # ---- View menu ----
         view_menu = self.menuBar().addMenu("&View")
+        self._view_actions: dict[str, object] = {}
         for obj_name, label in _VIEW_LABELS.items():
             dock = self._docks.get(obj_name)
             if dock:
                 act = dock.toggleViewAction()
                 act.setText(label)
                 view_menu.addAction(act)
+                self._view_actions[obj_name] = act
         view_menu.addSeparator()
         self._perspective_menu = PerspectiveMenu(
             self, self._dock_manager, view_menu.addMenu("&Layout")
@@ -672,7 +684,25 @@ class MainWindow(QMainWindow):
         self._scheduler.invalidate()  # discard any stale background results
         for widget in self._data_docks.values():
             widget.set_session(session, self._parameters)
+        self._apply_dock_availability(session)
         self._add_epoch_act.setEnabled(True)
+
+    def _apply_dock_availability(self, session: Session) -> None:
+        """Hide + grey docks whose source channel is absent for *session*.
+
+        E.g. with no blood-pressure channel the BP dock is closed and its
+        View-menu entry is disabled; the entry re-enables when a later
+        recording carries the channel.  Docks not in ``_DOCK_REQUIRES`` are
+        always available.
+        """
+        for obj_name, available in _DOCK_REQUIRES.items():
+            ok = bool(available(session))
+            act = self._view_actions.get(obj_name)
+            if act is not None:
+                act.setEnabled(ok)
+            dock = self._docks.get(obj_name)
+            if dock is not None and not ok:
+                dock.toggleView(False)   # deselect: close the unavailable dock
 
     def _cache_path(self, raw_path: Path) -> Path:
         """Cache pickle path for a raw recording: ``<cache_dir>/<name>.pkl``."""

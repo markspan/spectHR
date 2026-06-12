@@ -1,10 +1,11 @@
-HR series: shade inhalation phases behind the trace (V2)
+View menu: grey + close docks lacking their source channel
 
-The HR tachogram now shades each inhalation interval (session.breath
-INH windows) in light blue behind the trace, as V2 did, so the
-respiratory sinus arrhythmia (HR rising on inhalation, falling on
-exhalation) is legible. The inhalation windows are carried on HRModel
-and clipped to the visible window when drawn. Relies on the breath
-phases now produced by apply_breath_phases during loading.
+When a loaded recording has no blood-pressure channel the BP dock is now
+closed and its View-menu entry greyed out (and likewise the Transfer /
+Transfer-Profile docks when neither respiration nor BP is present). The
+entry re-enables for a later recording that carries the channel.
+_DOCK_REQUIRES maps a dock to a session predicate; docks not listed are
+always available since they derive from the R-peaks. Added an offscreen
+MainWindow test.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
