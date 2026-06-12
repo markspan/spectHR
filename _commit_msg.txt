@@ -1,9 +1,0 @@
-Fix PSD y-axis unit: density is mMI²/Hz, not mMI²
-
-draw_psd_tile labelled the y-axis with the per-Hz-stripped unit, so a
-mMI²/Hz spectrum read "mMI²". The plotted curve is a power spectral
-*density*, so the axis must keep the /Hz; only the integrated band-power
-values in the legend are stripped to mMI². Split the two units (psd_unit
-vs band_unit) and added a regression assertion.
-
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
