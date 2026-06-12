@@ -266,6 +266,10 @@ def build_epoch_grid(
         row, col = divmod(idx, columns)
         grid.addWidget(tile, row, col)
 
+    # Equal-width columns so each tile gets the same share of the viewport.
+    for c in range(columns):
+        grid.setColumnStretch(c, 1)
+
     scroll_area.setWidget(container)
     outer = QVBoxLayout(host)
     outer.addWidget(scroll_area)

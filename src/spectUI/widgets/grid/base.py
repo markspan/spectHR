@@ -23,7 +23,13 @@ from __future__ import annotations
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QLabel,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from spectHR.session import Session
 from spectUI.common import (
@@ -34,33 +40,20 @@ from spectUI.common import (
 )
 from spectUI.plot_worker import DockScheduler
 
-
-class _AspectRatioWidget(QWidget):
-    """Container that keeps a fixed height/width ratio via ``heightForWidth``.
-
-    Used to give the per-epoch tiles a landscape A-series aspect (height =
-    width / √2) so they stay readable and the grid scrolls vertically when
-    they no longer fit.
-    """
-
-    def __init__(self, ratio: float, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._ratio = float(ratio)
-        sp = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        sp.setHeightForWidth(True)
-        self.setSizePolicy(sp)
-        self._lay = QVBoxLayout(self)
-        self._lay.setContentsMargins(0, 0, 0, 0)
-
-    def hasHeightForWidth(self) -> bool:   # noqa: N802 - Qt override
-        return True
-
-    def heightForWidth(self, w: int) -> int:   # noqa: N802 - Qt override
-        return int(round(w * self._ratio))
+#: At most this many tiles per row (the rest wrap onto new, scrolled rows).
+_MAX_COLUMNS = 2
+#: A tile never shrinks below this height (px) however short the dock is.
+_MIN_TILE_PX = 170
 
 
 class EpochGridView(YZoomMixin, QWidget):
-    """Scrollable one-tile-per-epoch dock with background per-epoch compute."""
+    """Scrollable one-tile-per-epoch dock with background per-epoch compute.
+
+    Tiles are laid out at most :data:`_MAX_COLUMNS` wide and each is sized to
+    the dock's viewport aspect (height ≈ viewport_height / columns), so the
+    page *grows downward* and scrolls vertically rather than cramming every
+    epoch onto one screen.
+    """
 
     #: Stable scheduler key (override per dock so generations don't collide).
     DOCK_NAME = "grid"
@@ -68,8 +61,6 @@ class EpochGridView(YZoomMixin, QWidget):
     MIN_BEATS = 4
     #: When True, Up/Down arrows zoom a y-axis shared across all tiles.
     Y_ZOOM = False
-    #: Height/width ratio for each tile (None = let the figure decide).
-    TILE_ASPECT: float | None = None
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -80,6 +71,8 @@ class EpochGridView(YZoomMixin, QWidget):
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 0, 0, 0)
         self._content: QWidget | None = None
+        self._scroll: QScrollArea | None = None
+        self._columns = 1
         self._status = QLabel("")
         self._status.setStyleSheet("color:#999; padding:8px;")
         self._outer.addWidget(self._status)
@@ -147,25 +140,25 @@ class EpochGridView(YZoomMixin, QWidget):
         self._status.setText("")
 
         content = QWidget()
+        self._columns = max(1, min(_MAX_COLUMNS, len(results)))
         self._subplots = build_epoch_grid(
-            content, results, self._make_tile, install_save_shortcut=False
+            content, results, self._make_tile,
+            columns=self._columns, install_save_shortcut=False,
         )
         self._content = content
+        self._scroll = content.findChild(QScrollArea)
         self._outer.addWidget(content)
+        self._relayout_tiles()
         if self.Y_ZOOM:
             self._init_y_zoom()
 
     def _make_tile(self, record) -> QWidget:
         label, result = record
-        if self.TILE_ASPECT is not None:
-            tile: QWidget = _AspectRatioWidget(self.TILE_ASPECT)
-            layout = tile._lay
-            fig = Figure(figsize=(3.2, 3.2 * self.TILE_ASPECT), facecolor="white")
-        else:
-            tile = QWidget()
-            layout = QVBoxLayout(tile)
-            layout.setContentsMargins(0, 0, 0, 0)
-            fig = Figure(figsize=(3.2, 2.4), facecolor="white")
+        tile = QWidget()
+        tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(tile)
+        layout.setContentsMargins(0, 0, 0, 0)
+        fig = Figure(figsize=(3.2, 2.4), facecolor="white")
         canvas = FigureCanvas(fig)
         layout.addWidget(canvas)
         if isinstance(result, _ComputeError):
@@ -186,6 +179,30 @@ class EpochGridView(YZoomMixin, QWidget):
         tile.ax = fig.axes[0] if fig.axes else None
         tile.canvas = canvas
         return tile
+
+    # ------------------------------------------------------------------
+    # Viewport-aspect tile sizing (grow-down + vertical scroll)
+    # ------------------------------------------------------------------
+
+    def resizeEvent(self, event) -> None:   # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        self._relayout_tiles()
+
+    def _relayout_tiles(self) -> None:
+        """Size every tile to the viewport aspect: ``height ≈ vp_h / columns``.
+
+        The 2-column grid stretches each tile to ``vp_w / columns`` wide, so a
+        tile's height/width matches the viewport's; two rows then fill the
+        dock and further epochs push the page down into the vertical scroll.
+        """
+        if not self._subplots or self._scroll is None:
+            return
+        h = self._scroll.viewport().height()
+        if h < 50:                       # not laid out yet — use the dock height
+            h = max(self.height(), 400)
+        tile_h = max(_MIN_TILE_PX, (h - 6) // max(1, self._columns))
+        for tile in self._subplots:
+            tile.setFixedHeight(tile_h)
 
     # ------------------------------------------------------------------
     # Shared y-axis zoom (YZoomMixin contract)

@@ -181,9 +181,10 @@ assert len(canvases) == 2, f"expected 2 PSD tiles, got {len(canvases)}"
 drawn = sum(len(c.figure.axes[0].lines) for c in canvases if c.figure.axes)
 assert drawn >= 2, "PSD spectra not drawn"
 
-# Tiles carry the A-series aspect; method name shows; top/right spines gone.
-import math as _math
-assert abs(psd.TILE_ASPECT - 1.0 / _math.sqrt(2.0)) < 1e-9
+# Tiles are laid out at most 2 wide and given a fixed (viewport-aspect)
+# height so the page scrolls vertically instead of cramming every epoch.
+assert psd._columns == 2                                # 2 epochs -> 2 columns
+assert all(t.height() > 0 for t in psd._subplots)
 ax0 = canvases[0].figure.axes[0]
 assert not ax0.spines["top"].get_visible()
 assert not ax0.spines["right"].get_visible()

@@ -11,8 +11,6 @@ computes nothing itself.
 """
 from __future__ import annotations
 
-import math
-
 from matplotlib.figure import Figure
 
 from spectHR.analysis.psd import PSDResult, PsdMethod
@@ -28,8 +26,6 @@ class PSDPlotWidget(EpochGridView):
     DOCK_NAME = "psd"
     #: Up/Down arrows zoom the (shared) power y-axis.
     Y_ZOOM = True
-    #: A-series landscape tiles (height = width / √2), scroll when they overflow.
-    TILE_ASPECT = 1.0 / math.sqrt(2.0)
 
     def _resolve(self, config) -> None:
         """Resolve the PSD method, display bands and CI alpha (main thread)."""
