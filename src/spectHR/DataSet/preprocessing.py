@@ -33,15 +33,20 @@ from __future__ import annotations
 import numpy as np
 
 from spectHR.config import CardioParams, WorkspaceView
-from spectHR.session import Events, Samples, Session
+from spectHR.session import Events, Intervals, Samples, Session
 from spectHR.Tools.ECGProcessing import detect_ecg_polarity
 from spectHR.Tools.Logger import logger
+from spectHR.Tools.RespirationSegmentation import (
+    accel_to_respiration,
+    segment_respiration,
+)
 
 __all__ = [
     "resolve_ecg",
     "resolve_resp",
     "resolve_bp",
     "resolve_icg",
+    "resolve_accel_axes",
     "apply_canonical_channels",
     "filter_ecg",
     "apply_ecg_polarity",
@@ -401,29 +406,137 @@ def apply_rsp_source(session: Session, params: _ParamsLike = None) -> Session:
 # ---------------------------------------------------------------------------
 
 
-def apply_breath_phases(session: Session, params: _ParamsLike = None) -> Session:  # noqa: ARG001
+# Accelerometer-axis key triples recognised when rebuilding the respiration
+# surrogate (VU-AMS ``mxr/myr/mzr`` first, then generic spellings).
+_ACCEL_AXIS_TRIPLES: tuple[tuple[str, str, str], ...] = (
+    ("mxr", "myr", "mzr"),
+    ("acc_x", "acc_y", "acc_z"),
+    ("accx", "accy", "accz"),
+)
+
+
+def resolve_accel_axes(session: Session):
+    """Return the ``(x, y, z)`` accelerometer-axis :class:`Samples`, or ``None``.
+
+    Matches the loader's raw 3-axis channels (e.g. VU-AMS ``mxr-[…]`` /
+    ``myr-[…]`` / ``mzr-[…]``) so the respiration PCA can be rebuilt per epoch.
+    """
+    lower = {k.lower(): k for k in session.samples}
+    for ax, ay, az in _ACCEL_AXIS_TRIPLES:
+        kx = next((lower[k] for k in lower if k.startswith(ax)), None)
+        ky = next((lower[k] for k in lower if k.startswith(ay)), None)
+        kz = next((lower[k] for k in lower if k.startswith(az)), None)
+        if kx and ky and kz:
+            return session.samples[kx], session.samples[ky], session.samples[kz]
+    return None
+
+
+def _respiration_window(
+    session: Session,
+    view: WorkspaceView,
+    t0: float | None,
+    t1: float | None,
+) -> Samples | None:
+    """Build the respiration signal for a window (whole recording when *t0* is None).
+
+    For the accelerometer source the surrogate is recomputed from the raw
+    3-axis accelerometer over exactly this window (posture-adaptive PCA);
+    otherwise the native respiration channel is sliced.
+    """
+    if view.rsp_source == "accelerometer":
+        axes = resolve_accel_axes(session)
+        if axes is not None:
+            xs, ys, zs = axes
+            if t0 is not None:
+                xs, ys, zs = xs.window(t0, t1), ys.window(t0, t1), zs.window(t0, t1)
+            n = min(xs.times.size, ys.times.size, zs.times.size)
+            if n < 8:
+                return None
+            acc = np.column_stack([xs.values[:n], ys.values[:n], zs.values[:n]])
+            times = np.asarray(xs.times[:n], dtype=float)
+            fs = 1.0 / float(np.median(np.diff(times))) if times.size > 1 else 0.0
+            return Samples(times, accel_to_respiration(acc, fs), name="resp")
+        # No raw axes — fall back to a native respiration channel if present.
+    resp = resolve_resp(session)
+    if resp is None:
+        return None
+    return resp.window(t0, t1) if t0 is not None else resp
+
+
+def _segment(sig: Samples | None):
+    """Segment a respiration signal into ``(starts, ends, labels)`` arrays."""
+    if sig is None or sig.times.size < 8:
+        return None
+    starts, ends, labels = segment_respiration(sig)
+    return (starts, ends, labels) if starts.size else None
+
+
+def apply_breath_phases(session: Session, params: _ParamsLike = None) -> Session:
     """Return a new ``Session`` with INH/EXH breath phases detected.
 
-    The respiration channel is segmented into inhalation / exhalation
-    intervals (stored as the ``breath`` :class:`~spectHR.session.Intervals`),
-    which the per-epoch RSA, ``resp_rate`` and ``hf_resp_in_band`` metrics and
-    the HR-series breathing overlay all read.  Requires R-peaks (``hrv``) and a
-    respiration channel; returns the session unchanged when either is missing
-    or phases already exist.  Must run *after* :func:`apply_beat_detection`.
+    The respiration signal is segmented into inhalation / exhalation intervals
+    (stored as the ``breath`` :class:`~spectHR.session.Intervals`), which the
+    per-epoch RSA, ``resp_rate`` and ``hf_resp_in_band`` metrics and the
+    HR-series breathing overlay all read.  Requires R-peaks (``hrv``) and a
+    respiration source; returns the session unchanged when either is missing or
+    phases already exist.  Must run *after* :func:`apply_beat_detection`.
+
+    With ``RespirationAnalysis.per_epoch`` enabled the respiration surrogate is
+    rebuilt and segmented **within each analysis epoch** (the whole-recording
+    ``"experiment"`` epoch is skipped).  For the accelerometer source this
+    re-runs the PCA per epoch, so a posture change between epochs no longer
+    corrupts a single global principal axis.
     """
     if session.breath is not None or session.hrv is None:
         return session
-    # Prefer the canonical key, then any respiration-like channel
-    # ("resp", "respiration", "respi", "rsp-[device]", …).
-    keys = list(session.samples)
-    resp_key = next(
-        (k for k in ("resp", "respiration") if k in session.samples),
-        next((k for k in keys if k.lower().startswith(("resp", "rsp"))), None),
-    )
-    if resp_key is None:
-        return session
+    view = _as_view(params)
+
     try:
-        return session.with_detected_phases(resp_key)
+        if view.rsp_per_epoch:
+            phases = _detect_per_epoch(session, view)
+        else:
+            seg = _segment(_respiration_window(session, view, None, None))
+            phases = (
+                Intervals(starts=seg[0], ends=seg[1], labels=seg[2])
+                if seg is not None else None
+            )
     except Exception as exc:  # noqa: BLE001 — never abort a load
         logger.warning("Breath-phase detection failed: %s", exc)
         return session
+
+    if phases is None:
+        return session
+    return Session(
+        name=session.name,
+        samples=session.samples,
+        events=session.events,
+        intervals={**session.intervals, "breath": phases},
+        epochs=session.epochs,
+    )
+
+
+def _detect_per_epoch(session: Session, view: WorkspaceView) -> "Intervals | None":
+    """Segment respiration per analysis epoch and merge into one Intervals.
+
+    Each active epoch other than the whole-recording ``"experiment"`` epoch is
+    segmented on its own respiration window; the phases are concatenated and
+    time-sorted.  Falls back to whole-recording detection when no such epoch
+    exists (e.g. only ``"experiment"`` is present).
+    """
+    starts_l, ends_l, labels_l = [], [], []
+    for name, ep in session.epochs.items():
+        if name == "experiment" or not getattr(ep, "active", True):
+            continue
+        seg = _segment(_respiration_window(session, view, float(ep.start), float(ep.end)))
+        if seg is not None:
+            starts_l.append(seg[0]); ends_l.append(seg[1]); labels_l.append(seg[2])
+
+    if not starts_l:
+        seg = _segment(_respiration_window(session, view, None, None))
+        return Intervals(starts=seg[0], ends=seg[1], labels=seg[2]) if seg else None
+
+    starts = np.concatenate(starts_l)
+    ends = np.concatenate(ends_l)
+    labels = np.concatenate(labels_l)
+    order = np.argsort(starts, kind="stable")
+    return Intervals(starts=starts[order], ends=ends[order], labels=labels[order])

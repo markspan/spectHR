@@ -576,6 +576,18 @@ class WorkspaceView:
         return float(ra.get("rsa_lag_s", 1.0))
 
     @property
+    def rsp_per_epoch(self) -> bool:
+        """Detect breath phases per epoch (default False).
+
+        When True, the respiration surrogate is rebuilt and segmented within
+        each epoch separately.  For the accelerometer source this re-runs the
+        PCA per epoch, so a posture change between epochs no longer corrupts a
+        single global principal axis.
+        """
+        ra = self._ws.get("RespirationAnalysis", {}) or {}
+        return bool(ra.get("per_epoch", False))
+
+    @property
     def rsa_rejection(self) -> "tuple[float | None, float | None]":
         """``(max_ibi_deviation, max_rate_deviation)`` for the configured mode."""
         return rsa_rejection_from_workspace(self._ws)

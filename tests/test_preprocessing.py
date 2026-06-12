@@ -269,3 +269,66 @@ def test_canonical_channels_noop_when_canonical_present():
     s = Session(name="c", samples={"ecg": Samples(t, np.sin(t), "ecg")})
     from spectHR.DataSet.preprocessing import apply_canonical_channels
     assert apply_canonical_channels(s) is s
+
+
+# ---------------------------------------------------------------------------
+# Per-epoch breath detection (posture-adaptive PCA)
+# ---------------------------------------------------------------------------
+
+
+def _accel_session(per_epoch_breaths=True):
+    """Two epochs whose breathing sits on a *different* accelerometer axis."""
+    fs = 25.0
+    t = np.arange(0.0, 120.0, 1.0 / fs)
+    half = t.size // 2
+    z = np.zeros_like(t)
+    # Epoch 1 (0-60 s): breathing on X.  Epoch 2 (60-120 s): breathing on Y.
+    breath = np.sin(2 * np.pi * 0.25 * t)
+    x = np.where(np.arange(t.size) < half, breath, z) + 0.01 * np.random.default_rng(0).normal(size=t.size)
+    y = np.where(np.arange(t.size) >= half, breath, z) + 0.01 * np.random.default_rng(1).normal(size=t.size)
+    peaks = np.arange(0.5, 120.0, 0.8)
+    return Session(
+        name="acc",
+        samples={
+            "mxr": Samples(t, x, "mxr"), "myr": Samples(t, y, "myr"),
+            "mzr": Samples(t, z, "mzr"),
+            "ecg": Samples(t, np.sin(t), "ecg"),
+        },
+        events={"hrv": Events(peaks, np.full(peaks.shape, "N", object))},
+        epochs={
+            "experiment": Epoch("experiment", 0.0, 120.0, True),
+            "a": Epoch("a", 0.0, 60.0, True),
+            "b": Epoch("b", 60.0, 120.0, True),
+        },
+    )
+
+
+def test_accel_axes_resolved_and_pca():
+    from spectHR.DataSet.preprocessing import resolve_accel_axes
+    from spectHR.Tools.RespirationSegmentation import accel_to_respiration
+    s = _accel_session()
+    axes = resolve_accel_axes(s)
+    assert axes is not None and len(axes) == 3
+    acc = np.column_stack([a.values for a in axes])
+    rsp = accel_to_respiration(acc, 25.0)
+    assert rsp.shape[0] == acc.shape[0]
+    assert np.isfinite(rsp).all()
+
+
+def test_breath_phases_per_epoch_uses_accel_pca():
+    s = _accel_session()
+    params = {"RespirationAnalysis": {"per_epoch": True, "rsp_source": "accelerometer"}}
+    out = apply_breath_phases(s, params)
+    assert out.breath is not None
+    # The "experiment" epoch is skipped; phases come from epochs a and b, each
+    # PCA'd on its own posture, so breaths are found across the whole span.
+    starts = np.asarray(out.breath.starts, dtype=float)
+    assert starts.size > 4
+    assert starts.min() < 60.0 and starts.max() > 60.0   # both epochs contributed
+
+
+def test_breath_phases_global_default_still_works():
+    s = _accel_session()
+    # Global (default) accelerometer PCA over the whole recording.
+    out = apply_breath_phases(s, {"RespirationAnalysis": {"rsp_source": "accelerometer"}})
+    assert out.breath is not None and out.breath.labels.size > 0

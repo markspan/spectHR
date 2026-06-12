@@ -23,12 +23,58 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 import numpy as np
+from numpy.linalg import eigh
 from scipy.signal import butter, sosfiltfilt, savgol_filter, find_peaks, buttord
 
 from spectHR.Tools.Logger import logger
 
 
-__all__ = ["segment_respiration", "mean_breath_frequency_hz"]
+__all__ = [
+    "segment_respiration",
+    "mean_breath_frequency_hz",
+    "accel_to_respiration",
+]
+
+
+def accel_to_respiration(acc: np.ndarray, fs: float) -> np.ndarray:
+    """Return a 1-D z-scored respiration surrogate from ``Nx3`` accelerometer data.
+
+    Gravity is removed with a 0.04 Hz low-pass, the linear acceleration is
+    band-passed to the respiration band (0.10–0.70 Hz), and the first principal
+    component of the band-passed 3-axis signal is the respiration surrogate.
+
+    Because the principal axis that captures chest expansion depends on
+    posture, running this **per epoch** (rather than once over the whole
+    recording) gives a cleaner surrogate when posture changes between epochs —
+    see ``apply_breath_phases(..., per_epoch=True)``.
+    """
+    acc = np.asarray(acc, dtype=float)
+    if acc.ndim != 2 or acc.shape[1] != 3 or acc.shape[0] < 8:
+        return np.zeros(acc.shape[0] if acc.ndim else 0, dtype=float)
+    nyq = 0.5 * fs
+
+    # Gravity removal (very low-pass), leaving linear acceleration.
+    wn_g = min(0.04 / nyq, 0.999)
+    sos_g = butter(2, wn_g, btype="low", output="sos")
+    gravity = np.column_stack([sosfiltfilt(sos_g, acc[:, k]) for k in range(3)])
+    lin = acc - gravity
+
+    # Respiration bandpass.
+    lo = max(0.10 / nyq, 0.001)
+    hi = min(0.70 / nyq, 0.999)
+    if lo < hi:
+        sos_b = butter(4, [lo, hi], btype="band", output="sos")
+        band = np.column_stack([sosfiltfilt(sos_b, lin[:, k]) for k in range(3)])
+    else:
+        band = lin
+
+    # PCA: project onto the largest-variance eigenvector.
+    X = band - band.mean(0)
+    C = (X.T @ X) / max(X.shape[0] - 1, 1)
+    _, evecs = eigh(C)            # ascending eigenvalues
+    rsp = X @ evecs[:, -1]
+    s = rsp.std()
+    return (rsp - rsp.mean()) / (s if s > 0 else 1.0)
 
 
 def segment_respiration(

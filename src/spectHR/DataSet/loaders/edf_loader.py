@@ -184,36 +184,9 @@ _LABEL_ANN  = {"edf annotations"}
 # RSP surrogate from 3-axis accelerometers via PCA
 # ---------------------------------------------------------------------------
 
-def _acc_to_rsp(acc: np.ndarray, fs: float) -> np.ndarray:
-    """Return a 1-D z-scored respiration surrogate from Nx3 accelerometer data."""
-    from scipy.signal import butter, sosfiltfilt
-    from numpy.linalg import eigh
-
-    acc = np.asarray(acc, dtype=float)
-    nyq = 0.5 * fs
-
-    # gravity removal
-    wn_g = min(0.04 / nyq, 0.999)
-    sos_g = butter(2, wn_g, btype="low", output="sos")
-    gravity = np.column_stack([sosfiltfilt(sos_g, acc[:, k]) for k in range(3)])
-    lin = acc - gravity
-
-    # respiration bandpass
-    lo = max(0.10 / nyq, 0.001)
-    hi = min(0.70 / nyq, 0.999)
-    if lo < hi:
-        sos_b = butter(4, [lo, hi], btype="band", output="sos")
-        band = np.column_stack([sosfiltfilt(sos_b, lin[:, k]) for k in range(3)])
-    else:
-        band = lin
-
-    # PCA: first principal component (largest eigenvector)
-    X = band - band.mean(0)
-    C = (X.T @ X) / max(X.shape[0] - 1, 1)
-    _, evecs = eigh(C)  # ascending eigenvalues
-    rsp = X @ evecs[:, -1]
-    s = rsp.std()
-    return (rsp - rsp.mean()) / (s if s > 0 else 1.0)
+# The accelerometer→respiration PCA lives in the headless Tools layer so it can
+# be re-run per epoch (posture-adaptive); imported here under the old name.
+from spectHR.Tools.RespirationSegmentation import accel_to_respiration as _acc_to_rsp
 
 
 # ---------------------------------------------------------------------------
