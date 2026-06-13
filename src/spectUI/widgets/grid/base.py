@@ -11,6 +11,13 @@ it runs on a background pool thread via
 when a newer edit supersedes it); only the cheap tile rendering happens on
 the UI thread.
 
+Tiles are laid out at most :attr:`EpochGridView.MAX_COLUMNS` wide and sized to
+the dock's viewport aspect, so the page grows downward and scrolls vertically.
+A thin toolbar carries an *Equal y-axis* checkbox (when the dock has a single
+magnitude y-axis and more than one epoch) that links every tile's y-axis to
+the largest; Up / Down arrows then zoom that axis.  Subclasses can add their
+own controls to the toolbar (e.g. the profile dock's band checkboxes).
+
 Subclasses implement three hooks:
 
 ``_resolve(config)``         (main thread) cache any settings the compute
@@ -24,6 +31,8 @@ from __future__ import annotations
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
     QSizePolicy,
@@ -34,32 +43,29 @@ from PySide6.QtWidgets import (
 from spectHR.session import Session
 from spectUI.common import (
     Y_TOP_FLOOR,
-    YZoomMixin,
+    Y_ZOOM_STEP_DOWN,
+    Y_ZOOM_STEP_UP,
     build_epoch_grid,
     wire_y_zoom_shortcuts,
 )
 from spectUI.plot_worker import DockScheduler
 
-#: At most this many tiles per row (the rest wrap onto new, scrolled rows).
-_MAX_COLUMNS = 2
 #: A tile never shrinks below this height (px) however short the dock is.
 _MIN_TILE_PX = 170
 
 
-class EpochGridView(YZoomMixin, QWidget):
-    """Scrollable one-tile-per-epoch dock with background per-epoch compute.
-
-    Tiles are laid out at most :data:`_MAX_COLUMNS` wide and each is sized to
-    the dock's viewport aspect (height ≈ viewport_height / columns), so the
-    page *grows downward* and scrolls vertically rather than cramming every
-    epoch onto one screen.
-    """
+class EpochGridView(QWidget):
+    """Scrollable one-tile-per-epoch dock with background per-epoch compute."""
 
     #: Stable scheduler key (override per dock so generations don't collide).
     DOCK_NAME = "grid"
     #: Minimum beats in an epoch before its result is attempted.
     MIN_BEATS = 4
-    #: When True, Up/Down arrows zoom a y-axis shared across all tiles.
+    #: At most this many tiles per row (the rest wrap onto scrolled rows).
+    MAX_COLUMNS = 2
+    #: True when each tile has one magnitude y-axis that can be linked/zoomed
+    #: (PSD / profile / transfer-modulus).  False for the frequency-axis docks
+    #: (spectrogram 2-D / 3-D).
     Y_ZOOM = False
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -70,6 +76,22 @@ class EpochGridView(YZoomMixin, QWidget):
 
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 0, 0, 0)
+        self._outer.setSpacing(0)
+
+        # Toolbar row (hidden until it carries a visible control).
+        self._toolbar_row = QWidget()
+        self._toolbar = QHBoxLayout(self._toolbar_row)
+        self._toolbar.setContentsMargins(6, 2, 6, 2)
+        self._equal_y_cb = QCheckBox("Equal y-axis")
+        self._equal_y_cb.setChecked(True)        # linked by default (as before)
+        self._equal_y_cb.setToolTip("Link every plot's y-axis to the largest")
+        self._equal_y_cb.toggled.connect(self._on_equal_y_toggled)
+        self._toolbar.addWidget(self._equal_y_cb)
+        self._toolbar.addStretch()
+        self._toolbar_row.setVisible(False)
+        self._outer.addWidget(self._toolbar_row)
+        self._build_toolbar()                    # subclass extras
+
         self._content: QWidget | None = None
         self._scroll: QScrollArea | None = None
         self._columns = 1
@@ -77,10 +99,11 @@ class EpochGridView(YZoomMixin, QWidget):
         self._status.setStyleSheet("color:#999; padding:8px;")
         self._outer.addWidget(self._status)
 
-        # Y-zoom state (YZoomMixin contract): a shared y-max over tiles that
-        # expose ``.ax`` / ``.canvas``.
         self._subplots: list[QWidget] = []
-        self._y_top: float = Y_TOP_FLOOR
+        self._last_results: list | None = None   # cached for cheap re-render
+        # Y-axis control state (persists across refreshes).
+        self._equal_y = True
+        self._y_zoom_factor = 1.0
         self._yzoom_wired = False
         self.setVisible(False)
 
@@ -129,6 +152,12 @@ class EpochGridView(YZoomMixin, QWidget):
     # ------------------------------------------------------------------
 
     def _build_grid(self, results: list) -> None:
+        self._last_results = results
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        """(Re)build the tile grid from the cached results (no recompute)."""
+        results = self._last_results
         if self._content is not None:
             self._content.setParent(None)
             self._content.deleteLater()
@@ -136,11 +165,12 @@ class EpochGridView(YZoomMixin, QWidget):
 
         if not results:
             self._status.setText("No active epochs.")
+            self._toolbar_row.setVisible(self._toolbar_has_extras())
             return
         self._status.setText("")
 
         content = QWidget()
-        self._columns = max(1, min(_MAX_COLUMNS, len(results)))
+        self._columns = max(1, min(self.MAX_COLUMNS, len(results)))
         self._subplots = build_epoch_grid(
             content, results, self._make_tile,
             columns=self._columns, install_save_shortcut=False,
@@ -149,8 +179,17 @@ class EpochGridView(YZoomMixin, QWidget):
         self._scroll = content.findChild(QScrollArea)
         self._outer.addWidget(content)
         self._relayout_tiles()
+
+        # Y-axis controls: only for magnitude-axis docks, only when several
+        # epochs make linking meaningful.
+        show_equal_y = self.Y_ZOOM and len(self._subplots) > 1
+        self._equal_y_cb.setVisible(show_equal_y)
+        self._toolbar_row.setVisible(show_equal_y or self._toolbar_has_extras())
         if self.Y_ZOOM:
-            self._init_y_zoom()
+            if not self._yzoom_wired:
+                wire_y_zoom_shortcuts(self)      # Up / Down arrow y-zoom
+                self._yzoom_wired = True
+            self._apply_y()
 
     def _make_tile(self, record) -> QWidget:
         label, result = record
@@ -174,10 +213,13 @@ class EpochGridView(YZoomMixin, QWidget):
         else:
             self._render_tile(fig, label, result)
         canvas.draw_idle()
-        # Expose the primary axis + canvas so YZoomMixin can drive a shared
-        # y-axis across all tiles.
+        # Expose the primary axis + canvas and remember the data-driven y-top so
+        # the equal-y link / arrow zoom can rescale without re-rendering.
         tile.ax = fig.axes[0] if fig.axes else None
         tile.canvas = canvas
+        tile._natural_top = (
+            float(tile.ax.get_ylim()[1]) if tile.ax is not None else None
+        )
         return tile
 
     # ------------------------------------------------------------------
@@ -189,12 +231,7 @@ class EpochGridView(YZoomMixin, QWidget):
         self._relayout_tiles()
 
     def _relayout_tiles(self) -> None:
-        """Size every tile to the viewport aspect: ``height ≈ vp_h / columns``.
-
-        The 2-column grid stretches each tile to ``vp_w / columns`` wide, so a
-        tile's height/width matches the viewport's; two rows then fill the
-        dock and further epochs push the page down into the vertical scroll.
-        """
+        """Size every tile to the viewport aspect: ``height ≈ vp_h / columns``."""
         if not self._subplots or self._scroll is None:
             return
         h = self._scroll.viewport().height()
@@ -205,29 +242,36 @@ class EpochGridView(YZoomMixin, QWidget):
             tile.setFixedHeight(tile_h)
 
     # ------------------------------------------------------------------
-    # Shared y-axis zoom (YZoomMixin contract)
+    # Y-axis link + zoom (only when Y_ZOOM)
     # ------------------------------------------------------------------
 
-    def _init_y_zoom(self) -> None:
-        """Adopt one y-max across all tiles and wire Up/Down arrow zoom."""
-        tops = [t.ax.get_ylim()[1] for t in self._subplots
-                if getattr(t, "ax", None) is not None]
-        if tops:
-            self._y_top = max(max(tops), Y_TOP_FLOOR)
-            self._set_y_top(self._y_top)   # uniform y across epochs (V2)
-        if not self._yzoom_wired:
-            wire_y_zoom_shortcuts(self)
-            self._yzoom_wired = True
+    def _on_equal_y_toggled(self, checked: bool) -> None:
+        self._equal_y = bool(checked)
+        self._apply_y()
 
-    def _set_y_top(self, new_y_top: float) -> None:
-        """Apply *new_y_top* to every tile that carries a y-axis."""
-        new_y_top = max(float(new_y_top), Y_TOP_FLOOR)
-        self._y_top = new_y_top
-        for tile in self._subplots:
-            ax = getattr(tile, "ax", None)
-            if ax is not None:
-                ax.set_ylim(bottom=0.0, top=new_y_top)
-                tile.canvas.draw_idle()
+    def _zoom_in(self) -> None:
+        """Up arrow: shrink the y-max (zoom in)."""
+        self._y_zoom_factor *= Y_ZOOM_STEP_UP
+        self._apply_y()
+
+    def _zoom_out(self) -> None:
+        """Down arrow: grow the y-max (zoom out)."""
+        self._y_zoom_factor *= Y_ZOOM_STEP_DOWN
+        self._apply_y()
+
+    def _apply_y(self) -> None:
+        """Rescale tile y-axes per the equal-y link and the zoom factor."""
+        tiles = [t for t in self._subplots
+                 if getattr(t, "ax", None) is not None
+                 and getattr(t, "_natural_top", None)]
+        if not tiles:
+            return
+        shared = max(t._natural_top for t in tiles)
+        for t in tiles:
+            base = shared if self._equal_y else t._natural_top
+            top = max(base * self._y_zoom_factor, Y_TOP_FLOOR)
+            t.ax.set_ylim(bottom=0.0, top=top)
+            t.canvas.draw_idle()
 
     # ------------------------------------------------------------------
     # Hooks
@@ -240,6 +284,13 @@ class EpochGridView(YZoomMixin, QWidget):
         if isinstance(config, WorkspaceView):
             return config
         return WorkspaceView(config if isinstance(config, dict) else None)
+
+    def _build_toolbar(self) -> None:
+        """Add dock-specific toolbar controls (left of the stretch).  Default: none."""
+
+    def _toolbar_has_extras(self) -> bool:
+        """True when the dock added its own always-on toolbar controls."""
+        return False
 
     def _resolve(self, config) -> None:
         """Cache settings the worker needs (main thread).  Default: nothing."""

@@ -64,6 +64,8 @@ class TransferPlotWidget(_TransferBase):
     """Per-epoch input→HR transfer spectrum (|H| and coherence)."""
 
     DOCK_NAME = "transfer"
+    #: The modulus panel carries a linkable / zoomable magnitude y-axis.
+    Y_ZOOM = True
 
     def _compute_epoch(self, events, scoped: Session):
         inp = self._input_series(scoped)
@@ -143,6 +145,7 @@ class TransferProfilePlotWidget(_TransferBase):
     """Per-epoch transfer modulus per band over time."""
 
     DOCK_NAME = "transferprofile"
+    Y_ZOOM = True
 
     def _compute_epoch(self, events, scoped: Session):
         inp = self._input_series(scoped)

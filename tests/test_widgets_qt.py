@@ -195,14 +195,16 @@ leg = ax0.get_legend()
 band_lbls = [t.get_text() for t in leg.get_texts()] if leg else []
 assert any("/Hz" not in l for l in band_lbls if ":" in l), band_lbls
 
-# Up arrow shrinks the shared y-max (V2 y-zoom); Down grows it.
-y0 = psd._y_top
-assert y0 > 0.0
+# Equal y-axis (default) links every tile's y-max to the largest.
+assert psd._equal_y_cb.isVisibleTo(psd)                 # shown for >1 epoch
+tops = [c.figure.axes[0].get_ylim()[1] for c in canvases]
+assert max(tops) - min(tops) < 1e-9, "tiles not linked to a common y-max"
+# Up arrow shrinks the y-max (zoom in); Down grows it back past the start.
+top0 = canvases[0].figure.axes[0].get_ylim()[1]
 psd._zoom_in()
-assert psd._y_top < y0
+assert canvases[0].figure.axes[0].get_ylim()[1] < top0
 psd._zoom_out(); psd._zoom_out()
-assert psd._y_top > y0
-assert canvases[0].figure.axes[0].get_ylim()[1] == psd._y_top   # tiles track it
+assert canvases[0].figure.axes[0].get_ylim()[1] > top0
 
 print("WIDGETS_OK")
 """

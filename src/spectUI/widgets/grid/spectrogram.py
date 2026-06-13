@@ -88,6 +88,8 @@ class Spectrogram3DPlotWidget(_SpectrogramBase):
     """Per-epoch HRV spectrograms as 3-D surfaces (V2)."""
 
     DOCK_NAME = "spectrogram3d"
+    #: 3-D surfaces need room — one full-width tile per row (twice as wide).
+    MAX_COLUMNS = 1
 
     def _render_tile(self, fig: Figure, label: str, result) -> None:
         ax = fig.add_subplot(111, projection="3d")
