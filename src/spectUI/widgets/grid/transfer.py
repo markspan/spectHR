@@ -22,6 +22,7 @@ from spectHR.analysis.transfer import (
 )
 from spectHR.session import Session
 from spectUI.common.spectral_plots import band_color, draw_band_fills
+from spectUI.widgets.grid.band_select import BandSelectorMixin
 from spectUI.widgets.grid.base import EpochGridView
 
 
@@ -141,11 +142,19 @@ class TransferPlotWidget(_TransferBase):
         ax_m.set_xlim(f_min, f_max)
 
 
-class TransferProfilePlotWidget(_TransferBase):
-    """Per-epoch transfer modulus per band over time."""
+class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
+    """Per-epoch transfer modulus per band over time, with band selection."""
 
     DOCK_NAME = "transferprofile"
     Y_ZOOM = True
+
+    def _build_toolbar(self) -> None:
+        self._build_band_selector()
+
+    def _resolve(self, config) -> None:
+        super()._resolve(config)
+        # Only the named (non-FullRange) bands appear in the profile lines.
+        self._refresh_band_selector(self._display_bands, names=list(self._bands))
 
     def _compute_epoch(self, events, scoped: Session):
         inp = self._input_series(scoped)
@@ -163,13 +172,17 @@ class TransferProfilePlotWidget(_TransferBase):
 
     def _render_tile(self, fig: Figure, label: str, result) -> None:
         ax = fig.add_subplot(111)
+        drawn = 0
         for i, name in enumerate(result.band_names):
+            if not self._band_selected(name):
+                continue
             ax.plot(result.timestamps, result.modulus[i], linewidth=1.0,
                     color=band_color(self._display_bands, name), label=name)
+            drawn += 1
         ax.set_title(label, fontsize=9)
         ax.set_xlabel("Time (s)", fontsize=8)
         ax.set_ylabel("|H|", fontsize=8)
         ax.tick_params(labelsize=7)
-        if result.band_names:
+        if drawn:
             ax.legend(fontsize=6, loc="upper right")
         fig.tight_layout()

@@ -403,8 +403,6 @@ class MainWindow(QMainWindow):
         self._save_act     = self._action("fa5s.save",             "&Save settings",        self.save_workspace,          "Ctrl+S")
         self._settings_act = self._action("fa5s.folder-open",      "Directory &settings…",  self.open_directory_settings, "Ctrl+Shift+S")
         self._doc_act      = self._action("fa5s.question-circle",  "&Documentation",        self._open_docs,              "Ctrl+D")
-        self._add_epoch_act= self._action("fa5s.plus-circle",      "Add &Epoch",            lambda: None,                 "Ctrl+N")
-        self._add_epoch_act.setEnabled(False)
 
         # ---- Settings menu ----
         ws_menu = self.menuBar().addMenu("&Settings")
@@ -464,8 +462,6 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
 
         tb.addAction(self._settings_act)
-        tb.addSeparator()
-        tb.addAction(self._add_epoch_act)
         tb.addSeparator()
         tb.addAction(self._doc_act)
 
@@ -694,7 +690,6 @@ class MainWindow(QMainWindow):
         for widget in self._data_docks.values():
             widget.set_session(session, self._parameters)
         self._apply_dock_availability(session)
-        self._add_epoch_act.setEnabled(True)
 
     def _apply_dock_availability(self, session: Session) -> None:
         """Hide + grey docks whose source channel is absent for *session*.

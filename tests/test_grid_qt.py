@@ -121,6 +121,11 @@ assert pump(lambda: prof2._content is not None)
 cv_p2 = prof2._content.findChildren(FigureCanvas)[0]
 assert len(cv_p2.figure.axes[0].lines) < n_lines0, "unticking a band did not drop a line"
 
+# TransferProfile shares the same band selector.
+tp = TransferProfilePlotWidget(); tp.show(); tp.set_session(session, params)
+assert pump(lambda: tp._content is not None)
+assert len(tp._band_checks) >= 1, "transfer-profile has no band checkboxes"
+
 print("GRID_OK")
 """
 
