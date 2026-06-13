@@ -3,22 +3,26 @@
 # spectHR/analysis/exporter.py
 """
 EpochExporter: collect per-epoch PSD, profile, transfer and respiration
-arrays for CSV / HDF5 export.
+arrays for CSV / HDF5 export, plus the writers that serialise them.
 
-.. warning::
-   **Not yet wired to the immutable Session API and currently unused.**  This
-   is a V2-era exporter: it still expects a ``PhysioData``-style ``dataset``
-   (it calls ``resolve_transfer_input(self.dataset, …)``, which indexes the
-   dataset like ``dataset["rsp"].timeseries``).  No code path constructs an
-   ``EpochExporter`` today.  Porting it to take a :class:`Session` (and feed
-   ``Session.epochs_table`` contexts) is the outstanding task before the
-   Results dock can offer CSV/HDF5 export.
+Qt-free.  It reuses the cached :class:`~spectHR.analysis.epoch_context.EpochContext`
+results from :meth:`~spectHR.session.Session.epochs_table` (``ctx.psd`` /
+``ctx.rsa_beats`` / ``ctx.pep_detail`` and the epoch-scoped ``ctx.rsp_ts`` /
+``ctx.bp_ts`` transfer inputs) so the export pass only recomputes the
+profiles / transfers.
 
-The class is Qt-free and reuses the cached ``EpochContext`` results from
-:meth:`~spectHR.session.Session.epochs_table` (``ctx.psd`` / ``ctx.rsa_beats``
-/ ``ctx.pep_detail``) so the export pass recomputes only profiles/transfers.
+Public surface
+--------------
+EpochExporter(workspace, contexts).collect() -> dict[label, data]
+write_results_csv(path, table)        — the per-epoch metrics table, one CSV row per epoch.
+write_results_h5(path, table, epoch_data) — every array + scalar, hierarchically.
 """
 from __future__ import annotations
+
+import csv
+import datetime
+import math
+from pathlib import Path
 
 import numpy as np
 
@@ -31,7 +35,6 @@ from spectHR.analysis.profile import (
 from spectHR.analysis.transfer import (
     compute_transfer,
     compute_transfer_profile,
-    resolve_transfer_input,
     transfer_summary_scalars,
 )
 from spectHR.config import WorkspaceView
@@ -43,21 +46,28 @@ class EpochExporter:
 
     Parameters
     ----------
-    dataset
-        The loaded ``PhysioData`` instance.
     workspace
         Raw workspace configuration dict (or ``None``).
     contexts
-        ``dict[label, EpochContext]`` returned as the fourth element of
-        :meth:`~spectHR.session.Session.epochs_table`.
-        The PSD, RSA, and ICG computations on each context are already cached;
-        only profile / transfer / transfer-profile computations are run fresh.
+        ``dict[label, EpochContext]`` from :attr:`MetricsTable.contexts`
+        (:meth:`~spectHR.session.Session.epochs_table`).  The PSD, RSA, and ICG
+        computations on each context are already cached; only profile /
+        transfer / transfer-profile computations are run fresh.
     """
 
-    def __init__(self, dataset, workspace, contexts: dict) -> None:
-        self.dataset = dataset
+    def __init__(self, workspace, contexts: dict) -> None:
         self._ws = WorkspaceView(workspace)
         self.contexts: dict = contexts
+
+    @staticmethod
+    def _transfer_input(ctx, input_signal: str):
+        """Epoch-scoped transfer input (respiration or BP) from the context."""
+        sig = str(input_signal).lower()
+        if sig.startswith(("rsp", "resp")):
+            return ctx.rsp_ts
+        if sig.startswith("bp"):
+            return ctx.bp_ts
+        return ctx.rsp_ts or ctx.bp_ts
 
     # ------------------------------------------------------------------
 
@@ -103,7 +113,6 @@ class EpochExporter:
         }
 
         tf_input_signal = str(tf_cfg["input_signal"])
-        rsp_ts, _ = resolve_transfer_input(self.dataset, tf_input_signal)
 
         result: dict[str, dict] = {}
 
@@ -191,10 +200,11 @@ class EpochExporter:
                 logger.debug("Profile export failed for epoch %r: %s", label, exc)
 
             # ---- Transfer (computed fresh) ---------------------------
-            if rsp_ts is not None and tf_band_edges:
+            inp_ts = self._transfer_input(ctx, tf_input_signal)
+            if inp_ts is not None and tf_band_edges:
                 try:
                     tf_res = compute_transfer(
-                        ctx.view, rsp_ts,
+                        ctx.view, inp_ts,
                         input_signal  = tf_input_signal,
                         bands         = tf_band_edges,
                         min_coherence = float(tf_cfg["min_coherence"]),
@@ -253,7 +263,7 @@ class EpochExporter:
                 # ---- Transfer profile (computed fresh) ---------------
                 try:
                     tfp_res = compute_transfer_profile(
-                        ctx.view, rsp_ts,
+                        ctx.view, inp_ts,
                         input_signal  = tf_input_signal,
                         bands         = tf_band_edges,
                         window_s      = float(tf_cfg["window_s"]),
@@ -314,3 +324,101 @@ class EpochExporter:
             result[label] = epoch
 
         return result
+
+
+# ---------------------------------------------------------------------------
+# Writers — CSV (the metrics table) and HDF5 (all per-epoch arrays)
+# ---------------------------------------------------------------------------
+
+
+def _fmt_csv(value) -> str:
+    """Format a metrics-table cell for CSV (blank for NaN/None)."""
+    if value is None:
+        return ""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return "" if math.isnan(f) else f"{f:.6g}"
+
+
+def write_results_csv(path, table) -> None:
+    """Write the per-epoch metrics *table* to *path* as CSV (one row per epoch).
+
+    *table* is the :class:`~spectHR.session.MetricsTable` from
+    :meth:`Session.epochs_table` (``labels`` / ``columns`` / ``values``).
+    """
+    path = Path(path)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["epoch", *table.columns])
+        for i, label in enumerate(table.labels):
+            row = [str(label)]
+            for c in range(len(table.columns)):
+                row.append(_fmt_csv(table.values[i, c] if table.values.size else None))
+            w.writerow(row)
+
+
+def _h5_write_node(grp, data: dict) -> None:
+    """Recursively write a nested dict of arrays / scalars into an h5 group.
+
+    ``dict`` → sub-group, ``ndarray`` (or numeric sequence) → dataset, numeric /
+    string scalar → attribute.  ``None`` is skipped.
+    """
+    for key, val in data.items():
+        name = str(key)
+        if isinstance(val, dict):
+            _h5_write_node(grp.require_group(name), val)
+        elif val is None:
+            continue
+        elif isinstance(val, np.ndarray):
+            grp.create_dataset(name, data=np.asarray(val).ravel(),
+                               compression="gzip", compression_opts=4)
+        elif isinstance(val, (int, float, str, np.integer, np.floating, bool)):
+            try:
+                grp.attrs[name] = val
+            except Exception:   # noqa: BLE001 — unserialisable attr, skip
+                grp.attrs[name] = str(val)
+        else:
+            arr = np.asarray(val)
+            if arr.dtype.kind in "fiub":
+                grp.create_dataset(name, data=arr.ravel())
+            else:
+                grp.attrs[name] = str(val)
+
+
+def write_results_h5(path, table, epoch_data: dict) -> None:
+    """Write every per-epoch array and scalar to *path* as a hierarchical HDF5.
+
+    Root carries export metadata; each epoch is a group whose attributes are the
+    metrics-table scalars (plus the profile/transfer summary scalars), with
+    ``psd`` / ``profile`` / ``transfer`` / ``transfer_profile`` / ``respiration``
+    / ``icg`` sub-groups holding the arrays.
+    """
+    import h5py
+
+    path = Path(path)
+    cols = list(table.columns)
+    with h5py.File(path, "w") as hf:
+        hf.attrs["exported_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+        hf.attrs["specthr_export_version"] = "3"
+
+        for i, label in enumerate(table.labels):
+            eg = hf.require_group(str(label))
+            # Metrics-table scalars as epoch attributes.
+            for c, col in enumerate(cols):
+                v = table.values[i, c] if table.values.size else float("nan")
+                if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                    eg.attrs[col] = float(v)
+
+            ed = epoch_data.get(str(label), {})
+            for k, v in (ed.get("scalars") or {}).items():
+                try:
+                    eg.attrs[k] = v
+                except Exception:   # noqa: BLE001
+                    eg.attrs[k] = str(v)
+            for key in ("psd", "profile", "transfer", "transfer_profile",
+                        "respiration", "icg"):
+                node = ed.get(key)
+                if node:
+                    _h5_write_node(eg.require_group(key), node)
