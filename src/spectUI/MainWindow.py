@@ -400,15 +400,15 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_menu_and_toolbar(self) -> None:
-        self._open_act     = self._action("fa5s.cog",               "&Open settings…",       self.open_workspace,          "Ctrl+O")
-        self._edit_act     = self._action("fa5s.edit",             "&Edit settings…",       self.edit_workspace,          "Ctrl+E")
+        self._edit_act     = self._action("fa5s.cog",               "&Edit settings…",       self.edit_workspace,          "Ctrl+E")
+        self._load_act     = self._action("fa5s.file-import",      "&Load settings…",       self.open_workspace,          "Ctrl+O")
         self._save_act     = self._action("fa5s.save",             "&Save settings",        self.save_workspace,          "Ctrl+S")
         self._settings_act = self._action("fa5s.folder-open",      "Directory &settings…",  self.open_directory_settings, "Ctrl+Shift+S")
         self._doc_act      = self._action("fa5s.question-circle",  "&Documentation",        self._open_docs,              "Ctrl+D")
 
         # ---- Settings menu ----
         ws_menu = self.menuBar().addMenu("&Settings")
-        ws_menu.addAction(self._open_act)
+        ws_menu.addAction(self._load_act)
         ws_menu.addSeparator()
         ws_menu.addAction(self._edit_act)
         ws_menu.addAction(self._save_act)
@@ -444,15 +444,15 @@ class MainWindow(QMainWindow):
         tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         tb.setIconSize(QSize(20, 20))
 
-        tb.addAction(self._open_act)
+        tb.addAction(self._edit_act)
 
-        # Edit + Save stacked (half-height)
+        # Load + Save stacked (half-height)
         pair = QWidget()
         pair.setStyleSheet("background: transparent;")
         vbox = QVBoxLayout(pair)
         vbox.setContentsMargins(2, 2, 2, 2)
         vbox.setSpacing(0)
-        for act, label in ((self._edit_act, "Edit"), (self._save_act, "Save")):
+        for act, label in ((self._load_act, "Load"), (self._save_act, "Save")):
             btn = QToolButton()
             btn.setDefaultAction(act)
             btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -580,11 +580,32 @@ class MainWindow(QMainWindow):
         return (p.rsp_source, p.rsp_per_epoch)
 
     def _export_plots(self, directory: str) -> None:
-        """Let the user pick which dock plots to save as PNGs into *directory*."""
+        """Let the user pick which dock plots to save as PDFs into *directory*.
+
+        Each file is named ``{datafile}_{dock}[_{epoch}].pdf`` — the recording's
+        name plus the dock, plus the epoch label for per-epoch grid tiles.
+        """
         import re
 
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as _Canvas
         from spectUI.widgets.plot_export_dialog import PlotExportDialog
+
+        def _slug(text) -> str:
+            return re.sub(r"[^\w.-]+", "_", str(text)).strip("_")
+
+        def _dock_figures(widget):
+            """``(canvas, epoch_label|None)`` for every figure in *widget*.
+
+            Grid docks expose one tile per epoch (``_subplots`` aligned with the
+            ``_last_results`` records), so each tile is tagged with its epoch
+            label; single-figure docks yield one untagged canvas.
+            """
+            tiles = getattr(widget, "_subplots", None)
+            results = getattr(widget, "_last_results", None)
+            if tiles and results and len(tiles) == len(results):
+                return [(t.canvas, lbl) for t, (lbl, _r) in zip(tiles, results)
+                        if getattr(t, "canvas", None) is not None]
+            return [(cv, None) for cv in widget.findChildren(_Canvas)]
 
         # Every data dock that currently has at least one figure.
         candidates = []
@@ -602,16 +623,21 @@ class MainWindow(QMainWindow):
         out.mkdir(parents=True, exist_ok=True)
         selected = dlg.selected()
 
+        data_stem = _slug(getattr(self._session, "name", "") or "data") or "data"
         saved = 0
         for obj_name, label, widget in candidates:
             if obj_name not in selected:
                 continue
-            canvases = widget.findChildren(_Canvas)
-            stem = re.sub(r"[^\w.-]+", "_", label) or obj_name
-            for i, cv in enumerate(canvases):
-                suffix = f"_{i + 1}" if len(canvases) > 1 else ""
+            figs = _dock_figures(widget)
+            dock_slug = _slug(label) or obj_name
+            for i, (cv, epoch) in enumerate(figs):
+                parts = [data_stem, dock_slug]
+                if epoch:
+                    parts.append(_slug(epoch))
+                elif len(figs) > 1:
+                    parts.append(str(i + 1))
                 try:
-                    cv.figure.savefig(out / f"{stem}{suffix}.png", dpi=150,
+                    cv.figure.savefig(out / f"{'_'.join(parts)}.pdf",
                                       bbox_inches="tight")
                     saved += 1
                 except Exception:  # noqa: BLE001 — skip a bad figure, keep going

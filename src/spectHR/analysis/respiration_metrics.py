@@ -15,7 +15,7 @@ spectHR therefore surfaces, per epoch, the two quantities a researcher
 needs to judge whether an HF change is vagal or merely a breathing
 artefact:
 
-``resp_rate``
+``resp_freq``
     Mean breathing frequency in Hz.
 ``hf_resp_in_band``
     1.0 when the mean breathing frequency falls inside the configured HF
@@ -39,7 +39,7 @@ from spectHR.analysis.registry import epoch_metric
 from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
 
 
-__all__ = ["resp_rate", "hf_resp_in_band"]
+__all__ = ["resp_freq", "hf_resp_in_band"]
 
 
 def _mean_breath_hz(ctx):
@@ -54,7 +54,7 @@ def _mean_breath_hz(ctx):
 
 
 @epoch_metric
-def resp_rate(ctx) -> float:
+def resp_freq(ctx) -> float:
     """Mean breathing frequency in Hz (blank when no respiration channel)."""
     f = _mean_breath_hz(ctx)
     return float(f) if f is not None else float("nan")

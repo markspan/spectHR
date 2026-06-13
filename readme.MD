@@ -171,7 +171,7 @@ The CARSPAN bands are sometimes written with the names **low / middle (mid) / hi
 
 > **The two conventions are not interchangeable.** CARSPAN LF (0.07–0.14 Hz) is **narrower and shifted** relative to Task Force LF (0.04–0.15 Hz), and the VLF edges differ too. Numeric LF or VLF values from spectHR's default bands cannot be compared directly with published Task Force values unless you reconfigure the band edges to match. HF (0.15–0.40 Hz) is identical in both conventions.
 
-**VU-DAMS preset.** If you are comparing spectHR output against VU-DAMS 5.0 (VU Ambulatory Monitoring System software), load the ready-made workspace preset `presets/vuams_welch.json` via **Settings → Open settings**. It sets bands and Welch parameters to match what VU-DAMS computes by default:
+**VU-DAMS preset.** If you are comparing spectHR output against VU-DAMS 5.0 (VU Ambulatory Monitoring System software), load the ready-made workspace preset `presets/vuams_welch.json` via **Settings → Load settings**. It sets bands and Welch parameters to match what VU-DAMS computes by default:
 
 | Parameter | VU-DAMS (DAMS 5.0 manual §5.3.1) | preset value |
 |-----------|----------------------------------|--------------|
@@ -394,7 +394,7 @@ Both transfer views render as **three-row tiles per epoch**, all sharing the sam
 
 Vertical band-coloured shading on the phase and coherence panels marks the configured frequency bands so a peak at, say, 0.25 Hz reads immediately as "inside HF". The modulus panel uses PSD-style **under-curve** fills instead of vertical bars so the area visually scales with $\|H\|$ in that band. FullRange is intentionally not drawn on either view: a 0.02 -- 0.5 Hz overlay would blanket the secondary panels, and the integrated $|H|$ over that whole range is rarely meaningful.
 
-All plots, including the Transfer and Transfer-profile tiles, are exported from one place: the **Results** tab's **Export…** button (see [Step 8](#step-8-export-your-results-results-tab)) offers to save the visible docks' figures as PNGs after writing the metrics.
+All plots, including the Transfer and Transfer-profile tiles, are exported from one place: the **Results** tab's **Export…** button (see [Step 8](#step-8-export-your-results-results-tab)) offers to save the visible docks' figures as PDFs after writing the metrics.
 
 ---
 
@@ -406,7 +406,7 @@ The **Results tab** shows a table with one row per epoch:
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Non-linear / stationarity:** DFA short-term scaling exponent (`dfa_a1`) and the reverse-arrangements stationarity z-score (`stationarity_z`) — see [Non-linear and stationarity metrics](#non-linear-and-stationarity-metrics) below.
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default). *The LF/HF ratio is reported because the literature expects it, but it should be read descriptively: it is **not** a clean index of sympatho-vagal balance ([Billman, 2013](#ref-billman2013)).*
-- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)), the mean breathing frequency (`resp_rate`, Hz) and an HF-validity flag (`hf_resp_in_band`) — see [Respiration-context HF](#respiration-context-hf) below. These columns are always present; the values are blank when the corresponding channel is absent.
+- **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)), the mean breathing frequency (`resp_freq`, Hz) and an HF-validity flag (`hf_resp_in_band`) — see [Respiration-context HF](#respiration-context-hf) below. These columns are always present; the values are blank when the corresponding channel is absent.
 - **Sympathetic (ICG):** pre-ejection period (`pep`, ms) when the recording carries an ICG `dZ/dt` channel — see [Pre-ejection period (PEP)](#pre-ejection-period-pep) below.
 
 Each column header carries the metric's docstring as a tooltip. Per-band **transfer** summaries (modulus, phase, weighted coherence) and the spectral-profile summaries are not shown in the on-screen table but are written into the HDF5 export when the relevant channel is present.
@@ -435,7 +435,7 @@ Click the **Export…** button (top-right of the Results tab). It asks for a des
 | `{name}.csv` | The metrics table — one row per epoch, every cell a plain scalar (time-domain + Poincaré + integrated band powers + beat-by-beat blood-pressure / respiration / RSA / PEP means + DFA / stationarity). Opens directly in JASP, SPSS, R, or any spreadsheet. |
 | `{name}.h5` | HDF5 file with one group per epoch holding **all** the data: the metric scalars *and* the spectral-profile / transfer-function summary scalars as group attributes, plus the full arrays — complete PSD spectra, per-window profile time series, full Bode curves, and sliding-window transfer-function profiles — in sub-groups. |
 
-If you answer **Yes** to "export the plots as well?", a dialog lets you pick a folder and tick which of the open plot tabs to save; each ticked dock's figures are written as PNGs (one file per epoch tile for the per-epoch grids).
+If you answer **Yes** to "export the plots as well?", a dialog lets you pick a folder and tick which of the open plot tabs to save; each ticked dock's figures are written as PDFs named `{datafile}_{dock}_{epoch}.pdf` (one file per epoch tile for the per-epoch grids).
 
 #### Why two files?
 
@@ -452,7 +452,7 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 | **Poincaré** | `sd1`, `sd2`, `sd_ratio`, `ellipse_area` |
 | **Non-linear / stationarity** | `dfa_a1`, `stationarity_z` |
 | **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default), `lf_hf_ratio` |
-| **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `resp_rate`, `hf_resp_in_band`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
+| **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `resp_freq`, `hf_resp_in_band`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
 | **Sympathetic (ICG)** | the scored landmarks `pep_q_ms` (Q-onset), `pep_b_ms` (B-point), `pep_c_ms` (C-point; all latencies in ms relative to the R-peak) and `pep_n_beats` (ensemble size), followed by `pep` itself. All present; blank when no ICG `dZ/dt` channel |
 | **Profile summaries** | `{band}_prof_mean/std/min/max/t_max` per band; `prof_method`, `prof_unit`, `prof_window_s`, `prof_step_s`, `prof_n_windows` |
 | **Transfer summaries** | `{band}_tf_modulus`, `_tf_phase_w`, `_tf_phase_u`, `_tf_coherence`, `_tf_n_points`, `_tf_n_coherent` per band; `tf_method`, `tf_freq_resolution`, `tf_smooth`, `tf_min_coherence`; written only when a respiration channel is present |
@@ -471,7 +471,7 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
          sd1, sd2, sd_ratio, ellipse_area,                    ← Poincaré
          {band}_power, lf_hf_ratio,                           ← band powers
          bp_sbp/bp_dbp/bp_pp/bp_map, resp_mvo/resp_svo,        ← BP / respiration
-         resp_rate, hf_resp_in_band,                           ← respiration-context HF
+         resp_freq, hf_resp_in_band,                           ← respiration-context HF
          pep, pep_b_ms, pep_c_ms, pep_q_ms, pep_n_beats,       ← pre-ejection period (ICG)
          rsa, rsa0,                                             ← Grossman RSA (epoch means)
          {band}_prof_mean/std/min/max/t_max,                  ← profile summaries
@@ -762,7 +762,7 @@ Place the `.cfg` file in the **same directory** as the `.edf` file before openin
 | BAT | V | 1 Hz | Stored as auxiliary time series |
 | MYA | g | 1 Hz | Stored as auxiliary time series |
 
-The loader builds **both** respiration candidates when the channels are present and stores them as `rsp_icg-[vuams]` (the ICG / thoracic-impedance signal — DZ, or dZ/dt as a fallback) and `rsp_acc-[vuams]` (the accelerometer surrogate: gravity removed with a low-pass filter, then the first principal component of the 0.1–0.7 Hz band). The **active** respiration channel `rsp-[vuams]` — linked to the ECG band for RSA, transfer-function and `resp_rate` analysis — is selected by the workspace setting **`RespirationAnalysis.rsp_source`**:
+The loader builds **both** respiration candidates when the channels are present and stores them as `rsp_icg-[vuams]` (the ICG / thoracic-impedance signal — DZ, or dZ/dt as a fallback) and `rsp_acc-[vuams]` (the accelerometer surrogate: gravity removed with a low-pass filter, then the first principal component of the 0.1–0.7 Hz band). The **active** respiration channel `rsp-[vuams]` — linked to the ECG band for RSA, transfer-function and `resp_freq` analysis — is selected by the workspace setting **`RespirationAnalysis.rsp_source`**:
 
 | `rsp_source` | Active channel | Use when |
 |---|---|---|
@@ -862,7 +862,7 @@ When available, respiration data will be used. When a Polar H10 accelerometer st
 
 HF-HRV amplitude depends not only on vagal tone but also on the **rate and depth of breathing** ([Grossman & Taylor, 2007](#ref-grossman2007)): the same vagal drive produces a smaller HF peak when breathing is fast or shallow, and a breathing frequency that drifts *out of* the HF band breaks the assumption that HF power indexes respiratory sinus arrhythmia at all. spectHR therefore exports, per epoch, the two quantities needed to judge — or statistically correct — whether an HF change is genuinely vagal.
 
-**`resp_rate`** — mean breathing frequency in Hz (multiply by 60 for breaths/min). The phase-segmented respiration signal gives an alternating sequence of $N$ phase boundaries at times $t_1 < t_2 < \dots < t_N$ (each inhalation→exhalation or exhalation→inhalation transition). Pairing successive boundaries into $N-1$ breath cycles, the rate is the mean of the per-cycle instantaneous frequencies:
+**`resp_freq`** — mean breathing frequency in Hz (multiply by 60 for breaths/min). The phase-segmented respiration signal gives an alternating sequence of $N$ phase boundaries at times $t_1 < t_2 < \dots < t_N$ (each inhalation→exhalation or exhalation→inhalation transition). Pairing successive boundaries into $N-1$ breath cycles, the rate is the mean of the per-cycle instantaneous frequencies:
 
 $$f_\text{resp} = \frac{1}{N-1} \sum_{k=1}^{N-1} \frac{1}{t_{k+1} - t_k}$$
 
@@ -872,7 +872,7 @@ This matches CARSPAN's $1/\overline{\text{MeanIn}}$ for the `RespPeriod` profile
 
 $$\mathbb{1}\!\left[\, f_\text{HF}^\text{low} \le f_\text{resp} \le f_\text{HF}^\text{high} \,\right]$$
 
-A `0.0` is a red flag that the epoch's HF power may not reflect RSA at all. The actual statistical correction (e.g. regressing HF on `resp_rate` across epochs or subjects) is deliberately left to your statistics package (R / JASP) — these two columns are the inputs that make it possible.
+A `0.0` is a red flag that the epoch's HF power may not reflect RSA at all. The actual statistical correction (e.g. regressing HF on `resp_freq` across epochs or subjects) is deliberately left to your statistics package (R / JASP) — these two columns are the inputs that make it possible.
 
 ---
 
@@ -1115,7 +1115,7 @@ For non-overlapping segments $\rho = 0$ and $\nu = 2K$. For a Hann window at 50 
 | `units` | `"ms²"` | VU-DAMS reports band power in ms². |
 | Bands | TP 0.0001–0.40, LF 0.04–0.15, HF 0.15–0.40 | DAMS manual §5.3.1 |
 
-Load it with **Settings → Open settings** and point to `presets/vuams_welch.json`. The file is a partial workspace (only the changed keys), so your directory settings and other preferences are preserved by the deep-merge.
+Load it with **Settings → Load settings** and point to `presets/vuams_welch.json`. The file is a partial workspace (only the changed keys), so your directory settings and other preferences are preserved by the deep-merge.
 
 </details>
 

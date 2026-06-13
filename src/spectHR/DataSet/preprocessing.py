@@ -477,7 +477,7 @@ def apply_breath_phases(session: Session, params: _ParamsLike = None) -> Session
 
     The respiration signal is segmented into inhalation / exhalation intervals
     (stored as the ``breath`` :class:`~spectHR.session.Intervals`), which the
-    per-epoch RSA, ``resp_rate`` and ``hf_resp_in_band`` metrics and the
+    per-epoch RSA, ``resp_freq`` and ``hf_resp_in_band`` metrics and the
     HR-series breathing overlay all read.  Requires R-peaks (``hrv``) and a
     respiration source; returns the session unchanged when either is missing or
     phases already exist.  Must run *after* :func:`apply_beat_detection`.
