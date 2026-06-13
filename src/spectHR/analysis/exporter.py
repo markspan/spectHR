@@ -61,13 +61,21 @@ class EpochExporter:
 
     @staticmethod
     def _transfer_input(ctx, input_signal: str):
-        """Epoch-scoped transfer input (respiration or BP) from the context."""
+        """Epoch-scoped transfer input + the *effective* signal name.
+
+        Returns ``(timeseries, signal)``: the requested channel, but reverting
+        to respiration when a BP input is requested on a recording without BP
+        (mirrors :class:`~spectUI.widgets.grid.transfer` so the export matches
+        what the dock shows).
+        """
         sig = str(input_signal).lower()
         if sig.startswith(("rsp", "resp")):
-            return ctx.rsp_ts
+            return ctx.rsp_ts, input_signal
         if sig.startswith("bp"):
-            return ctx.bp_ts
-        return ctx.rsp_ts or ctx.bp_ts
+            if ctx.bp_ts is None and ctx.rsp_ts is not None:
+                return ctx.rsp_ts, "rsp"
+            return ctx.bp_ts, input_signal
+        return (ctx.rsp_ts or ctx.bp_ts), input_signal
 
     # ------------------------------------------------------------------
 
@@ -200,12 +208,12 @@ class EpochExporter:
                 logger.debug("Profile export failed for epoch %r: %s", label, exc)
 
             # ---- Transfer (computed fresh) ---------------------------
-            inp_ts = self._transfer_input(ctx, tf_input_signal)
+            inp_ts, eff_sig = self._transfer_input(ctx, tf_input_signal)
             if inp_ts is not None and tf_band_edges:
                 try:
                     tf_res = compute_transfer(
                         ctx.view, inp_ts,
-                        input_signal  = tf_input_signal,
+                        input_signal  = eff_sig,
                         bands         = tf_band_edges,
                         min_coherence = float(tf_cfg["min_coherence"]),
                         smooth        = bool(tf_cfg["smooth"]),
@@ -264,7 +272,7 @@ class EpochExporter:
                 try:
                     tfp_res = compute_transfer_profile(
                         ctx.view, inp_ts,
-                        input_signal  = tf_input_signal,
+                        input_signal  = eff_sig,
                         bands         = tf_band_edges,
                         window_s      = float(tf_cfg["window_s"]),
                         step_s        = float(tf_cfg["step_s"]),

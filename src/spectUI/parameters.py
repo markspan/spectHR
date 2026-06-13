@@ -104,7 +104,7 @@ _DEFAULT: dict = {
         "colormap":                 "RdYlBu_r",
     },
     "TransferAnalysis": {
-        "input_signal":             "rsp",
+        "input_signal":             "bp_sys",
         "window (sec)":             30.0,
         "step (sec)":                5.0,
         "min_coherence":             0.5,

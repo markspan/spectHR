@@ -50,10 +50,27 @@ class _TransferBase(EpochGridView):
             for name, s in self._display_bands.items()
             if "low" in s and "high" in s
         }
+        # The effective input channel: the configured signal, but reverting to
+        # respiration when a BP input is requested on a recording without BP.
+        self._sig = self._effective_input_signal()
+
+    def _effective_input_signal(self) -> str:
+        """Configured input signal, falling back to ``rsp`` when BP is absent.
+
+        Blood pressure is the default input (baroreflex), but many recordings
+        carry no BP channel — there we revert to respiration so the dock still
+        produces a transfer function instead of an empty tile.
+        """
+        sig = str(self._ts["input_signal"]).lower()
+        session = self._session
+        if (sig.startswith("bp") and session is not None
+                and session.bp is None and session.resp is not None):
+            return "rsp"
+        return self._ts["input_signal"]
 
     def _input_series(self, scoped: Session):
-        """Resolve the configured input channel (respiration or BP)."""
-        sig = self._ts["input_signal"].lower()
+        """Resolve the effective input channel (respiration or BP)."""
+        sig = self._sig.lower()
         if sig.startswith(("rsp", "resp")):
             return scoped.resp
         if sig.startswith("bp"):
@@ -71,10 +88,10 @@ class TransferPlotWidget(_TransferBase):
     def _compute_epoch(self, events, scoped: Session):
         inp = self._input_series(scoped)
         if inp is None:
-            raise ValueError(f"no '{self._ts['input_signal']}' channel")
+            raise ValueError(f"no '{self._sig}' channel")
         return compute_transfer(
             events, inp,
-            input_signal=self._ts["input_signal"],
+            input_signal=self._sig,
             bands=self._bands,
             min_coherence=self._ts["min_coherence"],
             smooth=self._ts["smooth"],
@@ -96,7 +113,7 @@ class TransferPlotWidget(_TransferBase):
         # ---- modulus: black line + under-curve band fills ----------------
         draw_band_fills(ax_m, f, result.modulus, self._display_bands)
         ax_m.plot(f, result.modulus, "k", linewidth=1.0, alpha=0.85, zorder=3)
-        unit = modulus_unit(self._ts["input_signal"])
+        unit = modulus_unit(self._sig)
         ax_m.set_ylabel(f"|H| [{unit}]" if unit else "|H|", fontsize=7)
         ax_m.set_ylim(bottom=0.0)
         ax_m.set_title(label, fontsize=9)
@@ -159,10 +176,10 @@ class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
     def _compute_epoch(self, events, scoped: Session):
         inp = self._input_series(scoped)
         if inp is None:
-            raise ValueError(f"no '{self._ts['input_signal']}' channel")
+            raise ValueError(f"no '{self._sig}' channel")
         return compute_transfer_profile(
             events, inp,
-            input_signal=self._ts["input_signal"],
+            input_signal=self._sig,
             bands=self._bands,
             window_s=self._ts["window_s"],
             step_s=self._ts["step_s"],

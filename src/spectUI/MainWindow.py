@@ -519,12 +519,22 @@ class MainWindow(QMainWindow):
         self._on_workspace_changed()
 
     def save_workspace(self) -> None:
-        """Persist the current settings to the workspace file (default ~/workspace.json)."""
-        target = self._parameters_path or self._workspace_file
+        """Persist the current settings to a chosen file (Save-As dialog).
+
+        Defaults to the file the settings came from (``~/workspace.json`` on a
+        fresh run); the user may save a named copy elsewhere instead.
+        """
+        default = str(self._parameters_path or self._workspace_file)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save settings", default,
+            "Workspace (*.json);;All files (*)",
+        )
+        if not path:
+            return
         try:
-            self._parameters.save(target)
-            self._parameters_path = target
-            logger.info("Saved workspace → %s", target)
+            self._parameters.save(path)
+            self._parameters_path = Path(path)
+            logger.info("Saved workspace → %s", path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Workspace error", f"Could not save:\n{exc}")
 

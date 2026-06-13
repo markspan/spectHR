@@ -99,6 +99,14 @@ assert any("\\pi" in lbl for lbl in phase_labels), phase_labels
 # Phase + coherence panels carry vertical band shading (axvspan -> patches).
 assert len(ax_phase.patches) >= 1 and len(ax_coh.patches) >= 1, "no band shading"
 
+# The default input is bp_sys; on a recording with respiration but no BP the
+# dock falls back to rsp so it still produces a transfer function.
+assert Parameters.default().transfer_settings["input_signal"] == "bp_sys"
+tw_fb = TransferPlotWidget(); tw_fb.show()
+tw_fb.set_session(session, Parameters.default())
+assert pump(lambda: tw_fb._content is not None)
+assert tw_fb._sig == "rsp", f"expected bp_sys->rsp fallback, got {tw_fb._sig!r}"
+
 # Editing the band table re-resolves settings on refresh (the path the
 # coordinator drives when the workspace changes).
 prof = ProfilePlotWidget(); prof.show(); prof.set_session(session, params)

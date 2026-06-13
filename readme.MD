@@ -357,7 +357,7 @@ Switch between them with `input_signal` in Transfer Settings; everything downstr
 
 > **Note on spectral BRS.** Blood pressure and heart rate drive each other in a closed loop, so the transfer function $H = \text{IBI} / \text{BP}$ is technically an open-loop approximation of a closed-loop system. This is inherent to the cross-spectral method and is shared by all single-channel spectral BRS estimators. [Robbe et al. (1987)](#ref-robbe1987) validated this approximation together with the 0.5 coherence gate used here. Interpret BRS values as estimates of spontaneous baroreflex gain, not as a direct open-loop measurement.
 
-The tab is enabled when the recording carries a **blood-pressure or respiration** channel; with neither, the View-menu entry is greyed out and trying to open it pops a message explaining why. The default input is `bp_sys`, so on a recording that has respiration but no blood pressure, switch `input_signal` to `rsp` in Transfer Settings to populate the view.
+The tab is enabled when the recording carries a **blood-pressure or respiration** channel; with neither, the View-menu entry is greyed out and trying to open it pops a message explaining why. The default input is `bp_sys`; on a recording that has respiration but no blood pressure the dock automatically falls back to `rsp` so the view still populates (you can still set `input_signal` explicitly in Transfer Settings).
 
 Each active epoch gets one **Bode tile** with three stacked panels sharing the frequency x-axis:
 
