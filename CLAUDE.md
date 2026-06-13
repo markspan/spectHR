@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Orientation for a Claude Code session working on **spectHR**. Read
-[README.md](README.md) for what the project *is*, and [AGENTS.md](AGENTS.md)
+[readme.MD](readme.MD) for what the project *is*, and [AGENTS.md](AGENTS.md)
 for the writing/style conventions (British spelling throughout). This file is
 the *how the codebase is shaped and how we work in it* brief.
 
