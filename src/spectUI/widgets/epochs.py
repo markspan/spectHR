@@ -69,6 +69,10 @@ class EpochEditorWidget(QWidget):
     # ------------------------------------------------------------------
 
     def set_session(self, session: Session, config=None) -> None:
+        # Re-sort by start only for a freshly loaded recording (a new epochs
+        # dict); a re-broadcast of the same session keeps the edited order.
+        if self._session is None or session.epochs is not self._session.epochs:
+            self._row_order = None
         self._session = session
         self._config = config
         self.setVisible(True)
@@ -90,14 +94,18 @@ class EpochEditorWidget(QWidget):
     def _ordered_epochs(self) -> list[tuple[str, object]]:
         """Epoch ``(name, epoch)`` pairs in display-row order.
 
-        Normally sorted by start time, but while a drag is in progress the
-        order captured at drag-start is kept so the dragged bar stays in its
-        row even as its start crosses a neighbour's.
+        Sorted by start **once**, when a recording is first shown; thereafter
+        the order is held fixed so editing an epoch (dragging its start past a
+        neighbour, renaming it) never reshuffles the rows.  Newly added epochs
+        append at the bottom; removed ones drop out.
         """
         items = dict(self._session.epochs)
-        if self._row_order is not None and set(self._row_order) == set(items):
-            return [(n, items[n]) for n in self._row_order]
-        return sorted(items.items(), key=lambda kv: float(kv[1].start))
+        if self._row_order is None:
+            self._row_order = sorted(items, key=lambda n: float(items[n].start))
+        order = [n for n in self._row_order if n in items]
+        order += [n for n in items if n not in order]   # new epochs at the end
+        self._row_order = order
+        return [(n, items[n]) for n in order]
 
     def _draw(self) -> None:
         ax = self.ax
@@ -212,10 +220,8 @@ class EpochEditorWidget(QWidget):
         ex = self.ax.transData.transform((float(ep.end), 0))[0]
         if abs(event.x - sx) <= _EDGE_PX:
             self._drag = (name, "start")
-            self._row_order = list(self._rows)   # freeze rows for the drag
         elif abs(event.x - ex) <= _EDGE_PX:
             self._drag = (name, "end")
-            self._row_order = list(self._rows)
         else:
             self._press_name = name
 
@@ -232,9 +238,7 @@ class EpochEditorWidget(QWidget):
 
     def _on_release(self, event) -> None:
         if self._drag is not None:
-            self._drag = None
-            self._row_order = None        # re-tidy (sort by start) on next draw
-            self.refresh()
+            self._drag = None             # order stays as-is — no re-sort
             self.epochsChanged.emit()
             return
         if self._press_name is not None and self._session is not None:
@@ -260,9 +264,21 @@ class EpochEditorWidget(QWidget):
         new = new.strip()
         if new == "":
             self._session.epochs.pop(old, None)
+            self._reorder_after_rename(old, None)
         elif new != old and new not in self._session.epochs:
             self._session.epochs[new] = self._session.epochs.pop(old)
+            self._reorder_after_rename(old, new)
         else:
             return
         self.refresh()
         self.epochsChanged.emit()
+
+    def _reorder_after_rename(self, old: str, new: str | None) -> None:
+        """Keep a renamed epoch in its row (or drop it when deleted)."""
+        if self._row_order is None or old not in self._row_order:
+            return
+        idx = self._row_order.index(old)
+        if new is None:
+            self._row_order.pop(idx)
+        else:
+            self._row_order[idx] = new

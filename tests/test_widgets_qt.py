@@ -153,8 +153,7 @@ assert abs(new_ep.end - float(ecg_ch.times[-1])) < 1e-6
 assert new_ep.active and ed_changes["n"] >= 3
 session.epochs.pop("baseline")  # restore for the results section (1 active epoch)
 
-# Dragging an edge freezes the row order, so a bar does not jump rows when its
-# start crosses a neighbour's; the rows re-sort by start only after release.
+# Rows are sorted by start only at load; editing never reshuffles them.
 ed2 = EpochEditorWidget(); ed2.show()
 tt2 = np.arange(0.0, 40.0, 0.02)
 pk2 = np.arange(0.5, 40.0, 0.8)
@@ -166,12 +165,11 @@ sess2 = Session(
             "late": Epoch("late", 10.0, 30.0, True)},
 )
 ed2.set_session(sess2, None)
-assert ed2._rows == ["early", "late"]                       # sorted by start
-ed2._row_order = list(ed2._rows)                            # simulate drag-start
-sess2.epochs["late"].start = 1.0                            # drag 'late' start left
-assert [n for n, _ in ed2._ordered_epochs()] == ["early", "late"]   # order held
-ed2._row_order = None                                       # release → re-tidy
-assert [n for n, _ in ed2._ordered_epochs()] == ["late", "early"]
+assert ed2._rows == ["early", "late"]                       # sorted by start at load
+sess2.epochs["late"].start = 1.0                            # edit: 'late' now earliest
+assert [n for n, _ in ed2._ordered_epochs()] == ["early", "late"]   # order unchanged
+sess2.epochs["mid"] = Epoch("mid", 3.0, 8.0, True)          # a new epoch...
+assert [n for n, _ in ed2._ordered_epochs()][-1] == "mid"   # ...appends at the bottom
 
 # --- Results table: rows = epochs, columns include time-domain metrics -----
 res = ResultsTableWidget()
