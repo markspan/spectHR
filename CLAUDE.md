@@ -20,6 +20,33 @@ splits the recording into epochs, and computes time-domain, frequency-domain
 (PSD), Poincaré, blood-pressure, respiration/RSA and ICG/PEP metrics, plus
 spectrograms and respiration→HR transfer functions.
 
+## Reference material
+
+Ground-truth references for algorithm / feature parity, most authoritative first:
+
+- **The `V2` branch** — the working reference implementation being ported (see
+  the parity note under [the data model](#the-data-model-srcspecthrsession));
+  read it with `git show V2:<path>`.
+- **Original CARSPAN Delphi/Pascal sources** —
+  `G:\My Drive\Source_23-01-2013work` (outside the repo): `Carspan.dpr` plus the
+  `*.pas` / `*.dfm` units the Python port descends from. The authoritative
+  record of *what the original algorithm actually did*.
+- **Manuals in [`docs/`](docs/):**
+  - [CARSPAN manual](docs/Carspan_Manual_VERSION_36.pdf) — the HRV analyser this
+    project reimplements (Mulder, Hofstetter & van Roon).
+  - [CARCAL manual](docs/CARCAL%20manual%20v%201.doc) — the companion
+    blood-pressure calibration tool.
+  - [VU-DAMS / VU-AMS manual](docs/VU-DAMS_manual_V2_DAMS5.0_10-01-2022.pdf) —
+    the VU Ambulatory Monitoring System (the ICG / accelerometer EDF source
+    format and its reference metrics).
+  - [`docs/ALGORITHM_AUDIT.md`](docs/ALGORITHM_AUDIT.md) — a written audit of how
+    the Python algorithms line up against the originals.
+
+> **At session start, request read access to `G:\My Drive\Source_23-01-2013work`.**
+> Those original CARSPAN Delphi sources live outside the repo, so Claude Code
+> will prompt the user for permission — ask for and obtain that approval before
+> reading them when a task needs the original algorithm as the reference.
+
 ## Architecture — the one rule that matters
 
 **Strict separation of algorithm from UI:**
@@ -93,14 +120,18 @@ setting changes at runtime.
 All settings (analysis parameters **and** working directories) live in one
 `~/workspace.json`, loaded at startup (created from defaults on first run).
 Changes are **not** auto-saved — the user persists with **Save settings
-(Ctrl+S)**. `Parameters` (extends `WorkspaceView`) carries the `Directories`
-section and `data_dir`/`cache_dir`/`output_dir`/`export_dir()` accessors.
-`AppSettings` (QSettings) holds only window geometry/dock layout.
+(Ctrl+S)**, which opens a Save-As dialog (defaults to `~/workspace.json`).
+`Parameters` (extends `WorkspaceView`) carries the `Directories` section and
+`data_dir`/`cache_dir`/`output_dir`/`export_dir()` accessors. `AppSettings`
+(QSettings, forced to an **INI file** under the user's config dir — never the
+Windows registry) holds only machine-local UI state: window geometry, dock
+layout and the saved dock perspectives. It accepts an injected `QSettings` so
+tests can isolate to a temp `.ini`.
 
 ## Working conventions
 
 - **Run tests:** `.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider`
-  (Windows; the venv is `.venv`). Full suite is ~410 tests, runs in ~45 s.
+  (Windows; the venv is `.venv`). Full suite is ~420 tests, runs in ~45 s.
 - **Qt tests MUST be subprocess-isolated** — importing spectUI/Qt into the
   shared pytest process segfaults. The `*_qt.py` tests build a session, render
   offscreen (`QT_QPA_PLATFORM=offscreen`) and assert inside a `subprocess`
@@ -115,13 +146,15 @@ section and `data_dir`/`cache_dir`/`output_dir`/`export_dir()` accessors.
   + raw accel `mxr/myr/mzr` → exercises PEP and per-epoch accel-PCA breathing).
 - LF→CRLF git warnings and an offscreen exit-code-9 on Qt teardown are benign.
 
-## Known gaps
+## Export
 
-- `spectHR/analysis/exporter.py` (`EpochExporter`, CSV/HDF5 export) is a
-  V2-era module **not yet ported to `Session`** and constructed nowhere — the
-  Results dock shows the metrics table but has no file export wired. Porting
-  `EpochExporter` (and its `resolve_transfer_input` helper in `transfer.py`)
-  off the old `PhysioData`/`_pd` API is the outstanding task there.
+`spectHR/analysis/exporter.py` (`EpochExporter`) is ported to `Session` and
+wired to the Results dock's **Export…** button: it writes `<name>.csv` (the
+metrics table) + `<name>.h5` (all per-epoch arrays + summary scalars via the
+recursive `_h5_write_node` walker), then optionally the open dock figures as
+PDFs (`MainWindow._export_plots`, named `{datafile}_{dock}_{epoch}.pdf`). The
+transfer input is resolved per epoch by `_transfer_input` (BP, falling back to
+respiration when no BP channel is present).
 
 ## Gotchas learned the hard way
 
@@ -130,3 +163,10 @@ section and `data_dir`/`cache_dir`/`output_dir`/`export_dir()` accessors.
 - `Path.home()` on Windows resolves via `USERPROFILE`, not `HOME`.
 - PEP ensemble averaging uses integer indexing on the uniform ICG grid (don't
   reintroduce per-beat `np.interp` — it was 30× slower).
+- The two-arg `QSettings(org, app)` ignores `setDefaultFormat`/`setPath` and
+  uses the native backend (the **registry** on Windows). `AppSettings` therefore
+  constructs `QSettings(IniFormat, UserScope, …)` explicitly — keep it that way,
+  and inject a temp-`.ini` `QSettings` in tests rather than touching the real store.
+- Retriggering / inverting R-tops (`MainWindow._reprocess`) re-detects beats over
+  the whole recording, so it also re-runs `recompute_breath_phases` — otherwise
+  the INH/EXH phases stay limited to an EVT file's originally annotated window.
