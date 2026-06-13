@@ -79,7 +79,6 @@ __all__ = [
     "INPUT_SIGNALS",
     "INPUT_SIGNAL_LABELS",
     "input_signal_label",
-    "resolve_transfer_input",
     "compute_transfer",
     "compute_transfer_profile",
     "transfer_summary_scalars",
@@ -142,40 +141,6 @@ def modulus_unit(input_signal: str) -> str:
     Empty string for respiration (no standardised engineering unit).
     """
     return MODULUS_UNITS.get(input_signal, "")
-
-
-def resolve_transfer_input(pd, input_signal: str):
-    """Resolve the transfer-function input TimeSeries for *input_signal*.
-
-    The transfer pipeline drives its input channel from one of the
-    continuous recordings on *pd*: respiration for ``"rsp"`` or the
-    blood-pressure waveform for ``"bp_sys"`` / ``"bp_dia"`` (the per-beat
-    systolic / diastolic values are extracted from the same BP waveform
-    inside :func:`compute_transfer`).
-
-    Parameters
-    ----------
-    pd : PhysioData
-        The dataset behind the cardio series (``series._pd``).
-    input_signal : str
-        One of :data:`INPUT_SIGNALS`.
-
-    Returns
-    -------
-    (timeseries, error) : tuple
-        ``timeseries`` is the resolved continuous TimeSeries (with
-        ``.times`` / ``.values``) and ``error`` is ``None`` on success; on
-        failure ``timeseries`` is ``None`` and ``error`` is a short
-        human-readable reason for the empty tile.
-    """
-    if input_signal == INPUT_SIGNAL_RSP:
-        key, channel = "rsp", "respiration"
-    else:
-        key, channel = "bp", "blood-pressure"
-    try:
-        return pd[key].timeseries, None
-    except (KeyError, AttributeError):
-        return None, f"No {channel} channel"
 
 
 def _fill_nans(values: np.ndarray) -> np.ndarray:
