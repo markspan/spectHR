@@ -28,10 +28,13 @@ _APP = "spectHR"
 
 
 class AppSettings:
-    """QSettings wrapper for window geometry and the dock layout."""
+    """QSettings wrapper for window geometry, the dock layout and the saved
+    dock perspectives (named layouts)."""
 
-    def __init__(self) -> None:
-        self._qs = QSettings(_ORG, _APP)
+    def __init__(self, settings: QSettings | None = None) -> None:
+        # Tests inject an isolated QSettings (an explicit .ini file); production
+        # uses the platform-conventional per-user store.
+        self._qs = settings if settings is not None else QSettings(_ORG, _APP)
 
     def save_window(self, window: QMainWindow, dock_manager: CDockManager) -> None:
         """Persist window geometry and dock layout."""
@@ -46,3 +49,22 @@ class AppSettings:
         state = self._qs.value("window/dock_state")
         if state:
             dock_manager.restoreState(state)
+
+    def save_perspectives(self, dock_manager: CDockManager) -> None:
+        """Persist every named perspective (built-in and user-defined)."""
+        dock_manager.savePerspectives(self._qs)
+
+    def load_perspectives(self, dock_manager: CDockManager) -> bool:
+        """Restore saved perspectives into *dock_manager*.
+
+        ``CDockManager.loadPerspectives`` *clears* the existing perspective map
+        before reading, so it is only called when the settings actually hold
+        some — otherwise it would wipe the built-ins captured at startup on a
+        first run.  Returns ``True`` when perspectives were loaded.
+        """
+        n = self._qs.beginReadArray("Perspectives")
+        self._qs.endArray()
+        if n <= 0:
+            return False
+        dock_manager.loadPerspectives(self._qs)
+        return True

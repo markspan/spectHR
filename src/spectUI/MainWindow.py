@@ -883,13 +883,19 @@ class MainWindow(QMainWindow):
         self._parameters_path = wf
 
         self._settings.restore_window(self, self._dock_manager)
+        # Restore the user's saved perspectives (named layouts); rebuild the
+        # Layout menu so the restored entries appear.
+        if self._settings.load_perspectives(self._dock_manager):
+            self._perspective_menu.rebuild()
         populate_tree(self._tree, self._parameters.data_dir)
         self._on_workspace_changed()   # apply restored parameters
 
     def closeEvent(self, event) -> None:
-        # Only window geometry is persisted automatically; settings changes are
-        # kept until the user saves the workspace.
+        # Window geometry, the live dock layout and the saved perspectives are
+        # persisted automatically; analysis settings are kept until the user
+        # saves the workspace.
         self._settings.save_window(self, self._dock_manager)
+        self._settings.save_perspectives(self._dock_manager)
         super().closeEvent(event)
 
 
