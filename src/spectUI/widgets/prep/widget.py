@@ -228,14 +228,17 @@ class PrepPlotWidget(TimelineView):
 
         x0, x1 = m.window.x_min, m.window.x_max
 
+        twin = ax.twinx()
+        self._ax_br_twin = twin
+
+        # Inhalation shading goes on the breathing axis *below* its line (the
+        # main ECG axis sits above the twin, so shading drawn there would
+        # obscure the green trace).  Semi-transparent so the line reads clearly.
         breath = m.session.intervals.get("breath")
         if breath is not None:
             inh = breath.window(x0, x1).of("INH")
             for s, e in zip(inh.starts.tolist(), inh.ends.tolist()):
-                ax.axvspan(s, e, color=_C_INH, alpha=1.0, linewidth=0, zorder=0)
-
-        twin = ax.twinx()
-        self._ax_br_twin = twin
+                twin.axvspan(s, e, color=_C_INH, alpha=0.45, linewidth=0, zorder=0)
 
         seg = resp.window(x0, x1)
         t, v = decimate_minmax(seg.times, seg.values)

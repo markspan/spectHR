@@ -58,6 +58,13 @@ seg = m.ecg_display.window(m.window.x_min, m.window.x_max)
 y0, y1 = w.ax_main.get_ylim()
 assert y1 > float(seg.values.max())
 
+# 1c. Inhalation shading sits on the breathing twin axis, *below* its line,
+#     so it never obscures the green respiration trace.
+twin = w._ax_br_twin
+assert twin is not None and len(twin.patches) > 0      # spans on the twin axis
+br_line = twin.lines[0]
+assert br_line.get_zorder() > max(p.get_zorder() for p in twin.patches)
+
 # 1b. A release that is not a drag must leave the R-peak markers intact
 #     (the bug that broke drag/remove cleared them on every release).
 n_lines = len(w._marker_lines)
