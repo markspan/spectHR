@@ -392,6 +392,8 @@ class MainWindow(QMainWindow):
             )
         if hasattr(widget, "annotationActivated"):
             widget.annotationActivated.connect(self._jump_to_prep_at)
+        if hasattr(widget, "plotsExportRequested"):
+            widget.plotsExportRequested.connect(self._export_plots)
 
     # ------------------------------------------------------------------
     # Menu bar + toolbar
@@ -576,6 +578,46 @@ class MainWindow(QMainWindow):
         """The respiration settings that, when changed, require re-detecting phases."""
         p = self._parameters
         return (p.rsp_source, p.rsp_per_epoch)
+
+    def _export_plots(self, directory: str) -> None:
+        """Let the user pick which dock plots to save as PNGs into *directory*."""
+        import re
+
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as _Canvas
+        from spectUI.widgets.plot_export_dialog import PlotExportDialog
+
+        # Every data dock that currently has at least one figure.
+        candidates = []
+        for obj_name, widget in self._data_docks.items():
+            if widget.findChildren(_Canvas):
+                candidates.append((obj_name, _VIEW_LABELS.get(obj_name, obj_name), widget))
+        if not candidates:
+            QMessageBox.information(self, "Export plots", "No plots are available to export.")
+            return
+
+        dlg = PlotExportDialog(self, [(k, lbl) for k, lbl, _ in candidates], directory)
+        if not dlg.exec():
+            return
+        out = Path(dlg.directory())
+        out.mkdir(parents=True, exist_ok=True)
+        selected = dlg.selected()
+
+        saved = 0
+        for obj_name, label, widget in candidates:
+            if obj_name not in selected:
+                continue
+            canvases = widget.findChildren(_Canvas)
+            stem = re.sub(r"[^\w.-]+", "_", label) or obj_name
+            for i, cv in enumerate(canvases):
+                suffix = f"_{i + 1}" if len(canvases) > 1 else ""
+                try:
+                    cv.figure.savefig(out / f"{stem}{suffix}.png", dpi=150,
+                                      bbox_inches="tight")
+                    saved += 1
+                except Exception:  # noqa: BLE001 — skip a bad figure, keep going
+                    logger.exception("Failed to save figure for %s", obj_name)
+        QMessageBox.information(self, "Plots exported",
+                                f"Saved {saved} figure(s) to {out}")
 
     # ------------------------------------------------------------------
     # File tree

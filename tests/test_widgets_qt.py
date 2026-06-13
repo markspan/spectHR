@@ -159,6 +159,8 @@ res.show()
 res.set_session(session, None)
 assert pump(lambda: res.table.rowCount() == 1)          # async: one active epoch
 assert res.table.columnCount() > 1                      # epoch + metrics
+assert res._export_btn is not None                      # CSV/H5 export button
+assert hasattr(res, "plotsExportRequested")             # → host plot-export dialog
 headers = [res.table.horizontalHeaderItem(c).text()
            for c in range(res.table.columnCount())]
 assert headers[0] == "epoch"

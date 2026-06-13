@@ -13,9 +13,20 @@ itself.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QHBoxLayout,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from spectHR.session import AnalysisConfig, Session
 from spectUI.plot_worker import DockScheduler
@@ -23,6 +34,10 @@ from spectUI.plot_worker import DockScheduler
 
 class ResultsTableWidget(QWidget):
     """Per-epoch metrics table driven by :meth:`Session.epochs_table`."""
+
+    #: Emitted after a results export, carrying the chosen directory, so the
+    #: host can offer to export the plots into the same folder.
+    plotsExportRequested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -33,11 +48,20 @@ class ResultsTableWidget(QWidget):
         # newer edit supersedes it.
         self._scheduler = DockScheduler()
 
+        self._export_btn = QPushButton("Export…")
+        self._export_btn.setToolTip("Write the table (CSV) and all per-epoch data (HDF5)")
+        self._export_btn.clicked.connect(self._export)
+        bar = QHBoxLayout()
+        bar.setContentsMargins(6, 4, 6, 0)
+        bar.addStretch()
+        bar.addWidget(self._export_btn)
+
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(bar)
         layout.addWidget(self.table)
         self.setVisible(False)
 
@@ -79,6 +103,50 @@ class ResultsTableWidget(QWidget):
     def _on_error(exc: Exception) -> None:
         from spectHR.Tools.Logger import logger
         logger.exception("epochs_table failed", exc_info=exc)
+
+    # ------------------------------------------------------------------
+    # Export
+    # ------------------------------------------------------------------
+
+    def _workspace_dict(self):
+        cfg = self._config
+        if cfg is not None and hasattr(cfg, "to_dict"):
+            return cfg.to_dict()
+        return cfg if isinstance(cfg, dict) else None
+
+    def _export(self) -> None:
+        """Write the table as CSV and all per-epoch data as HDF5, then offer plots."""
+        if self._session is None:
+            return
+        cfg = self._config
+        out_default = (str(cfg.output_dir)
+                       if cfg is not None and hasattr(cfg, "output_dir")
+                       else str(Path.home()))
+        directory = QFileDialog.getExistingDirectory(
+            self, "Export results to…", out_default)
+        if not directory:
+            return
+
+        from spectHR.analysis.exporter import (
+            EpochExporter, write_results_csv, write_results_h5,
+        )
+        import re
+        base = re.sub(r"[^\w.-]+", "_", self._session.name or "results") or "results"
+        try:
+            table = self._session.epochs_table(self._analysis_config())
+            write_results_csv(Path(directory) / f"{base}.csv", table)
+            data = EpochExporter(self._workspace_dict(), table.contexts).collect()
+            write_results_h5(Path(directory) / f"{base}.h5", table, data)
+        except Exception as exc:  # noqa: BLE001 — report, never crash the UI
+            QMessageBox.critical(self, "Export error",
+                                 f"Could not export results:\n{exc}")
+            return
+
+        if QMessageBox.question(
+            self, "Export plots?",
+            f"Saved {base}.csv and {base}.h5.\n\nExport the plots as well?",
+        ) == QMessageBox.StandardButton.Yes:
+            self.plotsExportRequested.emit(directory)
 
     # ------------------------------------------------------------------
     # Helpers
