@@ -115,6 +115,14 @@ section and `data_dir`/`cache_dir`/`output_dir`/`export_dir()` accessors.
   + raw accel `mxr/myr/mzr` → exercises PEP and per-epoch accel-PCA breathing).
 - LF→CRLF git warnings and an offscreen exit-code-9 on Qt teardown are benign.
 
+## Known gaps
+
+- `spectHR/analysis/exporter.py` (`EpochExporter`, CSV/HDF5 export) is a
+  V2-era module **not yet ported to `Session`** and constructed nowhere — the
+  Results dock shows the metrics table but has no file export wired. Porting
+  `EpochExporter` (and its `resolve_transfer_input` helper in `transfer.py`)
+  off the old `PhysioData`/`_pd` API is the outstanding task there.
+
 ## Gotchas learned the hard way
 
 - A `.pkl` cache predating a pipeline step won't have that step's data
