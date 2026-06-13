@@ -63,6 +63,10 @@ class EpochGridView(QWidget):
     MIN_BEATS = 4
     #: At most this many tiles per row (the rest wrap onto scrolled rows).
     MAX_COLUMNS = 2
+    #: Multiplier on the per-tile height (1.0 = viewport aspect).  >1 makes a
+    #: taller tile — e.g. the 3-D spectrogram, whose surface needs height but
+    #: leaves whitespace at the sides, so two still sit comfortably side by side.
+    TILE_HEIGHT_FACTOR = 1.0
     #: True when each tile has one magnitude y-axis that can be linked/zoomed
     #: (PSD / profile / transfer-modulus).  False for the frequency-axis docks
     #: (spectrogram 2-D / 3-D).
@@ -237,7 +241,8 @@ class EpochGridView(QWidget):
         h = self._scroll.viewport().height()
         if h < 50:                       # not laid out yet — use the dock height
             h = max(self.height(), 400)
-        tile_h = max(_MIN_TILE_PX, (h - 6) // max(1, self._columns))
+        base_h = (h - 6) / max(1, self._columns)
+        tile_h = max(_MIN_TILE_PX, int(base_h * self.TILE_HEIGHT_FACTOR))
         for tile in self._subplots:
             tile.setFixedHeight(tile_h)
 

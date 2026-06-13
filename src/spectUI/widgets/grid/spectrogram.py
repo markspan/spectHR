@@ -88,11 +88,16 @@ class Spectrogram3DPlotWidget(_SpectrogramBase):
     """Per-epoch HRV spectrograms as 3-D surfaces (V2)."""
 
     DOCK_NAME = "spectrogram3d"
-    #: 3-D surfaces need room — one full-width tile per row (twice as wide).
-    MAX_COLUMNS = 1
+    #: Two tiles per row, but each twice the usual height — the 3-D surface
+    #: needs vertical room yet leaves whitespace at the sides, so a tall,
+    #: half-width tile reads better than one stretched full-width.
+    TILE_HEIGHT_FACTOR = 2.0
 
     def _render_tile(self, fig: Figure, label: str, result) -> None:
         ax = fig.add_subplot(111, projection="3d")
+        # Let the cube use almost the whole figure — Axes3D otherwise leaves a
+        # wide left/right margin.
+        ax.set_position([0.0, 0.0, 1.0, 1.0])
         if result.error or result.power_grid.size == 0:
             ax.text2D(0.5, 0.5, f"{label}\n{result.error or 'no data'}",
                       ha="center", va="center", transform=ax.transAxes,
@@ -110,7 +115,9 @@ class Spectrogram3DPlotWidget(_SpectrogramBase):
         ax.plot_surface(T, F, Z, cmap=self._ss["colormap"], vmin=0.0, vmax=1.0,
                         rstride=1, cstride=1, linewidth=0, antialiased=True,
                         alpha=0.9)
-        ax.set_title(label, fontsize=9)
+        # text2D (not set_title) so the label is not clipped by the full-figure axes.
+        ax.text2D(0.5, 0.98, label, transform=ax.transAxes,
+                  ha="center", va="top", fontsize=9)
         ax.set_xlabel("Time (s)", fontsize=7, labelpad=2)
         ax.set_ylabel("Hz", fontsize=7, labelpad=2)
         ax.set_zlabel("norm. power", fontsize=7, labelpad=2)

@@ -78,12 +78,13 @@ check(Spectrogram3DPlotWidget, "spectrogram3d")
 check(TransferPlotWidget, "transfer")
 check(TransferProfilePlotWidget, "transferprofile")
 
-# The 3-D spectrogram tile is an Axes3D surface, one full-width column.
+# The 3-D spectrogram tile is an Axes3D surface; two per row but tall.
 s3 = Spectrogram3DPlotWidget(); s3.show(); s3.set_session(session, params)
 assert pump(lambda: s3._content is not None)
 cv3 = s3._content.findChildren(FigureCanvas)[0]
 assert cv3.figure.axes[0].name == "3d", "spectrogram3d tile is not a 3-D axis"
-assert s3._columns == 1, "spectrogram3d should use one wide column"
+assert s3._columns == 2, "spectrogram3d should keep two columns"
+assert s3.TILE_HEIGHT_FACTOR > 1.0, "spectrogram3d tiles should be taller"
 assert not s3.Y_ZOOM and not s3._equal_y_cb.isVisibleTo(s3)  # no y-link on a 3-D dock
 
 # A Transfer tile is a Bode triple (modulus / phase / coherence).
