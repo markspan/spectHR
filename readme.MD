@@ -33,7 +33,7 @@ This project is a work in progress. Blood-pressure support (calibration, beat-by
 - [Step 5, Examine frequency-domain HRV (PSD tab)](#step-5-examine-frequency-domain-hrv-psd-tab)
 - [Step 6, Track band power over time (Profiles tab)](#step-6-track-band-power-over-time-profiles-tab)
 - [Step 7, Examine input → HR coupling: RSA and baroreflex (Transfer tab)](#step-7-examine-input--hr-coupling-rsa-and-baroreflex-transfer-tab)
-- [Step 8, Export your results (Parameters tab)](#step-8-export-your-results-parameters-tab)
+- [Step 8, Export your results (Results tab)](#step-8-export-your-results-parameters-tab)
 
 </details>
 
@@ -161,7 +161,7 @@ spectHR defaults to the **CARSPAN (Groningen)** band convention, the one used th
 
 The CARSPAN bands are sometimes written with the names **low / middle (mid) / high** rather than VLF / LF / HF — they refer to the same three components. The middle band is deliberately centred on the ~0.10 Hz oscillation that [Mulder (1980](#ref-mulder1980), [1989)](#ref-mulder1989) identified as the component most sensitive to invested mental effort. See also [Mulder (1988)](#ref-mulder1988) for background.
 
-**Alternative: Task Force (1996) bands.** Many clinical and general HRV studies use the [Task Force (1996)](#ref-taskforce1996) convention instead. You can switch to it by editing the band edges under **WorkSpace → Edit Parameters → Frequency Analysis**:
+**Alternative: Task Force (1996) bands.** Many clinical and general HRV studies use the [Task Force (1996)](#ref-taskforce1996) convention instead. You can switch to it by editing the band edges under **Settings → Edit settings → Frequency Analysis**:
 
 | Band | Task Force range |
 |------|--------------|
@@ -171,7 +171,7 @@ The CARSPAN bands are sometimes written with the names **low / middle (mid) / hi
 
 > **The two conventions are not interchangeable.** CARSPAN LF (0.07–0.14 Hz) is **narrower and shifted** relative to Task Force LF (0.04–0.15 Hz), and the VLF edges differ too. Numeric LF or VLF values from spectHR's default bands cannot be compared directly with published Task Force values unless you reconfigure the band edges to match. HF (0.15–0.40 Hz) is identical in both conventions.
 
-**VU-DAMS preset.** If you are comparing spectHR output against VU-DAMS 5.0 (VU Ambulatory Monitoring System software), load the ready-made workspace preset `presets/vuams_welch.json` via **WorkSpace → Open Workspace**. It sets bands and Welch parameters to match what VU-DAMS computes by default:
+**VU-DAMS preset.** If you are comparing spectHR output against VU-DAMS 5.0 (VU Ambulatory Monitoring System software), load the ready-made workspace preset `presets/vuams_welch.json` via **Settings → Open settings**. It sets bands and Welch parameters to match what VU-DAMS computes by default:
 
 | Parameter | VU-DAMS (DAMS 5.0 manual §5.3.1) | preset value |
 |-----------|----------------------------------|--------------|
@@ -194,9 +194,9 @@ Two minor differences remain. VU-DAMS applies the smoothness-prior detrending **
 
 **Artefacts are critical.** A single missed or spurious R-peak introduces broadband spectral energy that can swamp the genuine HRV signal ([Mulder, 1988](#ref-mulder1988)). This is why spectHR requires the user to inspect and verify the IBI series before computing any metrics.
 
-**Detrending (optional).** Slow, non-stationary trends in the IBI series — warm-up, fatigue, posture shifts — leak into the VLF and LF bands and can bias exactly the mid-frequency band that mental-effort research cares about. spectHR offers the smoothness-priors detrending method of [Tarvainen et al. (2002)](#ref-tarvainen2002), which removes such trends without the band-edge distortion of a plain high-pass filter. It is **off by default**; set `detrend_lambda` (the regularisation strength λ; a typical value is ~500) under **WorkSpace → Edit Parameters → Frequency Analysis** to enable it. Detrending conditions the tachogram-based PSD methods (**Welch**, **Lomb-Scargle**) only; the faithful CARSPAN spectral paths are never altered.
+**Detrending (optional).** Slow, non-stationary trends in the IBI series — warm-up, fatigue, posture shifts — leak into the VLF and LF bands and can bias exactly the mid-frequency band that mental-effort research cares about. spectHR offers the smoothness-priors detrending method of [Tarvainen et al. (2002)](#ref-tarvainen2002), which removes such trends without the band-edge distortion of a plain high-pass filter. It is **off by default**; set `detrend_lambda` (the regularisation strength λ; a typical value is ~500) under **Settings → Edit settings → Frequency Analysis** to enable it. Detrending conditions the tachogram-based PSD methods (**Welch**, **Lomb-Scargle**) only; the faithful CARSPAN spectral paths are never altered.
 
-**Normalisation.** Absolute spectral power in ms² scales with mean IBI squared, increasing at lower heart rates. The CARSPAN mMI² normalisation corrects for this automatically. For the Welch method the output unit is configurable: the default is **mMI²** (normalised, heart-rate-independent) but can be switched to **ms²** (raw IBI power, not normalised) via the `"units"` key in *Edit Parameters*. Whether to normalise HRV for mean heart rate is genuinely unresolved ([de Geus et al., 2019](#ref-degeus2019)), and no single recommendation fits all research questions.
+**Normalisation.** Absolute spectral power in ms² scales with mean IBI squared, increasing at lower heart rates. The CARSPAN mMI² normalisation corrects for this automatically. For the Welch method the output unit is configurable: the default is **mMI²** (normalised, heart-rate-independent) but can be switched to **ms²** (raw IBI power, not normalised) via the `"units"` key in *Edit settings*. Whether to normalise HRV for mean heart rate is genuinely unresolved ([de Geus et al., 2019](#ref-degeus2019)), and no single recommendation fits all research questions.
 
 <details>
 <summary>mMI²/Hz vs ms²/Hz: which unit to use?</summary>
@@ -215,8 +215,8 @@ In short: use ms²/Hz when you care about the absolute size of the millisecond f
 
 ## Getting started
 
-1. Launch the application. On first run it creates a default workspace pointing to your Documents folder.
-2. Open **WorkSpace → Edit Workspace** to point spectHR at the folder where your data files live.
+1. Launch the application. On first run it creates a default settings file, `~/workspace.json`, holding both the analysis parameters and your working directories (defaulting to a folder under Documents).
+2. Open **Settings → Directory settings…** to point spectHR at the folder where your data files live, then **Settings → Save settings** (Ctrl+S) to keep it. Settings persist between sessions only when you save them.
 3. Your files appear in the tree on the left. Click one to load it.
 4. Work through the tabs from left to right: clean the ECG, define your epochs, then read the results.
 
@@ -237,7 +237,8 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | **Profiles** | Track each band's power as it evolves over time within an epoch |
 | **Transfer** | Bode plot of how an input signal — blood pressure (baroreflex, the default) or respiration (RSA) — drives HRV: modulus, phase, and coherence over frequency for each epoch |
 | **Transfer profile** | Sliding-window time course of the same modulus / phase / coherence summaries per band |
-| **Parameters** | See all HRV metrics in a table and export two files: a scalar CSV (all summaries, opens in JASP / SPSS) and an HDF5 file (full spectra, profile and transfer time series) |
+| **Spectrogram** / **Spectrogram 3D** | Per-epoch time-frequency power as a 2-D heat map or an interactive 3-D surface, with the breathing-frequency trace overlaid |
+| **Results** | See all HRV metrics in a table, with an **Export…** button that writes a scalar CSV (the table, opens in JASP / SPSS) and an HDF5 file (full spectra, profile and transfer time series), then optionally the plots |
 
 ---
 
@@ -275,15 +276,15 @@ Once the peaks look correct, switch to the **IBI Series tab** to see heart rate 
 
 ### Blood pressure (Blood Pressure tab)
 
-If the recording carries a continuous blood-pressure waveform (for example the BP channel of a CARSPAN `.nff` file), the **Blood Pressure tab** appears and shows that waveform on the same scrollable, zoomable timeline as the ECG and IBI views — pan/zoom is linked, so framing one view re-frames the others. When the BP channel arrives uncalibrated, spectHR converts it from raw A/D counts to **mmHg** using a linear calibration `mmHg = scale · raw + zero`, configurable under **WorkSpace → Edit Parameters → General Settings → Calibration** (`bp_scale`, `bp_zero`; defaults 0.125 / 0 match the worked example in the CARCAL manual for a Finapres/Finometer through a 12-bit converter). If the file's header already carries a per-channel calibration, that is kept and the manual values are ignored.
+If the recording carries a continuous blood-pressure waveform (for example the BP channel of a CARSPAN `.nff` file), the **Blood Pressure tab** appears and shows that waveform on the same scrollable, zoomable timeline as the ECG and IBI views — pan/zoom is linked, so framing one view re-frames the others. When the BP channel arrives uncalibrated, spectHR converts it from raw A/D counts to **mmHg** using a linear calibration `mmHg = scale · raw + zero`, configurable under **Settings → Edit settings → General Settings → Calibration** (`bp_scale`, `bp_zero`; defaults 0.125 / 0 match the worked example in the CARCAL manual for a Finapres/Finometer through a 12-bit converter). If the file's header already carries a per-channel calibration, that is kept and the manual values are ignored.
 
-From the calibrated waveform spectHR derives, per cardiac interval, four beat-by-beat parameters following the CARSPAN algorithm: **SBP** (systolic, the maximum in the interval), **DBP** (diastolic, the minimum preceding the systolic peak), **PP** (pulse pressure, SBP − DBP) and **MAP** (mean arterial pressure, the true integral mean between successive diastolic minima). Beats failing a flat-line / artefact check are dropped. Their per-epoch means are exported in the Parameters tab (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), and the systolic / diastolic series can drive the baroreflex transfer (see [Step 7](#step-7-examine-input--hr-coupling-rsa-and-baroreflex-transfer-tab)).
+From the calibrated waveform spectHR derives, per cardiac interval, four beat-by-beat parameters following the CARSPAN algorithm: **SBP** (systolic, the maximum in the interval), **DBP** (diastolic, the minimum preceding the systolic peak), **PP** (pulse pressure, SBP − DBP) and **MAP** (mean arterial pressure, the true integral mean between successive diastolic minima). Beats failing a flat-line / artefact check are dropped. Their per-epoch means are exported in the Results tab (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), and the systolic / diastolic series can drive the baroreflex transfer (see [Step 7](#step-7-examine-input--hr-coupling-rsa-and-baroreflex-transfer-tab)).
 
 ---
 
 ### Step 3, Define your analysis segments (Epochs tab)
 
-HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. You can also add epochs manually via **Actions → Add Epoch** and trim them by dragging their edges. Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
+HRV metrics are always computed within named segments. The **Epochs tab** shows a Gantt-style chart. If your recording contains marker events, epochs are built automatically. **Right-click the chart → Add epoch** to add a full-recording-span segment (you are asked for a name); drag an epoch's edges to trim it, click its body to toggle it active, and click its name to rename or delete it. Rows are sorted by start at load and then kept in place while you edit. Any change here immediately updates the Poincaré plot, the PSD plots, and the metrics table.
 
 ![Epochs](images/EpochsWindow.png)
 
@@ -317,7 +318,7 @@ The **PSD tab** shows one power spectrum per active epoch. Four frequency bands 
 - **LF (0.07–0.14 Hz)**, baroreflex, mixed sympathetic/parasympathetic.
 - **HF (0.15–0.40 Hz)**, respiratory sinus arrhythmia, parasympathetic tone.
 
-Ranges are configurable. The shaded grey band is the **confidence interval**. Three PSD methods are available (`carspan`, `carspan_strict`, `welch`), selected in **WorkSpace → Edit Parameters**. The method takes effect immediately without restarting.
+Ranges are configurable. The shaded grey band is the **confidence interval**. Three PSD methods are available (`carspan`, `carspan_strict`, `welch`), selected in **Settings → Edit settings**. The method takes effect immediately without restarting.
 
 ---
 
@@ -327,18 +328,18 @@ Ranges are configurable. The shaded grey band is the **confidence interval**. Th
 
 The **Profiles tab** shows how each chosen frequency band's power *changes over the course of each epoch*. Where the PSD tab gives you one spectrum per epoch (collapsing time), the Profiles tab gives you one curve per band per epoch (collapsing frequency *within* the band, but resolving time).
 
-Each subplot is one epoch; each filled, semi-transparent trace is one band. The x-axis is time within the epoch (seconds, with `t = 0` at the epoch's first R-peak); the y-axis is band power in mMI² (or ms², if you switched the Welch units). The y-axis is shared across epoch subplots so band-power magnitudes are directly comparable between epochs. Up / Down arrows zoom the shared axis; Shift+Ctrl+P exports every subplot to the configured output folder.
+Each subplot is one epoch; each trace is one band, coloured to match the band table. The x-axis is time within the epoch (seconds, with `t = 0` at the epoch's first R-peak); the y-axis is band power in mMI² (or ms², if you switched the Welch units). A row of **band checkboxes** at the top selects which bands are drawn (toggling re-draws instantly, without recomputing). The **Equal y-axis** checkbox links every epoch subplot to a common y-max so band-power magnitudes are directly comparable; Up / Down arrows then zoom that axis.
 
-How the curve is computed: a fixed window of length `window_s` slides along the epoch in steps of `step_s`, and the active PSD method (CARSPAN-strict by default) is recomputed on the R-peaks inside each window. The band-power integration that produces one dot of the trace is the **same `band_powers()` call** used in the PSD tab, just applied per-window; flipping the PSD method in *Edit Parameters* therefore affects the Profiles tab the same way it affects the PSD tab.
+How the curve is computed: a fixed window of length `window_s` slides along the epoch in steps of `step_s`, and the active PSD method (CARSPAN-strict by default) is recomputed on the R-peaks inside each window. The band-power integration that produces one dot of the trace is the **same `band_powers()` call** used in the PSD tab, just applied per-window; flipping the PSD method in *Edit settings* therefore affects the Profiles tab the same way it affects the PSD tab.
 
-Configure it under **WorkSpace → Edit Parameters → Profile Settings** (see [Spectral profiles](#spectral-profiles) for the full parameter table).
+Configure it under **Settings → Edit settings → Profile Settings** (see [Spectral profiles](#spectral-profiles) for the full parameter table).
 
 Each profile dot is plotted at the **centre of the window that produced it**, not at the window's left edge. So the first dot for a 30 s window lands at `t = 15 s` within the epoch; the apparent "gap" at the left of each plot is the half-window that the first window's centre is offset from `t = 0`.
 
 
 #### Alternative: Spectrogram
 
-An alternative to the profiles plot is the 'spectrogram', where the x-axis is time in the epoch, the y-axis is the frequency, and the z-axis (color) depicts the power in that frequency, at that timepoint.
+An alternative to the profiles plot is the **Spectrogram**, where the x-axis is time in the epoch, the y-axis is frequency, and colour depicts the power at that frequency and time. A **Spectrogram 3D** view shows the same surface in three dimensions (orbit it with the mouse). When a respiration channel is present, the per-window breathing frequency is overlaid on both.
 
 ![spectHR](images/SpectrogramWindow.png)
 ---
@@ -366,9 +367,9 @@ Each active epoch gets one **Bode tile** with three stacked panels sharing the f
 
 ![spectHR](images/TransferProfile.png)
 
-A sibling **Transfer profile tab** shows the same modulus / phase / coherence summaries as time series. Inside each epoch a fixed window slides at a fixed step (same parameters used by the Profiles tab) and the per-band BandTransfer summary (mean modulus, mean phase, weighted coherence) is collected per window. One coloured line per band on a time axis. Tile y-axes are linked to the same modulus scale on first draw; Up / Down arrows then act per tile (the one your mouse hovers over) so you can zoom into a quiet epoch without disturbing the rest.
+A sibling **Transfer profile tab** shows the same modulus / phase / coherence summaries as time series. Inside each epoch a fixed window slides at a fixed step (same parameters used by the Profiles tab) and the per-band BandTransfer summary (mean modulus, mean phase, weighted coherence) is collected per window. One coloured line per band on a time axis, with the same **band checkboxes** as the Profiles tab to pick which bands are drawn. The **Equal y-axis** checkbox links the modulus scale across epochs and Up / Down arrows zoom it.
 
-Both views share Settings, configurable under **WorkSpace -> Edit Parameters -> Transfer Settings**:
+Both views share Settings, configurable under **Settings -> Edit settings -> Transfer Settings**:
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -387,19 +388,19 @@ Both transfer views render as **three-row tiles per epoch**, all sharing the sam
 
 | Row | Bode tile (per epoch) | Transfer-profile tile (sliding window) |
 |---|---|---|
-| **Top: modulus** | $\|H(f)\|$, a black line with PSD-style under-curve fills coloured by band. A peak at the breathing frequency means heart rate tracks breathing strongly there. The legend reports the coherence-gated mean $\|H\|$ per band (the same number that lands in `<band>_modulus`). Up / Down arrows shrink / grow the y-axis. | One coloured line per band: how the band-mean modulus changes window by window. Tiles start linked (same y-top across epochs) so cross-epoch reading works; Up / Down on a hovered tile unlinks just that one for a closer look. |
+| **Top: modulus** | $\|H(f)\|$, a black line with PSD-style under-curve fills coloured by band. A peak at the breathing frequency means heart rate tracks breathing strongly there. The legend reports the coherence-gated mean $\|H\|$ per band (the same number that lands in `<band>_modulus`). Up / Down arrows shrink / grow the y-axis. | One coloured line per band: how the band-mean modulus changes window by window. The **Equal y-axis** checkbox links the y-top across epochs for cross-epoch reading; Up / Down arrows zoom it. |
 | **Middle: phase** | $\angle H(f)$ as a dot scatter (radians on the y-axis). Solid dots are bins whose coherence cleared `min_coherence`; faded dots (opacity = `coherence_mask_alpha`) are bins below the gate, shown so you can see where phase becomes noisy. Toggle wrapped (default, $[-\pi, \pi]$) or unwrapped in Settings. A near-zero phase at the breathing frequency means heart rate follows breathing without delay; a non-zero phase reflects a respiratory-sinus-arrhythmia time lag. | One coloured line per band over time. Same wrapped / unwrapped toggle. Watch for sustained drifts away from the band's resting-state phase; those flag breathing-pattern changes that are reshaping the coupling. |
 | **Bottom: coherence** | $\|C(f)\|^2 \in [0, 1]$, the linear predictability of heart rate from breathing per bin. A red dashed line sits at `min_coherence` so the visual gate always matches the integrator's gate. If the recording's peak coherence falls below 0.2 the y-axis auto-rescales (with the peak value annotated on the y-label) so a faint trace stays visible instead of hugging the bottom spine. | Weighted-coherence per band as a time series, one coloured line per band. Same auto-rescale rule. Drops here mark windows where breathing stopped driving HRV cleanly. |
 
 Vertical band-coloured shading on the phase and coherence panels marks the configured frequency bands so a peak at, say, 0.25 Hz reads immediately as "inside HF". The modulus panel uses PSD-style **under-curve** fills instead of vertical bars so the area visually scales with $\|H\|$ in that band. FullRange is intentionally not drawn on either view: a 0.02 -- 0.5 Hz overlay would blanket the secondary panels, and the integrated $|H|$ over that whole range is rarely meaningful.
 
-Shift+Ctrl+P exports every Transfer (and Transfer-profile) tile as PNG + PDF to the configured Output folder, alongside the existing PSD and Profile exports.
+All plots, including the Transfer and Transfer-profile tiles, are exported from one place: the **Results** tab's **Export…** button (see [Step 8](#step-8-export-your-results-results-tab)) offers to save the visible docks' figures as PNGs after writing the metrics.
 
 ---
 
-### Step 8, Export your results (Parameters tab)
+### Step 8, Export your results (Results tab)
 
-The **Parameters tab** shows a table with one row per epoch:
+The **Results tab** shows a table with one row per epoch:
 
 - **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
@@ -407,7 +408,8 @@ The **Parameters tab** shows a table with one row per epoch:
 - **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default). *The LF/HF ratio is reported because the literature expects it, but it should be read descriptively: it is **not** a clean index of sympatho-vagal balance ([Billman, 2013](#ref-billman2013)).*
 - **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)), the mean breathing frequency (`resp_rate`, Hz) and an HF-validity flag (`hf_resp_in_band`) — see [Respiration-context HF](#respiration-context-hf) below. These columns are always present; the values are blank when the corresponding channel is absent.
 - **Sympathetic (ICG):** pre-ejection period (`pep`, ms) when the recording carries an ICG `dZ/dt` channel — see [Pre-ejection period (PEP)](#pre-ejection-period-pep) below.
-- **Transfer** (when the input channel is present): per-band modulus, phase and weighted coherence
+
+Each column header carries the metric's docstring as a tooltip. Per-band **transfer** summaries (modulus, phase, weighted coherence) and the spectral-profile summaries are not shown in the on-screen table but are written into the HDF5 export when the relevant channel is present.
 
 #### RSA lag
 
@@ -415,7 +417,7 @@ The Grossman peak-to-valley algorithm finds, per breath cycle, the shortest IBI 
 
 The default of **1.0 s** is the value used in [Grossman et al. (1990)](#ref-grossman1990) and matches the VU-DAMS implementation.
 
- **For children** (typical rate 20–30 bpm) the 1.0 s default could be too large; values of 0.3–0.5 s are more appropriate. Configure `rsa_lag_s` under **Settings → Edit Parameters → General Settings → Respiration Analysis**.
+ **For children** (typical rate 20–30 bpm) the 1.0 s default could be too large; values of 0.3–0.5 s are more appropriate. Configure `rsa_lag_s` under **Settings → Edit settings → General Settings → Respiration Analysis**.
 
 #### `rsa` vs `rsa0`
 
@@ -426,12 +428,14 @@ For each breath cycle the algorithm may either (a) find a valid positive RSA, (b
 
 The distinction matters: `rsa0` is always ≤ `rsa`, and the two diverge precisely when an epoch contains invalid breaths. When respiratory coupling is strong and clean (e.g. supine rest) almost every breath is valid and positive, so `rsa0 ≈ rsa`; the gap widens under conditions that suppress or distort RSA (e.g. standing). This zero-inclusion is what reproduces VU-DAMS `RSA0` (e.g. standing `rsa` ≈ 16 ms but `rsa0` ≈ 10 ms, matching VU-AMS).
 
-Click **Save** to export **two files** to the configured Output folder:
+Click the **Export…** button (top-right of the Results tab). It asks for a destination folder, then writes **two files** and offers to export the plots as well:
 
 | File | What it contains |
 | --- | --- |
-| `{basename}.csv` | One row per epoch, every cell a plain scalar. Opens directly in JASP, SPSS, R, or any spreadsheet. Contains time-domain + Poincaré + integrated band powers + beat-by-beat blood-pressure / respiration means + spectral-profile summary statistics + transfer-function band summaries (the last written only when a respiration channel is available). |
-| `{basename}.h5` | HDF5 file with one group per epoch holding the full array data: complete PSD spectra, per-window profile time series, full Bode curves, and sliding-window transfer-function profiles. |
+| `{name}.csv` | The metrics table — one row per epoch, every cell a plain scalar (time-domain + Poincaré + integrated band powers + beat-by-beat blood-pressure / respiration / RSA / PEP means + DFA / stationarity). Opens directly in JASP, SPSS, R, or any spreadsheet. |
+| `{name}.h5` | HDF5 file with one group per epoch holding **all** the data: the metric scalars *and* the spectral-profile / transfer-function summary scalars as group attributes, plus the full arrays — complete PSD spectra, per-window profile time series, full Bode curves, and sliding-window transfer-function profiles — in sub-groups. |
+
+If you answer **Yes** to "export the plots as well?", a dialog lets you pick a folder and tick which of the open plot tabs to save; each ticked dock's figures are written as PNGs (one file per epoch tile for the per-epoch grids).
 
 #### Why two files?
 
@@ -698,17 +702,17 @@ with h5py.File("P01.h5", "r") as f:
 
 ## Configuring the analysis
 
-All parameters are stored in a JSON workspace file, editable through the application menus.
+All settings — the analysis parameters **and** the working directories — live in one `~/workspace.json` file, editable through the **Settings** menu.
 
-**WorkSpace → Edit Workspace** changes the three folder paths (data, cache, export).
+**Settings → Directory settings…** changes the three folder paths (data, cache, export).
 
-**WorkSpace → Edit Parameters** is a tabbed dialog:
+**Settings → Edit settings** is a tabbed dialog:
 
 - **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag; RSA overlay; `rsp_source` — `icg` vs `accelerometer`, see [Supported channels](#supported-channels)), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *ICG Analysis* (PEP B-point guard `b_point_guard_ms`, see [Pre-ejection period](#pre-ejection-period-pep)), *Logging* (minimum log level shown in the Log dock / console).
 - **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
 - **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window (sec)`, `step (sec)`), and the optional `smooth_for_display` time-axis smoother.
 
-Changes take effect immediately and are saved to disk.
+Changes take effect immediately, but are held only in memory until you **Save settings** (Ctrl+S) — which writes the whole workspace back to `~/workspace.json`. On the next launch spectHR reloads that file, so settings persist across sessions only once saved. (Window geometry and the dock layout are remembered separately and automatically.)
 
 ---
 
@@ -804,7 +808,7 @@ Let $\text{IBI}_i$ denote the $i$-th inter-beat interval and let $\bar{\text{IBI
 | beat $`i`$ is S, beat $`i+1`$ is N, beat $`i+2`$ is S | **SNS** |
 | otherwise | **N** |
 
-**Default parameters** (all configurable in *Edit Parameters*):
+**Default parameters** (all configurable in *Edit settings*):
 
 | Parameter | Default | JSON key |
 |-----------|---------|----------|
@@ -1087,7 +1091,7 @@ where:
 
 For non-overlapping segments $\rho = 0$ and $\nu = 2K$. For a Hann window at 50 % overlap $\rho \approx 1/6$, giving $\nu \approx 1.89\,K$, close to the value for fully independent segments.
 
-**Default parameters** (configurable in *Edit Parameters*):
+**Default parameters** (configurable in *Edit settings*):
 
 | Parameter | Default | JSON key |
 |-----------|---------|----------|
@@ -1111,7 +1115,7 @@ For non-overlapping segments $\rho = 0$ and $\nu = 2K$. For a Hann window at 50 
 | `units` | `"ms²"` | VU-DAMS reports band power in ms². |
 | Bands | TP 0.0001–0.40, LF 0.04–0.15, HF 0.15–0.40 | DAMS manual §5.3.1 |
 
-Load it with **WorkSpace → Open Workspace** and point to `presets/vuams_welch.json`. The file is a partial workspace (only the changed keys), so your directory settings and other preferences are preserved by the deep-merge.
+Load it with **Settings → Open settings** and point to `presets/vuams_welch.json`. The file is a partial workspace (only the changed keys), so your directory settings and other preferences are preserved by the deep-merge.
 
 </details>
 
@@ -1208,7 +1212,7 @@ Two practical consequences:
 
 #### How do I make `carspan` perform like `carspan_strict`?
 
-`carspan_strict` is, by design, the same code as `carspan` with the `carspan_strict_options()` preset applied. If you want to keep `method: "carspan"` in your workspace but flip the algorithm under the hood, **two settings in the Edit Parameters dialog do the job**:
+`carspan_strict` is, by design, the same code as `carspan` with the `carspan_strict_options()` preset applied. If you want to keep `method: "carspan"` in your workspace but flip the algorithm under the hood, **two settings in the Edit settings dialog do the job**:
 
 | Setting | From-strict-equivalent value |
 |---|---|
@@ -1233,19 +1237,19 @@ Or as JSON:
 
 Two things to know:
 
-1. **`signal: "ibi_amplitude"`** is the switch that selects the manual-faithful algorithm ([CARSPAN manual](#ref-carspan-manual) Eq. 3.21). On this branch the other strict-bundle fields (`amplitude_correction`, `skip_first_event`, `dc_removal`, `dc_grid`) are **ignored** by the compute layer (the manual fixes their values), so they don't need to appear in the Edit Parameters dialog.
+1. **`signal: "ibi_amplitude"`** is the switch that selects the manual-faithful algorithm ([CARSPAN manual](#ref-carspan-manual) Eq. 3.21). On this branch the other strict-bundle fields (`amplitude_correction`, `skip_first_event`, `dc_removal`, `dc_grid`) are **ignored** by the compute layer (the manual fixes their values), so they don't need to appear in the Edit settings dialog.
 2. **`window: "5% cosine bell"`** matches `TaperPercent := 5` (5 % cosine taper per side). The default of `"10% cosine bell"` is 10 % per side, which leaves ~3–5 % more energy on the table and is the single largest source of disagreement with strict if you only flip `signal`.
 
 Setting `signal: "ibi_amplitude"` + `window: "5% cosine bell"` on the configurable `carspan` path reproduces `carspan_strict` to within ~1 % on every band.
 
 Two small residuals remain between `carspan + signal=ibi_amplitude` and pure `carspan_strict`:
 
-* **Window taper variant.** With `window: "5% cosine bell"` the configurable path uses scipy's Tukey window, which zeros the first/last sample exactly; Index taper gives them a small non-zero weight. The strict preset (`carspan_strict_options()`) hard-codes `taper: "carspan_index"` to get the CARSPAN-faithful version. Difference: ≪ 1 % on band power. Not exposed in the Edit Parameters dialog because it would be a new "carspan_index" choice for the window dropdown that most users wouldn't recognise; if you need it, set it via the Python API.
-* **Mean convention.** `psd_method_from_workspace` sets `mean_convention = "arithmetic"` (arithmetic mean of per-beat rate = harmonic mean of IBI) only when `method == "carspan_strict"`. With `method: "carspan"` you get the manual's `T/N` (harmonic mean of rate). For typical 5–8 % RR variability that's a ~0.3–0.8 % difference in the resulting mMI² values. Not exposed in the Edit Parameters dialog for the same reason. If you need full bit-equivalence to strict, just use `method: "carspan_strict"`.
+* **Window taper variant.** With `window: "5% cosine bell"` the configurable path uses scipy's Tukey window, which zeros the first/last sample exactly; Index taper gives them a small non-zero weight. The strict preset (`carspan_strict_options()`) hard-codes `taper: "carspan_index"` to get the CARSPAN-faithful version. Difference: ≪ 1 % on band power. Not exposed in the Edit settings dialog because it would be a new "carspan_index" choice for the window dropdown that most users wouldn't recognise; if you need it, set it via the Python API.
+* **Mean convention.** `psd_method_from_workspace` sets `mean_convention = "arithmetic"` (arithmetic mean of per-beat rate = harmonic mean of IBI) only when `method == "carspan_strict"`. With `method: "carspan"` you get the manual's `T/N` (harmonic mean of rate). For typical 5–8 % RR variability that's a ~0.3–0.8 % difference in the resulting mMI² values. Not exposed in the Edit settings dialog for the same reason. If you need full bit-equivalence to strict, just use `method: "carspan_strict"`.
 
 The same answer in summary form:
 
-| Goal | What to set in Edit Parameters |
+| Goal | What to set in Edit settings |
 |---|---|
 | Match the manual exactly | `method: "carspan_strict"` (the dropdown choice does it all) |
 | Use `method: "carspan"` but get strict-style numbers (within ~1 %) | `method: "carspan"`, `carspan.signal: "ibi_amplitude"`, `carspan.window: "5% cosine bell"` |
@@ -1294,7 +1298,7 @@ The mixin's `PsdMethod.mean_convention` is `"arithmetic"` for `carspan_strict` a
 
 The configurable unit-impulse branch does one extra trick the manual doesn't flag: before squaring, it subtracts the DFT of a perfectly periodic impulse train at the mean rate. At $f = 0$ both DFTs equal 1, so their difference is exactly zero and DC is removed. Beyond DC, the subtraction also cancels the spectral leakage that a mean-rate impulse train would otherwise contribute to the VLF region. For an approximately regular rhythm the correction is small at LF and HF but dominant at VLF.
 
-In spectHR this is `FrequencyAnalysis.carspan.dc_removal` (also editable in *Edit Parameters*), only applicable to the configurable `carspan` variant. It defaults to `false` to preserve historical behaviour; turn it on when you need the VLF cleanup while retaining a custom window or the variance-correct amplitude. The IBI-amplitude `carspan_strict` path does **not** use this mechanism; its mean-subtraction step does the DC removal at the signal level (manual Eq. 3.21).
+In spectHR this is `FrequencyAnalysis.carspan.dc_removal` (also editable in *Edit settings*), only applicable to the configurable `carspan` variant. It defaults to `false` to preserve historical behaviour; turn it on when you need the VLF cleanup while retaining a custom window or the variance-correct amplitude. The IBI-amplitude `carspan_strict` path does **not** use this mechanism; its mean-subtraction step does the DC removal at the signal level (manual Eq. 3.21).
 
 #### Native frequency grid
 
@@ -1362,7 +1366,7 @@ In both cases the factor $10^6$ (explicit above for strict, implicit in the even
 
 **Bottom line.** The two CARSPAN paths share the same band-power *idea* (variance of IBI in a frequency band, normalised by mean), but get there by different routes and with slightly different mean conventions. For numerical agreement with the CARSPAN manual or any `(IBI)`-prefixed CARSPAN output, use `carspan_strict`. The `PsdMethod.mean_convention` field (`"arithmetic"` vs `"harmonic"`) selects between the two; `psd_method_from_workspace` picks the right one automatically based on the algorithm name.
 
-**Default parameters** (configurable in *Edit Parameters*):
+**Default parameters** (configurable in *Edit settings*):
 
 | Parameter | Default | JSON key | Effect |
 |-----------|---------|----------|--------|
@@ -1379,7 +1383,7 @@ In both cases the factor $10^6$ (explicit above for strict, implicit in the even
 
 A **spectral profile** is the time-resolved evolution of band power within one epoch ([CARSPAN manual](#ref-carspan-manual) §3.3.5). Where the PSD tab collapses time and gives one spectrum per epoch, the Profiles tab does the opposite: it collapses *frequency* inside each band and gives one curve per band drawn against time, answering *"how did this band's power rise and fall over the recording?"* rather than *"how is power distributed across frequency?"*
 
-Configure profiles under **WorkSpace → Edit Parameters → Profile Settings**:
+Configure profiles under **Settings → Edit settings → Profile Settings**:
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -1396,7 +1400,7 @@ Configure profiles under **WorkSpace → Edit Parameters → Profile Settings**:
 
 The implementation is `CardioMetricsMixin.band_power_profile`.
 
-**spectHR extension: multiple PSD back-ends.** CARSPAN supports profiles only for the SOC spectral path. spectHR runs the same sliding-window scheme for all four methods (Welch, Lomb-Scargle, CARSPAN, and CARSPAN-strict), dispatching through the same `band_powers()` call used by the PSD tab. The active PSD method in *Edit Parameters → PSD Settings* applies immediately to profiles.
+**spectHR extension: multiple PSD back-ends.** CARSPAN supports profiles only for the SOC spectral path. spectHR runs the same sliding-window scheme for all four methods (Welch, Lomb-Scargle, CARSPAN, and CARSPAN-strict), dispatching through the same `band_powers()` call used by the PSD tab. The active PSD method in *Edit settings → PSD Settings* applies immediately to profiles.
 
 #### Step 1: Window enumeration
 
@@ -1623,7 +1627,7 @@ All methods share the same configurable band definitions:
 | LF | 0.07–0.14 Hz | Baroreceptor reflex, mixed sympathetic/parasympathetic |
 | HF | 0.15–0.40 Hz | Respiratory sinus arrhythmia, parasympathetic tone |
 
-Band edges are configurable in *Edit Parameters*. If your participants breathe slowly, you may need to extend the HF band to lower frequencies.
+Band edges are configurable in *Edit settings*. If your participants breathe slowly, you may need to extend the HF band to lower frequencies.
 
 ---
 
@@ -1659,7 +1663,7 @@ Download `spectHR-macOS-vX.Y.Z.zip` from the [Releases](https://github.com/marks
 
 spectHR is written in pure Python. The analysis library (`src/spectHR/`) and the GUI (`src/spectUI/`) are kept separate so the library can be used independently in scripts.
 
-New metrics can be added by decorating a standalone function with `@epoch_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/`. The function takes one argument and returns a single `float` (one column — a metric may never emit more than one). For a plain IBI metric that argument is a `CardioSeriesLike`; metrics that need extra data (blood pressure, respiration, the PSD) receive the per-epoch `EpochContext`, which exposes the same series interface plus the cached PSD and BP/RESP beats (this is how `lf_power`, `bp_sbp`, `resp_mvo`, … are built). No other changes are needed: the metric automatically appears in the **Parameters table**, the **scalar CSV** (`{basename}.csv`), and as an **attribute on the epoch group in the HDF5 file** (`{basename}.h5`). The `@epoch_metric` decorator raises `ValueError` at import time if a name collision is detected, so duplicate registrations are caught immediately.
+New metrics can be added by decorating a standalone function with `@epoch_metric` (from `spectHR.analysis.registry`) and placing it in `src/spectHR/analysis/`. The function takes one argument and returns a single `float` (one column — a metric may never emit more than one). For a plain IBI metric that argument is a `CardioSeriesLike`; metrics that need extra data (blood pressure, respiration, the PSD) receive the per-epoch `EpochContext`, which exposes the same series interface plus the cached PSD and BP/RESP beats (this is how `lf_power`, `bp_sbp`, `resp_mvo`, … are built). No other changes are needed: the metric automatically appears in the **Results table**, the **scalar CSV** (`{basename}.csv`), and as an **attribute on the epoch group in the HDF5 file** (`{basename}.h5`). The `@epoch_metric` decorator raises `ValueError` at import time if a name collision is detected, so duplicate registrations are caught immediately.
 
 ```python
 from spectHR.analysis.registry import epoch_metric
