@@ -10,10 +10,12 @@ Window geometry and the dock layout are per-machine UI state (not analysis
 in the single :class:`~spectUI.parameters.Parameters` workspace, saved to /
 loaded from ``~/workspace.json`` (see :class:`~spectUI.MainWindow`).
 
-QSettings uses the platform-conventional location:
-  Windows : ``%APPDATA%\\spectHR\\spectHR.ini`` (or the registry)
+We force the **INI format** (not the platform-native backend) so the state
+always lands in a human-readable file under the user's config directory rather
+than the Windows registry:
+  Windows : ``%APPDATA%\\spectHR\\spectHR.ini``
   Linux   : ``~/.config/spectHR/spectHR.ini``
-  macOS   : ``~/Library/Application Support/spectHR/spectHR.ini``
+  macOS   : ``~/Library/Preferences/spectHR/spectHR.ini``
 """
 from __future__ import annotations
 
@@ -33,8 +35,10 @@ class AppSettings:
 
     def __init__(self, settings: QSettings | None = None) -> None:
         # Tests inject an isolated QSettings (an explicit .ini file); production
-        # uses the platform-conventional per-user store.
-        self._qs = settings if settings is not None else QSettings(_ORG, _APP)
+        # uses an INI file in the user's config dir (never the registry, even on
+        # Windows — the two-arg QSettings would default to NativeFormat there).
+        self._qs = settings if settings is not None else QSettings(
+            QSettings.IniFormat, QSettings.UserScope, _ORG, _APP)
 
     def save_window(self, window: QMainWindow, dock_manager: CDockManager) -> None:
         """Persist window geometry and dock layout."""

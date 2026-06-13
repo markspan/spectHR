@@ -702,6 +702,11 @@ class MainWindow(QMainWindow):
         self.setCursor(Qt.WaitCursor)
         try:
             self._session = transform(self._session, self._parameters)
+            # A fresh detection changes the R-top coverage — e.g. retriggering
+            # over the whole recording on an EVT file that only annotated event
+            # windows.  Re-evaluate the INH/EXH breath phases so they span the
+            # new coverage instead of staying limited to the original R-tops.
+            self._session = recompute_breath_phases(self._session, self._parameters)
         except Exception:  # noqa: BLE001 — surface, never crash
             logger.exception("Re-processing failed")
             self.unsetCursor()

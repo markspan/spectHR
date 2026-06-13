@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from spectHR.session import Epoch, Events, Samples, Session
+from spectHR.session import Epoch, Events, Intervals, Samples, Session
 from spectHR.DataSet.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
@@ -19,6 +19,7 @@ from spectHR.DataSet.preprocessing import (
     apply_rsp_source,
     filter_ecg,
     invert_ecg,
+    recompute_breath_phases,
     resolve_ecg,
     resolve_resp,
     retrigger_beats,
@@ -228,6 +229,36 @@ def test_breath_phases_detected_from_resp():
     assert out.breath is not None
     assert set(np.unique(out.breath.labels)) <= {"INH", "EXH"}
     assert out.breath.labels.size > 4              # several breaths over 120 s
+
+
+def test_retrigger_then_breath_recompute_spans_full_recording():
+    """The retrigger path re-evaluates breath over the *new* R-top coverage.
+
+    Mirrors an EVT recording whose breath phases were limited to the annotated
+    R-top window: once ``retrigger_beats`` redetects across the whole ECG,
+    ``recompute_breath_phases`` (the step ``MainWindow._reprocess`` now chains)
+    re-segments the full respiration instead of staying limited.
+    """
+    fs = 50.0
+    dur = 120.0
+    t = np.arange(0.0, dur, 1.0 / fs)
+    te, ecg = _synth_ecg(duration=dur, fs=fs, hr=75.0)   # beats across the whole span
+    resp = np.sin(2 * np.pi * 0.25 * t)
+    # Pre-existing breath phases limited to the first few seconds (the EVT case).
+    limited = Intervals(
+        starts=np.array([1.0, 3.0]),
+        ends=np.array([3.0, 5.0]),
+        labels=np.array(["INH", "EXH"], dtype=object),
+    )
+    s = Session(
+        name="evt",
+        samples={"ecg": Samples(te, ecg, "ecg"), "resp": Samples(t, resp, "resp")},
+        events={"hrv": Events(np.array([1.0]), np.array(["N"], dtype=object))},  # bogus
+        intervals={"breath": limited},
+    )
+    out = recompute_breath_phases(retrigger_beats(s), None)
+    assert out.breath is not None
+    assert float(out.breath.ends[-1]) > 0.75 * dur      # now spans the whole recording
 
 
 def test_breath_phases_noop_without_resp():
