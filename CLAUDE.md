@@ -41,6 +41,11 @@ Ground-truth references for algorithm / feature parity, most authoritative first
     format and its reference metrics).
   - [`docs/ALGORITHM_AUDIT.md`](docs/ALGORITHM_AUDIT.md) — a written audit of how
     the Python algorithms line up against the originals.
+- **Scientific bibliography** — the full academic reference list (Mulder,
+  Grossman, Billman, Robbe, Riese, Lozano, Peng, van Roon, Task Force 1996, …)
+  lives in [readme.MD § References](readme.MD#references); the algorithm
+  docstrings and readme sections cite into it by `#ref-…` anchors. Treat it as
+  the canonical source list — extend *it*, not a second copy here.
 
 > **At session start, request read access to `G:\My Drive\Source_23-01-2013work`.**
 > Those original CARSPAN Delphi sources live outside the repo, so Claude Code
