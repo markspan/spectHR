@@ -141,6 +141,18 @@ ed._on_release(MouseEvent("button_release_event", ed.canvas, bx, by, button=1))
 assert session.epochs["whole"].active is False and ed_changes["n"] >= 2
 session.epochs["whole"].active = True  # restore for the results section
 
+# Right-click → "Add epoch" adds a full-recording-span epoch (tested via the
+# dialog-free add_epoch entry point).
+n_before = len(session.epochs)
+ed.add_epoch("baseline")
+assert "baseline" in session.epochs and len(session.epochs) == n_before + 1
+new_ep = session.epochs["baseline"]
+ecg_ch = session.samples["ecg"]                                  # the recording span
+assert abs(new_ep.start - float(ecg_ch.times[0])) < 1e-6
+assert abs(new_ep.end - float(ecg_ch.times[-1])) < 1e-6
+assert new_ep.active and ed_changes["n"] >= 3
+session.epochs.pop("baseline")  # restore for the results section (1 active epoch)
+
 # --- Results table: rows = epochs, columns include time-domain metrics -----
 res = ResultsTableWidget()
 res.show()

@@ -25,9 +25,10 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QInputDialog, QVBoxLayout, QWidget
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QInputDialog, QMenu, QVBoxLayout, QWidget
 
-from spectHR.session import Session
+from spectHR.session import Epoch, Session
 
 _EDGE_PX = 8.0     # how near an edge counts as grabbing it (screen px)
 _MIN_SPAN = 0.5    # seconds — an epoch may not be dragged narrower than this
@@ -134,6 +135,47 @@ class EpochEditorWidget(QWidget):
         pad = 0.02 * (hi - lo)
         return lo - pad, hi + pad
 
+    def _full_span(self) -> tuple[float, float]:
+        """The recording's time span (unpadded) for a new full-sized epoch."""
+        s = self._session
+        ch = s.ecg or s.resp or s.bp
+        if ch is not None and ch.times.size:
+            return float(ch.times[0]), float(ch.times[-1])
+        hrv = s.hrv
+        if hrv is not None and hrv.times.size:
+            return float(hrv.times[0]), float(hrv.times[-1])
+        if s.epochs:
+            return (min(float(e.start) for e in s.epochs.values()),
+                    max(float(e.end) for e in s.epochs.values()))
+        return 0.0, 1.0
+
+    # ------------------------------------------------------------------
+    # Context menu
+    # ------------------------------------------------------------------
+
+    def _show_context_menu(self) -> None:
+        if self._session is None:
+            return
+        menu = QMenu(self)
+        add_act = menu.addAction("Add epoch")
+        if menu.exec(QCursor.pos()) is add_act:
+            self._add_full_epoch()
+
+    def _add_full_epoch(self) -> None:
+        """Ask for a name, then add a new epoch spanning the whole recording."""
+        name, ok = QInputDialog.getText(self, "Add epoch", "Epoch name:")
+        if ok:
+            self.add_epoch(name.strip())
+
+    def add_epoch(self, name: str) -> None:
+        """Add a full-recording-span epoch named *name* (blank/duplicate → no-op)."""
+        if self._session is None or not name or name in self._session.epochs:
+            return
+        lo, hi = self._full_span()
+        self._session.epochs[name] = Epoch(name, lo, hi, True)
+        self.refresh()
+        self.epochsChanged.emit()
+
     # ------------------------------------------------------------------
     # Interaction
     # ------------------------------------------------------------------
@@ -141,6 +183,9 @@ class EpochEditorWidget(QWidget):
     def _on_press(self, event) -> None:
         self._drag = None
         self._press_name = None
+        if event.button == 3:                 # right-click → context menu
+            self._show_context_menu()
+            return
         if event.inaxes is not self.ax or event.xdata is None or event.ydata is None:
             return
         row = round(event.ydata)
