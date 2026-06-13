@@ -47,6 +47,7 @@ class _SpectrogramBase(EpochGridView):
             step_s=self._ss["step_s"],
             psd_method=self._psd_method,
             adaptive_source=self._ss["adaptive_source"],
+            rsp_phases=scoped.intervals.get("breath"),
         )
 
 

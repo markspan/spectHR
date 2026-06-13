@@ -176,8 +176,7 @@ class EpochGridView(QWidget):
         content = QWidget()
         self._columns = max(1, min(self.MAX_COLUMNS, len(results)))
         self._subplots = build_epoch_grid(
-            content, results, self._make_tile,
-            columns=self._columns, install_save_shortcut=False,
+            content, results, self._make_tile, columns=self._columns,
         )
         self._content = content
         self._scroll = content.findChild(QScrollArea)

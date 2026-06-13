@@ -101,6 +101,7 @@ def fetch_spectrogram(
     step_s: float,
     psd_method: PsdMethod | None = None,
     adaptive_source: str = "respiration_channel",
+    rsp_phases=None,
 ) -> SpectrogramData:
     """Compute the sliding-window PSD grid for one cardio series.
 
@@ -112,8 +113,8 @@ def fetch_spectrogram(
     Parameters
     ----------
     series
-        A ``CardioSeriesView`` (or compatible) object exposing
-        ``.times`` and ``.view(t_start, t_end)``.
+        An ``Events`` (or compatible) object exposing ``.times`` and
+        ``.window(t_start, t_end)``.
     label : str
         Epoch name, stored verbatim in the returned ``SpectrogramData``.
     window_s : float
@@ -127,10 +128,9 @@ def fetch_spectrogram(
         Controls how the per-window breathing frequency is estimated.
 
         ``"respiration_channel"``
-            Stage 1: ``mean_breath_frequency_hz`` on the RSP series
-            attached to the cardio series' parent ``PhysioData``.
-            Stage 2 (PSD peak in the HF band) runs as a fallback for
-            windows where Stage 1 produces no result.
+            Stage 1: ``mean_breath_frequency_hz`` on *rsp_phases* sliced to
+            the window.  Stage 2 (PSD peak in the HF band) runs as a fallback
+            for windows where Stage 1 produces no result.
 
         ``"psd_peak"``
             Stage 1 is skipped; every window uses the PSD-peak
@@ -193,13 +193,9 @@ def fetch_spectrogram(
             return replace(empty, error="No window fits in epoch")
 
         # ---- respiration setup (mirrors profile.py exactly) ----------
-        # Locate the RSP series attached to the parent PhysioData, once,
-        # before the window loop so we do not re-traverse on every step.
-        rsp_series = None
-        pd = getattr(series, "_pd", None)
-        if pd is not None:
-            rsp_map = getattr(pd, "rsp_map", None) or {}
-            rsp_series = next(iter(rsp_map.values()), None)
+        # The breath phases are supplied by the caller (the epoch's INH/EXH
+        # Intervals); each window is sliced from them inside the loop.
+        rsp_series = rsp_phases
 
         # PSD-peak fallback search range: use the first band whose
         # respiration_band flag is set, else fall back to standard HF.

@@ -214,40 +214,31 @@ def build_epoch_grid(
     single_plot_factory: Callable[[object], QWidget],
     *,
     columns: int = 2,
-    install_save_shortcut: bool = True,
 ) -> list[QWidget]:
     """Build the standard scrollable N-column grid of single-plot widgets.
 
-    Shared by ``PSDPlotWidget``, ``ProfilePlotWidget`` and
-    ``SpectrogramPlotWidget`` whose ``__init__`` bodies all follow the
-    same shape: white scroll-area, white-grid container, one tile per
-    pre-computed plot, focus policy, Shift+Ctrl+P save shortcut.
+    Used by :class:`~spectUI.widgets.grid.base.EpochGridView`: a white
+    scroll-area holding a white grid container with one equal-width tile per
+    pre-computed plot.
 
     Parameters
     ----------
     host
-        The QWidget that hosts the grid (typically the plot widget
-        itself). Receives a ``QVBoxLayout``, focus policy, and the
-        Shift+Ctrl+P save shortcut.
+        The QWidget that hosts the grid. Receives a ``QVBoxLayout`` and focus
+        policy.
     plots
         Iterable of pre-computed plot-data records, one per epoch.
     single_plot_factory
         Callable that takes a plot-data record and returns the per-tile
-        QWidget. The widget classes differ across PSD / Profile /
-        Spectrogram, so the host passes a lambda that closes over
-        per-widget kwargs.
+        QWidget.
     columns
         Grid column count. Defaults to 2.
-    install_save_shortcut
-        When True (default) wire Shift+Ctrl+P to ``host._save_all_plots``
-        (provided by ``PlotExportMixin``). Set False if the host does
-        not mix in the export helper.
 
     Returns
     -------
     list of QWidget
         The constructed tiles, in plot-data order, ready to be stashed
-        on the host (typically as ``host._subplots``).
+        on the host (as ``host._subplots``).
     """
     host.setStyleSheet("background-color: white;")
     scroll_area = QScrollArea()
@@ -275,11 +266,6 @@ def build_epoch_grid(
     outer.addWidget(scroll_area)
     host.setLayout(outer)
     host.setFocusPolicy(Qt.StrongFocus)
-
-    if install_save_shortcut and hasattr(host, "_save_all_plots"):
-        save = QShortcut(QKeySequence("Shift+Ctrl+P"), host)
-        save.setContext(Qt.WidgetWithChildrenShortcut)
-        save.activated.connect(host._save_all_plots)
 
     return subplots
 
