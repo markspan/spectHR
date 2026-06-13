@@ -31,7 +31,6 @@ from typing import Optional, Dict, Any
 
 from spectHR.Tools.Logger import logger
 from spectUI.common.uitools import show_export_summary
-from spectUI.settings import AppSettings
 
 _FILENAME_BAD_CHARS = re.compile(r'[\\/:*?"<>|\s]+')
 
@@ -90,7 +89,14 @@ class PlotExportMixin:
         show_export_summary(self, context=ctx, summary=summary, failures=failures)
 
     def _resolve_export_dir(self) -> Path:
-        return AppSettings().export_dir(context=self._export_context)
+        # The host widget holds the workspace (``_config``), which owns the
+        # output directory; fall back to a sane default when absent.
+        config = getattr(self, "_config", None)
+        if config is not None and hasattr(config, "export_dir"):
+            return config.export_dir(context=self._export_context)
+        path = Path.home() / "Documents" / "spectHR" / "export" / self._export_context
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def _dataset_prefix(self) -> str:
         for series in self._series_list:

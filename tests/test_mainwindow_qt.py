@@ -35,6 +35,12 @@ from spectHR.session import Epoch, Events, Samples, Session
 
 w = mw.MainWindow()
 
+# First run seeds the single settings file with the defaults.
+from pathlib import Path
+wf = Path.home() / "workspace.json"
+assert wf.exists(), "MainWindow did not create the default workspace.json"
+assert "Directories" in __import__("json").loads(wf.read_text())
+
 t = np.arange(0.0, 30.0, 0.01)
 peaks = np.arange(0.5, 30.0, 0.8)
 labels = np.full(peaks.shape, "N", dtype=object)
@@ -72,7 +78,10 @@ def test_dock_availability_offscreen():
     env["QT_QPA_PLATFORM"] = "offscreen"
     env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
     with tempfile.TemporaryDirectory() as tmp:
+        # Isolate Path.home() so _restore's ~/workspace.json lands in tmp, not
+        # the real home dir (Windows resolves ~ via USERPROFILE).
         env["HOME"] = tmp
+        env["USERPROFILE"] = tmp
         proc = subprocess.run(
             [sys.executable, "-c", _DRIVER], capture_output=True, text=True, env=env
         )

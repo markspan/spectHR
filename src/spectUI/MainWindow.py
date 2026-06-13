@@ -506,8 +506,8 @@ class MainWindow(QMainWindow):
 
     def open_workspace(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open workspace", str(self._settings.data_dir),
-            "Parameters (*.json);;All files (*)",
+            self, "Open workspace", str(self._parameters.data_dir),
+            "Workspace (*.json);;All files (*)",
         )
         if not path:
             return
@@ -515,25 +515,20 @@ class MainWindow(QMainWindow):
             self._parameters      = Parameters.load(path)
             self._parameters_path = Path(path)
         except Exception as exc:
-            QMessageBox.critical(self, "Parameters error", str(exc))
+            QMessageBox.critical(self, "Workspace error", str(exc))
             return
+        populate_tree(self._tree, self._parameters.data_dir)
         self._on_workspace_changed()
 
     def save_workspace(self) -> None:
-        if self._parameters_path is None:
-            self._save_workspace_as()
-        else:
-            self._parameters.save(self._parameters_path)
-
-    def _save_workspace_as(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save workspace", str(self._settings.data_dir),
-            "Parameters (*.json)",
-        )
-        if not path:
-            return
-        self._parameters_path = Path(path)
-        self._parameters.save(self._parameters_path)
+        """Persist the current settings to the workspace file (default ~/workspace.json)."""
+        target = self._parameters_path or self._workspace_file
+        try:
+            self._parameters.save(target)
+            self._parameters_path = target
+            logger.info("Saved workspace → %s", target)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Workspace error", f"Could not save:\n{exc}")
 
     def edit_workspace(self) -> None:
         dlg = ParametersEditorDialog(self._parameters.to_dict(), self)
@@ -544,10 +539,12 @@ class MainWindow(QMainWindow):
             self._on_workspace_changed()
 
     def open_directory_settings(self) -> None:
-        dlg = DirectorySelectorDialog(self._settings.directories, self)
+        # Directories live in the workspace now; edits stay in memory until the
+        # user saves the workspace.
+        dlg = DirectorySelectorDialog(self._parameters.directories, self)
         if dlg.exec():
-            self._settings.directories = dlg.get_directories()
-            populate_tree(self._tree, self._settings.data_dir)
+            self._parameters.directories = dlg.get_directories()
+            populate_tree(self._tree, self._parameters.data_dir)
 
     def _on_workspace_changed(self) -> None:
         """Apply edited analysis parameters: re-broadcast and recompute.
@@ -576,28 +573,13 @@ class MainWindow(QMainWindow):
         else:
             self._scheduler.invalidate()
             self._coordinator.notify(DataChange.PARAMS)
-        self._persist_parameters()
+        # Settings are *not* auto-saved — the user persists them explicitly with
+        # Save workspace (Settings menu).  See _restore / save_workspace.
 
     def _current_resp_key(self) -> tuple:
         """The respiration settings that, when changed, require re-detecting phases."""
         p = self._parameters
         return (p.rsp_source, p.rsp_per_epoch)
-
-    def _persist_parameters(self) -> None:
-        """Auto-save the live parameters so they survive a restart.
-
-        Written to the app-managed :attr:`AppSettings.app_parameters_path`
-        (not the user's named workspace file), so edits made through the
-        Edit-workspace dialog are remembered even when the analyst never runs
-        Save-workspace.  Failures are logged, not fatal.
-        """
-        try:
-            self._parameters.save(self._settings.app_parameters_path)
-        except Exception as exc:   # pragma: no cover - disk/permission errors
-            import logging
-            logging.getLogger("spectHR").warning(
-                "Could not persist parameters: %s", exc
-            )
 
     # ------------------------------------------------------------------
     # File tree
@@ -733,7 +715,7 @@ class MainWindow(QMainWindow):
 
     def _cache_path(self, raw_path: Path) -> Path:
         """Cache pickle path for a raw recording: ``<cache_dir>/<name>.pkl``."""
-        return self._settings.cache_dir / (raw_path.name + ".pkl")
+        return self._parameters.cache_dir / (raw_path.name + ".pkl")
 
     def _save_cache(self) -> None:
         """Persist the current (edited) Session to the cache as a pickle.
@@ -804,36 +786,37 @@ class MainWindow(QMainWindow):
     # Persistence
     # ------------------------------------------------------------------
 
+    @property
+    def _workspace_file(self) -> Path:
+        """The single default settings file: ``~/workspace.json``."""
+        return Path.home() / "workspace.json"
+
     def _restore(self) -> None:
-        # Settings priority: the user's last named workspace file if it still
-        # exists, otherwise the app-managed auto-saved parameters, otherwise
-        # the built-in defaults already in self._parameters.
-        loaded = False
-        ws_path = self._settings.workspace_path
-        if ws_path:
+        # All settings (analysis parameters + working directories) come from one
+        # workspace file in the home directory.  Create it from the built-in
+        # defaults on first run so the user has something to edit and save.
+        wf = self._workspace_file
+        if wf.exists():
             try:
-                self._parameters      = Parameters.load(ws_path)
-                self._parameters_path = ws_path
-                loaded = True
-            except Exception:
-                pass
-        if not loaded and self._settings.app_parameters_path.exists():
+                self._parameters = Parameters.load(wf)
+            except Exception as exc:   # noqa: BLE001 — fall back to defaults
+                logger.warning("Could not read %s (%s); using defaults.", wf, exc)
+        else:
             try:
-                self._parameters = Parameters.load(self._settings.app_parameters_path)
-                loaded = True
-            except Exception:
-                pass
+                self._parameters.save(wf)   # seed with the current defaults
+                logger.info("Created default settings file %s", wf)
+            except Exception as exc:   # noqa: BLE001 — non-fatal
+                logger.warning("Could not create %s: %s", wf, exc)
+        self._parameters_path = wf
 
         self._settings.restore_window(self, self._dock_manager)
-        populate_tree(self._tree, self._settings.data_dir)
-        if loaded:
-            self._on_workspace_changed()   # apply restored parameters
+        populate_tree(self._tree, self._parameters.data_dir)
+        self._on_workspace_changed()   # apply restored parameters
 
     def closeEvent(self, event) -> None:
+        # Only window geometry is persisted automatically; settings changes are
+        # kept until the user saves the workspace.
         self._settings.save_window(self, self._dock_manager)
-        self._persist_parameters()
-        if self._parameters_path is not None:
-            self._settings.workspace_path = self._parameters_path
         super().closeEvent(event)
 
 

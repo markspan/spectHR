@@ -28,10 +28,19 @@ from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 from spectHR.config import WorkspaceView
 
 # ---------------------------------------------------------------------------
-# Default configuration (no Directories section — those are in AppSettings)
+# Default configuration
+#
+# Everything lives in one workspace dict — including the working directories —
+# so it can be saved to / loaded from a single ``workspace.json``.  Window
+# geometry stays in QSettings (machine-specific UI state, not a "setting").
 # ---------------------------------------------------------------------------
 
 _DEFAULT: dict = {
+    "Directories": {
+        "DataDirectory":   str(Path.home() / "Documents" / "spectHR"),
+        "CacheDirectory":  str(Path.home() / "Documents" / "spectHR" / "cache"),
+        "OutputDirectory": str(Path.home() / "Documents" / "spectHR" / "export"),
+    },
     "FrequencyAnalysis": {
         "method": "carspan",
         "bands": {
@@ -184,6 +193,47 @@ class Parameters(WorkspaceView):
         """Replace the entire configuration dict and invalidate the cache."""
         self._ws = data
         self._invalidate()
+
+    # ------------------------------------------------------------------
+    # Working directories (stored in the workspace, not QSettings)
+    # ------------------------------------------------------------------
+
+    def _dir(self, key: str, default: Path) -> Path:
+        return Path(self._ws.get("Directories", {}).get(key, str(default)))
+
+    @property
+    def data_dir(self) -> Path:
+        return self._dir("DataDirectory", Path.home() / "Documents" / "spectHR")
+
+    @property
+    def cache_dir(self) -> Path:
+        return self._dir("CacheDirectory", Path.home() / "Documents" / "spectHR" / "cache")
+
+    @property
+    def output_dir(self) -> Path:
+        return self._dir("OutputDirectory", Path.home() / "Documents" / "spectHR" / "export")
+
+    def export_dir(self, context: str = "") -> Path:
+        """Return the output directory for *context*, creating it if needed."""
+        path = self.output_dir / context if context else self.output_dir
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def directories(self) -> dict:
+        """Flat dict compatible with ``DirectorySelectorDialog``."""
+        return {
+            "DataDirectory":   str(self.data_dir),
+            "CacheDirectory":  str(self.cache_dir),
+            "OutputDirectory": str(self.output_dir),
+        }
+
+    @directories.setter
+    def directories(self, dirs: dict) -> None:
+        """Accept the dict from ``DirectorySelectorDialog.get_directories()``."""
+        self._ws.setdefault("Directories", {}).update(
+            {k: str(v) for k, v in dirs.items()}
+        )
 
     # ------------------------------------------------------------------
     # Cache invalidation
