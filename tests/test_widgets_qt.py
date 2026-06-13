@@ -153,6 +153,26 @@ assert abs(new_ep.end - float(ecg_ch.times[-1])) < 1e-6
 assert new_ep.active and ed_changes["n"] >= 3
 session.epochs.pop("baseline")  # restore for the results section (1 active epoch)
 
+# Dragging an edge freezes the row order, so a bar does not jump rows when its
+# start crosses a neighbour's; the rows re-sort by start only after release.
+ed2 = EpochEditorWidget(); ed2.show()
+tt2 = np.arange(0.0, 40.0, 0.02)
+pk2 = np.arange(0.5, 40.0, 0.8)
+sess2 = Session(
+    name="e2",
+    samples={"ecg": Samples(tt2, np.sin(tt2), "ecg")},
+    events={"hrv": Events(pk2, np.full(pk2.shape, "N", object))},
+    epochs={"early": Epoch("early", 5.0, 20.0, True),
+            "late": Epoch("late", 10.0, 30.0, True)},
+)
+ed2.set_session(sess2, None)
+assert ed2._rows == ["early", "late"]                       # sorted by start
+ed2._row_order = list(ed2._rows)                            # simulate drag-start
+sess2.epochs["late"].start = 1.0                            # drag 'late' start left
+assert [n for n, _ in ed2._ordered_epochs()] == ["early", "late"]   # order held
+ed2._row_order = None                                       # release → re-tidy
+assert [n for n, _ in ed2._ordered_epochs()] == ["late", "early"]
+
 # --- Results table: rows = epochs, columns include time-domain metrics -----
 res = ResultsTableWidget()
 res.show()

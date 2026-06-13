@@ -60,6 +60,9 @@ class EpochEditorWidget(QWidget):
         self._rows: list[str] = []                  # row index -> epoch name
         self._drag: tuple[str, str] | None = None    # (name, "start"|"end")
         self._press_name: str | None = None          # body-press candidate to toggle
+        # Row order frozen during a drag so a bar does not jump rows (and
+        # colours) when its start crosses another epoch's start.
+        self._row_order: list[str] | None = None
 
     # ------------------------------------------------------------------
     # Dock contract
@@ -84,13 +87,25 @@ class EpochEditorWidget(QWidget):
     # Drawing
     # ------------------------------------------------------------------
 
+    def _ordered_epochs(self) -> list[tuple[str, object]]:
+        """Epoch ``(name, epoch)`` pairs in display-row order.
+
+        Normally sorted by start time, but while a drag is in progress the
+        order captured at drag-start is kept so the dragged bar stays in its
+        row even as its start crosses a neighbour's.
+        """
+        items = dict(self._session.epochs)
+        if self._row_order is not None and set(self._row_order) == set(items):
+            return [(n, items[n]) for n in self._row_order]
+        return sorted(items.items(), key=lambda kv: float(kv[1].start))
+
     def _draw(self) -> None:
         ax = self.ax
         ax.clear()
         s = self._session
         assert s is not None
 
-        epochs = sorted(s.epochs.items(), key=lambda kv: float(kv[1].start))
+        epochs = self._ordered_epochs()
         self._rows = [name for name, _ in epochs]
         if not epochs:
             ax.text(0.5, 0.5, "No epochs", ha="center", va="center",
@@ -197,8 +212,10 @@ class EpochEditorWidget(QWidget):
         ex = self.ax.transData.transform((float(ep.end), 0))[0]
         if abs(event.x - sx) <= _EDGE_PX:
             self._drag = (name, "start")
+            self._row_order = list(self._rows)   # freeze rows for the drag
         elif abs(event.x - ex) <= _EDGE_PX:
             self._drag = (name, "end")
+            self._row_order = list(self._rows)
         else:
             self._press_name = name
 
@@ -216,6 +233,8 @@ class EpochEditorWidget(QWidget):
     def _on_release(self, event) -> None:
         if self._drag is not None:
             self._drag = None
+            self._row_order = None        # re-tidy (sort by start) on next draw
+            self.refresh()
             self.epochsChanged.emit()
             return
         if self._press_name is not None and self._session is not None:
