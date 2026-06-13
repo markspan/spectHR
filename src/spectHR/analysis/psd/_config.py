@@ -7,8 +7,8 @@ algorithm + its options bundles) live here so the PSD configuration types
 sit alongside the algorithm-specific options dataclasses
 (``WelchOptions``, ``LombscargleOptions``, ``CarspanOptions``).
 
-``CardioSeriesView`` re-exports :class:`BandSpec` and :class:`PsdMethod`
-for convenience, so UI code can import them from a single location.
+``spectHR.analysis.psd`` re-exports :class:`BandSpec` and :class:`PsdMethod`
+so callers can import them from the package root.
 """
 
 from __future__ import annotations
@@ -58,8 +58,8 @@ class BandSpec:
     Respiration-tracked bands
     -------------------------
     When ``respiration_band`` is True, the profile builder
-    (:meth:`CardioSeriesView.band_power_profile`) centers the band on
-    the per-window breathing frequency using dedicated half-width fields
+    (:func:`~spectHR.analysis.profile.compute_band_power_profile`) centers the
+    band on the per-window breathing frequency using dedicated half-width fields
     :attr:`resp_low` and :attr:`resp_high`, which are completely
     independent of the absolute-Hz edges :attr:`low` / :attr:`high`.
     This mirrors CARSPAN's ``TAnaBand.RespirationBand`` flag and the

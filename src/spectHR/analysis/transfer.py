@@ -759,7 +759,7 @@ def compute_transfer(
 
     Parameters
     ----------
-    series : CardioSeriesLike
+    series : series-like
         Heart-rate series exposing ``.times``, ``.ibi``, ``.labels``.
         Artefact-labelled beats are excluded via
         :func:`~spectHR.analysis.ibi_helpers.event_times_clean`.
@@ -1015,7 +1015,7 @@ def compute_transfer_profile(
 
     Parameters
     ----------
-    series : CardioSeriesLike
+    series : series-like
         Heart-rate series exposing ``.times``, ``.ibi``, ``.labels``,
         ``.view(t_start, t_end)``.
     input_timeseries : TimeSeries

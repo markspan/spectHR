@@ -65,7 +65,7 @@ class AnalysisConfig:
     """All parameters needed to run epoch metrics.
 
     Replaces the scattered keyword arguments on
-    ``PhysioData.epoched_parameters_table``.  Build from a workspace dict
+    ``Session.epochs_table``.  Build from a workspace dict
     via :meth:`from_workspace`.
     """
 

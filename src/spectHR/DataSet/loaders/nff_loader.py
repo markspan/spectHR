@@ -4,8 +4,8 @@
 
 ``.nff`` files store channel data as little-endian int16 samples in
 sweep-interleaved blocks. :class:`TNFF` handles the binary layout;
-:func:`load_nff` attaches the ECG channel to a :class:`PhysioData`
-instance as a :class:`TimeSeries`.
+:func:`load_nff` returns the channels as :class:`~spectHR.session.Samples`
+for the loader to fold into a :class:`~spectHR.session.Session`.
 
 NFF files are always paired with a companion ``.evt`` file.
 :func:`load_nff` is called directly from :func:`load_evt` when a

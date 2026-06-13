@@ -4,11 +4,11 @@
 """
 Per-epoch evaluation context for ``@epoch_metric`` functions.
 
-``PhysioData.epoched_parameters_table`` builds one :class:`EpochContext` per
+``Session.epochs_table`` builds one :class:`EpochContext` per
 active epoch and passes it to every registered metric.  The context is a
 ``@dataclass`` that satisfies :class:`CardioSeriesProtocol` via explicit
 ``times`` / ``ibi`` / ``labels`` properties, so time-domain metrics written
-against a bare ``CardioSeriesView`` work unchanged when handed a context.
+against a bare ``Events`` window work unchanged when handed a context.
 
 On top of the series interface it adds the extra inputs the BP / RESP /
 band-power metrics need, each computed **lazily and cached** via
@@ -29,7 +29,7 @@ matter how many metrics consult it:
     Full ICG ensemble dict from :func:`~spectHR.analysis.icg_metrics.pep_ensemble`,
     or ``None`` when no ICG channel is present.
 
-A bare ``CardioSeriesView`` has no ``psd_method`` attribute; the dual-mode
+A bare ``Events`` window has no ``psd_method`` attribute; the dual-mode
 band-power metrics distinguish the two call paths via ``isinstance(series,
 EpochContext)``.
 """
@@ -49,9 +49,9 @@ import numpy as np
 class CardioSeriesProtocol(Protocol):
     """Minimal interface that ``@epoch_metric`` functions depend on.
 
-    Both :class:`~spectHR.DataSet.Series.CardioSeriesView.CardioSeriesView`
-    and :class:`EpochContext` satisfy this protocol, so metrics written
-    against a bare view continue to work when the table passes a context.
+    Both a bare :class:`~spectHR.session.Events` window and
+    :class:`EpochContext` satisfy this protocol, so metrics written against a
+    bare series continue to work when the table passes a context.
     """
 
     @property
@@ -75,7 +75,7 @@ class EpochContext:
     Parameters
     ----------
     view
-        The epoch's ``CardioSeriesView`` (the active HRV series restricted to
+        The epoch's ``Events`` window (the active HRV series restricted to
         the epoch bounds).
     psd_method
         Parameters-configured ``PsdMethod`` (or ``None``).  Drives :attr:`psd`

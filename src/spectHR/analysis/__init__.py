@@ -8,7 +8,7 @@ Importing this package populates the metric registry with every built-in
 per-epoch parameter: time-domain HRV metrics, the standard band powers, and
 the beat-by-beat blood-pressure / respiration parameters. Any function
 decorated with ``@epoch_metric`` is then automatically discovered by
-``PhysioData.epoched_parameters_table()``.
+``Session.epochs_table()``.
 
 Direct usage
 ------------

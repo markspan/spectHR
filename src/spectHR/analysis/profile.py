@@ -170,7 +170,7 @@ def _setup_profile_grid(
 
     Parameters
     ----------
-    series : CardioSeriesLike
+    series : series-like
         Series exposing ``.times`` (sorted seconds).
     window_s, step_s : float
         Sliding-window length and step in seconds.  ``step_s`` must be

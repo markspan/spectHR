@@ -5,15 +5,18 @@
 EpochExporter: collect per-epoch PSD, profile, transfer and respiration
 arrays for CSV / HDF5 export.
 
-This class is **Qt-free and UI-free**.  Moving the computation here means:
+.. warning::
+   **Not yet wired to the immutable Session API and currently unused.**  This
+   is a V2-era exporter: it still expects a ``PhysioData``-style ``dataset``
+   (it calls ``resolve_transfer_input(self.dataset, …)``, which indexes the
+   dataset like ``dataset["rsp"].timeseries``).  No code path constructs an
+   ``EpochExporter`` today.  Porting it to take a :class:`Session` (and feed
+   ``Session.epochs_table`` contexts) is the outstanding task before the
+   Results dock can offer CSV/HDF5 export.
 
-* It is independently testable without a Qt environment.
-* The ``EpochContext`` objects produced by
-  :meth:`~spectHR.DataSet.PhysioData.PhysioData.epoched_parameters_table`
-  are *reused* rather than discarded and recomputed.  By the time the export
-  pass runs, ``ctx.psd``, ``ctx.rsa_beats``, and ``ctx.pep_detail`` are
-  already populated in the context's ``cached_property`` cache — the exporter
-  reads them for free.
+The class is Qt-free and reuses the cached ``EpochContext`` results from
+:meth:`~spectHR.session.Session.epochs_table` (``ctx.psd`` / ``ctx.rsa_beats``
+/ ``ctx.pep_detail``) so the export pass recomputes only profiles/transfers.
 """
 from __future__ import annotations
 
@@ -46,7 +49,7 @@ class EpochExporter:
         Raw workspace configuration dict (or ``None``).
     contexts
         ``dict[label, EpochContext]`` returned as the fourth element of
-        :meth:`~spectHR.DataSet.PhysioData.PhysioData.epoched_parameters_table`.
+        :meth:`~spectHR.session.Session.epochs_table`.
         The PSD, RSA, and ICG computations on each context are already cached;
         only profile / transfer / transfer-profile computations are run fresh.
     """

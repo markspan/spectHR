@@ -45,7 +45,7 @@ Aggregation
 :func:`bp_epoch_metrics` / :func:`resp_epoch_metrics` return the ``nanmean`` of
 the beat-by-beat values that fall inside an epoch, keyed with the column names
 that flow through
-:meth:`~spectHR.DataSet.PhysioData.PhysioData.epoched_parameters_table` into the CSV and
+:meth:`~spectHR.session.Session.epochs_table` into the CSV and
 HDF5 exports.
 """
 

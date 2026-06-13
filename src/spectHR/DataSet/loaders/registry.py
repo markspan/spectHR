@@ -42,7 +42,7 @@ def get_loader(ext_or_path: str) -> LoaderFunc | None:
 
     .. deprecated::
         Use :func:`load` instead.  ``get_loader`` exists for backward
-        compatibility with ``PhysioData`` and other old-style callers.
+        compatibility with old-style callers.
     """
     import os
     _, ext = os.path.splitext(ext_or_path)

@@ -4,18 +4,14 @@
 """
 Standalone IBI classification algorithm.
 
-This module contains the rolling-window beat-label assignment logic that was
-previously embedded in ``CardioSeries.classify_ibi``. Extracting it here
-makes the algorithm independently testable and reusable without constructing
-a ``CardioSeries`` object.
+The rolling-window beat-label assignment logic, kept as a pure function so it
+is independently testable.  :meth:`spectHR.session.Events.detect` and the
+re-classification helpers call it with the IBI and label arrays.
 
 Public surface
 --------------
 classify_ibi(ibi_sec, labels, *, window_length, n_std, max_ibi_sec) -> None
     Classify inter-beat intervals and write labels in-place.
-
-``CardioSeries.classify_ibi`` is a thin wrapper that passes ``self.ibi`` and
-``self.labels`` to this function; existing call sites need no changes.
 """
 from __future__ import annotations
 
@@ -54,7 +50,7 @@ def classify_ibi(
     ----------
     ibi_sec : np.ndarray
         Inter-beat intervals in seconds, length N. The last element is
-        typically NaN (alignment sentinel from ``CardioSeries.ibi``).
+        typically NaN (the per-beat alignment sentinel from ``Events.ibi``).
     labels : np.ndarray
         Label array of the same length N. Modified in-place.
     window_length : int

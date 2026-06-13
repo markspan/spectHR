@@ -7,7 +7,7 @@ PSD dispatch, unit conversion, and band-mask logic.
 Public surface
 --------------
 PSDEngine(series)
-    Accepts any CardioSeriesLike (times, labels, ibi arrays plus view()).
+    Accepts any series-like (times, labels, ibi arrays plus view()).
     Exposes:
 
     compute(method, *, with_ci) -> PSDResult

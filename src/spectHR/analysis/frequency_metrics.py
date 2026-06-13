@@ -11,10 +11,10 @@ table exactly like the time-domain metrics.
 
 These functions are **dual-mode**:
 
-* Called directly with a bare ``CardioSeriesLike`` (and optionally an explicit
+* Called directly with a bare ``series-like`` (and optionally an explicit
   ``psd_method``) they integrate that band on a freshly-computed PSD — the
   backward-compatible signature external scripts and the test-suite rely on.
-* Called by :meth:`~spectHR.DataSet.PhysioData.PhysioData.epoched_parameters_table`
+* Called by :meth:`~spectHR.session.Session.epochs_table`
   they receive an :class:`~spectHR.analysis.epoch_context.EpochContext`, read
   the workspace ``psd_method`` from it, and reuse its cached PSD so all five
   metrics share a single spectral computation per epoch.
@@ -57,7 +57,7 @@ def _resolve_method(series, psd_method):
     2. An :class:`EpochContext` carries ``psd_method`` (possibly ``None``); the
        table path uses it, and a configured ``None`` means "no band powers"
        (the caller returns ``NaN``).
-    3. A bare ``CardioSeriesView`` → fall back to the default method,
+    3. A bare ``Events`` series → fall back to the default method,
        matching the historical direct-call behaviour.
 
     Returns the method, or ``None`` to signal "configured but no method →

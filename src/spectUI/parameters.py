@@ -3,15 +3,17 @@
 """
 Parameters — analysis configuration.
 
-A :class:`Parameters` is the single object that carries all analysis
-parameters (PSD method, band definitions, RSA settings, calibration, …).
-It is stored in a user-managed JSON file and passed directly to every
-widget so widgets access typed properties instead of digging into dicts.
+A :class:`Parameters` is the single object that carries all settings:
+the analysis parameters (PSD method, band definitions, RSA settings,
+calibration, …) **and** the working directories (DataDirectory,
+CacheDirectory, OutputDirectory).  It is the in-memory form of the
+``~/workspace.json`` file; ``MainWindow`` loads it at startup and saves it
+only when the user asks (Save settings).  It is passed directly to every
+widget so widgets read typed properties instead of digging into dicts.
 
-Working-directory paths (DataDirectory, CacheDirectory, OutputDirectory)
-deliberately live in :class:`~spectUI.settings.AppSettings` (QSettings),
-not here.  Parameters files travel with the analysis; directory paths are
-machine-specific preferences.
+Only window geometry / dock layout lives outside here, in
+:class:`~spectUI.settings.AppSettings` (QSettings) — genuinely
+machine-specific UI state, not a portable "setting".
 
 ``populate_tree`` lives here because it is the bridge between the file-
 system data directory and the file-browser dock.

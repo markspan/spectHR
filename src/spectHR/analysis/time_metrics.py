@@ -7,7 +7,7 @@ Time-domain HRV metrics.
 Every function here is a standalone callable decorated with ``@epoch_metric``,
 which registers it in ``spectHR.analysis.registry._REGISTRY``.
 
-Each function accepts a single ``CardioSeriesLike`` argument (anything that
+Each function accepts a single ``series-like`` argument (anything that
 exposes ``.times``, ``.ibi``, and ``.labels`` arrays) and returns a ``float``
 (or ``np.nan`` when the metric cannot be computed).
 

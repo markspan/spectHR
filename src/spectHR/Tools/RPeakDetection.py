@@ -4,18 +4,14 @@
 """
 Standalone R-peak detection algorithm.
 
-This module contains the peak-detection and sub-sample-correction logic
-that was previously embedded in ``CardioSeries.from_timeseries``. Extracting
-it here makes the algorithm independently testable and reusable without
-importing the full ``CardioSeries`` class.
+The peak-detection and sub-sample-correction logic, kept as a pure function so
+it is independently testable.  :meth:`spectHR.session.Events.detect` (and the
+preprocessing beat-detection transform) call it with an ECG signal.
 
 Public surface
 --------------
 detect_rpeaks(ts, *, min_peak_distance_ms, ...) -> np.ndarray
     Detect R-peak timestamps from an ECG TimeSeries.
-
-``CardioSeries.from_timeseries`` and ``CardioSeries.replace_from_timeseries``
-are thin wrappers that call this function; existing call sites need no changes.
 """
 from __future__ import annotations
 

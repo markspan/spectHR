@@ -4,7 +4,7 @@
 """
 Pure IBI helper functions.
 
-Every function here takes a ``CardioSeriesLike`` as its first argument and
+Every function here takes a ``series-like`` as its first argument and
 performs read-only operations on its ``.times``, ``.ibi``, and ``.labels``
 arrays. There are no side effects and no imports of dataset classes.
 
@@ -98,8 +98,7 @@ def successive_diffs_ms(series) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# PSD protocol helpers
-# (called by CardioSeriesView thin wrappers; also used by PSDEngine)
+# PSD protocol helpers (used by PSDEngine and the band-power metrics)
 # ---------------------------------------------------------------------------
 
 def ibi_clean_pairs(series) -> Tuple[np.ndarray, np.ndarray]:

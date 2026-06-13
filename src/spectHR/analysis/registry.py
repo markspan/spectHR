@@ -5,7 +5,7 @@
 Epoch-metric registry.
 
 Functions decorated with ``@epoch_metric`` are stored here and discovered
-automatically by ``PhysioData.epoched_parameters_table()``.  Every registered
+automatically by ``Session.epochs_table()``.  Every registered
 metric contributes exactly **one** scalar column to the parameters CSV — the
 column name is the function's ``__name__``.
 
@@ -13,7 +13,7 @@ The decorator unifies every per-epoch parameter the table exports: the
 time-domain HRV metrics (``rmssd``, ``sdnn`` …), the beat-by-beat
 blood-pressure and respiration parameters (``bp_sbp`` …, ``resp_mvo`` …) and
 the standard band powers (``lf_power`` …, ``lf_hf_ratio``).  A metric receives
-a single positional argument — either a bare ``CardioSeriesLike`` (when called
+a single positional argument — either a bare ``series-like`` (when called
 directly) or an :class:`~spectHR.analysis.epoch_context.EpochContext` (when
 called by the table), which exposes the same series interface plus the extra
 channels and cached PSD that BP / RESP / band-power metrics need.
@@ -34,7 +34,7 @@ def epoch_metric(func: Callable) -> Callable:
     """Register *func* as a single-valued per-epoch metric.
 
     The decorated function must accept a single positional argument — a
-    ``CardioSeriesLike`` or an
+    ``series-like`` or an
     :class:`~spectHR.analysis.epoch_context.EpochContext` — and return a value
     coercible to ``float``.  It must contribute exactly one column (one scalar)
     to the parameters table; a metric may never emit multiple columns.
