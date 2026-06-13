@@ -54,6 +54,7 @@ __all__ = [
     "apply_bp_calibration",
     "apply_rsp_source",
     "apply_breath_phases",
+    "recompute_breath_phases",
     "retrigger_beats",
     "invert_ecg",
 ]
@@ -513,6 +514,27 @@ def apply_breath_phases(session: Session, params: _ParamsLike = None) -> Session
         intervals={**session.intervals, "breath": phases},
         epochs=session.epochs,
     )
+
+
+def recompute_breath_phases(session: Session, params: _ParamsLike = None) -> Session:
+    """Drop any existing breath phases and re-detect with the current *params*.
+
+    :func:`apply_breath_phases` is a no-op once a ``breath`` Intervals exists,
+    so this is the entry point the UI uses when a respiration setting changes
+    (``rsp_source`` / ``per_epoch``): it removes the stale phases and re-runs
+    detection — e.g. switching to the accelerometer source rebuilds the INH/EXH
+    phases from the (optionally per-epoch) accelerometer PCA.
+    """
+    if session.hrv is None:
+        return session
+    base = Session(
+        name=session.name,
+        samples=session.samples,
+        events=session.events,
+        intervals={k: v for k, v in session.intervals.items() if k != "breath"},
+        epochs=session.epochs,
+    )
+    return apply_breath_phases(base, params)
 
 
 def _detect_per_epoch(session: Session, view: WorkspaceView) -> "Intervals | None":

@@ -50,6 +50,7 @@ from spectHR.DataSet.preprocessing import (
     apply_ecg_polarity,
     apply_rsp_source,
     invert_ecg,
+    recompute_breath_phases,
     retrigger_beats,
 )
 
@@ -264,6 +265,9 @@ class MainWindow(QMainWindow):
         self._settings        = AppSettings()
         self._parameters       = Parameters.default()
         self._parameters_path: Path | None = None
+        # Respiration settings last applied to the loaded Session's breath
+        # phases; a change triggers a re-detection in _on_workspace_changed.
+        self._resp_key: tuple | None = None
         self._session:         Session | None = None
         self._load_thread:     QThread | None = None
         self._prep_widget:     PrepPlotWidget | None = None
@@ -557,9 +561,27 @@ class MainWindow(QMainWindow):
         logging.getLogger("spectHR").setLevel(self._parameters.log_level)
         for widget in self._data_docks.values():
             widget._config = self._parameters   # host owns these docks
-        self._scheduler.invalidate()
-        self._coordinator.notify(DataChange.PARAMS)
+
+        # A respiration-source / per-epoch change means the INH/EXH phases must
+        # be recomputed (e.g. switch to the accelerometer PCA); that rebuilds
+        # the Session, so re-broadcast it to every dock.  Otherwise just refresh
+        # the parameter-dependent docks.
+        new_resp_key = self._current_resp_key()
+        if self._session is not None and new_resp_key != self._resp_key:
+            self._resp_key = new_resp_key
+            self._session = recompute_breath_phases(self._session, self._parameters)
+            self._scheduler.invalidate()
+            for widget in self._data_docks.values():
+                widget.set_session(self._session, self._parameters)
+        else:
+            self._scheduler.invalidate()
+            self._coordinator.notify(DataChange.PARAMS)
         self._persist_parameters()
+
+    def _current_resp_key(self) -> tuple:
+        """The respiration settings that, when changed, require re-detecting phases."""
+        p = self._parameters
+        return (p.rsp_source, p.rsp_per_epoch)
 
     def _persist_parameters(self) -> None:
         """Auto-save the live parameters so they survive a restart.
@@ -685,6 +707,7 @@ class MainWindow(QMainWindow):
             f"Loaded {session.name}  ({elapsed:.2f} s)\n"
             + _session_summary(session)
         )
+        self._resp_key = self._current_resp_key()  # baseline for change detection
         self._scheduler.invalidate()  # discard any stale background results
         for widget in self._data_docks.values():
             widget.set_session(session, self._parameters)
