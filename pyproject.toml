@@ -7,7 +7,7 @@ name = "specthr"
 dynamic = ["version"]
 description = "HRV / physiological data tooling"
 readme = "readme.MD"
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11"
 license = { text = "GPL-2.0-only" }
 authors = [
   { name = "M.M. Span", email = "m.m.span@rug.nl" }
