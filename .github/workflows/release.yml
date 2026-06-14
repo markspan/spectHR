@@ -231,6 +231,11 @@ jobs:
             --enable-plugin=pyside6
             --include-package=spectHR
             --include-package=spectUI
+            # matplotlib loads output backends dynamically by name, so Nuitka
+            # cannot see them statically: backend_qtagg is included via the
+            # on-screen canvas import, but the PDF export backend must be
+            # forced in or savefig(...).pdf fails in the packaged build.
+            --include-module=matplotlib.backends.backend_pdf
             --include-data-dir="${{ env.RESOURCES_SRC_DIR }}=${{ env.RESOURCES_DST_DIR }}"
             --output-dir="$OUTDIR"
           )
