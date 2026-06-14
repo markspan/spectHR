@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "specthr"
 dynamic = ["version"]
 description = "HRV / physiological data tooling"
-readme = "README.md"
+readme = "readme.MD"
 requires-python = ">=3.11,<3.14"
 license = { text = "GPL-2.0-only" }
 authors = [
