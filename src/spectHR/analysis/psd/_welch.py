@@ -103,12 +103,14 @@ def compute_welch_psd(
     # Build the actual window array for "quadratic" (VU-DAMS parabolic window).
     # For all other strings / tuples scipy resolves the name via get_window.
     if isinstance(window, str) and window == "quadratic":
-        window = _quadratic_window(nperseg)
+        w_arr = _quadratic_window(nperseg)
+    else:
+        w_arr = signal.get_window(window, nperseg, fftbins=False).astype(float)
 
     freqs, power = signal.welch(
         ibi_resampled,
         fs=fs,
-        window=window,
+        window=w_arr,
         nperseg=nperseg,
         noverlap=noverlap,
         nfft=nfft,
@@ -118,8 +120,6 @@ def compute_welch_psd(
 
     step = nperseg - noverlap
     n_segments = max(1, 1 + (n_samples - nperseg) // step)
-
-    w_arr = signal.get_window(window, nperseg, fftbins=False).astype(float)
     w_sq = float(np.dot(w_arr, w_arr))
     if step < nperseg and n_segments > 1 and w_sq > 0.0:
         rho = float(np.dot(w_arr[: nperseg - step], w_arr[step:])) / w_sq

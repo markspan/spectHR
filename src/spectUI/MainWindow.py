@@ -20,6 +20,8 @@ import sys
 import time
 from pathlib import Path
 
+from platformdirs import user_config_dir
+
 import numpy as np
 import qtawesome as qta
 from PySide6.QtCore import Qt, QObject, QSize, QThread, QTimer, Signal
@@ -870,8 +872,8 @@ class MainWindow(QMainWindow):
 
     @property
     def _workspace_file(self) -> Path:
-        """The single default settings file: ``~/workspace.json``."""
-        return Path.home() / "workspace.json"
+        """The single default settings file in the OS config directory."""
+        return Path(user_config_dir("spectHR")) / "workspace.json"
 
     def _restore(self) -> None:
         # All settings (analysis parameters + working directories) come from one

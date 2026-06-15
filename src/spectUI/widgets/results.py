@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from platformdirs import user_documents_dir
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -121,7 +122,7 @@ class ResultsTableWidget(QWidget):
         cfg = self._config
         out_default = (str(cfg.output_dir)
                        if cfg is not None and hasattr(cfg, "output_dir")
-                       else str(Path.home()))
+                       else user_documents_dir())
         directory = QFileDialog.getExistingDirectory(
             self, "Export results to…", out_default)
         if not directory:

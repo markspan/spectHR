@@ -67,6 +67,14 @@ class DockScheduler:
     ----------
     None.  Instantiate once inside ``MainWindow.__init__`` after
     ``QApplication`` exists so ``QThreadPool.globalInstance()`` is valid.
+
+    Busy / idle hooks
+    -----------------
+    Register zero-argument callables with :meth:`on_busy` / :meth:`on_idle`.
+    ``on_busy`` is called when ``_inflight`` transitions 0 → 1 (work starts);
+    ``on_idle`` is called when it transitions N → 0 (all work done).
+    Each call to ``on_busy`` will be paired with exactly one ``on_idle`` call,
+    so they can safely wrap a Qt override-cursor push/pop.
     """
 
     def __init__(self) -> None:
@@ -74,6 +82,16 @@ class DockScheduler:
         self._gen:         dict[str, int]      = {}
         self._inflight:    set[_Signals]       = set()
         self._current_sig: dict[str, _Signals] = {}  # dock_name → live signal
+        self._busy_cbs:    list                = []
+        self._idle_cbs:    list                = []
+
+    def on_busy(self, cb) -> None:
+        """Register *cb* to be called when this scheduler becomes busy."""
+        self._busy_cbs.append(cb)
+
+    def on_idle(self, cb) -> None:
+        """Register *cb* to be called when this scheduler becomes idle."""
+        self._idle_cbs.append(cb)
 
     # ------------------------------------------------------------------
     # Public API
@@ -109,16 +127,26 @@ class DockScheduler:
         if old is not None:
             self._inflight.discard(old)
 
+        was_idle = not self._inflight
         sig = _Signals()
         self._inflight.add(sig)
         self._current_sig[dock_name] = sig
+        if was_idle:
+            for cb in self._busy_cbs:
+                cb()
 
         def _done(result, _sig=sig):
             self._inflight.discard(_sig)
+            if not self._inflight:
+                for cb in self._idle_cbs:
+                    cb()
             on_done(result)
 
         def _fail(exc, _sig=sig):
             self._inflight.discard(_sig)
+            if not self._inflight:
+                for cb in self._idle_cbs:
+                    cb()
             if on_error:
                 on_error(exc)
 

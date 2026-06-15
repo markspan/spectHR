@@ -290,7 +290,9 @@ def retrigger_beats_per_epoch(session: Session, params: _ParamsLike = None) -> S
 
     hrv: Events = Events(np.empty(0, dtype=np.float64), np.empty(0, dtype=object))
     for epoch in active_epochs:
-        epoch_ecg = filtered.window(epoch.start, epoch.end)
+        # Extend the detection window past epoch.end so we can capture one
+        # extra beat whose IBI closes the last in-epoch interval.
+        epoch_ecg = filtered.window(epoch.start, epoch.end + cardio.max_ibi_sec)
         if epoch_ecg.times.size < 2:
             continue
         try:
@@ -304,10 +306,25 @@ def retrigger_beats_per_epoch(session: Session, params: _ParamsLike = None) -> S
         except Exception:  # noqa: BLE001
             logger.exception("R-peak detection failed for epoch %s", epoch.label)
             continue
-        hrv = hrv.replace_window(epoch.start, epoch.end, new_beats)
+
+        # Keep all in-epoch beats plus the first beat after epoch.end.
+        after = new_beats.times > epoch.end
+        if after.any():
+            keep = int(np.argmax(after)) + 1  # up to and including that one beat
+            replace_end = float(new_beats.times[keep - 1])
+        else:
+            keep = new_beats.times.size
+            replace_end = epoch.end
+        new_beats = Events(new_beats.times[:keep], new_beats.labels[:keep])
+
+        hrv = hrv.replace_window(epoch.start, replace_end, new_beats)
         logger.info(
-            "Detected %d R-peaks in epoch '%s'", new_beats.times.size, epoch.label
+            "Detected %d R-peaks in epoch '%s' (incl. trailing beat)",
+            new_beats.times.size, epoch.label,
         )
+
+    # Reclassify over the full merged stream so boundary IBIs are correct.
+    hrv = hrv.reclassified(**cardio.classify_kwargs)
 
     return Session(
         name=session.name,

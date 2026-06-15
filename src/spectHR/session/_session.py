@@ -74,19 +74,38 @@ class AnalysisConfig:
     rsa_max_ibi_deviation:  float | None = None
     rsa_max_rate_deviation: float | None = None
     b_point_guard_ms:       float = 30.0
+    # Transfer config: dict with keys input_signal, min_coherence, smooth,
+    # f_max, and bands {name: (lo, hi)}.  None disables transfer metrics.
+    transfer_config:        Any   = None
 
     @classmethod
     def from_workspace(cls, workspace: dict | None) -> AnalysisConfig:
         """Build from a raw workspace dict."""
-        from spectHR.config import WorkspaceView
+        from spectHR.config import WorkspaceView, transfer_settings_from_workspace
+        from spectHR.config import display_bands_from_workspace
         ws = WorkspaceView(workspace)
         ibi_dev, rate_dev = ws.rsa_rejection
+        ts = transfer_settings_from_workspace(workspace)
+        raw_bands = display_bands_from_workspace(workspace)
+        bands = {
+            name: (float(s["low"]), float(s["high"]))
+            for name, s in raw_bands.items()
+            if "low" in s and "high" in s and name != "FullRange"
+        }
+        tf_cfg = {
+            "input_signal": ts["input_signal"],
+            "min_coherence": ts["min_coherence"],
+            "smooth": ts["smooth"],
+            "f_max": ts["f_max"],
+            "bands": bands,
+        }
         return cls(
             psd_method=ws.psd_method,
             rsa_lag_s=ws.rsa_lag_s,
             rsa_max_ibi_deviation=ibi_dev,
             rsa_max_rate_deviation=rate_dev,
             b_point_guard_ms=ws.b_point_guard_ms,
+            transfer_config=tf_cfg,
         )
 
 
@@ -251,6 +270,7 @@ class Session:
                 icg_ts=_win(self.icg),
                 ecg_ts=_win(self.ecg),
                 b_point_guard_ms=config.b_point_guard_ms,
+                transfer_config=config.transfer_config,
             )
             contexts[label] = ctx
 

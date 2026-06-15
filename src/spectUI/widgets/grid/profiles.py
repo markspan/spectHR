@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from matplotlib.figure import Figure
 
+from spectHR.analysis._smoothing import smooth3 as _smooth3
 from spectHR.analysis.profile import compute_band_power_profile
 from spectHR.session import Session
 from spectUI.common.spectral_plots import band_color, strip_per_hz
@@ -53,10 +54,12 @@ class ProfilePlotWidget(BandSelectorMixin, EpochGridView):
         # Epoch-relative time so every tile starts at 0.
         t = result.timestamps - (float(result.timestamps[0]) if result.timestamps.size else 0.0)
         drawn = 0
+        smooth = bool(self._ps.get("smooth_for_display", False))
         for i, name in enumerate(result.band_names):
             if not self._band_selected(name):
                 continue
-            ax.plot(t, result.band_power[i], linewidth=1.2,
+            power = _smooth3(result.band_power[i]) if smooth else result.band_power[i]
+            ax.plot(t, power, linewidth=1.2,
                     color=band_color(self._bands, name), label=name)
             drawn += 1
         ax.set_title(label, fontsize=9)

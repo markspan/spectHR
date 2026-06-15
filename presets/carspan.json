@@ -1,0 +1,14 @@
+{
+    "_description": "CARSPAN default frequency bands (Mulder, Hofstetter & van Roon). Deep-merged on top of the default workspace; only the keys that differ are listed here.",
+
+    "FrequencyAnalysis": {
+        "method": "carspan",
+
+        "bands": {
+            "FullRange": {"low": 0.02, "high": 0.50, "color": "gray",      "alpha": 0.15},
+            "VLF":       {"low": 0.02, "high": 0.06, "color": "purple",    "alpha": 0.20},
+            "LF":        {"low": 0.07, "high": 0.14, "color": "darkgreen"              },
+            "HF":        {"low": 0.15, "high": 0.40, "color": "red"                    }
+        }
+    }
+}

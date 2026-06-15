@@ -30,7 +30,9 @@ from __future__ import annotations
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QHBoxLayout,
     QLabel,
@@ -77,6 +79,8 @@ class EpochGridView(QWidget):
         self._session: Session | None = None
         self._config = None
         self._scheduler = DockScheduler()
+        self._scheduler.on_busy(lambda: QApplication.setOverrideCursor(Qt.WaitCursor))
+        self._scheduler.on_idle(lambda: QApplication.restoreOverrideCursor())
 
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 0, 0, 0)
@@ -181,7 +185,10 @@ class EpochGridView(QWidget):
         self._content = content
         self._scroll = content.findChild(QScrollArea)
         self._outer.addWidget(content)
-        self._relayout_tiles()
+        # Defer one event-loop cycle so the scroll viewport has its final
+        # geometry before we size the tiles.  resizeEvent handles subsequent
+        # dock resizes once the widget is visible.
+        QTimer.singleShot(0, self._relayout_tiles)
 
         # Y-axis controls: only for magnitude-axis docks, only when several
         # epochs make linking meaningful.
@@ -231,6 +238,10 @@ class EpochGridView(QWidget):
 
     def resizeEvent(self, event) -> None:   # noqa: N802 - Qt override
         super().resizeEvent(event)
+        self._relayout_tiles()
+
+    def showEvent(self, event) -> None:    # noqa: N802 - Qt override
+        super().showEvent(event)
         self._relayout_tiles()
 
     def _relayout_tiles(self) -> None:

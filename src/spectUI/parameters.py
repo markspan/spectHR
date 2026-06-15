@@ -24,6 +24,29 @@ import copy
 import json
 from pathlib import Path
 
+from platformdirs import user_cache_dir, user_config_dir, user_documents_dir
+
+
+_REPLACE_WHOLE = {"bands"}  # keys whose dict value is an atomic table, not merged
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Return a new dict: *override* merged onto *base*, recursively.
+
+    Scalar/list values in *override* win outright; dict values are merged
+    key-by-key so that a preset that only specifies a few keys leaves the
+    rest at their defaults.  Keys listed in ``_REPLACE_WHOLE`` are treated
+    as atomic tables — a preset that provides them replaces the base value
+    entirely (e.g. ``bands`` defines a complete band table, not additions).
+    """
+    result = copy.deepcopy(base)
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(result.get(k), dict) and k not in _REPLACE_WHOLE:
+            result[k] = _deep_merge(result[k], v)
+        else:
+            result[k] = copy.deepcopy(v)
+    return result
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 
@@ -39,9 +62,9 @@ from spectHR.config import WorkspaceView
 
 _DEFAULT: dict = {
     "Directories": {
-        "DataDirectory":   str(Path.home() / "Documents" / "spectHR"),
-        "CacheDirectory":  str(Path.home() / "Documents" / "spectHR" / "cache"),
-        "OutputDirectory": str(Path.home() / "Documents" / "spectHR" / "export"),
+        "DataDirectory":   str(Path(user_documents_dir()) / "spectHR"),
+        "CacheDirectory":  str(Path(user_cache_dir("spectHR"))),
+        "OutputDirectory": str(Path(user_documents_dir()) / "spectHR" / "export"),
     },
     "FrequencyAnalysis": {
         "method": "carspan",
@@ -159,9 +182,16 @@ class Parameters(WorkspaceView):
 
     @classmethod
     def load(cls, path: Path | str) -> Parameters:
-        """Load analysis parameters from a JSON file."""
+        """Load analysis parameters from a JSON file.
+
+        The file is deep-merged onto the built-in defaults so that a preset
+        which only specifies a subset of sections (e.g. a VU-AMS preset that
+        only overrides ``CardioParameters``) leaves every other section at its
+        default value rather than disappearing.
+        """
         with open(path, "r", encoding="utf-8") as f:
-            return cls(json.load(f))
+            on_disk = json.load(f)
+        return cls(_deep_merge(_DEFAULT, on_disk))
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -205,15 +235,15 @@ class Parameters(WorkspaceView):
 
     @property
     def data_dir(self) -> Path:
-        return self._dir("DataDirectory", Path.home() / "Documents" / "spectHR")
+        return self._dir("DataDirectory", Path(user_documents_dir()) / "spectHR")
 
     @property
     def cache_dir(self) -> Path:
-        return self._dir("CacheDirectory", Path.home() / "Documents" / "spectHR" / "cache")
+        return self._dir("CacheDirectory", Path(user_cache_dir("spectHR")))
 
     @property
     def output_dir(self) -> Path:
-        return self._dir("OutputDirectory", Path.home() / "Documents" / "spectHR" / "export")
+        return self._dir("OutputDirectory", Path(user_documents_dir()) / "spectHR" / "export")
 
     def export_dir(self, context: str = "") -> Path:
         """Return the output directory for *context*, creating it if needed."""

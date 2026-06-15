@@ -32,6 +32,7 @@ from spectHR.analysis import bp_metrics         # noqa: F401
 from spectHR.analysis import nonlinear          # noqa: F401  (dfa_a1)
 from spectHR.analysis import respiration_metrics  # noqa: F401  (resp_freq, hf_resp_in_band)
 from spectHR.analysis import icg_metrics        # noqa: F401  (pep)
+from spectHR.analysis import transfer_metrics   # noqa: F401  (transfer_band_metrics)
 
 __all__ = [
     "epoch_metric",

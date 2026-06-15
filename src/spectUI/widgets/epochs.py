@@ -180,9 +180,25 @@ class EpochEditorWidget(QWidget):
         if self._session is None:
             return
         menu = QMenu(self)
-        add_act = menu.addAction("Add epoch")
-        if menu.exec(QCursor.pos()) is add_act:
+        add_act        = menu.addAction("Add epoch")
+        menu.addSeparator()
+        select_all_act   = menu.addAction("Select all")
+        deselect_all_act = menu.addAction("Deselect all")
+        chosen = menu.exec(QCursor.pos())
+        if chosen is add_act:
             self._add_full_epoch()
+        elif chosen is select_all_act:
+            self._set_all_active(True)
+        elif chosen is deselect_all_act:
+            self._set_all_active(False)
+
+    def _set_all_active(self, state: bool) -> None:
+        if self._session is None:
+            return
+        for ep in self._session.epochs.values():
+            ep.active = state
+        self.refresh()
+        self.epochsChanged.emit()
 
     def _add_full_epoch(self) -> None:
         """Ask for a name, then add a new epoch spanning the whole recording."""

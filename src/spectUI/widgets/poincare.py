@@ -106,6 +106,7 @@ class PoincareWidget(QWidget):
     def refresh(self) -> None:
         if self._session is None:
             return
+        self._sync_checkboxes()
         self._draw()
         self.canvas.draw_idle()
 
@@ -129,6 +130,17 @@ class PoincareWidget(QWidget):
             self._cb_layout.addWidget(cb)
             self._checkboxes[name] = cb
         self._cb_layout.addStretch()
+
+    def _sync_checkboxes(self) -> None:
+        """Update checkbox states to match ``ep.active`` without firing _on_toggle."""
+        if self._session is None:
+            return
+        for name, cb in self._checkboxes.items():
+            ep = self._session.epochs.get(name)
+            if ep is not None:
+                cb.blockSignals(True)
+                cb.setChecked(getattr(ep, "active", True))
+                cb.blockSignals(False)
 
     def _on_toggle(self) -> None:
         for name, cb in self._checkboxes.items():

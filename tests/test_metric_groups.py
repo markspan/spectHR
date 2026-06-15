@@ -73,23 +73,23 @@ def _method_with_custom_band() -> PsdMethod:
 
 
 class TestBandPowersGroup:
-    def test_emits_only_non_standard_bands(self):
+    def test_emits_all_configured_bands(self):
         cs = make_spectral_cs(0.25)
         ctx = EpochContext(cs, psd_method=_method_with_custom_band())
         cols = band_powers(ctx)
         # The custom band gets a column ...
         assert "myband_power" in cols
         assert np.isfinite(cols["myband_power"])
-        # ... and the standard bands never do (those are single-valued metrics).
-        for std in STANDARD_BAND_POWER_COLUMNS:
-            assert std not in cols
+        # ... and so do the standard bands — all powers flow through band_powers.
+        for name in _method_with_custom_band().bands:
+            assert f"{name.lower()}_power" in cols
 
     def test_empty_when_no_method(self):
         cs = make_spectral_cs(0.25)
         ctx = EpochContext(cs, psd_method=None)
         assert band_powers(ctx) == {}
 
-    def test_only_standard_bands_gives_no_columns(self):
+    def test_standard_bands_emit_columns(self):
         cs = make_spectral_cs(0.25)
         method = PsdMethod(
             algorithm="carspan",
@@ -97,7 +97,10 @@ class TestBandPowersGroup:
             mean_convention="harmonic",
         )
         ctx = EpochContext(cs, psd_method=method)
-        assert band_powers(ctx) == {}
+        cols = band_powers(ctx)
+        # All configured bands — including the standard ones — get a column.
+        for name in method.bands:
+            assert f"{name.lower()}_power" in cols
 
     def test_reuses_cached_psd(self):
         # band_powers must not trigger a second PSD computation: it reads the

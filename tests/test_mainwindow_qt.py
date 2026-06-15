@@ -37,7 +37,8 @@ w = mw.MainWindow()
 
 # First run seeds the single settings file with the defaults.
 from pathlib import Path
-wf = Path.home() / "workspace.json"
+from platformdirs import user_config_dir
+wf = Path(user_config_dir("spectHR")) / "workspace.json"
 assert wf.exists(), "MainWindow did not create the default workspace.json"
 assert "Directories" in __import__("json").loads(wf.read_text())
 

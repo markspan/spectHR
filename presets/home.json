@@ -1,0 +1,7 @@
+{
+    "Directories": {
+        "DataDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/data",
+        "CacheDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/cache",
+        "OutputDirectory": "C:/Users/P154492/Documents/GitHub/spectHR/ExampleData/export"
+    },
+}

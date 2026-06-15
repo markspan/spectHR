@@ -158,6 +158,13 @@ class TransferPlotWidget(_TransferBase):
         ax_c.tick_params(labelsize=6)
         ax_m.set_xlim(f_min, f_max)
 
+        # Open-loop caveat: BRS is estimated from spontaneous fluctuations in
+        # a closed-loop system (BP and HR mutually drive each other).
+        fig.text(0.5, 0.01,
+                 "Open-loop estimate — BP and HR are mutually coupled.",
+                 ha="center", va="bottom", fontsize=5, color="#888888",
+                 style="italic")
+
 
 class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
     """Per-epoch transfer modulus per band over time, with band selection."""

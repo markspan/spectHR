@@ -99,6 +99,9 @@ class EpochContext:
     icg_ts:                  Any   = field(default=None,  kw_only=True)
     ecg_ts:                  Any   = field(default=None,  kw_only=True)
     b_point_guard_ms:        float = field(default=30.0,  kw_only=True)
+    # Dict with keys: input_signal, min_coherence, smooth, f_max, bands.
+    # None disables transfer metrics.
+    transfer_config:         Any   = field(default=None,  kw_only=True)
 
     # ------------------------------------------------------------------ #
     # CardioSeriesProtocol — explicit forwarding to self.view            #
@@ -224,6 +227,38 @@ class EpochContext:
             if p_labels[i] == "INH" and p_labels[i + 1] == "EXH":
                 x_pts.append((p_starts[i] + p_ends[i + 1]) / 2.0)
         return np.array(x_pts, dtype=float)
+
+    @cached_property
+    def transfer_result(self):
+        """Per-epoch transfer function result (cached), or ``None``.
+
+        Uses the configured ``transfer_config`` dict.  ``None`` when no config
+        is present, the required input channel is absent, or fewer than 4
+        clean R-peaks are available.
+        """
+        cfg = self.transfer_config
+        if cfg is None:
+            return None
+        sig = cfg.get("input_signal", "rsp")
+        if sig.startswith("bp"):
+            inp = self.bp_ts
+        else:
+            inp = self.rsp_ts
+        if inp is None:
+            return None
+        try:
+            from spectHR.analysis.transfer import compute_transfer
+            return compute_transfer(
+                self.view,
+                inp,
+                input_signal=sig,
+                bands=cfg.get("bands") or {},
+                min_coherence=float(cfg.get("min_coherence", 0.5)),
+                smooth=bool(cfg.get("smooth", True)),
+                f_max=float(cfg.get("f_max", 0.5)),
+            )
+        except Exception:
+            return None
 
     @property
     def pep_value(self):

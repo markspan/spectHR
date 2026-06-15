@@ -31,17 +31,16 @@ from __future__ import annotations
 import numpy as np
 
 from spectHR.analysis.epoch_context import EpochContext
-from spectHR.analysis.registry import epoch_metric, epoch_metric_group, get_metrics
+from spectHR.analysis.registry import epoch_metric, epoch_metric_group
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 
-# Lower-cased ``{name}_power`` columns owned by the decorated metrics below.
-# The :func:`band_powers` group metric consults this set so it does not
-# double-emit columns already produced by the standard single-valued metrics.
-STANDARD_BAND_POWER_COLUMNS = frozenset(
-    {"fullrange_power", "vlf_power", "lf_power", "hf_power"}
-)
+# Previously the four standard bands were registered as individual
+# @epoch_metric functions and listed here so the group metric could avoid
+# double-emitting them.  All band powers now flow through band_powers (the
+# @epoch_metric_group), so this set is empty.  Kept for import compatibility.
+STANDARD_BAND_POWER_COLUMNS: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -108,27 +107,23 @@ def _named_band_power(series, band_name: str, psd_method=None) -> float:
 # Registered band-power metrics
 # ---------------------------------------------------------------------------
 
-@epoch_metric
 def fullrange_power(series, psd_method=None) -> float:
-    """Power across the FullRange band."""
+    """Power across the FullRange band (direct-call helper; not an epoch_metric)."""
     return _named_band_power(series, "FullRange", psd_method)
 
 
-@epoch_metric
 def vlf_power(series, psd_method=None) -> float:
-    """Power in the very-low-frequency band."""
+    """Power in the VLF band (direct-call helper; not an epoch_metric)."""
     return _named_band_power(series, "VLF", psd_method)
 
 
-@epoch_metric
 def lf_power(series, psd_method=None) -> float:
-    """Power in the low-frequency band."""
+    """Power in the LF band (direct-call helper; not an epoch_metric)."""
     return _named_band_power(series, "LF", psd_method)
 
 
-@epoch_metric
 def hf_power(series, psd_method=None) -> float:
-    """Power in the high-frequency band."""
+    """Power in the HF band (direct-call helper; not an epoch_metric)."""
     return _named_band_power(series, "HF", psd_method)
 
 
@@ -153,39 +148,31 @@ def lf_hf_ratio(series, psd_method=None) -> float:
         return np.nan
 
 
-# Frozen snapshot of all single-valued metric columns registered above.
-# Built once at import time; the registry is stable by this point.
-_REGISTERED_METRIC_COLS: frozenset[str] = frozenset(get_metrics())
-
-
 # ---------------------------------------------------------------------------
 # Registered multi-column band-power group
 # ---------------------------------------------------------------------------
 
 @epoch_metric_group
 def band_powers(ctx) -> dict[str, float]:
-    """``{band}_power`` columns for every **non-standard** configured band.
+    """``{band}_power`` column for every configured frequency band.
 
-    The four conventional bands (FullRange/VLF/LF/HF) are owned by the
-    single-valued metrics above; this group covers any band the researcher
-    renamed or added in the workspace, emitting one ``{name}_power`` column
-    each.  It reuses the context's cached PSD, so it adds no spectral
-    computation on top of the standard band-power metrics.
+    Emits one ``{band_name.lower()}_power`` column per band in the configured
+    PSD method.  Because all band powers flow through this group metric, the
+    column set is always data-driven: renaming a band in the workspace
+    changes the column name, and adding new bands adds new columns
+    automatically.  No band names are hard-coded.
 
-    Returns an empty dict (no columns) when no PSD method is configured or the
-    PSD could not be computed.  Group metrics are only ever called by the table
-    with an :class:`~spectHR.analysis.epoch_context.EpochContext`.
+    Returns an empty dict when no PSD method is configured or the PSD could
+    not be computed.  Group metrics are always called with an
+    :class:`~spectHR.analysis.epoch_context.EpochContext`.
     """
     out: dict[str, float] = {}
     method = getattr(ctx, "psd_method", None)
     psd_res = getattr(ctx, "psd", None)
     if method is None or psd_res is None:
         return out
-    single_cols = _REGISTERED_METRIC_COLS
     for band_name, band_spec in method.bands.items():
         col = f"{band_name.lower()}_power"
-        if col in single_cols:
-            continue
         try:
             out[col] = float(band_power_rectangular(
                 psd_res.freqs, psd_res.power, band_spec.low, band_spec.high,
