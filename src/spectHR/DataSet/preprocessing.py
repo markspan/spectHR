@@ -267,14 +267,17 @@ def retrigger_beats(session: Session, params: _ParamsLike = None) -> Session:
 
 
 def retrigger_beats_per_epoch(session: Session, params: _ParamsLike = None) -> Session:
-    """Re-detect R-peaks within each active epoch, leaving beats outside epochs intact.
+    """Re-detect R-peaks for each active epoch, starting fresh.
 
-    Unlike :func:`retrigger_beats` (which discards all R-peaks and redetects
-    over the whole recording), this function only replaces beats that fall
-    inside active epoch windows.  Manually edited beats outside any epoch are
-    preserved.  When no epochs are defined, falls back to a full retrigger.
+    All existing R-peaks are discarded.  Active epochs are processed in
+    ascending duration order so that a larger epoch that overlaps a smaller
+    one overwrites the smaller epoch's beats (the wider window wins).
+    When no epochs are defined, falls back to a full retrigger.
     """
-    active_epochs = [ep for ep in session.epochs.values() if ep.active]
+    active_epochs = sorted(
+        (ep for ep in session.epochs.values() if ep.active),
+        key=lambda ep: ep.duration,
+    )
     if not active_epochs:
         return retrigger_beats(session, params)
 
@@ -285,13 +288,7 @@ def retrigger_beats_per_epoch(session: Session, params: _ParamsLike = None) -> S
     cardio = _as_view(params).cardio_params
     filtered = filter_ecg(ecg, cardio)
 
-    existing_hrv = session.events.get("hrv")
-    if existing_hrv is None:
-        existing_hrv = Events(
-            np.empty(0, dtype=np.float64), np.empty(0, dtype=object)
-        )
-
-    hrv = existing_hrv
+    hrv: Events = Events(np.empty(0, dtype=np.float64), np.empty(0, dtype=object))
     for epoch in active_epochs:
         epoch_ecg = filtered.window(epoch.start, epoch.end)
         if epoch_ecg.times.size < 2:
