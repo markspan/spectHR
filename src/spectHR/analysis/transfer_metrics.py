@@ -37,6 +37,30 @@ import numpy as np
 from spectHR.analysis.epoch_context import EpochContext
 from spectHR.analysis.registry import epoch_metric_group
 
+# Suffix → tooltip text for dynamically-named transfer-function columns.
+# Results widget uses these to annotate column headers whose names cannot be
+# known at import time (they include the configured band name).
+TRANSFER_COLUMN_TOOLTIPS: dict[str, str] = {
+    "_tf_modulus": (
+        "Transfer function modulus |H(f)| averaged over this band, gated to "
+        "bins where squared coherence ≥ threshold. "
+        "Units: ms/mmHg (BP input) or dimensionless (respiration input). "
+        "Reflects the gain of the input→IBI transfer — baroreflex sensitivity "
+        "when the input is blood pressure."
+    ),
+    "_tf_coherence": (
+        "Power-weighted mean squared coherence over this band "
+        "(Σ coh[k]·PSD_in[k] / Σ PSD_in[k]). "
+        "Ranges 0–1; values below the threshold (~0.5) indicate a weak or "
+        "non-linear coupling — treat the modulus and phase with caution."
+    ),
+    "_tf_phase_w": (
+        "Mean wrapped phase ∠H(f) in radians over the coherent bins in this "
+        "band. Positive values indicate IBI lags the input; negative values "
+        "indicate IBI leads. Reported as the coherence-weighted circular mean."
+    ),
+}
+
 
 @epoch_metric_group
 def transfer_band_metrics(ctx: EpochContext) -> dict[str, float]:

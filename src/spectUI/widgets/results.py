@@ -180,6 +180,17 @@ class ResultsTableWidget(QWidget):
                     docs[name] = doc.split("\n\n")[0].strip()
         return docs
 
+    @staticmethod
+    def _column_tooltip(col: str, docs: dict[str, str]) -> str | None:
+        """Return a tooltip for *col*, with fallback to suffix pattern matching."""
+        if col in docs:
+            return docs[col]
+        from spectHR.analysis.transfer_metrics import TRANSFER_COLUMN_TOOLTIPS
+        for suffix, tip in TRANSFER_COLUMN_TOOLTIPS.items():
+            if col.endswith(suffix):
+                return tip
+        return None
+
     def _populate(self, labels, columns: list[str], values: np.ndarray) -> None:
         self.table.clear()
         self.table.setRowCount(len(labels))
@@ -190,8 +201,10 @@ class ResultsTableWidget(QWidget):
         docs = self._metric_docs()
         for c, col in enumerate(columns):
             header = self.table.horizontalHeaderItem(c + 1)
-            if header is not None and col in docs:
-                header.setToolTip(docs[col])
+            if header is not None:
+                tip = self._column_tooltip(col, docs)
+                if tip:
+                    header.setToolTip(tip)
 
         for r, label in enumerate(labels):
             name_item = QTableWidgetItem(str(label))
