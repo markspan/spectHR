@@ -59,8 +59,12 @@ class ProfilePlotWidget(BandSelectorMixin, EpochGridView):
             if not self._band_selected(name):
                 continue
             power = _smooth3(result.band_power[i]) if smooth else result.band_power[i]
-            ax.plot(t, power, linewidth=1.2,
-                    color=band_color(self._bands, name), label=name)
+            color = band_color(self._bands, name)
+            # Translucent fill under the curve (down to y=0); the per-band alpha
+            # keeps overlapping bands all visible.  The solid line sits on top.
+            alpha = float((self._bands.get(name) or {}).get("alpha", 0.25))
+            ax.fill_between(t, power, color=color, alpha=alpha, zorder=1)
+            ax.plot(t, power, linewidth=1.2, color=color, label=name, zorder=2)
             drawn += 1
         ax.set_title(label, fontsize=9)
         ax.set_xlabel("Time (s)", fontsize=8)
