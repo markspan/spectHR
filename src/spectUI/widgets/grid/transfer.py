@@ -200,8 +200,14 @@ class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
         for i, name in enumerate(result.band_names):
             if not self._band_selected(name):
                 continue
+            color = band_color(self._display_bands, name)
+            # Translucent fill under the curve (per-band alpha) so overlapping
+            # bands stay visible; the solid line sits on top.
+            alpha = float((self._display_bands.get(name) or {}).get("alpha", 0.25))
+            ax.fill_between(result.timestamps, result.modulus[i],
+                            color=color, alpha=alpha, zorder=1)
             ax.plot(result.timestamps, result.modulus[i], linewidth=1.0,
-                    color=band_color(self._display_bands, name), label=name)
+                    color=color, label=name, zorder=2)
             drawn += 1
         ax.set_title(label, fontsize=9)
         ax.set_xlabel("Time (s)", fontsize=8)
