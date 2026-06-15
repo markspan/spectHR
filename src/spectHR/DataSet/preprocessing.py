@@ -56,6 +56,7 @@ __all__ = [
     "apply_breath_phases",
     "recompute_breath_phases",
     "retrigger_beats",
+    "retrigger_beats_per_epoch",
     "invert_ecg",
 ]
 
@@ -263,6 +264,61 @@ def retrigger_beats(session: Session, params: _ParamsLike = None) -> Session:
     R-tops" action that throws away manual edits and redetects from scratch.
     """
     return apply_beat_detection(_without_hrv(session), params)
+
+
+def retrigger_beats_per_epoch(session: Session, params: _ParamsLike = None) -> Session:
+    """Re-detect R-peaks within each active epoch, leaving beats outside epochs intact.
+
+    Unlike :func:`retrigger_beats` (which discards all R-peaks and redetects
+    over the whole recording), this function only replaces beats that fall
+    inside active epoch windows.  Manually edited beats outside any epoch are
+    preserved.  When no epochs are defined, falls back to a full retrigger.
+    """
+    active_epochs = [ep for ep in session.epochs.values() if ep.active]
+    if not active_epochs:
+        return retrigger_beats(session, params)
+
+    ecg = resolve_ecg(session)
+    if ecg is None or ecg.times.size < 2:
+        return session
+
+    cardio = _as_view(params).cardio_params
+    filtered = filter_ecg(ecg, cardio)
+
+    existing_hrv = session.events.get("hrv")
+    if existing_hrv is None:
+        existing_hrv = Events(
+            np.empty(0, dtype=np.float64), np.empty(0, dtype=object)
+        )
+
+    hrv = existing_hrv
+    for epoch in active_epochs:
+        epoch_ecg = filtered.window(epoch.start, epoch.end)
+        if epoch_ecg.times.size < 2:
+            continue
+        try:
+            new_beats = Events.detect(
+                epoch_ecg,
+                min_peak_distance_ms=cardio.min_peak_distance_ms,
+                window_length=cardio.window_length,
+                n_std=cardio.n_std,
+                max_ibi_sec=cardio.max_ibi_sec,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("R-peak detection failed for epoch %s", epoch.label)
+            continue
+        hrv = hrv.replace_window(epoch.start, epoch.end, new_beats)
+        logger.info(
+            "Detected %d R-peaks in epoch '%s'", new_beats.times.size, epoch.label
+        )
+
+    return Session(
+        name=session.name,
+        samples=session.samples,
+        events={**session.events, "hrv": hrv},
+        intervals=session.intervals,
+        epochs=session.epochs,
+    )
 
 
 def invert_ecg(session: Session, params: _ParamsLike = None) -> Session:

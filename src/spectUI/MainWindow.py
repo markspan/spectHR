@@ -52,6 +52,7 @@ from spectHR.DataSet.preprocessing import (
     invert_ecg,
     recompute_breath_phases,
     retrigger_beats,
+    retrigger_beats_per_epoch,
 )
 
 from spectUI.perspectives import (
@@ -681,7 +682,8 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         act_reload = menu.addAction("Reload raw")        # discard cache, re-parse
         act_invert = menu.addAction("Invert ECG polarity")
-        act_retrig = menu.addAction("Retrigger R-tops")  # re-detect from scratch
+        act_retrig       = menu.addAction("Retrigger R-tops")              # whole recording
+        act_retrig_epoch = menu.addAction("Retrigger R-tops (per epoch)")  # active epochs only
         chosen = menu.exec(self._tree.viewport().mapToGlobal(position))
 
         if chosen is act_reload:
@@ -690,6 +692,8 @@ class MainWindow(QMainWindow):
             self._reprocess(invert_ecg)
         elif chosen is act_retrig:
             self._reprocess(retrigger_beats)
+        elif chosen is act_retrig_epoch:
+            self._reprocess(retrigger_beats_per_epoch)
 
     def _reprocess(self, transform) -> None:
         """Apply a headless ``Session → Session`` *transform* to the loaded data.
