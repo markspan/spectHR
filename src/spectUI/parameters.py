@@ -198,6 +198,20 @@ class Parameters(WorkspaceView):
             on_disk = json.load(f)
         return cls(_deep_merge(_DEFAULT, on_disk))
 
+    def merge_from_file(self, path: Path | str) -> None:
+        """Merge analysis parameters from *path* onto the current settings.
+
+        Unlike :meth:`load`, this merges onto the *current* workspace dict
+        rather than the built-in defaults.  Keys present in the file win;
+        keys absent from the file (including ``Directories``) are left
+        unchanged.  Use this when loading a preset so the user's working
+        directories and any other personalised settings survive.
+        """
+        with open(path, "r", encoding="utf-8") as f:
+            on_disk = json.load(f)
+        self._ws = _deep_merge(self._ws, on_disk)
+        self._invalidate()
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------

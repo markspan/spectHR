@@ -513,7 +513,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            self._parameters      = Parameters.load(path)
+            self._parameters.merge_from_file(path)
             self._parameters_path = Path(path)
         except Exception as exc:
             QMessageBox.critical(self, "Workspace error", str(exc))
