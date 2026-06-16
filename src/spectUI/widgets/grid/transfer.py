@@ -18,6 +18,7 @@ from matplotlib.figure import Figure
 from spectHR.analysis.transfer import (
     compute_transfer,
     compute_transfer_profile,
+    input_signal_label,
     modulus_unit,
 )
 from spectHR.session import Session
@@ -116,7 +117,8 @@ class TransferPlotWidget(_TransferBase):
         unit = modulus_unit(self._sig)
         ax_m.set_ylabel(f"|H| [{unit}]" if unit else "|H|", fontsize=7)
         ax_m.set_ylim(bottom=0.0)
-        ax_m.set_title(label, fontsize=9)
+        sig_label = input_signal_label(self._sig)
+        ax_m.set_title(f"{label}\ninput: {sig_label}", fontsize=9)
         ax_m.legend(fontsize=5, loc="upper right", framealpha=0.5)
 
         # ---- phase: points gated by coherence, y-axis in π ---------------
@@ -158,10 +160,14 @@ class TransferPlotWidget(_TransferBase):
         ax_c.tick_params(labelsize=6)
         ax_m.set_xlim(f_min, f_max)
 
-        # Open-loop caveat: BRS is estimated from spontaneous fluctuations in
-        # a closed-loop system (BP and HR mutually drive each other).
-        fig.text(0.5, 0.01,
-                 "Open-loop estimate — BP and HR are mutually coupled.",
+        # Open-loop caveat: the transfer estimate uses spontaneous fluctuations
+        # in a closed-loop system.  The wording differs by input channel.
+        sig_lower = self._sig.lower()
+        if sig_lower.startswith("bp"):
+            caveat = "Open-loop estimate — BP and HR are mutually coupled."
+        else:
+            caveat = "Open-loop estimate — respiration and HR are mutually coupled."
+        fig.text(0.5, 0.01, caveat,
                  ha="center", va="bottom", fontsize=5, color="#888888",
                  style="italic")
 
@@ -209,9 +215,11 @@ class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
             ax.plot(result.timestamps, result.modulus[i], linewidth=1.0,
                     color=color, label=name, zorder=2)
             drawn += 1
-        ax.set_title(label, fontsize=9)
+        unit = modulus_unit(self._sig)
+        sig_label = input_signal_label(self._sig)
+        ax.set_title(f"{label}\ninput: {sig_label}", fontsize=9)
         ax.set_xlabel("Time (s)", fontsize=8)
-        ax.set_ylabel("|H|", fontsize=8)
+        ax.set_ylabel(f"|H| [{unit}]" if unit else "|H|", fontsize=8)
         ax.tick_params(labelsize=7)
         if drawn:
             ax.legend(fontsize=6, loc="upper right")
