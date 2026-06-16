@@ -884,11 +884,11 @@ $$f_\text{resp} = \frac{1}{N-1} \sum_{k=1}^{N-1} \frac{1}{t_{k+1} - t_k}$$
 
 This matches CARSPAN's $1/\overline{\text{MeanIn}}$ for the `RespPeriod` profile. Blank when fewer than two phases fall inside the epoch.
 
-**`hf_resp_in_band`** — a validity flag: `1.0` when the mean breathing frequency lies inside the configured HF band $[f_\text{HF}^\text{low}, f_\text{HF}^\text{high}]$ (default 0.15–0.40 Hz, i.e. 9–24 breaths/min), `0.0` when it falls outside, blank when undeterminable. It is the band-membership indicator
+**`hf_resp_in_band`** — a validity flag: `True` when the mean breathing frequency lies inside the configured HF band $[f_\text{HF}^\text{low}, f_\text{HF}^\text{high}]$ (default 0.15–0.40 Hz, i.e. 9–24 breaths/min), `False` when it falls outside, blank when undeterminable. It is the band-membership indicator
 
 $$\mathbb{1}\!\left[\, f_\text{HF}^\text{low} \le f_\text{resp} \le f_\text{HF}^\text{high} \,\right]$$
 
-A `0.0` is a red flag that the epoch's HF power may not reflect RSA at all. The actual statistical correction (e.g. regressing HF on `resp_freq` across epochs or subjects) is deliberately left to your statistics package (R / JASP) — these two columns are the inputs that make it possible.
+A `False` is a red flag that the epoch's HF power may not reflect RSA at all. The actual statistical correction (e.g. regressing HF on `resp_freq` across epochs or subjects) is deliberately left to your statistics package (R / JASP) — these two columns are the inputs that make it possible.
 
 ---
 
