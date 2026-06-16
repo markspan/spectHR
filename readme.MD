@@ -26,7 +26,7 @@ This project is a work in progress. Blood-pressure support (calibration, beat-by
 <summary><a href="#the-interface-at-a-glance"><strong>The interface at a glance</strong></a></summary>
 
 - [Step 1, Check and clean the ECG (Preprocessing tab)](#step-1-check-and-clean-the-ecg-preprocessing-tab)
-- [Step 2, Inspect the IBI timeseries (IBI Series tab)](#step-2-inspect-the-ibi-timeseries-ibi-series-tab)
+- [Step 2, Inspect the Heartrate timeseries (HR Series tab)](#step-2-inspect-the-ibi-timeseries-ibi-series-tab)
 - [Blood pressure (Blood Pressure tab)](#blood-pressure-blood-pressure-tab)
 - [Step 3, Define your analysis segments (Epochs tab)](#step-3-define-your-analysis-segments-epochs-tab)
 - [Step 4, Explore autonomic dynamics (Poincaré tab)](#step-4-explore-autonomic-dynamics-poincaré-tab)
@@ -241,7 +241,7 @@ The window is divided into two areas. On the left is a narrow **file tree** list
 | Tab | What you do there |
 |-----|------------------|
 | **Preprocessing** | Verify and correct R-peak detection |
-| **IBI Series** | Review the IBI timeseries |
+| **HR Series** | Review the Heartrate timeseries |
 | **Blood Pressure** | Review the calibrated blood-pressure waveform (shown only when the recording has a BP channel) |
 | **Poincaré** | Explore beat-to-beat dynamics visually |
 | **Epochs** | Draw and adjust your analysis segments |
@@ -278,9 +278,9 @@ Right-clicking a file gives you **Reload Raw**, **Invert ECG Polarity**, and **R
 
 ---
 
-### Step 2, Inspect the IBI timeseries (IBI Series tab)
+### Step 2, Inspect the Heartrate timeseries (HR Series tab)
 
-Once the peaks look correct, switch to the **IBI Series tab** to see heart rate over time in beats per minute. If a breathing signal is available it is shown as a faint green overlay.
+Once the peaks look correct, switch to the **HR Series tab** to see heart rate over time in beats per minute. If a breathing signal is available it is shown as a faint green overlay.
 
 ![Heart Rate Series](images/IBIWindow.png)
 
