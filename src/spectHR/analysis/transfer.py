@@ -707,7 +707,7 @@ def compute_transfer(
     bands: Optional[Dict[str, Tuple[float, float]]] = None,
     min_coherence: float = 0.5,
     f_max: float = 0.5,
-    _smooth: bool = False,
+    _smooth: bool = True,
     taper: str = "carspan_index",
     alpha_taper: float = 0.10,
     _full_beat_input: Optional[Tuple[np.ndarray, np.ndarray]] = None,

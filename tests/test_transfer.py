@@ -321,13 +321,14 @@ class TestComputeTransferSingleEpoch:
         assert res.phase_unwrapped.shape == (n,)
         assert res.coherence.shape       == (n,)
 
-    def test_coherence_is_unity_unsmoothed(self):
-        """Single-epoch transfer has one realisation per bin, so |C|^2 = 1
-        by construction (no spectral smoother is applied).  This catches
-        accidental amplitude regressions."""
+    def test_coherence_is_unity_without_smoother(self):
+        """Without the spectral smoother each frequency bin has one
+        realisation of the cross- and auto-spectra, so |C|^2 = 1 by
+        construction.  The smoother is on by default; pass _smooth=False
+        to verify the baseline."""
         cs = make_spectral_cs(0.25, duration_s=200.0)
         rsp = _coupled_respiration(cs.times)
-        res = compute_transfer(cs, rsp)
+        res = compute_transfer(cs, rsp, _smooth=False)
         # Allow a few ULPs from the divisions.
         assert np.all(np.isfinite(res.coherence))
         assert np.allclose(res.coherence, 1.0, atol=1e-9)
