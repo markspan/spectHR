@@ -313,7 +313,7 @@ class MainWindow(QMainWindow):
         # and the analysis parameters.
         _HEAVY = DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS
         data_specs = {
-            _DOCK_PREPROCESSING: (PrepPlotWidget, DataChange.HRV | DataChange.EPOCHS),
+            _DOCK_PREPROCESSING: (PrepPlotWidget, DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS),
             _DOCK_HR:            (HRSeriesWidget, DataChange.HRV | DataChange.EPOCHS),
             _DOCK_BP:            (BPSeriesWidget, DataChange.BP | DataChange.EPOCHS),
             _DOCK_POINCARE:      (PoincareWidget, DataChange.HRV | DataChange.EPOCHS),
