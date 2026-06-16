@@ -94,9 +94,6 @@ _DEFAULT: dict = {
         "detrend_lambda": 500.0,
     },
     "CardioParameters": {
-        "PrsaAnalysis": {
-            "prsa_window": 30,
-        },
         "IbiClassification": {
             "window_length":        20,
             "n_std":                3.0,
@@ -115,6 +112,9 @@ _DEFAULT: dict = {
     },
     "IcgAnalysis": {
         "b_point_guard_ms": 30.0,
+    },
+    "PrsaAnalysis": {
+        "prsa_window": 30,
     },
     "Profiles": {
         "window (sec)":       30.0,

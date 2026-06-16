@@ -124,7 +124,7 @@ _EXCLUDED_SECTIONS = {"Directories"}
 # future workspace additions stay editable even before they're explicitly
 # routed.
 _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration", "IcgAnalysis", "Logging")),
+    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration", "IcgAnalysis", "PrsaAnalysis", "Logging")),
     ("PSD Settings",         ("FrequencyAnalysis",)),
     ("Profile Settings",     ("Profiles",)),
     ("Spectrogram Settings", ("Spectrogram",)),

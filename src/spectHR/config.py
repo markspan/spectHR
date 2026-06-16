@@ -620,7 +620,10 @@ class WorkspaceView:
     @property
     def prsa_window(self) -> int:
         """PRSA half-window size in beats (default 30, Bauer 2006)."""
-        pa = (self._ws.get("CardioParameters", {}) or {}).get("PrsaAnalysis", {}) or {}
+        # Top-level PrsaAnalysis (current); fall back to old nested location.
+        pa = (self._ws.get("PrsaAnalysis", {})
+              or (self._ws.get("CardioParameters", {}) or {}).get("PrsaAnalysis", {})
+              or {})
         return int(pa.get("prsa_window", 30))
 
     # ---- profile / spectrogram / transfer ---------------------------
