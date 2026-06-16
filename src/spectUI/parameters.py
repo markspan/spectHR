@@ -138,7 +138,7 @@ _DEFAULT: dict = {
         "min_coherence":             0.5,
         "f_min":                     0.0,
         "f_max":                     0.5,
-        "smooth":                    True,
+        "smooth_for_display":        True,
         "phase_view":               "wrapped",
         "show_coherence_threshold":  True,
         "coherence_mask_alpha":      0.20,

@@ -74,7 +74,7 @@ class AnalysisConfig:
     rsa_max_ibi_deviation:  float | None = None
     rsa_max_rate_deviation: float | None = None
     b_point_guard_ms:       float = 30.0
-    # Transfer config: dict with keys input_signal, min_coherence, smooth,
+    # Transfer config: dict with keys input_signal, min_coherence,
     # f_max, and bands {name: (lo, hi)}.  None disables transfer metrics.
     transfer_config:        Any   = None
     prsa_window:            int   = 30
@@ -96,7 +96,6 @@ class AnalysisConfig:
         tf_cfg = {
             "input_signal": ts["input_signal"],
             "min_coherence": ts["min_coherence"],
-            "smooth": ts["smooth"],
             "f_max": ts["f_max"],
             "bands": bands,
         }

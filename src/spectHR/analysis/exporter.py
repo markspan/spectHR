@@ -247,7 +247,6 @@ class EpochExporter:
 
                     epoch["scalars"].update(transfer_summary_scalars(
                         tf_res,
-                        smooth        = bool(tf_cfg["smooth"]),
                         min_coherence = float(tf_cfg["min_coherence"]),
                         f_max         = float(tf_cfg["f_max"]),
                     ))

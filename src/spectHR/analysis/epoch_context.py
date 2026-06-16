@@ -99,7 +99,7 @@ class EpochContext:
     icg_ts:                  Any   = field(default=None,  kw_only=True)
     ecg_ts:                  Any   = field(default=None,  kw_only=True)
     b_point_guard_ms:        float = field(default=30.0,  kw_only=True)
-    # Dict with keys: input_signal, min_coherence, smooth, f_max, bands.
+    # Dict with keys: input_signal, min_coherence, f_max, bands.
     # None disables transfer metrics.
     transfer_config:         Any   = field(default=None,  kw_only=True)
     prsa_window:             int   = field(default=30,    kw_only=True)
@@ -255,7 +255,6 @@ class EpochContext:
                 input_signal=sig,
                 bands=cfg.get("bands") or {},
                 min_coherence=float(cfg.get("min_coherence", 0.5)),
-                smooth=bool(cfg.get("smooth", True)),
                 f_max=float(cfg.get("f_max", 0.5)),
             )
         except Exception:

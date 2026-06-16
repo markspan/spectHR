@@ -210,7 +210,7 @@ def _transfer_result() -> TransferResult:
 class TestTransferSummaryScalars:
     def test_per_band_and_metadata_columns(self):
         out = transfer_summary_scalars(
-            _transfer_result(), smooth=True, min_coherence=0.5, f_max=0.4,
+            _transfer_result(), min_coherence=0.5, f_max=0.4,
         )
         assert out["LF_tf_modulus"] == pytest.approx(12.5)
         assert out["LF_tf_phase_w"] == pytest.approx(0.3)
@@ -220,7 +220,7 @@ class TestTransferSummaryScalars:
         assert out["LF_tf_n_coherent"] == 7
         assert out["tf_method"] == "carspan_transfer"
         assert out["tf_freq_resolution"] == pytest.approx(0.05)
-        assert out["tf_smooth"] == 1
+        assert "tf_smooth" not in out
         assert out["tf_min_coherence"] == pytest.approx(0.5)
         assert out["tf_f_max"] == pytest.approx(0.4)
 
@@ -233,8 +233,8 @@ class TestTransferSummaryScalars:
             method=tr.method, band_results=None,
         )
         out = transfer_summary_scalars(
-            tr, smooth=False, min_coherence=0.5, f_max=0.4,
+            tr, min_coherence=0.5, f_max=0.4,
         )
         assert not any(k.startswith("LF_tf_") for k in out)
-        assert out["tf_smooth"] == 0
+        assert "tf_smooth" not in out
         assert out["tf_method"] == "carspan_transfer"

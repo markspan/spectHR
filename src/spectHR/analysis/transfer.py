@@ -706,8 +706,8 @@ def compute_transfer(
     input_signal: str = INPUT_SIGNAL_RSP,
     bands: Optional[Dict[str, Tuple[float, float]]] = None,
     min_coherence: float = 0.5,
-    smooth: bool = False,
     f_max: float = 0.5,
+    _smooth: bool = False,
     taper: str = "carspan_index",
     alpha_taper: float = 0.10,
     _full_beat_input: Optional[Tuple[np.ndarray, np.ndarray]] = None,
@@ -749,11 +749,6 @@ def compute_transfer(
     min_coherence : float
         Minimum squared coherence for a bin to contribute to the band
         modulus/phase means (CARSPAN ``MinCoh``, default 0.5).
-    smooth : bool
-        Apply 3-point triangular smoother to auto- and cross-spectra
-        *before* computing transfer / coherence.  Use ``True`` for
-        sliding-window (profile) analysis; leave ``False`` (default) for
-        single-epoch spectral analysis.
     f_max : float
         Upper frequency limit of the native grid (default 0.5 Hz).
     taper : {"carspan_index", "scipy"}
@@ -857,12 +852,11 @@ def compute_transfer(
     auto_ibi = _auto_spectrum(dft_ibi, T)
     cross    = _cross_spectrum(dft_in, dft_ibi, T)
 
-    if smooth:
-        # Profile path: 3-point triangular smoother applied INSIDE Pascal's
-        # AutoSpectrum / CrossSpectrum when WindowSize=3 (T_AnaFunctions.pas
-        # 443-487 / 519-570). The single _smooth3 helper handles the real
-        # and complex branches together (Pascal calls AutoSpectrum and
-        # CrossSpectrum, which are separate functions sharing a kernel).
+    if _smooth:
+        # Profile path: 3-point triangular smoother (Pascal WindowSize=3,
+        # T_AnaFunctions.pas 443-487/519-570).  Not exposed publicly —
+        # compute_transfer_profile passes _smooth=True; single-epoch
+        # callers never need it.
         auto_in  = _smooth3(auto_in)
         auto_ibi = _smooth3(auto_ibi)
         cross    = _smooth3(cross)
@@ -915,7 +909,6 @@ def compute_transfer(
 def transfer_summary_scalars(
     tf_res: "TransferResult",
     *,
-    smooth: bool,
     min_coherence: float,
     f_max: float,
 ) -> dict:
@@ -925,7 +918,7 @@ def transfer_summary_scalars(
     ``{band}_tf_modulus``, ``{band}_tf_phase_w`` (wrapped), ``{band}_tf_phase_u``
     (unwrapped), ``{band}_tf_coherence`` (weighted), ``{band}_tf_n_points`` and
     ``{band}_tf_n_coherent``; plus the run-level metadata ``tf_method``,
-    ``tf_freq_resolution``, ``tf_smooth``, ``tf_min_coherence`` and ``tf_f_max``.
+    ``tf_freq_resolution``, ``tf_min_coherence`` and ``tf_f_max``.
 
     Centralising the column-naming here keeps the CSV/HDF5 column set defined in
     the analysis layer rather than in the UI export code.  The settings
@@ -945,7 +938,6 @@ def transfer_summary_scalars(
 
     scalars["tf_method"]          = tf_res.method or ""
     scalars["tf_freq_resolution"] = float(tf_res.freq_resolution)
-    scalars["tf_smooth"]          = int(smooth)
     scalars["tf_min_coherence"]   = float(min_coherence)
     scalars["tf_f_max"]           = float(f_max)
     return scalars
@@ -961,22 +953,21 @@ def compute_transfer_profile(
     step_s: float,
     min_coherence: float = 0.5,
     f_max: float = 0.5,
-    smooth: bool = True,
     taper: str = "carspan_index",
     alpha_taper: float = 0.10,
 ) -> "TransferProfileResult":
     """Sliding-window band-transfer profile (CARSPAN ``RunTransfer`` profile path).
 
-    Equivalent to calling :func:`compute_transfer` with ``smooth=True``
-    (CARSPAN ``AutoSpectrum`` / ``CrossSpectrum`` ``WindowSize=3``) inside
-    each window, then collecting the :class:`BandTransfer` summaries into
-    ``(n_bands, n_windows)`` arrays -- exactly as
+    Calls :func:`compute_transfer` with the 3-point triangular spectral
+    smoother (CARSPAN ``AutoSpectrum`` / ``CrossSpectrum`` ``WindowSize=3``)
+    enabled inside each window, then collects the :class:`BandTransfer`
+    summaries into ``(n_bands, n_windows)`` arrays — exactly as
     ``T_AnaFunctions.pas:RunTransfer`` (profile branch, lines 2562-2608)
     feeds the band-summary loop in ``T_Output.pas``.
 
-    The 3-point triangular smoother (``WindowSize=3``) applied by
-    ``smooth=True`` is what makes the per-window coherence estimates
-    fall below 1, matching CARSPAN's profile computation.
+    The smoother is always applied in the profile path (not user-configurable):
+    it is what allows per-window coherence estimates to fall below 1,
+    matching CARSPAN's profile computation.
 
     Parameters
     ----------
@@ -1072,7 +1063,7 @@ def compute_transfer_profile(
                 input_signal=input_signal,
                 bands=bands,
                 min_coherence=min_coherence,
-                smooth=smooth,      # CARSPAN profile default WindowSize=3; toggleable from UI
+                _smooth=True,
                 f_max=f_max,
                 taper=taper,
                 alpha_taper=alpha_taper,

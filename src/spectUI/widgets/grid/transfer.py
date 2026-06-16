@@ -15,6 +15,7 @@ from __future__ import annotations
 import numpy as np
 from matplotlib.figure import Figure
 
+from spectHR.analysis._smoothing import smooth3 as _smooth3
 from spectHR.analysis.transfer import (
     compute_transfer,
     compute_transfer_profile,
@@ -45,6 +46,7 @@ class _TransferBase(EpochGridView):
     def _resolve(self, config) -> None:
         view = self._view(config)
         self._ts = view.transfer_settings
+        self._smooth_display: bool = bool(self._ts.get("smooth_for_display", True))
         self._display_bands = view.display_bands     # {name: {low, high, color}}
         self._bands = {
             name: (float(s["low"]), float(s["high"]))
@@ -95,7 +97,6 @@ class TransferPlotWidget(_TransferBase):
             input_signal=self._sig,
             bands=self._bands,
             min_coherence=self._ts["min_coherence"],
-            smooth=self._ts["smooth"],
             f_max=self._ts["f_max"],
         )
 
@@ -112,8 +113,9 @@ class TransferPlotWidget(_TransferBase):
         min_coh = float(self._ts["min_coherence"])
 
         # ---- modulus: black line + under-curve band fills ----------------
-        draw_band_fills(ax_m, f, result.modulus, self._display_bands)
-        ax_m.plot(f, result.modulus, "k", linewidth=1.0, alpha=0.85, zorder=3)
+        mod = _smooth3(result.modulus) if self._smooth_display else result.modulus
+        draw_band_fills(ax_m, f, mod, self._display_bands)
+        ax_m.plot(f, mod, "k", linewidth=1.0, alpha=0.85, zorder=3)
         unit = modulus_unit(self._sig)
         ax_m.set_ylabel(f"|H| [{unit}]" if unit else "|H|", fontsize=7)
         ax_m.set_ylim(bottom=0.0)

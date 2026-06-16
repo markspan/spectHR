@@ -370,7 +370,7 @@ def transfer_settings_from_workspace(
     """Return ``workspace["TransferAnalysis"]`` flattened with defaults applied.
 
     Returned keys: ``input_signal``, ``window_s``, ``step_s``,
-    ``min_coherence``, ``f_min``, ``f_max``, ``smooth``, ``phase_view``,
+    ``min_coherence``, ``f_min``, ``f_max``, ``smooth_for_display``, ``phase_view``,
     ``show_coherence_threshold``, ``coherence_mask_alpha``.
 
     The Bode-plot widgets read this dict directly, the band edges they
@@ -385,7 +385,7 @@ def transfer_settings_from_workspace(
         "min_coherence": 0.5,
         "f_min": 0.0,
         "f_max": 0.5,
-        "smooth": True,
+        "smooth_for_display": True,
         "phase_view": "wrapped",
         "show_coherence_threshold": True,
         "coherence_mask_alpha": 0.20,
@@ -402,7 +402,7 @@ def transfer_settings_from_workspace(
         "min_coherence": float(cfg.get("min_coherence", defaults["min_coherence"])),
         "f_min": float(cfg.get("f_min", defaults["f_min"])),
         "f_max": float(cfg.get("f_max", defaults["f_max"])),
-        "smooth": bool(cfg.get("smooth", defaults["smooth"])),
+        "smooth_for_display": bool(cfg.get("smooth_for_display", defaults["smooth_for_display"])),
         "phase_view": str(cfg.get("phase_view", defaults["phase_view"])),
         "show_coherence_threshold": bool(
             cfg.get("show_coherence_threshold", defaults["show_coherence_threshold"])

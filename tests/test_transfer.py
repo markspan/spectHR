@@ -322,23 +322,23 @@ class TestComputeTransferSingleEpoch:
         assert res.coherence.shape       == (n,)
 
     def test_coherence_is_unity_unsmoothed(self):
-        """Without spectral smoothing each frequency bin has one
-        realisation of the cross- and auto-spectra, so |C|^2 = 1 by
-        construction. This catches accidental amplitude regressions."""
+        """Single-epoch transfer has one realisation per bin, so |C|^2 = 1
+        by construction (no spectral smoother is applied).  This catches
+        accidental amplitude regressions."""
         cs = make_spectral_cs(0.25, duration_s=200.0)
         rsp = _coupled_respiration(cs.times)
-        res = compute_transfer(cs, rsp, smooth=False)
+        res = compute_transfer(cs, rsp)
         # Allow a few ULPs from the divisions.
         assert np.all(np.isfinite(res.coherence))
         assert np.allclose(res.coherence, 1.0, atol=1e-9)
 
-    def test_smoothing_drops_coherence_below_one(self):
-        """The 3-point smoother averages neighbouring spectra, which
-        breaks the per-bin "one realisation" property and yields
-        sub-unity coherence at most bins."""
+    def test_profile_smoother_drops_coherence_below_one(self):
+        """The 3-point smoother (_smooth=True, profile path) averages
+        neighbouring spectra, breaking the per-bin "one realisation"
+        property and yielding sub-unity coherence at most bins."""
         cs = make_spectral_cs(0.25, duration_s=200.0)
         rsp = _coupled_respiration(cs.times)
-        res = compute_transfer(cs, rsp, smooth=True)
+        res = compute_transfer(cs, rsp, _smooth=True)
         assert np.median(res.coherence) < 1.0
 
     def test_phase_wrapped_within_pi(self):
