@@ -873,6 +873,7 @@ class MainWindow(QMainWindow):
     @property
     def _workspace_file(self) -> Path:
         """The single default settings file in the OS config directory."""
+        logger.info(f"Workspace file in: {user_config_dir("spectHR")}")
         return Path(user_config_dir("spectHR")) / "workspace.json"
 
     def _restore(self) -> None:

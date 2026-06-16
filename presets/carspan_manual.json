@@ -1,9 +1,4 @@
 {
-    "Directories": {
-        "DataDirectory": "C:/Users/mmspa/Documents/GitHub/spectHR/ExampleData/data",
-        "CacheDirectory": "C:\\Users\\mmspa\\AppData\\Local\\spectHR\\spectHR\\Cache",
-        "OutputDirectory": "C:\\Users\\mmspa\\Documents\\spectHR\\export"
-    },
     "FrequencyAnalysis": {
         "method": "carspan_strict",
         "bands": {
