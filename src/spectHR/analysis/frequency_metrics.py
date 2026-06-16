@@ -42,6 +42,19 @@ from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 # @epoch_metric_group), so this set is empty.  Kept for import compatibility.
 STANDARD_BAND_POWER_COLUMNS: frozenset[str] = frozenset()
 
+# Suffix → tooltip for dynamically-named band-power columns.
+# The Results widget uses this to annotate {band}_power column headers whose
+# names depend on the workspace band configuration and are not known at import.
+BAND_POWER_COLUMN_TOOLTIP: dict[str, str] = {
+    "_power": (
+        "Spectral power integrated over this frequency band (rectangular "
+        "summation on the display-grid spectrum). Units are mMI² by default "
+        "(dimensionless, normalised by squared mean heart rate) or ms² when "
+        "the Welch units setting is switched. Computed by the active PSD "
+        "method (CARSPAN, Welch, or Lomb-Scargle)."
+    ),
+}
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers

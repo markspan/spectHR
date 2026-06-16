@@ -41,6 +41,9 @@ from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
 
 __all__ = ["resp_freq", "hf_resp_in_band"]
 
+# Columns whose float value (1.0 / 0.0) should be displayed as True / False.
+BOOLEAN_METRIC_COLUMNS: frozenset[str] = frozenset({"hf_resp_in_band"})
+
 
 def _mean_breath_hz(ctx):
     """Mean breathing frequency (Hz) for the epoch, or None."""
@@ -62,7 +65,7 @@ def resp_freq(ctx) -> float:
 
 @epoch_metric
 def hf_resp_in_band(ctx) -> float:
-    """1.0 if mean breathing frequency lies inside the HF band, else 0.0 (Grossman & Taylor 2007)."""
+    """True if mean breathing frequency lies inside the HF band, else False (Grossman & Taylor 2007). A False value flags that the epoch's HF power may not reflect RSA."""
     f = _mean_breath_hz(ctx)
     if f is None:
         return float("nan")

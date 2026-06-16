@@ -102,6 +102,7 @@ class EpochContext:
     # Dict with keys: input_signal, min_coherence, smooth, f_max, bands.
     # None disables transfer metrics.
     transfer_config:         Any   = field(default=None,  kw_only=True)
+    prsa_window:             int   = field(default=30,    kw_only=True)
 
     # ------------------------------------------------------------------ #
     # CardioSeriesProtocol — explicit forwarding to self.view            #

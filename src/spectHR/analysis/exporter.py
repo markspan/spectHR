@@ -350,20 +350,36 @@ def _fmt_csv(value) -> str:
     return "" if math.isnan(f) else f"{f:.6g}"
 
 
+def _fmt_csv_bool(value) -> str:
+    """Format a 1.0/0.0 metric as True/False for CSV (blank for NaN/None)."""
+    if value is None:
+        return ""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return "" if math.isnan(f) else ("True" if f else "False")
+
+
 def write_results_csv(path, table) -> None:
     """Write the per-epoch metrics *table* to *path* as CSV (one row per epoch).
 
     *table* is the :class:`~spectHR.session.MetricsTable` from
     :meth:`Session.epochs_table` (``labels`` / ``columns`` / ``values``).
     """
+    from spectHR.analysis.respiration_metrics import BOOLEAN_METRIC_COLUMNS
     path = Path(path)
     with path.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["epoch", *table.columns])
         for i, label in enumerate(table.labels):
             row = [str(label)]
-            for c in range(len(table.columns)):
-                row.append(_fmt_csv(table.values[i, c] if table.values.size else None))
+            for c, col in enumerate(table.columns):
+                val = table.values[i, c] if table.values.size else None
+                if col in BOOLEAN_METRIC_COLUMNS:
+                    row.append(_fmt_csv_bool(val))
+                else:
+                    row.append(_fmt_csv(val))
             w.writerow(row)
 
 

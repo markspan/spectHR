@@ -90,8 +90,13 @@ _DEFAULT: dict = {
             "nfreqs": 100, "fmin_floor": 0.0001, "units": "mMI²",
         },
         "confidence_interval_alpha": 0.05,
+        "detrend":        False,
+        "detrend_lambda": 500.0,
     },
     "CardioParameters": {
+        "PrsaAnalysis": {
+            "prsa_window": 30,
+        },
         "IbiClassification": {
             "window_length":        20,
             "n_std":                3.0,

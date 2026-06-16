@@ -759,6 +759,8 @@ class ParametersEditorDialog(QDialog):
         # Spectrogram
         "Spectrogram.window (sec)":                ["step (sec)"],
         "Spectrogram.show_respiration_overlay":    ["colormap"],
+        # PSD - detrending
+        "FrequencyAnalysis.detrend": ["detrend_lambda"],
         # PSD - CARSPAN
         "FrequencyAnalysis.carspan.freq_resolution":    ["signal"],
         "FrequencyAnalysis.carspan.window":             ["plot_units"],
@@ -777,6 +779,8 @@ class ParametersEditorDialog(QDialog):
     _LABEL_ALIASES: dict[str, str] = {
         "FrequencyAnalysis.welch.units":       "plot units",
         "FrequencyAnalysis.lombscargle.units": "plot units",
+        "FrequencyAnalysis.detrend":           "smoothness-priors detrend",
+        "FrequencyAnalysis.detrend_lambda":    "detrend λ (Tarvainen 2002)",
         "CardioParameters.EcgPreprocessing.display_filtered": "show filtered ECG in plot",
     }
 

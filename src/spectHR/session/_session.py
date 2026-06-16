@@ -77,6 +77,7 @@ class AnalysisConfig:
     # Transfer config: dict with keys input_signal, min_coherence, smooth,
     # f_max, and bands {name: (lo, hi)}.  None disables transfer metrics.
     transfer_config:        Any   = None
+    prsa_window:            int   = 30
 
     @classmethod
     def from_workspace(cls, workspace: dict | None) -> AnalysisConfig:
@@ -106,6 +107,7 @@ class AnalysisConfig:
             rsa_max_rate_deviation=rate_dev,
             b_point_guard_ms=ws.b_point_guard_ms,
             transfer_config=tf_cfg,
+            prsa_window=ws.prsa_window,
         )
 
 
@@ -271,6 +273,7 @@ class Session:
                 ecg_ts=_win(self.ecg),
                 b_point_guard_ms=config.b_point_guard_ms,
                 transfer_config=config.transfer_config,
+                prsa_window=config.prsa_window,
             )
             contexts[label] = ctx
 

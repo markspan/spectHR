@@ -499,7 +499,11 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
         welch=welch_opts,
         lombscargle=ls_opts,
         carspan=carspan_opts,
-        detrend_lambda=float(fa.get("detrend_lambda", 0.0) or 0.0),
+        detrend_lambda=(
+            float(fa.get("detrend_lambda", 500.0) or 500.0)
+            if fa.get("detrend", False)
+            else 0.0
+        ),
     )
 
 
@@ -612,6 +616,12 @@ class WorkspaceView:
         """PEP B-point guard zone width in ms (default 30)."""
         icg = self._ws.get("IcgAnalysis", {}) or {}
         return float(icg.get("b_point_guard_ms", 30.0))
+
+    @property
+    def prsa_window(self) -> int:
+        """PRSA half-window size in beats (default 30, Bauer 2006)."""
+        pa = (self._ws.get("CardioParameters", {}) or {}).get("PrsaAnalysis", {}) or {}
+        return int(pa.get("prsa_window", 30))
 
     # ---- profile / spectrogram / transfer ---------------------------
 

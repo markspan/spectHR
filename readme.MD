@@ -82,6 +82,10 @@ This project is a work in progress. Blood-pressure support (calibration, beat-by
 <summary><a href="#non-linear-and-stationarity-metrics"><strong>Non-linear and stationarity metrics</strong></a></summary>
 </details>
 
+<details open>
+<summary><a href="#prsa-metrics"><strong>PRSA metrics (DC / AC)</strong></a></summary>
+</details>
+
 <details>
 <summary><a href="#power-spectral-density-method-details"><strong>Power Spectral Density, method details</strong></a></summary>
 
@@ -171,7 +175,15 @@ The CARSPAN bands are sometimes written with the names **low / middle (mid) / hi
 
 > **The two conventions are not interchangeable.** CARSPAN LF (0.07–0.14 Hz) is **narrower and shifted** relative to Task Force LF (0.04–0.15 Hz), and the VLF edges differ too. Numeric LF or VLF values from spectHR's default bands cannot be compared directly with published Task Force values unless you reconfigure the band edges to match. HF (0.15–0.40 Hz) is identical in both conventions.
 
-**VU-DAMS preset.** If you are comparing spectHR output against VU-DAMS 5.0 (VU Ambulatory Monitoring System software), load the ready-made workspace preset `presets/vuams_welch.json` via **Settings → Load settings**. It sets bands and Welch parameters to match what VU-DAMS computes by default:
+**Ready-made presets.** Load any of these via **Settings → Load settings**; they deep-merge onto your current workspace so directory settings and other preferences are preserved.
+
+| Preset file | Convention | Notes |
+|---|---|---|
+| `presets/carspan.json` | CARSPAN / Groningen defaults | VLF 0.02–0.06, LF 0.07–0.14, HF 0.15–0.40 Hz; CARSPAN spectral method |
+| `presets/taskforce.json` | Task Force (1996) | TP 0.0033–0.40, VLF 0.0033–0.04, LF 0.04–0.15, HF 0.15–0.40 Hz; Welch with Hann window |
+| `presets/vuams_welch.json` | VU-DAMS 5.0 | TP/LF/HF bands, Welch with quadratic window and Tarvainen detrending to match VU-DAMS output |
+
+**VU-DAMS preset detail.** If you are comparing spectHR output against VU-DAMS 5.0 (VU Ambulatory Monitoring System software), load `presets/vuams_welch.json`. It sets bands and Welch parameters to match what VU-DAMS computes by default:
 
 | Parameter | VU-DAMS (DAMS 5.0 manual §5.3.1) | preset value |
 |-----------|----------------------------------|--------------|
@@ -194,7 +206,7 @@ Two minor differences remain. VU-DAMS applies the smoothness-prior detrending **
 
 **Artefacts are critical.** A single missed or spurious R-peak introduces broadband spectral energy that can swamp the genuine HRV signal ([Mulder, 1988](#ref-mulder1988)). This is why spectHR requires the user to inspect and verify the IBI series before computing any metrics.
 
-**Detrending (optional).** Slow, non-stationary trends in the IBI series — warm-up, fatigue, posture shifts — leak into the VLF and LF bands and can bias exactly the mid-frequency band that mental-effort research cares about. spectHR offers the smoothness-priors detrending method of [Tarvainen et al. (2002)](#ref-tarvainen2002), which removes such trends without the band-edge distortion of a plain high-pass filter. It is **off by default**; set `detrend_lambda` (the regularisation strength λ; a typical value is ~500) under **Settings → Edit settings → Frequency Analysis** to enable it. Detrending conditions the tachogram-based PSD methods (**Welch**, **Lomb-Scargle**) only; the faithful CARSPAN spectral paths are never altered.
+**Detrending (optional).** Slow, non-stationary trends in the IBI series — warm-up, fatigue, posture shifts — leak into the VLF and LF bands and can bias exactly the mid-frequency band that mental-effort research cares about. spectHR offers the smoothness-priors detrending method of [Tarvainen et al. (2002)](#ref-tarvainen2002), which removes such trends without the band-edge distortion of a plain high-pass filter. It is **off by default**; enable it with the **smoothness-priors detrend** checkbox under **Settings → Edit settings → PSD Settings**. When enabled, the adjacent **detrend λ** field sets the regularisation strength (default 500, the value from the original paper; higher values remove slower trends). Detrending conditions the tachogram before PSD computation and applies to all PSD methods (**Welch**, **CARSPAN**, **Lomb-Scargle**); the λ field is greyed out while the toggle is off so it acts as a memory of the last-used value.
 
 **Normalisation.** Absolute spectral power in ms² scales with mean IBI squared, increasing at lower heart rates. The CARSPAN mMI² normalisation corrects for this automatically. For the Welch method the output unit is configurable: the default is **mMI²** (normalised, heart-rate-independent) but can be switched to **ms²** (raw IBI power, not normalised) via the `"units"` key in *Edit settings*. Whether to normalise HRV for mean heart rate is genuinely unresolved ([de Geus et al., 2019](#ref-degeus2019)), and no single recommendation fits all research questions.
 
@@ -405,11 +417,13 @@ The **Results tab** shows a table with one row per epoch:
 - **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
 - **Non-linear / stationarity:** DFA short-term scaling exponent (`dfa_a1`) and the reverse-arrangements stationarity z-score (`stationarity_z`) — see [Non-linear and stationarity metrics](#non-linear-and-stationarity-metrics) below.
-- **Frequency-domain:** FullRange, VLF, LF, HF power and LF/HF ratio (mMI² by default). *The LF/HF ratio is reported because the literature expects it, but it should be read descriptively: it is **not** a clean index of sympatho-vagal balance ([Billman, 2013](#ref-billman2013)).*
+- **PRSA:** Deceleration Capacity (`dc`, ms) and Acceleration Capacity (`ac`, ms) from Phase-Rectified Signal Averaging — see [PRSA metrics](#prsa-metrics) below.
+- **Frequency-domain:** One `{band}_power` column per configured frequency band (mMI² by default) and `lf_hf_ratio`. Band columns are data-driven: renaming or adding a band in **PSD Settings** changes the column names automatically. *The LF/HF ratio is reported because the literature expects it, but it should be read descriptively: it is **not** a clean index of sympatho-vagal balance ([Billman, 2013](#ref-billman2013)).*
 - **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)), the mean breathing frequency (`resp_freq`, Hz) and an HF-validity flag (`hf_resp_in_band`) — see [Respiration-context HF](#respiration-context-hf) below. These columns are always present; the values are blank when the corresponding channel is absent.
+- **Transfer (per band):** `{band}_tf_modulus` (coherence-gated mean |H(f)|), `{band}_tf_coherence` (power-weighted mean squared coherence), and `{band}_tf_phase_w` (coherence-gated mean wrapped phase, radians) — one set per configured frequency band (excluding FullRange). Present when a blood-pressure or respiration channel is available; blank otherwise. Hover over a column header for a full description.
 - **Sympathetic (ICG):** pre-ejection period (`pep`, ms) when the recording carries an ICG `dZ/dt` channel — see [Pre-ejection period (PEP)](#pre-ejection-period-pep) below.
 
-Each column header carries the metric's docstring as a tooltip. Per-band **transfer** summaries (modulus, phase, weighted coherence) and the spectral-profile summaries are not shown in the on-screen table but are written into the HDF5 export when the relevant channel is present.
+Each column header carries the metric's docstring as a tooltip.
 
 #### RSA lag
 
@@ -451,6 +465,7 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 | **Time-domain HRV** | `count`, `mean`, `median`, `min`, `max`, `rmssd`, `sdnn`, `sdsd`, `stationarity`, … |
 | **Poincaré** | `sd1`, `sd2`, `sd_ratio`, `ellipse_area` |
 | **Non-linear / stationarity** | `dfa_a1`, `stationarity_z` |
+| **PRSA** | `dc` (Deceleration Capacity, ms), `ac` (Acceleration Capacity, ms) |
 | **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default), `lf_hf_ratio` |
 | **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `resp_freq`, `hf_resp_in_band`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
 | **Sympathetic (ICG)** | the scored landmarks `pep_q_ms` (Q-onset), `pep_b_ms` (B-point), `pep_c_ms` (C-point; all latencies in ms relative to the R-peak) and `pep_n_beats` (ensemble size), followed by `pep` itself. All present; blank when no ICG `dZ/dt` channel |
@@ -468,6 +483,7 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
   attrs: subject,
          rmssd, sdnn, sdsd, mean, median, count, min, max,   ← time-domain
          stationarity, stationarity_z, dfa_a1,                ← stationarity / non-linear
+         dc, ac,                                               ← PRSA
          sd1, sd2, sd_ratio, ellipse_area,                    ← Poincaré
          {band}_power, lf_hf_ratio,                           ← band powers
          bp_sbp/bp_dbp/bp_pp/bp_map, resp_mvo/resp_svo,        ← BP / respiration
@@ -708,8 +724,8 @@ All settings — the analysis parameters **and** the working directories — liv
 
 **Settings → Edit settings** is a tabbed dialog:
 
-- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag; RSA overlay; `rsp_source` — `icg` vs `accelerometer`, see [Supported channels](#supported-channels)), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *ICG Analysis* (PEP B-point guard `b_point_guard_ms`, see [Pre-ejection period](#pre-ejection-period-pep)), *Logging* (minimum log level shown in the Log dock / console).
-- **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level (everything under `FrequencyAnalysis` in the workspace JSON).
+- **General Settings**: *IBI Classification* (window length, threshold multiplier, TL ceiling), *ECG Preprocessing* (high-pass filter), *Respiration Analysis* (per-epoch flag; RSA lag; RSA overlay; `rsp_source` — `icg` vs `accelerometer`, see [Supported channels](#supported-channels)), *Calibration* (blood-pressure `bp_scale` / `bp_zero`), *ICG Analysis* (PEP B-point guard `b_point_guard_ms`, see [Pre-ejection period](#pre-ejection-period-pep)), *PRSA Analysis* (`prsa_window` — half-window size in beats for DC/AC, default 30, see [PRSA metrics](#prsa-metrics)), *Logging* (minimum log level shown in the Log dock / console).
+- **PSD Settings**: PSD method, band edges and colours, method-specific parameters, CI level; **smoothness-priors detrend** toggle and **detrend λ** (default 500; see [Practical considerations](#practical-considerations)).
 - **Profile Settings**: which bands to plot in the Profiles tab (`bands` tick-box list), the sliding-window parameters (`window (sec)`, `step (sec)`), and the optional `smooth_for_display` time-axis smoother.
 
 Changes take effect immediately, but are held only in memory until you **Save settings** (Ctrl+S) — which writes the whole workspace back to `~/workspace.json`. On the next launch spectHR reloads that file, so settings persist across sessions only once saved. (Window geometry and the dock layout are remembered separately and automatically.)
@@ -1045,6 +1061,24 @@ $$z = \frac{A - \mu_A}{\sigma_A} \;\sim\; \mathcal{N}(0, 1)$$
 </div>
 
 </details>
+
+---
+
+## PRSA metrics
+
+**Phase-Rectified Signal Averaging** (PRSA; [Bauer et al., 2006](#ref-bauer2006)) extracts rhythmic components from a non-stationary IBI series without requiring stationarity. It works by identifying anchor beats, extracting short windows around each anchor, and averaging them: rhythmic patterns that phase-lock to the anchor survive; noise cancels.
+
+**`dc`** — **Deceleration Capacity** (ms). Anchors on beats where the IBI *increased* (the heart slowed). A positive DC reflects the strength of the parasympathetic brake. In post-MI populations, DC is a strong independent predictor of mortality, outperforming SDNN and RMSSD in some cohorts ([Bauer et al., 2006](#ref-bauer2006)).
+
+**`ac`** — **Acceleration Capacity** (ms). Anchors on beats where the IBI *decreased* (the heart sped up). AC is negative by convention; a more negative value indicates stronger acceleration drive (combined sympathetic / vagal withdrawal).
+
+Both are computed by the four-point formula:
+
+$$\text{DC} = \frac{X[0] + X[+1] - X[-1] - X[-2]}{4}, \qquad \text{AC defined analogously}$$
+
+where $X[\cdot]$ is the phase-averaged window (length $2T$) evaluated at the anchor position. Returns NaN when fewer than $2T+2$ clean beats are available or no qualifying anchors exist in the epoch.
+
+The half-window size $T$ (default **30 beats**, the standard clinical value from Bauer et al.) is configurable under **Settings → Edit settings → General Settings → PRSA Analysis → prsa_window**. For short epochs or tachycardic recordings a smaller $T$ (e.g. 10–15) may be necessary.
 
 ---
 
@@ -1706,6 +1740,9 @@ spectHR is released under the GNU GPL-3.0 license. See the [LICENSE](LICENSE) fi
 
 <a id="ref-arutyunova2024"></a>
 Arutyunova, K.R., Bakhchina, A.V., Konovalov, D.I., Margaryan, M., Filimonov, A.V., & Shishalov, I.S. (2024). Heart rate dynamics for cognitive load estimation in a driving simulation task. *Scientific Reports*, 14, 31656. https://doi.org/10.1038/s41598-024-79728-x
+
+<a id="ref-bauer2006"></a>
+Bauer, A., Kantelhardt, J.W., Barthel, P., Schneider, R., Mäkikallio, T., Ulm, K., Rost, M., Möller, A., Huikuri, H.V., Bunde, A., Schömig, A., & Schmidt, G. (2006). Deceleration capacity of heart rate as a predictor of mortality after myocardial infarction: cohort study. *The Lancet*, 367(9523), 1674–1681. https://doi.org/10.1016/S0140-6736(06)68735-7
 
 <a id="ref-bendat2010"></a>
 Bendat, J.S., & Piersol, A.G. (2010). *Random Data: Analysis and Measurement Procedures* (4th ed.). Hoboken, NJ: Wiley. (Reverse-arrangements test for stationarity.)

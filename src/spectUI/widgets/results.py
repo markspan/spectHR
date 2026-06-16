@@ -186,9 +186,11 @@ class ResultsTableWidget(QWidget):
         if col in docs:
             return docs[col]
         from spectHR.analysis.transfer_metrics import TRANSFER_COLUMN_TOOLTIPS
-        for suffix, tip in TRANSFER_COLUMN_TOOLTIPS.items():
-            if col.endswith(suffix):
-                return tip
+        from spectHR.analysis.frequency_metrics import BAND_POWER_COLUMN_TOOLTIP
+        for lookup in (TRANSFER_COLUMN_TOOLTIPS, BAND_POWER_COLUMN_TOOLTIP):
+            for suffix, tip in lookup.items():
+                if col.endswith(suffix):
+                    return tip
         return None
 
     def _populate(self, labels, columns: list[str], values: np.ndarray) -> None:
@@ -206,12 +208,16 @@ class ResultsTableWidget(QWidget):
                 if tip:
                     header.setToolTip(tip)
 
+        from spectHR.analysis.respiration_metrics import BOOLEAN_METRIC_COLUMNS
         for r, label in enumerate(labels):
             name_item = QTableWidgetItem(str(label))
             self.table.setItem(r, 0, name_item)
-            for c, _col in enumerate(columns):
+            for c, col in enumerate(columns):
                 val = values[r, c] if values.size else np.nan
-                text = "" if (val is None or np.isnan(val)) else f"{val:.4g}"
+                if col in BOOLEAN_METRIC_COLUMNS:
+                    text = "" if (val is None or np.isnan(val)) else ("True" if val else "False")
+                else:
+                    text = "" if (val is None or np.isnan(val)) else f"{val:.4g}"
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.table.setItem(r, c + 1, item)
