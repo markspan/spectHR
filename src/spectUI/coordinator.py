@@ -10,8 +10,14 @@ than wire "when X changes, refresh Y" across every widget, each dock declares
 *what it depends on* (a :class:`DataChange` mask) and implements ``refresh()``;
 the coordinator owns the mapping.
 
-Two responsibilities, both dependency-driven:
+Three responsibilities, all dependency-driven:
 
+* **Session broadcast.**  :meth:`set_session` hands the loaded/edited session to
+  every registered dock — but only computes it for the **visible** ones; a
+  hidden dock keeps the session pending and applies it the first time it is
+  shown (:meth:`widget_shown`).  So opening only the pre-processing dock and
+  leaving the PSD / profile / transfer docks closed skips their computation
+  entirely until you actually open them.
 * **Refresh fan-out.**  :meth:`notify` walks the registered docks and refreshes
   those whose dependencies intersect the change — immediately if the dock is
   visible, lazily (on next show, via :meth:`widget_shown`) otherwise, so a
@@ -47,7 +53,8 @@ class DataChange(Flag):
 class _Entry:
     widget: QWidget
     depends: DataChange
-    dirty: bool = False
+    dirty: bool = False          # a dependency changed while hidden → refresh on show
+    needs_session: bool = False  # a new session arrived while hidden → set_session on show
 
 
 class DataCoordinator(QObject):
@@ -59,6 +66,10 @@ class DataCoordinator(QObject):
         self._timelines: list = []
         # The window all timeline docks share; the last one any dock reported.
         self._shared_window: tuple[float, float] | None = None
+        # The current session / config, so a dock revealed later can be brought
+        # up to date without the host re-broadcasting.
+        self._session = None
+        self._config = None
 
     # ------------------------------------------------------------------
     # Registration
@@ -82,6 +93,36 @@ class DataCoordinator(QObject):
         widget.viewChanged.connect(lambda w=widget: self._sync_window(w))
 
     # ------------------------------------------------------------------
+    # Session broadcast
+    # ------------------------------------------------------------------
+
+    def set_session(self, session, config) -> None:
+        """Hand *session* / *config* to the docks, computing only visible ones.
+
+        Visible docks get ``set_session`` now (and compute); hidden docks keep it
+        pending and apply it the first time they are shown — so closed plot docks
+        never compute until opened.
+        """
+        self._session = session
+        self._config = config
+        for entry in self._entries:
+            if entry.widget.isVisible():
+                entry.needs_session = False
+                entry.dirty = False
+                entry.widget.set_session(session, config)
+            else:
+                entry.needs_session = True
+
+    def set_config(self, config) -> None:
+        """Update the current *config* so a later-shown dock uses fresh params.
+
+        Used when only the analysis parameters change (no new session): visible
+        docks are refreshed via :meth:`notify`, and a dock revealed afterwards
+        applies the pending session with these parameters.
+        """
+        self._config = config
+
+    # ------------------------------------------------------------------
     # Refresh fan-out
     # ------------------------------------------------------------------
 
@@ -103,15 +144,25 @@ class DataCoordinator(QObject):
     def widget_shown(self, widget: QWidget) -> None:
         """Bring a just-shown *widget* up to date.
 
-        A timeline dock adopts the shared window so the axes stay coupled even
-        across a hide/show; any dock marked dirty while hidden is refreshed.
+        A dock that has a session pending (it was hidden when the session
+        arrived) receives it now and computes for the first time; otherwise a
+        dock marked dirty by a dependency change while hidden is refreshed.  A
+        timeline dock then adopts the shared window so the axes stay coupled
+        across a hide/show.
         """
-        if widget in self._timelines and self._shared_window is not None:
-            widget.apply_window(*self._shared_window)
         for entry in self._entries:
-            if entry.widget is widget and entry.dirty:
+            if entry.widget is not widget:
+                continue
+            if entry.needs_session and self._session is not None:
+                entry.needs_session = False
+                entry.dirty = False
+                entry.widget.set_session(self._session, self._config)
+            elif entry.dirty:
                 entry.dirty = False
                 entry.widget.refresh()
+            break
+        if widget in self._timelines and self._shared_window is not None:
+            widget.apply_window(*self._shared_window)
 
     # ------------------------------------------------------------------
     # Window sync

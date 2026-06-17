@@ -32,10 +32,14 @@ class FakeDock(QWidget):
     def __init__(self):
         super().__init__()
         self.refreshed = 0
+        self.sessions = []
         self._win = (0.0, 10.0)
 
     def refresh(self):
         self.refreshed += 1
+
+    def set_session(self, session, config):
+        self.sessions.append((session, config))
 
     def current_window(self):
         return self._win
@@ -67,6 +71,20 @@ coord.widget_shown(d)
 assert d.refreshed == 1, "dirty dock refreshes when shown"
 coord.widget_shown(d)
 assert d.refreshed == 1, "clean dock does not refresh again"
+
+# --- lazy session broadcast: only visible docks compute on load ------------
+coord_s = DataCoordinator()
+vis, hid = FakeDock(), FakeDock()
+vis.show(); hid.hide()
+coord_s.register(vis, DataChange.HRV)
+coord_s.register(hid, DataChange.HRV)
+coord_s.set_session("SESS", "CFG")
+assert vis.sessions == [("SESS", "CFG")], "visible dock receives session at once"
+assert hid.sessions == [], "hidden dock defers its session (no computation)"
+coord_s.widget_shown(hid)
+assert hid.sessions == [("SESS", "CFG")], "hidden dock applies session when first shown"
+coord_s.widget_shown(hid)
+assert len(hid.sessions) == 1, "no recompute on re-show without a change"
 
 # --- window sync across timeline docks -------------------------------------
 ta, tb = FakeDock(), FakeDock()

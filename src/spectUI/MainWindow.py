@@ -579,10 +579,12 @@ class MainWindow(QMainWindow):
             self._resp_key = new_resp_key
             self._session = recompute_breath_phases(self._session, self._parameters)
             self._scheduler.invalidate()
-            for widget in self._data_docks.values():
-                widget.set_session(self._session, self._parameters)
+            self._coordinator.set_session(self._session, self._parameters)
         else:
             self._scheduler.invalidate()
+            # Keep the coordinator's params current so a dock opened later
+            # applies its pending session with the new parameters.
+            self._coordinator.set_config(self._parameters)
             self._coordinator.notify(DataChange.PARAMS)
         # Settings are *not* auto-saved — the user persists them explicitly with
         # Save workspace (Settings menu).  See _restore / save_workspace.
@@ -718,9 +720,8 @@ class MainWindow(QMainWindow):
             self.unsetCursor()
             return
         self.unsetCursor()
-        for widget in self._data_docks.values():
-            widget.set_session(self._session, self._parameters)
         self._scheduler.invalidate()
+        self._coordinator.set_session(self._session, self._parameters)
         self._save_cache()
 
     def _load_file(self, path: Path, *, ignore_cache: bool = False) -> None:
@@ -776,8 +777,9 @@ class MainWindow(QMainWindow):
         )
         self._resp_key = self._current_resp_key()  # baseline for change detection
         self._scheduler.invalidate()  # discard any stale background results
-        for widget in self._data_docks.values():
-            widget.set_session(session, self._parameters)
+        # Only the visible docks compute now; hidden ones apply the session when
+        # first opened (see DataCoordinator.set_session / widget_shown).
+        self._coordinator.set_session(session, self._parameters)
         self._apply_dock_availability(session)
 
     def _apply_dock_availability(self, session: Session) -> None:
