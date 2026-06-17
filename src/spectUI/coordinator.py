@@ -1,11 +1,11 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`DataCoordinator` — keeps the docks in sync with the data and each other.
+:class:`DataCoordinator`, keeps the docks in sync with the data and each other.
 
 One :class:`~spectHR.session.Session` is the single source of truth.  When an
-editing dock changes part of it — R-peaks, blood-pressure calibration, the
-epoch table — the docks that *derive* from that part must repaint.  Rather
+editing dock changes part of it, R-peaks, blood-pressure calibration, the
+epoch table, the docks that *derive* from that part must repaint.  Rather
 than wire "when X changes, refresh Y" across every widget, each dock declares
 *what it depends on* (a :class:`DataChange` mask) and implements ``refresh()``;
 the coordinator owns the mapping.
@@ -13,20 +13,20 @@ the coordinator owns the mapping.
 Three responsibilities, all dependency-driven:
 
 * **Session broadcast.**  :meth:`set_session` hands the loaded/edited session to
-  every registered dock — but only computes it for the **visible** ones; a
+  every registered dock, but only computes it for the **visible** ones; a
   hidden dock keeps the session pending and applies it the first time it is
   shown (:meth:`widget_shown`).  So opening only the pre-processing dock and
   leaving the PSD / profile / transfer docks closed skips their computation
   entirely until you actually open them.
 * **Refresh fan-out.**  :meth:`notify` walks the registered docks and refreshes
-  those whose dependencies intersect the change — immediately if the dock is
+  those whose dependencies intersect the change, immediately if the dock is
   visible, lazily (on next show, via :meth:`widget_shown`) otherwise, so a
   hidden, expensive dock recomputes at most once when the user reveals it.
 * **Window sync.**  Timeline docks registered with :meth:`register_timeline`
   scroll together: when one reports a new window the others follow.
 
 The coordinator is Qt-aware (it reads ``isVisible`` and connects signals) but
-holds no analysis logic — it is pure UI orchestration.
+holds no analysis logic, it is pure UI orchestration.
 """
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ class DataCoordinator(QObject):
         """Register a timeline dock so its window stays in sync with siblings.
 
         The widget must expose ``viewChanged`` (signal), ``current_window()``
-        and ``apply_window(x_min, x_max)`` — the :class:`TimelineView` contract.
+        and ``apply_window(x_min, x_max)``, the :class:`TimelineView` contract.
         """
         self._timelines.append(widget)
         widget.viewChanged.connect(lambda w=widget: self._sync_window(w))
@@ -100,7 +100,7 @@ class DataCoordinator(QObject):
         """Hand *session* / *config* to the docks, computing only visible ones.
 
         Visible docks get ``set_session`` now (and compute); hidden docks keep it
-        pending and apply it the first time they are shown — so closed plot docks
+        pending and apply it the first time they are shown, so closed plot docks
         never compute until opened.
         """
         self._session = session

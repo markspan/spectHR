@@ -1,6 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""EDF / EDF+C loader — primary target is VU-AMS 5fs exports."""
+"""EDF / EDF+C loader, primary target is VU-AMS 5fs exports."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -268,7 +268,7 @@ def load_edf(path: Path, **kwargs) -> Session:
     ---------------
     ECG               → ``ecg-[vuams]``      (primary ECG for HRV)
     DZ                → ``rsp_icg-[vuams]``   (ICG / thoracic-impedance
-                                              respiration candidate — what
+                                              respiration candidate, what
                                               VU-AMS scores RSA from)
     MXR + MYR + MZR   → ``rsp_acc-[vuams]``   (PCA respiration-surrogate candidate)
     one of the above  → ``rsp-[vuams]``       (the *active* respiration channel)
@@ -350,7 +350,7 @@ def load_edf(path: Path, **kwargs) -> Session:
     # motion) varies strongly with posture (the gravity vector and the axis
     # capturing chest expansion change between supine / standing / sitting)
     # and can lock onto non-respiratory body-motion components, detecting
-    # breaths at the wrong rate and roughly halving RSA relative to VU-AMS —
+    # breaths at the wrong rate and roughly halving RSA relative to VU-AMS,
     # but it is useful for ambulatory/movement recordings or devices without
     # an impedance channel.
     #

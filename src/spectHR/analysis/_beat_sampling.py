@@ -8,11 +8,11 @@ These are used by every "beat-by-beat" parameter pass that gates a waveform
 (blood pressure, respiration, …) on the cardiac R-peaks, so they live in one
 place rather than being duplicated per series module:
 
-* :func:`median_dt`            — the waveform's uniform sample interval.
-* :func:`rpeak_sample_indices` — map R-peak times onto sample indices.
-* :func:`nanmean`              — NaN-safe mean (no warning for all-NaN).
+* :func:`median_dt`, the waveform's uniform sample interval.
+* :func:`rpeak_sample_indices`, map R-peak times onto sample indices.
+* :func:`nanmean`, NaN-safe mean (no warning for all-NaN).
 
-This module is series-agnostic on purpose — it knows nothing about pressure,
+This module is series-agnostic on purpose, it knows nothing about pressure,
 respiration or RSA, only about turning ``(times, values, rpeak_times)`` into
 indexable beat windows.
 """

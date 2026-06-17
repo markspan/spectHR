@@ -23,7 +23,7 @@ def _evt_code_resolver(other_codes, rtop_code):
     """Dialog-backed resolver for the headless ``.evt`` loader hook.
 
     File loading runs on a worker ``QThread``, but Qt dialogs may only be
-    created on the GUI thread — so the dialog is marshalled there via
+    created on the GUI thread, so the dialog is marshalled there via
     :func:`~spectUI.gui_invoke.run_in_gui_thread`, which blocks the
     loader until the user has chosen the start/stop codes.
     """

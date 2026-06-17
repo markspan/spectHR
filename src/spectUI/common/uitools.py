@@ -159,7 +159,7 @@ def style_axis_clean(ax: Axes, *, show_y: bool = False) -> None:
         Target axes.
     show_y
         When ``False`` (default) the y-axis ticks, labels and left spine are
-        hidden — the historic behaviour used for overview strips and any axis
+        hidden, the historic behaviour used for overview strips and any axis
         where amplitude is not meaningful to the reader.
         When ``True`` the y-axis and left spine are kept so the signal
         amplitude can be read off the plot (e.g. blood pressure in mmHg,

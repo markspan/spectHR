@@ -854,7 +854,7 @@ def compute_transfer(
 
     if _smooth:
         # Profile path: 3-point triangular smoother (Pascal WindowSize=3,
-        # T_AnaFunctions.pas 443-487/519-570).  Not exposed publicly —
+        # T_AnaFunctions.pas 443-487/519-570).  Not exposed publicly,
         # compute_transfer_profile passes _smooth=True; single-epoch
         # callers never need it.
         auto_in  = _smooth3(auto_in)
@@ -961,7 +961,7 @@ def compute_transfer_profile(
     Calls :func:`compute_transfer` with the 3-point triangular spectral
     smoother (CARSPAN ``AutoSpectrum`` / ``CrossSpectrum`` ``WindowSize=3``)
     enabled inside each window, then collects the :class:`BandTransfer`
-    summaries into ``(n_bands, n_windows)`` arrays — exactly as
+    summaries into ``(n_bands, n_windows)`` arrays, exactly as
     ``T_AnaFunctions.pas:RunTransfer`` (profile branch, lines 2562-2608)
     feeds the band-summary loop in ``T_Output.pas``.
 

@@ -14,8 +14,8 @@ profiles / transfers.
 Public surface
 --------------
 EpochExporter(workspace, contexts).collect() -> dict[label, data]
-write_results_csv(path, table)        — the per-epoch metrics table, one CSV row per epoch.
-write_results_h5(path, table, epoch_data) — every array + scalar, hierarchically.
+write_results_csv(path, table), the per-epoch metrics table, one CSV row per epoch.
+write_results_h5(path, table, epoch_data), every array + scalar, hierarchically.
 """
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ class EpochExporter:
                 "respiration": None, "icg": None,
             }
 
-            # ---- PSD (free — ctx.psd already cached) ----------------
+            # ---- PSD (free, ctx.psd already cached) ----------------
             psd_res = ctx.psd
             if psd_res is not None and psd_method is not None:
                 try:
@@ -303,7 +303,7 @@ class EpochExporter:
                     logger.debug(
                         "Transfer-profile export failed for epoch %r: %s", label, exc)
 
-            # ---- RSA per-breath (free — ctx.rsa_beats already cached) --
+            # ---- RSA per-breath (free, ctx.rsa_beats already cached) --
             rsa_raw = ctx.rsa_beats
             if rsa_raw is not None and rsa_raw.size > 0:
                 try:
@@ -323,7 +323,7 @@ class EpochExporter:
                 except Exception as exc:
                     logger.debug("RSA export failed for epoch %r: %s", label, exc)
 
-            # ---- ICG ensemble (free — ctx.pep_detail already cached) ---
+            # ---- ICG ensemble (free, ctx.pep_detail already cached) ---
             detail = ctx.pep_detail
             if detail is not None:
                 epoch["icg"] = detail
@@ -334,7 +334,7 @@ class EpochExporter:
 
 
 # ---------------------------------------------------------------------------
-# Writers — CSV (the metrics table) and HDF5 (all per-epoch arrays)
+# Writers, CSV (the metrics table) and HDF5 (all per-epoch arrays)
 # ---------------------------------------------------------------------------
 
 
@@ -400,7 +400,7 @@ def _h5_write_node(grp, data: dict) -> None:
         elif isinstance(val, (int, float, str, np.integer, np.floating, bool)):
             try:
                 grp.attrs[name] = val
-            except Exception:   # noqa: BLE001 — unserialisable attr, skip
+            except Exception:   # noqa: BLE001, unserialisable attr, skip
                 grp.attrs[name] = str(val)
         else:
             arr = np.asarray(val)

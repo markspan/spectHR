@@ -28,7 +28,7 @@ from spectUI.settings import AppSettings
 app = QApplication.instance() or QApplication([])
 
 # Isolate to an explicit .ini file (the two-arg QSettings would hit the real
-# per-user store — the registry on Windows — regardless of setDefaultFormat).
+# per-user store, the registry on Windows, regardless of setDefaultFormat).
 ini = str(Path(tempfile.mkdtemp()) / "app.ini")
 
 

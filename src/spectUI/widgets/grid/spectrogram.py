@@ -89,14 +89,14 @@ class Spectrogram3DPlotWidget(_SpectrogramBase):
     """Per-epoch HRV spectrograms as 3-D surfaces (V2)."""
 
     DOCK_NAME = "spectrogram3d"
-    #: Two tiles per row, but each twice the usual height — the 3-D surface
+    #: Two tiles per row, but each twice the usual height, the 3-D surface
     #: needs vertical room yet leaves whitespace at the sides, so a tall,
     #: half-width tile reads better than one stretched full-width.
     TILE_HEIGHT_FACTOR = 2.0
 
     def _render_tile(self, fig: Figure, label: str, result) -> None:
         ax = fig.add_subplot(111, projection="3d")
-        # Let the cube use almost the whole figure — Axes3D otherwise leaves a
+        # Let the cube use almost the whole figure, Axes3D otherwise leaves a
         # wide left/right margin.
         ax.set_position([0.0, 0.0, 1.0, 1.0])
         if result.error or result.power_grid.size == 0:

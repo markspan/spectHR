@@ -5,7 +5,7 @@ Headless-import guard.
 
 ``spectHR`` is the algorithm/computation library and must stay strictly
 separated from ``spectUI`` (the PySide6 Qt UI). Importing any part of
-``spectHR`` must therefore **not** drag in the GUI stack — both for clean
+``spectHR`` must therefore **not** drag in the GUI stack, both for clean
 layering and because pulling PySide6 into a headless process is what
 historically caused the test suite to abort (a Qt init-order segfault when
 a "headless" test imported the UI indirectly).
@@ -74,7 +74,7 @@ def test_headless_import_pulls_no_gui(mod: str) -> None:
     """Importing *mod* must not load any GUI package into sys.modules."""
     proc = _run_import_check(mod)
     assert proc.returncode == 0, (
-        f"Importing {mod!r} pulled GUI modules into sys.modules — spectHR "
+        f"Importing {mod!r} pulled GUI modules into sys.modules, spectHR "
         f"must stay headless and independent of spectUI/Qt.\n"
         f"{proc.stderr.strip()}"
     )

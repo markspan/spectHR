@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`ProfilePlotWidget` — per-epoch band-power profile dock.
+:class:`ProfilePlotWidget`, per-epoch band-power profile dock.
 
 One tile per active epoch showing the sliding-window band-power profile
 (:func:`compute_band_power_profile`), one coloured line per frequency band.

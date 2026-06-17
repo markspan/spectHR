@@ -80,7 +80,7 @@ class TestBandPowersGroup:
         # The custom band gets a column ...
         assert "myband_power" in cols
         assert np.isfinite(cols["myband_power"])
-        # ... and so do the standard bands — all powers flow through band_powers.
+        # ... and so do the standard bands, all powers flow through band_powers.
         for name in _method_with_custom_band().bands:
             assert f"{name.lower()}_power" in cols
 
@@ -98,7 +98,7 @@ class TestBandPowersGroup:
         )
         ctx = EpochContext(cs, psd_method=method)
         cols = band_powers(ctx)
-        # All configured bands — including the standard ones — get a column.
+        # All configured bands, including the standard ones, get a column.
         for name in method.bands:
             assert f"{name.lower()}_power" in cols
 

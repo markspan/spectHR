@@ -3,11 +3,11 @@
 """
 Tests for the pre-processing widget's headless helpers.
 
-The :mod:`spectUI.widgets.prep` package keeps its moving parts — window
-state, navigation arithmetic, and R-peak editing — as small Qt-free
+The :mod:`spectUI.widgets.prep` package keeps its moving parts, window
+state, navigation arithmetic, and R-peak editing, as small Qt-free
 objects so they can be reasoned about in isolation.  Importing them still
 pulls in the ``spectUI`` GUI package (and therefore the Qt + matplotlib
-stack), which must never enter the shared pytest process — doing so
+stack), which must never enter the shared pytest process, doing so
 triggers the Qt init-order segfault that ``test_headless_imports`` exists
 to prevent.  So, like that module, these checks run in a **fresh
 subprocess**.  The driver below uses plain ``assert`` statements; on

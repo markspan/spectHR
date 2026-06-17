@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`PSDPlotWidget` — per-epoch power-spectral-density dock.
+:class:`PSDPlotWidget`, per-epoch power-spectral-density dock.
 
 One tile per active epoch, each the IBI power spectrum
 (:meth:`PSDEngine.compute`) with the configured frequency bands shaded.  The

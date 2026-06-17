@@ -376,12 +376,12 @@ def build():
 
     # ── LEGEND ───────────────────────────────────────────────────────────────
     LLy = L7y + L7h + 18
-    legend=[('ui','spectUI  —  workspace I/O · configuration · plot widgets · export'),
-            ('cfg','Configuration translation  —  PsdMethod · psd_method_from_workspace'),
-            ('fil','File loading  —  loaders (XDF, NFF, CSV, PKL)  ·  PreProcessFile'),
-            ('ds','spectHR · DataSet  —  PhysioData · CardioSeries · RespirationSeries · TimeSeries · Epoch'),
-            ('ana','spectHR · Analysis  —  PSD backends · Transfer · Profiles · Metrics · RSA · EpochContext'),
-            ('exp','Export  —  CSV (scalar metrics per epoch) + HDF5 (full arrays)')]
+    legend=[('ui','spectUI, workspace I/O · configuration · plot widgets · export'),
+            ('cfg','Configuration translation, PsdMethod · psd_method_from_workspace'),
+            ('fil','File loading, loaders (XDF, NFF, CSV, PKL)  ·  PreProcessFile'),
+            ('ds','spectHR · DataSet, PhysioData · CardioSeries · RespirationSeries · TimeSeries · Epoch'),
+            ('ana','spectHR · Analysis, PSD backends · Transfer · Profiles · Metrics · RSA · EpochContext'),
+            ('exp','Export, CSV (scalar metrics per epoch) + HDF5 (full arrays)')]
     for i,(cls,lbl) in enumerate(legend):
         col,row=i%3,i//3
         lx=36+col*465; ly=LLy+26+row*28

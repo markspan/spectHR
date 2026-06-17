@@ -1,14 +1,14 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`ResultsTableWidget` — the per-epoch metrics table.
+:class:`ResultsTableWidget`, the per-epoch metrics table.
 
-One row per active epoch, one column per registered ``@epoch_metric`` —
+One row per active epoch, one column per registered ``@epoch_metric``,
 time-domain HRV, frequency-domain band powers, blood-pressure, respiration,
 RSA and ICG.  The whole table comes from :meth:`Session.epochs_table`, which
 takes an :class:`~spectHR.session.AnalysisConfig` built from the *workspace*,
 so every analysis setting (PSD method, bands, RSA rejection, BP calibration,
-B-point guard) flows straight into the numbers — the widget computes nothing
+B-point guard) flows straight into the numbers, the widget computes nothing
 itself.
 """
 from __future__ import annotations
@@ -76,7 +76,7 @@ class ResultsTableWidget(QWidget):
         self.setVisible(True)
         self.refresh()
 
-    def set_epoch(self, name: str) -> None:  # noqa: ARG002 — table shows all epochs
+    def set_epoch(self, name: str) -> None:  # noqa: ARG002, table shows all epochs
         """No-op: the table always shows every active epoch."""
 
     def refresh(self) -> None:
@@ -138,7 +138,7 @@ class ResultsTableWidget(QWidget):
             write_results_csv(Path(directory) / f"{base}.csv", table)
             data = EpochExporter(self._workspace_dict(), table.contexts).collect()
             write_results_h5(Path(directory) / f"{base}.h5", table, data)
-        except Exception as exc:  # noqa: BLE001 — report, never crash the UI
+        except Exception as exc:  # noqa: BLE001, report, never crash the UI
             QMessageBox.critical(self, "Export error",
                                  f"Could not export results:\n{exc}")
             return

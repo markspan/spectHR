@@ -173,7 +173,7 @@ class _LoadWorker(QObject):
         try:
             session = _load_session(self._path)
             # A cached ``.pkl`` is an already-processed Session (it may carry
-            # the user's R-peak edits) — re-running the pipeline would, e.g.,
+            # the user's R-peak edits), re-running the pipeline would, e.g.,
             # flip an already-corrected ECG a second time, and recomputing
             # breath phases on every cache load would defeat the cache.  Only
             # raw files get the conditioning pipeline; the ``.pkl`` is trusted
@@ -194,7 +194,7 @@ def _session_summary(session: Session) -> str:
     """Return a multi-line human-readable summary of *session*."""
     lines: list[str] = []
 
-    # Duration — prefer the experiment epoch, fall back to sample axes
+    # Duration, prefer the experiment epoch, fall back to sample axes
     exp   = session.epochs.get("experiment")
     dur_s = (exp.end - exp.start) if exp else max(
         (s.times[-1] for s in session.samples.values() if len(s.times)),
@@ -307,7 +307,7 @@ class MainWindow(QMainWindow):
                        DockWidgetArea.LeftDockWidgetArea)
 
         # Which centre docks are live (take a Session) and what each derives
-        # from — the coordinator refreshes a dock when its dependencies change.
+        # from, the coordinator refreshes a dock when its dependencies change.
         # Docks not listed here are still placeholders.
         # Heavy spectral docks all derive from the R-peaks, the epoch table
         # and the analysis parameters.
@@ -586,7 +586,7 @@ class MainWindow(QMainWindow):
             # applies its pending session with the new parameters.
             self._coordinator.set_config(self._parameters)
             self._coordinator.notify(DataChange.PARAMS)
-        # Settings are *not* auto-saved — the user persists them explicitly with
+        # Settings are *not* auto-saved, the user persists them explicitly with
         # Save workspace (Settings menu).  See _restore / save_workspace.
 
     def _current_resp_key(self) -> tuple:
@@ -597,7 +597,7 @@ class MainWindow(QMainWindow):
     def _export_plots(self, directory: str) -> None:
         """Let the user pick which dock plots to save as PDFs into *directory*.
 
-        Each file is named ``{datafile}_{dock}[_{epoch}].pdf`` — the recording's
+        Each file is named ``{datafile}_{dock}[_{epoch}].pdf``, the recording's
         name plus the dock, plus the epoch label for per-epoch grid tiles.
         """
         import re
@@ -655,7 +655,7 @@ class MainWindow(QMainWindow):
                     cv.figure.savefig(out / f"{'_'.join(parts)}.pdf",
                                       bbox_inches="tight")
                     saved += 1
-                except Exception:  # noqa: BLE001 — skip a bad figure, keep going
+                except Exception:  # noqa: BLE001, skip a bad figure, keep going
                     logger.exception("Failed to save figure for %s", obj_name)
         QMessageBox.information(self, "Plots exported",
                                 f"Saved {saved} figure(s) to {out}")
@@ -710,12 +710,12 @@ class MainWindow(QMainWindow):
         self.setCursor(Qt.WaitCursor)
         try:
             self._session = transform(self._session, self._parameters)
-            # A fresh detection changes the R-top coverage — e.g. retriggering
+            # A fresh detection changes the R-top coverage, e.g. retriggering
             # over the whole recording on an EVT file that only annotated event
             # windows.  Re-evaluate the INH/EXH breath phases so they span the
             # new coverage instead of staying limited to the original R-tops.
             self._session = recompute_breath_phases(self._session, self._parameters)
-        except Exception:  # noqa: BLE001 — surface, never crash
+        except Exception:  # noqa: BLE001, surface, never crash
             logger.exception("Re-processing failed")
             self.unsetCursor()
             return
@@ -726,7 +726,7 @@ class MainWindow(QMainWindow):
 
     def _load_file(self, path: Path, *, ignore_cache: bool = False) -> None:
         if self._load_thread is not None and self._load_thread.isRunning():
-            logger.warning(f"Still loading — ignoring {path.name}")
+            logger.warning(f"Still loading, ignoring {path.name}")
             return
 
         self._loaded_raw_path = path
@@ -759,7 +759,7 @@ class MainWindow(QMainWindow):
         """Release the finished loader thread.
 
         ``deleteLater`` destroys the underlying C++ QThread, so the Python
-        references must be dropped here as well — otherwise the next
+        references must be dropped here as well, otherwise the next
         ``_load_file`` call would touch a dead wrapper and raise
         ``RuntimeError: Internal C++ object already deleted``.
         """
@@ -807,7 +807,7 @@ class MainWindow(QMainWindow):
         """Persist the current (edited) Session to the cache as a pickle.
 
         Called debounced after a data change.  On the next load of the same
-        raw file the cached Session — with the user's edits — is loaded
+        raw file the cached Session, with the user's edits, is loaded
         instead of re-parsing and re-detecting the raw recording.
         """
         if self._session is None or self._loaded_raw_path is None:
@@ -818,7 +818,7 @@ class MainWindow(QMainWindow):
             with open(cache, "wb") as f:
                 pickle.dump(self._session, f, protocol=pickle.HIGHEST_PROTOCOL)
             logger.info("Cached edited dataset → %s", cache.name)
-        except Exception:  # noqa: BLE001 — caching is best-effort
+        except Exception:  # noqa: BLE001, caching is best-effort
             logger.exception("Failed to write cache pickle %s", cache)
 
     def _on_epochs_changed(self, source) -> None:
@@ -830,7 +830,7 @@ class MainWindow(QMainWindow):
     def _jump_to_prep_at(self, t: float) -> None:
         """Raise the pre-processing dock and zoom it onto the IBI at time *t*.
 
-        Wired to a dock's ``annotationActivated`` signal — double-clicking a
+        Wired to a dock's ``annotationActivated`` signal, double-clicking a
         Poincaré point jumps to that beat in the editor.
         """
         dock = self._docks.get(_DOCK_PREPROCESSING)
@@ -847,7 +847,7 @@ class MainWindow(QMainWindow):
         The edit is already written into ``session.events["hrv"]`` (every dock
         holds the same session reference).  Invalidate the background scheduler
         so heavy derived docks recompute, and ask the coordinator to refresh
-        the docks that derive from the R-peaks — skipping the prep dock, which
+        the docks that derive from the R-peaks, skipping the prep dock, which
         has already repainted itself.
         """
         self._scheduler.invalidate()
@@ -886,13 +886,13 @@ class MainWindow(QMainWindow):
         if wf.exists():
             try:
                 self._parameters = Parameters.load(wf)
-            except Exception as exc:   # noqa: BLE001 — fall back to defaults
+            except Exception as exc:   # noqa: BLE001, fall back to defaults
                 logger.warning("Could not read %s (%s); using defaults.", wf, exc)
         else:
             try:
                 self._parameters.save(wf)   # seed with the current defaults
                 logger.info("Created default settings file %s", wf)
-            except Exception as exc:   # noqa: BLE001 — non-fatal
+            except Exception as exc:   # noqa: BLE001, non-fatal
                 logger.warning("Could not create %s: %s", wf, exc)
         self._parameters_path = wf
 

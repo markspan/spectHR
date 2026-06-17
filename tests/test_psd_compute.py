@@ -1,15 +1,15 @@
 """
-tests/test_psd_compute.py — pure compute-layer tests.
+tests/test_psd_compute.py, pure compute-layer tests.
 
 Covers
 ------
-* :class:`PSDResult` — frozen dataclass, replace() behaviour.
+* :class:`PSDResult`, frozen dataclass, replace() behaviour.
 * :class:`WelchOptions`,  :func:`compute_welch_psd`.
 * :class:`LombscargleOptions`, :func:`compute_lombscargle_psd`.
 * :class:`CarspanOptions`, :func:`compute_carspan_psd`,
   :func:`compute_carspan_psd_strict`,  :func:`carspan_strict_options`.
 
-These tests poke the compute functions directly — they don't touch
+These tests poke the compute functions directly, they don't touch
 any mixin, dataset or workspace. The mixin-level integration tests
 live in :mod:`tests.test_hrv_metrics`.
 """
@@ -58,7 +58,7 @@ def _event_times(n_beats: int = 250, mean_ibi_s: float = 0.8,
 
 
 # ===========================================================================
-# PSDResult — the new pre-filled result type
+# PSDResult, the new pre-filled result type
 # ===========================================================================
 
 
@@ -86,7 +86,7 @@ class TestPSDResult:
         assert r.unit == "Hz"           # original untouched
         assert r2.unit == "mMI²/Hz"
         assert r2.method == "carspan"
-        # Shared array fields are still the same object — replace doesn't
+        # Shared array fields are still the same object, replace doesn't
         # deep-copy. Document the contract by asserting it explicitly.
         assert r2.freqs is r.freqs
 
@@ -155,7 +155,7 @@ class TestComputeWelchPsd:
         assert r.freqs[0] >= 0.0
 
     def test_short_series_raises(self):
-        t = np.array([0.0, 0.8, 1.6])  # 3 samples — below the 4-sample floor
+        t = np.array([0.0, 0.8, 1.6])  # 3 samples, below the 4-sample floor
         v = np.array([800.0, 800.0, 800.0])
         with pytest.raises(ValueError):
             compute_welch_psd(t, v)
@@ -170,7 +170,7 @@ class TestComputeWelchPsd:
     def test_alpha_ci_widens_ci(self):
         """A larger alpha (less confidence) yields narrower bounds. With
         alpha=0.5 the CI is the 50 % interval; with alpha=0.05 it's the
-        95 % interval — so 95 % bounds are wider."""
+        95 % interval, so 95 % bounds are wider."""
         t, v = _ibi_series()
         narrow = compute_welch_psd(t, v, alpha_ci=0.5)
         wide   = compute_welch_psd(t, v, alpha_ci=0.05)
@@ -183,7 +183,7 @@ class TestComputeWelchPsd:
     def test_short_epoch_clamps_nperseg(self):
         """When the resampled series is shorter than ``nperseg``, the
         Welch back-end transparently clamps nperseg + halves the overlap
-        — no exception."""
+, no exception."""
         t, v = _ibi_series(n=30)
         opts = WelchOptions(fs=4.0, nperseg=2048, noverlap=1024)
         r = compute_welch_psd(t, v, options=opts)
@@ -411,7 +411,7 @@ class TestCarspanStrictParity:
         events = compute_carspan_psd(times, options=events_opts)
         # Same display grid (both go through the same Resample step).
         assert np.array_equal(strict.freqs, events.freqs)
-        # But the spectra differ — IBI-amplitude vs unit-impulse.
+        # But the spectra differ, IBI-amplitude vs unit-impulse.
         assert not np.allclose(strict.power, events.power)
         # And the units reflect the different native scales.
         assert strict.unit == "ms²/Hz"
@@ -501,7 +501,7 @@ class TestCarspanIndividualKnobs:
         exactly with the actual events, so the DC-removed spectra are
         numerically indistinguishable (max relative difference is at
         the float-precision noise floor). The point of this test is
-        that *neither* grid raises and both produce finite power —
+        that *neither* grid raises and both produce finite power,
         the bit-for-bit parity is exercised by
         :class:`TestCarspanStrictParity`.
         """

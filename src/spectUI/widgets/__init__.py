@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-``spectUI.widgets`` — docked plot widgets and utility dialogs.
+``spectUI.widgets``, docked plot widgets and utility dialogs.
 
 ``MainWindow`` imports widgets from this package only; it never reaches
 into the sub-modules directly.

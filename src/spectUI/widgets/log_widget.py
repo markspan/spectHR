@@ -12,7 +12,7 @@ Docked log output widget.
   ERROR=red, CRITICAL=bold dark-red).
 * Provides a level-filter combo and a clear button.
 
-Usage — once, during ``MainWindow.__init__``::
+Usage, once, during ``MainWindow.__init__``::
 
     log_dock.setWidget(LogWidget())
 

@@ -181,7 +181,7 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     "Logging.level": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     "RespirationAnalysis.rsa_overlay": ["rsa", "rsa0", "none"],
     # Respiration source for ICG-capable (VU-AMS) recordings: the thoracic
-    # impedance (ICG) signal — what VU-AMS scores RSA from — or the
+    # impedance (ICG) signal, what VU-AMS scores RSA from, or the
     # accelerometer chest-wall surrogate.
     "RespirationAnalysis.rsp_source": ["icg", "accelerometer"],
     # Breath rejection guards for the Grossman peak-to-valley RSA algorithm:
@@ -740,7 +740,7 @@ class ParametersEditorDialog(QDialog):
     # All members must be scalars in the same section; dicts, band-lists,
     # and adaptive-band widgets are never grouped horizontally.
     _HORIZONTAL_GROUPS: dict[str, list[str]] = {
-        # General Settings — keep each box compact (one row, except IBI
+        # General Settings, keep each box compact (one row, except IBI
         # Classification which has four fields and reads better as two rows).
         "CardioParameters.IbiClassification.window_length": ["n_std"],
         "CardioParameters.IbiClassification.max_ibi_sec":   ["min_peak_distance_ms"],

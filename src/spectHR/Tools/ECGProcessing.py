@@ -51,7 +51,7 @@ def detect_ecg_polarity(
         * An ``Epoch`` object (or any object with ``.start`` / ``.end``
           attributes in seconds).
         * A ``(start, end)`` tuple of floats in seconds.
-        * ``None`` (default) — falls back to the middle third of the
+        * ``None`` (default), falls back to the middle third of the
           recording, which avoids settling artefacts at both ends.
 
         The middle-third fallback is always used when the segment

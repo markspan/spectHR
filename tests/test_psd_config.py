@@ -1,11 +1,11 @@
 """
-tests/test_psd_config.py — configuration plumbing.
+tests/test_psd_config.py, configuration plumbing.
 
 Covers
 ------
-* :class:`BandSpec` — defaults, optional fields, frozenness.
-* :class:`PsdMethod` — defaults, immutability, default bands.
-* :func:`spectHR.config.psd_method_from_workspace` —
+* :class:`BandSpec`, defaults, optional fields, frozenness.
+* :class:`PsdMethod`, defaults, immutability, default bands.
+* :func:`spectHR.config.psd_method_from_workspace`,
     f_max derivation from bands, mean_convention selection,
     silent dropping of unknown JSON keys, missing-section fall-backs.
     Imported from the headless ``spectHR.config`` module so this test
@@ -78,7 +78,7 @@ class TestPsdMethod:
 
     def test_independent_default_bands_per_instance(self):
         """``field(default_factory=...)`` must give each instance its
-        own dict — otherwise mutation would leak across instances."""
+        own dict, otherwise mutation would leak across instances."""
         a = PsdMethod()
         b = PsdMethod()
         assert a.bands is not b.bands

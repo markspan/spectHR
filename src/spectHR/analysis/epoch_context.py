@@ -43,7 +43,7 @@ import numpy as np
 
 
 # ------------------------------------------------------------------ #
-# Protocol — documents the series interface @epoch_metric relies on  #
+# Protocol, documents the series interface @epoch_metric relies on  #
 # ------------------------------------------------------------------ #
 
 class CardioSeriesProtocol(Protocol):
@@ -85,7 +85,7 @@ class EpochContext:
         ``.times`` and ``.values``).  ``None`` when the channel is not loaded.
     """
 
-    # Positional-only field — no default, must be supplied first
+    # Positional-only field, no default, must be supplied first
     view: Any
 
     # All remaining fields are keyword-only (mirrors the original * separator)
@@ -105,7 +105,7 @@ class EpochContext:
     prsa_window:             int   = field(default=30,    kw_only=True)
 
     # ------------------------------------------------------------------ #
-    # CardioSeriesProtocol — explicit forwarding to self.view            #
+    # CardioSeriesProtocol, explicit forwarding to self.view            #
     # ------------------------------------------------------------------ #
 
     @property
@@ -122,7 +122,7 @@ class EpochContext:
 
     @property
     def rpeak_times(self) -> np.ndarray:
-        """R-peak timestamps for the epoch — the BP/RESP beat boundaries."""
+        """R-peak timestamps for the epoch, the BP/RESP beat boundaries."""
         return self.view.times
 
     # ------------------------------------------------------------------ #
@@ -190,7 +190,7 @@ class EpochContext:
 
     @cached_property
     def pep_detail(self):
-        """Ensemble-PEP detail dict (cached) — scored Q/B/C landmarks plus the
+        """Ensemble-PEP detail dict (cached), scored Q/B/C landmarks plus the
         ensemble-averaged ICG/ECG complexes.  ``None`` when no ICG channel is
         present or no scorable ensemble could be formed."""
         if self.icg_ts is None:

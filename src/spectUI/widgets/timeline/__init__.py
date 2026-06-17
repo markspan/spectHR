@@ -1,10 +1,10 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-``spectUI.widgets.timeline`` — shared scrolling-time-series scaffolding.
+``spectUI.widgets.timeline``, shared scrolling-time-series scaffolding.
 
-Every dock that shows a signal over a draggable time window — the ECG
-pre-processor, the HR tachogram, the blood-pressure trace — needs the same
+Every dock that shows a signal over a draggable time window, the ECG
+pre-processor, the HR tachogram, the blood-pressure trace, needs the same
 machinery: a visible-window model, zoom / pan / goto navigation, a
 full-recording overview strip with a draggable zoom rectangle, epoch
 arrows, and debounced repaints.  That machinery lives here once, in

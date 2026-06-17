@@ -58,7 +58,7 @@ def smoothness_priors_detrend(x: np.ndarray, lam: float = 500.0) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        ``x - trend`` — the zero-mean stationary component. Returned
+        ``x - trend``, the zero-mean stationary component. Returned
         unchanged when the series is too short (< 4 samples) or ``λ <= 0``.
     """
     x = np.asarray(x, dtype=float)

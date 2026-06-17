@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`EpochEditorWidget` — the epoch-table editor dock.
+:class:`EpochEditorWidget`, the epoch-table editor dock.
 
 A Gantt-style view of the recording's epochs (V2 ``epochPlotWidget``,
 re-implemented on the immutable Session): one coloured bar per epoch on a
@@ -12,7 +12,7 @@ Interaction
 * Drag a bar's left/right edge to move its start/end.
 * Click a bar's body to toggle whether the epoch is active (inactive epochs
   are dimmed rather than hidden).
-* Click an epoch's y-axis label to rename it — or clear the name to delete it.
+* Click an epoch's y-axis label to rename it, or clear the name to delete it.
 
 Every change mutates ``session.epochs`` in place and emits
 :attr:`epochsChanged`, so the coordinator refreshes every dependent dock.
@@ -31,7 +31,7 @@ from PySide6.QtWidgets import QInputDialog, QMenu, QVBoxLayout, QWidget
 from spectHR.session import Epoch, Session
 
 _EDGE_PX = 8.0     # how near an edge counts as grabbing it (screen px)
-_MIN_SPAN = 0.5    # seconds — an epoch may not be dragged narrower than this
+_MIN_SPAN = 0.5    # seconds, an epoch may not be dragged narrower than this
 
 
 class EpochEditorWidget(QWidget):
@@ -78,7 +78,7 @@ class EpochEditorWidget(QWidget):
         self.setVisible(True)
         self.refresh()
 
-    def set_epoch(self, name: str) -> None:  # noqa: ARG002 — shows all epochs
+    def set_epoch(self, name: str) -> None:  # noqa: ARG002, shows all epochs
         """No-op: the editor always shows the whole epoch table."""
 
     def refresh(self) -> None:
@@ -254,7 +254,7 @@ class EpochEditorWidget(QWidget):
 
     def _on_release(self, event) -> None:
         if self._drag is not None:
-            self._drag = None             # order stays as-is — no re-sort
+            self._drag = None             # order stays as-is, no re-sort
             self.epochsChanged.emit()
             return
         if self._press_name is not None and self._session is not None:

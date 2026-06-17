@@ -57,7 +57,7 @@ def _quadratic_window(n: int) -> np.ndarray:
     This is the window VU-DAMS applies per 1024-sample segment before the DFT
     (DAMS manual §5.3.1 / Appendix A).  It is zero at both endpoints, reaches
     its maximum of 1.0 at the centre, and tapers with a smooth parabolic
-    profile — identical to what P.D. Welch (1967) originally called "the
+    profile, identical to what P.D. Welch (1967) originally called "the
     modified periodogram window."  scipy's ``signal.get_window`` does not
     expose it by name, so it is constructed here as a NumPy array.
     """

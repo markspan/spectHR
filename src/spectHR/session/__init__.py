@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-spectHR.session — modern physiological data layer.
+spectHR.session, modern physiological data layer.
 
 Three immutable data primitives::
 
@@ -10,7 +10,7 @@ Three immutable data primitives::
     Intervals   labelled segments (INH/EXH phases, conditions)
 
 All three support zero-copy ``obj.window(start, end)`` that returns the
-same type — no separate slice class.
+same type, no separate slice class.
 
 Session layer::
 

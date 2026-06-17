@@ -4,8 +4,8 @@
 """
 Plot-ready series derived from an R-peak :class:`Events` channel.
 
-These are the small transforms the *viewer* widgets need — instantaneous
-heart rate over time, and the Poincaré point cloud — kept here in
+These are the small transforms the *viewer* widgets need, instantaneous
+heart rate over time, and the Poincaré point cloud, kept here in
 ``spectHR`` so the UI computes nothing.  Both reuse the artefact-aware
 extraction in :mod:`spectHR.analysis.ibi_helpers` (a dropped or artefact
 beat breaks the chain rather than bridging it), so they share one
@@ -48,8 +48,8 @@ def heart_rate_series(events) -> "tuple[np.ndarray, np.ndarray]":
 def poincare_pairs(events) -> "tuple[np.ndarray, np.ndarray]":
     """Consecutive IBI pairs ``(ibi_n, ibi_n+1)`` in ms, for a Poincaré plot.
 
-    Only *temporally adjacent* valid intervals are paired — an artefact or
-    dropped beat breaks the pair rather than bridging the gap — matching the
+    Only *temporally adjacent* valid intervals are paired, an artefact or
+    dropped beat breaks the pair rather than bridging the gap, matching the
     convention used by the SD1/SD2/RMSSD metrics.
 
     Parameters

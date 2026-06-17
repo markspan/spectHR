@@ -24,7 +24,7 @@ Workers carry a ``gen_check`` closure.  When a worker finishes, it only
 emits its signal if the generation it started with still matches the
 scheduler's current counter.  Calling ``submit()`` a second time (because
 the user switched datasets or edited the workspace) bumps the counter, so
-the first worker's result is silently discarded — no stale data reaches the
+the first worker's result is silently discarded, no stale data reaches the
 widget.
 """
 from __future__ import annotations
@@ -111,7 +111,7 @@ class DockScheduler:
         dock_name:  Stable dock object-name string (from the ``_DOCK_*``
                     constants in MainWindow) used to track generations.
         compute_fn: Zero-argument callable; returns the precomputed data.
-                    Called on a pool thread — must NOT touch Qt objects.
+                    Called on a pool thread, must NOT touch Qt objects.
         on_done:    ``callback(result)`` called on the **main thread** with
                     the value returned by *compute_fn*.
         on_error:   Optional ``callback(exc)`` called on the **main thread**
@@ -120,7 +120,7 @@ class DockScheduler:
         gen = self._gen.get(dock_name, 0) + 1
         self._gen[dock_name] = gen
 
-        # Drop the previous signal for this dock from inflight — its worker
+        # Drop the previous signal for this dock from inflight, its worker
         # will finish with gen_check()=False and never emit, so the closure
         # references (layout, views, workspace) would otherwise leak forever.
         old = self._current_sig.pop(dock_name, None)

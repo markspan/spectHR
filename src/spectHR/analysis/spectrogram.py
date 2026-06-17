@@ -199,8 +199,8 @@ def fetch_spectrogram(
 
         # PSD-peak fallback search range: use the first band whose
         # respiration_band flag is set, else fall back to standard HF.
-        _HF_LOW_DEFAULT  = 0.15   # Hz — standard HF lower edge
-        _HF_HIGH_DEFAULT = 0.40   # Hz — standard HF upper edge
+        _HF_LOW_DEFAULT  = 0.15   # Hz, standard HF lower edge
+        _HF_HIGH_DEFAULT = 0.40   # Hz, standard HF upper edge
         resp_band_low  = _HF_LOW_DEFAULT
         resp_band_high = _HF_HIGH_DEFAULT
         for _band in method.bands.values():
@@ -228,7 +228,7 @@ def fetch_spectrogram(
             try:
                 psd_result = PSDEngine(win_view).for_band_power(per_window_method)
             except Exception as exc:
-                logger.debug("Spectrogram: window %d skipped — %s", i, exc)
+                logger.debug("Spectrogram: window %d skipped, %s", i, exc)
                 continue
 
             psd_cache[i] = psd_result
@@ -250,7 +250,7 @@ def fetch_spectrogram(
                         resp_freqs_arr[i] = float(rf)
                 except Exception as exc:
                     logger.debug(
-                        "Spectrogram: resp-freq RSP stage failed for window %d — %s",
+                        "Spectrogram: resp-freq RSP stage failed for window %d, %s",
                         i, exc,
                     )
 
@@ -277,7 +277,7 @@ def fetch_spectrogram(
             if psd_result.freqs.size == 0:
                 continue
             if np.array_equal(psd_result.freqs, common_freqs):
-                # Fast path: grids are identical — direct assignment.
+                # Fast path: grids are identical, direct assignment.
                 grid[:, i] = psd_result.power
             else:
                 # Slow path: interpolate onto the common grid.

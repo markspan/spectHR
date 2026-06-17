@@ -238,7 +238,7 @@ def test_grossman_rsa_negative_kept_not_nan():
     phases = _Phases(starts[order], ends[order], lbls[order])
 
     # IBI: 1000 ms baseline.  Deliberately LONG (decelerating) during INH,
-    # SHORT (accelerating) during EXH — the opposite of normal RSA.
+    # SHORT (accelerating) during EXH, the opposite of normal RSA.
     rpeaks = np.arange(0.0, 12.0, 0.9)
     labels = np.array(["N"] * rpeaks.size, dtype=object)
     # Inject a long IBI during inspiration of breath 0

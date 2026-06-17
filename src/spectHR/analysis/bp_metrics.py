@@ -12,11 +12,11 @@ HRV metrics computed on the same R-peaks.
 
 Registered epoch metrics (one CSV/HDF5 column each, the function name)
 ---------------------------------------------------------------------
-* ``bp_sbp`` — systolic blood pressure: epoch mean of the per-beat maxima.
-* ``bp_dbp`` — diastolic blood pressure: epoch mean of the foot minima that
+* ``bp_sbp``, systolic blood pressure: epoch mean of the per-beat maxima.
+* ``bp_dbp``, diastolic blood pressure: epoch mean of the foot minima that
   precede each systolic peak.
-* ``bp_pp``  — pulse pressure (SBP − DBP), epoch mean over beats.
-* ``bp_map`` — mean arterial pressure: the true integral mean of the waveform
+* ``bp_pp``, pulse pressure (SBP − DBP), epoch mean over beats.
+* ``bp_map``, mean arterial pressure: the true integral mean of the waveform
   between two successive diastolic minima (CARSPAN ``CalcDataColBPMPR``), **not**
   the textbook ``(SBP + 2·DBP) / 3`` approximation.
 
@@ -28,7 +28,7 @@ Flat-line guard
 ---------------
 CARSPAN's ``IsFlatLine`` slides a 300 ms / 10 ms-step window across each cardiac
 interval and rejects the beat when the mean is zero or the coefficient of
-variation (``std / mean``) drops below 0.005 anywhere — the signature of a
+variation (``std / mean``) drops below 0.005 anywhere, the signature of a
 disconnected or clamped pressure transducer.  Because the test is
 scale-invariant it works directly on the physically-scaled values spectHR
 stores (CARSPAN ran it on raw, unscaled samples).  Rejected beats become

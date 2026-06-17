@@ -20,7 +20,7 @@ def decimate_minmax(
 
     An overview axis is only a couple of thousand pixels wide, so plotting
     a multi-million-sample recording into it is almost entirely wasted
-    work — and it is re-rendered on every mouse-move while the window
+    work, and it is re-rendered on every mouse-move while the window
     rectangle is dragged. This reduces the line to ~``target_points``
     points while preserving the visual envelope: the signal is split into
     buckets and each bucket contributes its min and its max (in time

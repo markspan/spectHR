@@ -1,10 +1,10 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`PrepModel` — everything the pre-processing view needs about *one* load.
+:class:`PrepModel`, everything the pre-processing view needs about *one* load.
 
-The widget used to hold a dozen ``| None`` attributes — session, window,
-navigator, controller, three channels, the cardio settings — all set
+The widget used to hold a dozen ``| None`` attributes, session, window,
+navigator, controller, three channels, the cardio settings, all set
 together in ``set_session`` and all guarded with ``assert ... is not None``
 on every use.  :class:`PrepModel` bundles them into a single value object
 that is *either fully present or absent*: the widget holds one
@@ -16,7 +16,7 @@ detection/classification settings, the editing controller and the initial
 window all come together in :meth:`PrepModel.build`, which makes the whole
 load step testable without a display.
 
-The matplotlib axes, canvas and blit cache deliberately stay on the widget —
+The matplotlib axes, canvas and blit cache deliberately stay on the widget,
 they are render state, not model state, and are rebuilt on every load.
 """
 from __future__ import annotations

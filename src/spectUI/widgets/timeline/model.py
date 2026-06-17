@@ -1,18 +1,18 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`TimelineModel` — the per-load state shared by every timeline dock.
+:class:`TimelineModel`, the per-load state shared by every timeline dock.
 
 A timeline dock always needs the same four things: the loaded
 :class:`~spectHR.session.Session`, the visible :class:`WindowState`, the
 :class:`TimelineNavigator` that zooms / pans it, and the recording
 ``extent`` navigation clamps to.  This base bundles them (and builds the
 window + navigator from a signal extent) so concrete docks subclass it and
-add only their own derived data — the ECG channels for the pre-processor,
+add only their own derived data, the ECG channels for the pre-processor,
 the heart-rate series for the tachogram, and so on.
 
 The widget holds one ``TimelineModel | None``: present means *loaded*,
-``None`` means *nothing yet* — one question instead of a dozen ``is None``
+``None`` means *nothing yet*, one question instead of a dozen ``is None``
 checks.
 """
 from __future__ import annotations

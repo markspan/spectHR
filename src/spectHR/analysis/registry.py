@@ -6,14 +6,14 @@ Epoch-metric registry.
 
 Functions decorated with ``@epoch_metric`` are stored here and discovered
 automatically by ``Session.epochs_table()``.  Every registered
-metric contributes exactly **one** scalar column to the parameters CSV — the
+metric contributes exactly **one** scalar column to the parameters CSV, the
 column name is the function's ``__name__``.
 
 The decorator unifies every per-epoch parameter the table exports: the
 time-domain HRV metrics (``rmssd``, ``sdnn`` …), the beat-by-beat
 blood-pressure and respiration parameters (``bp_sbp`` …, ``resp_mvo`` …) and
 the standard band powers (``lf_power`` …, ``lf_hf_ratio``).  A metric receives
-a single positional argument — either a bare ``series-like`` (when called
+a single positional argument, either a bare ``series-like`` (when called
 directly) or an :class:`~spectHR.analysis.epoch_context.EpochContext` (when
 called by the table), which exposes the same series interface plus the extra
 channels and cached PSD that BP / RESP / band-power metrics need.
@@ -33,9 +33,9 @@ _GROUP_REGISTRY: Dict[str, Callable] = {}
 def epoch_metric(func: Callable) -> Callable:
     """Register *func* as a single-valued per-epoch metric.
 
-    The decorated function must accept a single positional argument — a
+    The decorated function must accept a single positional argument, a
     ``series-like`` or an
-    :class:`~spectHR.analysis.epoch_context.EpochContext` — and return a value
+    :class:`~spectHR.analysis.epoch_context.EpochContext`, and return a value
     coercible to ``float``.  It must contribute exactly one column (one scalar)
     to the parameters table; a metric may never emit multiple columns.
 
@@ -71,7 +71,7 @@ def epoch_metric_group(func: Callable) -> Callable:
 
     Unlike :func:`epoch_metric` (one function → one scalar column), a group
     metric returns a ``dict[str, float]`` whose keys are column names and whose
-    values are the scalars for that epoch — used for parameters whose column
+    values are the scalars for that epoch, used for parameters whose column
     *set* is data-driven and cannot be known at import time.  The motivating
     case is band power: the workspace lets the researcher rename or add
     frequency bands, so the non-standard ``{band}_power`` columns only exist

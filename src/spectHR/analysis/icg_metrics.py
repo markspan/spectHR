@@ -5,7 +5,7 @@
 Impedance-cardiography (ICG) metric: pre-ejection period (PEP).
 
 PEP is the cleanest non-invasive index of *sympathetic* (beta-adrenergic)
-drive to the heart — the branch that HRV alone cannot isolate (Sherwood et
+drive to the heart, the branch that HRV alone cannot isolate (Sherwood et
 al., 1990; Berntson et al., 2004). It is the interval from the onset of
 left-ventricular electrical depolarization (the ECG **Q-onset**) to the
 opening of the aortic valve (the **B-point** on the ICG ``dZ/dt`` waveform).
@@ -30,7 +30,7 @@ same recipe per epoch:
    ejection excursion regardless of stored polarity.
 4. **C-point** = ``dZ/dt`` maximum (peak ejection velocity).
 5. **B-point** (aortic-valve opening) = point of maximum upstroke
-   acceleration before C — the maximum of the second derivative of
+   acceleration before C, the maximum of the second derivative of
    ``dZ/dt`` (Lozano et al., 2007), with a 30 ms guard zone before C
    excluded so detection cannot latch onto a secondary acceleration bump
    adjacent to the C peak.
@@ -156,7 +156,7 @@ def _ensemble_average(
 
     ICG / ECG are uniformly sampled, so each beat's window is gathered by
     integer indexing (``base ± offsets``) instead of ``np.interp`` over the
-    whole array per beat — the latter dominated the per-epoch cost (a full
+    whole array per beat, the latter dominated the per-epoch cost (a full
     binary search per beat).  A non-uniform axis falls back to ``np.interp``.
     """
     times = np.asarray(times, dtype=float)
@@ -308,7 +308,7 @@ def pep_ensemble(
     icg_times, dzdt_values : np.ndarray
         ICG ``dZ/dt`` waveform (seconds, physical units).
     rpeak_times : np.ndarray
-        R-peak times (seconds) for the epoch — the ensemble-averaging anchors.
+        R-peak times (seconds) for the epoch, the ensemble-averaging anchors.
     ecg_times, ecg_values : np.ndarray | None
         ECG waveform for Q-onset detection. When omitted the R-peak is the
         PEP reference (R-to-B interval).
@@ -324,7 +324,7 @@ def pep_ensemble(
     return_detail : bool
         When ``True`` return a dict with the scored landmarks and the
         ensemble-averaged complexes (see *Returns*) instead of the bare PEP
-        scalar — used to populate the diagnostic CSV/H5 columns and the per-epoch
+        scalar, used to populate the diagnostic CSV/H5 columns and the per-epoch
         ensemble curves in the H5 export.
 
     Returns
@@ -369,7 +369,7 @@ def pep_ensemble(
     )
     ens = ens * polarity
 
-    # Ensemble ECG (for Q-onset and the H5 curve) — computed up front so the
+    # Ensemble ECG (for Q-onset and the H5 curve), computed up front so the
     # detail dict always carries it when an ECG channel is supplied.
     ecg_ens = None
     if ecg_times is not None and ecg_values is not None and np.asarray(ecg_times).size:
@@ -436,7 +436,7 @@ def pep_per_beat(
     pep_min_ms: float = 40.0,
     pep_max_ms: float = 180.0,
 ) -> np.ndarray:
-    """Per-beat PEP (Q-onset-to-B, or R-to-B) in ms — single-complex scoring.
+    """Per-beat PEP (Q-onset-to-B, or R-to-B) in ms, single-complex scoring.
 
     This is the un-averaged variant. It applies the same polarity correction
     as :func:`pep_ensemble`, but single-beat ``dZ/dt`` is noisy, so for

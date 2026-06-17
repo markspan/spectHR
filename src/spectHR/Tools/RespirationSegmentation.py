@@ -45,7 +45,7 @@ def accel_to_respiration(acc: np.ndarray, fs: float) -> np.ndarray:
 
     Because the principal axis that captures chest expansion depends on
     posture, running this **per epoch** (rather than once over the whole
-    recording) gives a cleaner surrogate when posture changes between epochs —
+    recording) gives a cleaner surrogate when posture changes between epochs,
     see ``apply_breath_phases(..., per_epoch=True)``.
     """
     acc = np.asarray(acc, dtype=float)

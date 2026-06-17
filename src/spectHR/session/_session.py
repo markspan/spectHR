@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/session/_session.py
 """
-:class:`Session` — the root container for one physiological recording.
+:class:`Session`, the root container for one physiological recording.
 
 Architecture
 ------------
 A ``Session`` owns three typed channel dicts (``samples``, ``events``,
-``intervals``) and an epoch table.  The channel types —
+``intervals``) and an epoch table.  The channel types,
 :class:`~._core.Samples`, :class:`~._core.Events`,
-:class:`~._core.Intervals` — are pure data; they know nothing about the
+:class:`~._core.Intervals`, are pure data; they know nothing about the
 session.  The session is the sole owner; there are no circular references.
 
 Computation flows one way::
@@ -17,7 +17,7 @@ Computation flows one way::
     Session  →  AnalysisConfig  →  EpochContext  →  @epoch_metric
 
 :meth:`Session.scoped_to` collapses all channels to a single epoch window
-with zero copying and returns a ``Session`` with no epoch table — the
+with zero copying and returns a ``Session`` with no epoch table, the
 epoch IS the session.  This makes all channel operations naturally
 epoch-scoped without any special casing in metric code.
 
@@ -57,7 +57,7 @@ class Epoch:
 
 
 # ---------------------------------------------------------------------------
-# AnalysisConfig — typed replacement for workspace-dict kwargs
+# AnalysisConfig, typed replacement for workspace-dict kwargs
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -202,10 +202,10 @@ class Session:
     def scoped_to(self, epoch_label: str) -> Session:
         """Return a new ``Session`` with every channel windowed to *epoch_label*.
 
-        The returned session has an empty epoch table — it *is* the epoch.
+        The returned session has an empty epoch table, it *is* the epoch.
         All windowing is zero-copy (O(log n) per channel).
 
-        Example — per-breath RSA within one epoch::
+        Example, per-breath RSA within one epoch::
 
             ep = session.scoped_to("A")
             for t0, t1 in ep.intervals["breath"].windows_of("INH"):
@@ -305,7 +305,7 @@ class Session:
             contexts=contexts,
         )
 
-    # --- preprocessing helpers (functional — return new Session) ---
+    # --- preprocessing helpers (functional, return new Session) ---
 
     def with_detected_beats(
         self,

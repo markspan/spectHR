@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`PlotExportDialog` — pick a destination and which dock plots to save.
+:class:`PlotExportDialog`, pick a destination and which dock plots to save.
 
 Shown after a results export when the analyst opts to export the figures too:
 a destination folder picker plus a tickbox per available plot (all ticked by

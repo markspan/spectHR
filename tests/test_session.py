@@ -4,10 +4,10 @@
 Tests for spectHR.session.
 
 Coverage:
-  Samples     — immutability, windowing, srate, with_values
-  Events      — immutability, windowing, ibi caching, of(), replace_window
-  Intervals   — immutability, windowing (overlap semantics), of(), windows_of()
-  Session     — scoped_to(), epochs_table() shape and values
+  Samples, immutability, windowing, srate, with_values
+  Events, immutability, windowing, ibi caching, of(), replace_window
+  Intervals, immutability, windowing (overlap semantics), of(), windows_of()
+  Session, scoped_to(), epochs_table() shape and values
 """
 from __future__ import annotations
 
@@ -282,7 +282,7 @@ class TestIntervals:
         ev = make_events(n_beats=200, mean_ibi_ms=800.0, seed=1)
         iv = make_intervals(n_cycles=20)
 
-        # Compute mean IBI within each INH phase — the natural pattern
+        # Compute mean IBI within each INH phase, the natural pattern
         means = []
         for t0, t1 in iv.windows_of("INH"):
             phase_beats = ev.window(t0, t1)

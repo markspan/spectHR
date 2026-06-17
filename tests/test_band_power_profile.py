@@ -1,5 +1,5 @@
 """
-tests/test_band_power_profile.py — sliding-window spectral profiles.
+tests/test_band_power_profile.py, sliding-window spectral profiles.
 
 Covers :func:`compute_band_power_profile`, the faithful port
 of CARSPAN's ``RunProfileSommation`` (``T_AnaFunctions.pas`` 2888-3056).
@@ -9,10 +9,10 @@ section promises:
 
 1. Result structure and the window-enumeration arithmetic
    (``N = floor((T - W) / S) + 1`` and window-centre timestamps).
-2. The static (non-adaptive) regression path — finite, non-negative
+2. The static (non-adaptive) regression path, finite, non-negative
    band powers that still respect the band the signal sits in, for
    every PSD algorithm.
-3. The NaN-sentinel contract — a window with fewer than four R-peaks
+3. The NaN-sentinel contract, a window with fewer than four R-peaks
    leaves its whole output column NaN rather than dropping it.
 4. The adaptive (respiration-tracked) band: tracking a known breathing
    frequency through a real respiration channel, the per-window
@@ -249,7 +249,7 @@ class TestProfileStaticBandPower:
     )
     def test_hf_series_hf_dominates_lf(self, algorithm):
         """A 0.25 Hz (HF-dominant) series must show HF > LF power in the
-        profile, for every PSD algorithm — confirming the per-window
+        profile, for every PSD algorithm, confirming the per-window
         integration is reading real spectral content, not noise."""
         cs = make_spectral_cs(0.25)
         res = compute_band_power_profile(cs,
@@ -298,7 +298,7 @@ class TestProfileNaNWindow:
 
 
 # ===========================================================================
-# Adaptive band — fallback when no respiration channel is present
+# Adaptive band, fallback when no respiration channel is present
 # ===========================================================================
 
 
@@ -352,7 +352,7 @@ class TestProfileAdaptiveFallback:
 
 
 # ===========================================================================
-# Adaptive band — tracking a real respiration channel
+# Adaptive band, tracking a real respiration channel
 # ===========================================================================
 
 
@@ -380,7 +380,7 @@ class TestProfileAdaptiveRespiration:
 
     def test_adaptive_band_power_finite(self):
         """The HF band power must stay finite when the band tracks
-        breathing — i.e. the shifted edges always land on grid."""
+        breathing, i.e. the shifted edges always land on grid."""
         method = _adaptive_hf_method()
         cs = make_spectral_cs(0.25)
         rsp = _attach_respiration(cs, freq_hz=0.25)

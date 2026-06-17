@@ -5,7 +5,7 @@ Offscreen smoke test for :class:`PrepPlotWidget`.
 
 This drives the real Qt + matplotlib widget, but does so in a **fresh
 subprocess** with ``QT_QPA_PLATFORM=offscreen``.  The rest of the test
-suite is deliberately Qt-free in-process — importing PySide6 into the
+suite is deliberately Qt-free in-process, importing PySide6 into the
 shared pytest process triggers a Qt init-order segfault (the same reason
 ``test_headless_imports`` shells out).  Running the widget in its own
 interpreter keeps that contract while still exercising the genuine widget:

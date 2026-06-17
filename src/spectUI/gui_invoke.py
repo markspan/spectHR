@@ -12,7 +12,7 @@ mid-load to ask the user which event codes mark epoch boundaries.
 it ships the callable to the GUI thread via a ``BlockingQueuedConnection``
 signal, blocks the worker until the callable (and any dialog event loop
 inside it) returns, and hands the result back.  Called from the GUI
-thread itself — or before a ``QApplication`` exists — it simply invokes
+thread itself, or before a ``QApplication`` exists, it simply invokes
 the callable directly, so headless/test use keeps working.
 """
 from __future__ import annotations
@@ -66,7 +66,7 @@ def run_in_gui_thread(fn: Callable[[], T]) -> T:
     def job() -> None:
         try:
             result.append(fn())
-        except BaseException as exc:  # noqa: BLE001 — re-raised in caller
+        except BaseException as exc:  # noqa: BLE001, re-raised in caller
             error.append(exc)
 
     _invoker.invoke.emit(job)

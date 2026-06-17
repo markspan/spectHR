@@ -1,5 +1,5 @@
 """
-tests/conftest.py — shared fixtures and Events factories.
+tests/conftest.py, shared fixtures and Events factories.
 
 Every test module imports the factories from here so the synthetic
 series stay consistent across the suite (same RNG seeds, same ramp

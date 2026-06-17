@@ -7,7 +7,7 @@ Loader-agnostic pre-processing transforms: ``Session`` → ``Session``.
 These are the steps that turn a freshly *parsed* recording into one ready
 for analysis: ECG polarity correction, R-peak detection, blood-pressure
 calibration and respiration-source selection.  They are pure, headless
-(no Qt), and generic across every loader — the loaders only *parse*; this
+(no Qt), and generic across every loader, the loaders only *parse*; this
 module *conditions*.  The Qt UI calls these; it does not own them.
 
 Each transform returns a **new** ``Session`` when it changes anything and
@@ -25,7 +25,7 @@ Channel resolution is shared from here too: loaders disagree on keys
 :func:`resolve_ecg` / :func:`resolve_resp` give every consumer one answer.
 
 Parameters are taken as a :class:`~spectHR.config.WorkspaceView` (typed),
-a raw workspace ``dict``, or ``None`` (defaults) — so headless scripts and
+a raw workspace ``dict``, or ``None`` (defaults), so headless scripts and
 the UI share one entry point.
 """
 from __future__ import annotations
@@ -101,7 +101,7 @@ def resolve_icg(session: Session) -> Samples | None:
     """Return the ICG (dZ/dt) channel: canonical ``"icg"`` or a ``dzdt*`` variant.
 
     VU-AMS EDF recordings carry the impedance-cardiogram derivative under
-    ``dzdt-[device]`` rather than ``icg`` — that derivative *is* the ICG signal
+    ``dzdt-[device]`` rather than ``icg``, that derivative *is* the ICG signal
     PEP detection needs, so it resolves here.
     """
     return session.icg or _first_with_prefix(session, ("icg", "dzdt", "dz/dt"))
@@ -153,8 +153,8 @@ def apply_canonical_channels(session: Session, params: _ParamsLike = None) -> Se
 def _polarity_segment(session: Session):
     """Pick the analysis segment for polarity detection.
 
-    Prefers the first non-``"experiment"`` active epoch — a task block is a
-    cleaner stretch of beats than the whole recording — and falls back to
+    Prefers the first non-``"experiment"`` active epoch, a task block is a
+    cleaner stretch of beats than the whole recording, and falls back to
     ``None`` so :func:`detect_ecg_polarity` uses the recording's middle third.
     """
     for name, ep in session.epochs.items():
@@ -174,8 +174,8 @@ def apply_ecg_polarity(session: Session, params: _ParamsLike = None) -> Session:
     values of any channel detected as ``"inverted"`` so downstream R-peak
     detection sees upright R-waves.
 
-    Should run before beat detection.  Sessions with no ECG — or whose ECG
-    already reads upright — are returned unchanged (same object), so it is
+    Should run before beat detection.  Sessions with no ECG, or whose ECG
+    already reads upright, are returned unchanged (same object), so it is
     cheap and side-effect-free in the common case.
 
     *params* is accepted for pipeline symmetry and currently unused.
@@ -195,7 +195,7 @@ def apply_ecg_polarity(session: Session, params: _ParamsLike = None) -> Session:
             continue
         try:
             polarity = detect_ecg_polarity(ecg.times, ecg.values, segment=segment)
-        except Exception as exc:  # noqa: BLE001 — never abort a load over polarity
+        except Exception as exc:  # noqa: BLE001, never abort a load over polarity
             logger.warning("ECG polarity detection failed for %s: %s", key, exc)
             continue
 
@@ -240,7 +240,7 @@ def filter_ecg(ecg: Samples | None, cardio: CardioParams) -> Samples | None:
         return ecg.filtered(
             filter_type=cardio.ecg_filter_type, cutoff=cardio.ecg_filter_cutoff
         )
-    except Exception as exc:  # noqa: BLE001 — bad cutoff / too-short signal
+    except Exception as exc:  # noqa: BLE001, bad cutoff / too-short signal
         logger.warning("ECG prefilter skipped (%s).", exc)
         return ecg
 
@@ -260,7 +260,7 @@ def retrigger_beats(session: Session, params: _ParamsLike = None) -> Session:
     """Re-detect R-peaks from the ECG, discarding any existing ``"hrv"``.
 
     Unlike :func:`apply_beat_detection` (which leaves an already-detected
-    session untouched), this forces a fresh detection — the "retrigger
+    session untouched), this forces a fresh detection, the "retrigger
     R-tops" action that throws away manual edits and redetects from scratch.
     """
     return apply_beat_detection(_without_hrv(session), params)
@@ -363,7 +363,7 @@ def apply_beat_detection(session: Session, params: _ParamsLike = None) -> Sessio
     ``CardioParameters.EcgPreprocessing``, and passed to :meth:`Events.detect`
     with the workspace ``CardioParameters.IbiClassification`` thresholds.
     Sessions that already carry an ``"hrv"`` channel (e.g. CARSPAN ``.evt``
-    recordings) — or that have no usable ECG — are returned unchanged.
+    recordings), or that have no usable ECG, are returned unchanged.
 
     The work is O(n) over the recording; callers that must not block a UI
     thread (e.g. ``MainWindow._LoadWorker``) run it on a background thread.
@@ -385,7 +385,7 @@ def apply_beat_detection(session: Session, params: _ParamsLike = None) -> Sessio
             n_std=cardio.n_std,
             max_ibi_sec=cardio.max_ibi_sec,
         )
-    except Exception:  # noqa: BLE001 — detection must never abort a load
+    except Exception:  # noqa: BLE001, detection must never abort a load
         logger.exception("R-peak detection failed; loading without beats.")
         return session
 
@@ -442,8 +442,8 @@ def apply_rsp_source(session: Session, params: _ParamsLike = None) -> Session:
     carries no respiration channel of its own does this derive ``resp`` from
     the configured ``rsp_source``:
 
-    * ``"icg"`` — uses the ``icg`` channel if present (thoracic impedance).
-    * ``"accelerometer"`` — uses ``accel_rsp`` if present (PCA surrogate).
+    * ``"icg"``, uses the ``icg`` channel if present (thoracic impedance).
+    * ``"accelerometer"``, uses ``accel_rsp`` if present (PCA surrogate).
 
     This guard matters once :func:`apply_canonical_channels` has aliased a
     device-suffixed impedance channel to ``icg`` (e.g. VU-AMS ``dzdt-[…]``):
@@ -453,7 +453,7 @@ def apply_rsp_source(session: Session, params: _ParamsLike = None) -> Session:
     unavailable the session is returned unchanged.
     """
     if resolve_resp(session) is not None:
-        return session   # native respiration present — keep it
+        return session   # native respiration present, keep it
 
     source = _as_view(params).rsp_source
     key = "icg" if source == "icg" else "accel_rsp"
@@ -527,7 +527,7 @@ def _respiration_window(
             times = np.asarray(xs.times[:n], dtype=float)
             fs = 1.0 / float(np.median(np.diff(times))) if times.size > 1 else 0.0
             return Samples(times, accel_to_respiration(acc, fs), name="resp")
-        # No raw axes — fall back to a native respiration channel if present.
+        # No raw axes, fall back to a native respiration channel if present.
     resp = resolve_resp(session)
     if resp is None:
         return None
@@ -571,7 +571,7 @@ def apply_breath_phases(session: Session, params: _ParamsLike = None) -> Session
                 Intervals(starts=seg[0], ends=seg[1], labels=seg[2])
                 if seg is not None else None
             )
-    except Exception as exc:  # noqa: BLE001 — never abort a load
+    except Exception as exc:  # noqa: BLE001, never abort a load
         logger.warning("Breath-phase detection failed: %s", exc)
         return session
 
@@ -592,7 +592,7 @@ def recompute_breath_phases(session: Session, params: _ParamsLike = None) -> Ses
     :func:`apply_breath_phases` is a no-op once a ``breath`` Intervals exists,
     so this is the entry point the UI uses when a respiration setting changes
     (``rsp_source`` / ``per_epoch``): it removes the stale phases and re-runs
-    detection — e.g. switching to the accelerometer source rebuilds the INH/EXH
+    detection, e.g. switching to the accelerometer source rebuilds the INH/EXH
     phases from the (optionally per-epoch) accelerometer PCA.
     """
     if session.hrv is None:

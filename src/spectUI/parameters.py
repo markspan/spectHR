@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-Parameters — analysis configuration.
+Parameters, analysis configuration.
 
 A :class:`Parameters` is the single object that carries all settings:
 the analysis parameters (PSD method, band definitions, RSA settings,
@@ -12,7 +12,7 @@ only when the user asks (Save settings).  It is passed directly to every
 widget so widgets read typed properties instead of digging into dicts.
 
 Only window geometry / dock layout lives outside here, in
-:class:`~spectUI.settings.AppSettings` (QSettings) — genuinely
+:class:`~spectUI.settings.AppSettings` (QSettings), genuinely
 machine-specific UI state, not a portable "setting".
 
 ``populate_tree`` lives here because it is the bridge between the file-
@@ -36,7 +36,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
     Scalar/list values in *override* win outright; dict values are merged
     key-by-key so that a preset that only specifies a few keys leaves the
     rest at their defaults.  Keys listed in ``_REPLACE_WHOLE`` are treated
-    as atomic tables — a preset that provides them replaces the base value
+    as atomic tables, a preset that provides them replaces the base value
     entirely (e.g. ``bands`` defines a complete band table, not additions).
     """
     result = copy.deepcopy(base)
@@ -55,7 +55,7 @@ from spectHR.config import WorkspaceView
 # ---------------------------------------------------------------------------
 # Default configuration
 #
-# Everything lives in one workspace dict — including the working directories —
+# Everything lives in one workspace dict, including the working directories,
 # so it can be saved to / loaded from a single ``workspace.json``.  Window
 # geometry stays in QSettings (machine-specific UI state, not a "setting").
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ Headless configuration bridge: workspace dict -> spectHR algorithm parameters.
 
 These functions translate the application's plain (JSON-serialisable)
 *workspace* configuration dict into the concrete parameter objects the
-headless analysis layer consumes — :class:`~spectHR.analysis.psd._config.PsdMethod`,
+headless analysis layer consumes, :class:`~spectHR.analysis.psd._config.PsdMethod`,
 band tables, and the flat settings dicts read by the profile / transfer /
 spectrogram computations.
 
@@ -61,9 +61,9 @@ class CardioParams:
     """R-peak detection, ECG preprocessing and IBI-classification settings.
 
     Mirrors the workspace ``CardioParameters`` section.  One object carries
-    everything the preprocessing pipeline needs — the ECG prefilter, the
+    everything the preprocessing pipeline needs, the ECG prefilter, the
     peak-detector refractory period, and the rolling-window IBI classifier
-    thresholds — so detection and post-edit re-classification stay in lockstep.
+    thresholds, so detection and post-edit re-classification stay in lockstep.
 
     Attributes
     ----------
@@ -169,9 +169,9 @@ def rsp_source_from_workspace(workspace: "Dict[str, Any] | None") -> str:
 
     One of :data:`RSP_SOURCES`:
 
-    * ``"icg"`` (default) — the thoracic-impedance (ICG / dZ) signal, which
+    * ``"icg"`` (default), the thoracic-impedance (ICG / dZ) signal, which
       VU-AMS itself segments breaths and scores RSA from.
-    * ``"accelerometer"`` — the 3-axis chest-wall accelerometer PCA
+    * ``"accelerometer"``, the 3-axis chest-wall accelerometer PCA
       surrogate (for ambulatory recordings or devices without an ICG
       channel).
 
@@ -189,9 +189,9 @@ def rsp_source_from_workspace(workspace: "Dict[str, Any] | None") -> str:
 #: section.  Also the choice list the workspace editor offers for
 #: ``RespirationAnalysis.rsa_rejection_mode``.
 #:
-#: * ``"none"``   — no extra rejection; all valid INH→EXH pairs are scored
+#: * ``"none"``, no extra rejection; all valid INH→EXH pairs are scored
 #:                  (default, preserves the legacy spectHR behaviour).
-#: * ``"strict"`` — apply the two automatic rejection guards that VU-DAMS runs
+#: * ``"strict"``, apply the two automatic rejection guards that VU-DAMS runs
 #:                  by default (Appendix A, DAMS 5.0 manual):
 #:                  - code -5: exclude IBIs that deviate >50 % from the
 #:                    preceding IBI from the shortest/longest candidate pool.
@@ -201,7 +201,7 @@ def rsp_source_from_workspace(workspace: "Dict[str, Any] | None") -> str:
 RSA_REJECTION_MODES = ("none", "strict")
 _DEFAULT_RSA_REJECTION_MODE = "none"
 
-# VU-DAMS default thresholds — both 50 % (Appendix A).
+# VU-DAMS default thresholds, both 50 % (Appendix A).
 # Imported by bp_metrics too; kept here as the single source of truth.
 _STRICT_IBI_DEV: float = 0.50   # code -5: max fractional IBI-to-IBI deviation
 _STRICT_RATE_DEV: float = 0.50  # code -6: max fractional rate deviation from 20-breath avg

@@ -32,7 +32,7 @@ def load_evt(path: Path, **kwargs: Any) -> "Session":
     # The NFF sample clock and the EVT event clock share one absolute time
     # base (e.g. both start at ~286.7 s for example1).  We rebase the whole
     # recording to start at 0 for display, which means shifting the NFF
-    # samples *and the EVT events by the same offset* — shifting only the
+    # samples *and the EVT events by the same offset*, shifting only the
     # samples (as an earlier version did) left the R-tops ~t_min_nff seconds
     # adrift of the ECG.
     samples: dict[str, Samples] = {}

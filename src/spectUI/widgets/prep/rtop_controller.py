@@ -3,8 +3,8 @@
 """
 A mutable editing facade over the immutable ``"hrv"`` :class:`Events` channel.
 
-The R-peak *algorithms* — insert / move / delete / re-classify, and the
-"jump to the next abnormal beat" queries — all live on
+The R-peak *algorithms*, insert / move / delete / re-classify, and the
+"jump to the next abnormal beat" queries, all live on
 :class:`spectHR.session.Events` as functional methods that return a new
 ``Events``.  :class:`RTopController` adds the only thing the data model
 should not own: the *editing-session* state.  It holds the current
@@ -12,18 +12,18 @@ should not own: the *editing-session* state.  It holds the current
 into ``session.events["hrv"]``.
 
 Because :class:`~spectHR.session.Session` is a plain (non-frozen) dataclass,
-that commit is seen immediately by every other holder of the same session —
+that commit is seen immediately by every other holder of the same session,
 the call-by-reference convenience V2 had from its mutable ``CardioSeries``,
 without giving up array immutability in the analysis layer.
 
 Two tiers of edit are exposed:
 
 ``*_no_classify``
-    Apply the structural change and commit, leaving labels untouched — used
+    Apply the structural change and commit, leaving labels untouched, used
     for instant feedback during a drag, with re-classification scheduled on
     a background thread.
 ``add`` / ``move`` / ``delete``
-    Apply the change *and* re-classify synchronously — for scripted or test
+    Apply the change *and* re-classify synchronously, for scripted or test
     edits where labels must be correct on the next read.
 """
 from __future__ import annotations
@@ -122,7 +122,7 @@ class RTopController:
 
     @property
     def ibi(self) -> np.ndarray:
-        """Inter-beat intervals (last entry ``NaN``) — from :attr:`Events.ibi`."""
+        """Inter-beat intervals (last entry ``NaN``), from :attr:`Events.ibi`."""
         return self._events.ibi
 
     @property
@@ -153,7 +153,7 @@ class RTopController:
         return self._events.prev_abnormal(before)
 
     # ------------------------------------------------------------------
-    # Structural edits — no re-classification
+    # Structural edits, no re-classification
     # ------------------------------------------------------------------
 
     def move_no_classify(self, old_t: float, new_t: float) -> None:
@@ -172,7 +172,7 @@ class RTopController:
         self._commit()
 
     # ------------------------------------------------------------------
-    # Structural edits — with synchronous re-classification
+    # Structural edits, with synchronous re-classification
     # ------------------------------------------------------------------
 
     def move(self, old_t: float, new_t: float) -> None:

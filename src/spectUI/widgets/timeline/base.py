@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`TimelineView` — base widget for every scrolling-time-series dock.
+:class:`TimelineView`, base widget for every scrolling-time-series dock.
 
 It owns the parts every timeline dock shares: a main panel over a thin
 full-recording overview strip, a draggable zoom rectangle (blitted for
@@ -49,8 +49,8 @@ from spectUI.common import (
 from spectUI.widgets.timeline.model import TimelineModel
 
 # Palette shared across timeline docks.
-_C_OVERVIEW = "#2980b9"   # blue — overview trace and zoom rectangle
-_C_EPOCH = "#16a085"      # teal — epoch arrows
+_C_OVERVIEW = "#2980b9"   # blue, overview trace and zoom rectangle
+_C_EPOCH = "#16a085"      # teal, epoch arrows
 
 # Debounce (ms) coalescing rapid window changes into one repaint.
 _REDRAW_DEBOUNCE_MS = 160
@@ -479,7 +479,7 @@ class TimelineView(QWidget):
         self._overview_bg = None
 
     # ------------------------------------------------------------------
-    # Gesture dispatch — one press / motion / release for every interaction
+    # Gesture dispatch, one press / motion / release for every interaction
     # ------------------------------------------------------------------
 
     def _on_press(self, event) -> None:

@@ -86,7 +86,7 @@ def normalise_grid(power_grid: np.ndarray) -> np.ndarray:
     """
     finite = power_grid[np.isfinite(power_grid)]
     if finite.size == 0:
-        raise ValueError("power_grid contains no finite values — cannot normalise")
+        raise ValueError("power_grid contains no finite values, cannot normalise")
 
     p_min = float(np.nanmin(finite))
     p_max = float(np.nanmax(finite))
@@ -135,7 +135,7 @@ def downsample_for_surface(
     hardware.  This function applies uniform stride-based downsampling
     on both axes independently.
 
-    The original ``power_grid`` is never modified — this works on a
+    The original ``power_grid`` is never modified, this works on a
     strided view and is only called by the 3-D renderer.
 
     Parameters

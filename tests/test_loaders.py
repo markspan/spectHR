@@ -33,7 +33,7 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "ExampleData" / "data"
 def stub_event_code_window(monkeypatch):
     """Replace the Qt ``EventCodeWindow`` dialog with a headless stub.
 
-    Selecting no codes causes the EVT loader to fall back to a single epoch —
+    Selecting no codes causes the EVT loader to fall back to a single epoch,
     sufficient for these smoke tests which only verify that parsing completes
     and the series are built.
     """

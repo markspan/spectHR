@@ -16,12 +16,12 @@ Three immutable data primitives that cover every physiological time series.
 Design rules
 ------------
 *Immutable.*  All arrays are read-only at construction.  Updates are
-functional — every modifying method returns a new object.
+functional, every modifying method returns a new object.
 
 *Zero-copy windowing.*  ``obj.window(start, end)`` uses ``np.searchsorted``
 on the sorted time axis to locate the slice boundaries in O(log n) and
 returns a new object whose arrays are numpy *views* of the parent's arrays
-— no heap allocation beyond the three new Python objects.
+- no heap allocation beyond the three new Python objects.
 
 *No separate slice type.*  Windowing returns the same type as the
 parent.  Code written for a full ``Events`` works identically on a
@@ -90,7 +90,7 @@ class IntervalsLike(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Samples — continuous 1-D waveform
+# Samples, continuous 1-D waveform
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True, eq=False)
@@ -144,7 +144,7 @@ class Samples:
 
 
 # ---------------------------------------------------------------------------
-# Events — point process with categorical labels
+# Events, point process with categorical labels
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True, eq=False)
@@ -289,7 +289,7 @@ class Events:
 
         The final beat is always excluded: its IBI is the trailing-``NaN``
         sentinel, so :func:`classify_ibi` labels it ``"T"`` (degenerate) even
-        though it is not a real artefact — without this it would be a phantom
+        though it is not a real artefact, without this it would be a phantom
         target at the very end of every recording.
         """
         mask = self.labels != "N"
@@ -309,7 +309,7 @@ class Events:
 
 
 # ---------------------------------------------------------------------------
-# Intervals — labelled non-overlapping time segments
+# Intervals, labelled non-overlapping time segments
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True, eq=False)
@@ -382,7 +382,7 @@ class Intervals:
     def windows_of(self, label: str) -> Iterator[tuple[float, float]]:
         """Yield ``(start, end)`` pairs for all intervals with *label*.
 
-        Example — compute a metric per inhalation phase::
+        Example, compute a metric per inhalation phase::
 
             for t0, t1 in session.intervals["breath"].windows_of("INH"):
                 ibi_in_phase = session.events["hrv"].window(t0, t1)

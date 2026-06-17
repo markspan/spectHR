@@ -3,8 +3,8 @@
 """
 Pure timeline-navigation arithmetic.
 
-:class:`TimelineNavigator` turns the toolbar verbs — zoom in, zoom out,
-pan, jump to the ends — into new ``[x_min, x_max]`` windows, clamped to the
+:class:`TimelineNavigator` turns the toolbar verbs, zoom in, zoom out,
+pan, jump to the ends, into new ``[x_min, x_max]`` windows, clamped to the
 signal extent.  It holds a reference to a
 :class:`~spectUI.widgets.timeline.state.WindowState` and a zero-argument
 ``extent`` callable returning ``(t_first, t_last)`` of the underlying
@@ -56,7 +56,7 @@ class TimelineNavigator:
 
         A window wider than the whole recording collapses to the full
         extent.  Otherwise the window is slid inward (not truncated) so its
-        width is kept exactly — the behaviour V2 users expect when panning
+        width is kept exactly, the behaviour V2 users expect when panning
         into either end.
         """
         ext = self._extent()

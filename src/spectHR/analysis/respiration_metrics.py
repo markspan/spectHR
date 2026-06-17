@@ -6,29 +6,29 @@ Respiration-series metrics: breathing-frequency context, respiratory volume,
 and respiratory sinus arrhythmia (RSA).
 
 Everything here derives from the respiration channel (or its INH/EXH phase
-segmentation) — on its own or coupled to the R-peaks — so all respiration-
+segmentation), on its own or coupled to the R-peaks, so all respiration-
 related parameters live in one module rather than alongside blood pressure.
 
 Registered epoch metrics (one CSV/HDF5 column each, the function name)
 ---------------------------------------------------------------------
 Breathing-frequency context (Grossman & Taylor, 2007)
-* ``resp_freq``        — mean breathing frequency in Hz.
-* ``hf_resp_in_band``  — 1.0/0.0 flag: is the mean breathing frequency inside
+* ``resp_freq``, mean breathing frequency in Hz.
+* ``hf_resp_in_band``, 1.0/0.0 flag: is the mean breathing frequency inside
   the configured HF band?  A 0.0 warns that the epoch's HF power may not index
   RSA at all (NaN when undeterminable).
 
 Respiratory volume (CARSPAN ``CalcDataColRESMVO/RESSVO``), gated on the R-peaks
-* ``resp_mvo`` — mean respiratory volume per cardiac interval ``[R_i, R_{i+1}]``
+* ``resp_mvo``, mean respiratory volume per cardiac interval ``[R_i, R_{i+1}]``
   (CARSPAN's ``RESPVO`` is an exact duplicate of ``RESMVO``; only MVO is exposed).
-* ``resp_svo`` — sample respiratory volume: the mean over the ``ResSamples // 2``
+* ``resp_svo``, sample respiratory volume: the mean over the ``ResSamples // 2``
   samples ending at each R-peak.
 
 Respiratory sinus arrhythmia (Grossman et al., 1990 peak-to-valley)
-* ``rsa``  — mean over *valid* breath cycles (positive peak-to-valley, ms).
-* ``rsa0`` — RSA with every invalid breath (negative or undetectable) counted as
+* ``rsa``, mean over *valid* breath cycles (positive peak-to-valley, ms).
+* ``rsa0``, RSA with every invalid breath (negative or undetectable) counted as
   zero over the total breath count, reducing over-estimation bias (VU-DAMS RSA0).
 
-HF-HRV context — why ``resp_freq`` / ``hf_resp_in_band`` matter
+HF-HRV context, why ``resp_freq`` / ``hf_resp_in_band`` matter
 ---------------------------------------------------------------
 HF-HRV amplitude depends not only on vagal tone but also on the rate and depth
 of breathing (Grossman & Taylor, 2007): the same vagal drive produces a smaller
@@ -260,9 +260,9 @@ def grossman_rsa_per_breath(
 
     For each INH→EXH breath cycle:
 
-    * **Shortest IBI** — the minimum IBI within ``[INH_start, INH_end + lag_s]``
+    * **Shortest IBI**, the minimum IBI within ``[INH_start, INH_end + lag_s]``
       that sits on an *accelerating* slope (IBI shorter than the preceding one).
-    * **Longest IBI**  — the maximum IBI within ``[EXH_start, EXH_end + lag_s]``
+    * **Longest IBI**, the maximum IBI within ``[EXH_start, EXH_end + lag_s]``
       that sits on a *decelerating* slope (IBI longer than the preceding one).
     * **RSA** = longest − shortest (ms).  Negative values and breaths where
       either IBI could not be located are stored as ``NaN``.
@@ -401,8 +401,8 @@ def _rsa_metric(ctx, key: str) -> float:
         # Mean of positive-only values (VU-DAMS RSA: excludes negative and missing).
         valid = beats[np.isfinite(beats) & (beats > 0)]
         return float(np.mean(valid)) if valid.size > 0 else float("nan")
-    # RSA0 (VU-DAMS): every *invalid* breath — negative RSA OR an undetectable
-    # shortest/longest IBI — is **included** in the mean with value zero, i.e.
+    # RSA0 (VU-DAMS): every *invalid* breath, negative RSA OR an undetectable
+    # shortest/longest IBI, is **included** in the mean with value zero, i.e.
     # the denominator is the total number of breath cycles in the label
     # (manual §5.4.1: "included in the mean calculation with value zero").
     # Returns NaN only when no breath was measurable at all.

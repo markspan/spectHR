@@ -52,7 +52,7 @@ q = Parameters.load(wf)
 assert q.data_dir == tmp / "data"
 assert q.psd_method.algorithm == "carspan_strict"
 
-# AppSettings is now window-state only — no directory / workspace-path API.
+# AppSettings is now window-state only, no directory / workspace-path API.
 from spectUI.settings import AppSettings
 assert not hasattr(AppSettings, "directories")
 assert not hasattr(AppSettings, "app_parameters_path")

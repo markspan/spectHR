@@ -1,12 +1,12 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`PrepPlotWidget` — the docked ECG pre-processing and R-peak editor.
+:class:`PrepPlotWidget`, the docked ECG pre-processing and R-peak editor.
 
 The development-branch port of the V2 ``prepPlotWidget``.  All the scrolling
-timeline machinery — visible-window model, overview strip with a draggable
+timeline machinery, visible-window model, overview strip with a draggable
 zoom rectangle, zoom/pan/goto navigation, epoch arrows, the single gesture
-dispatcher — is inherited from
+dispatcher, is inherited from
 :class:`~spectUI.widgets.timeline.base.TimelineView`.  This module adds only
 what is specific to ECG pre-processing:
 
@@ -17,7 +17,7 @@ what is specific to ECG pre-processing:
 * background IBI re-classification after each edit.
 
 Edits go through ``model.rtop_ctrl`` and commit back into
-``session.events["hrv"]`` — call-by-reference — and :attr:`dataEdited` is
+``session.events["hrv"]``, call-by-reference, and :attr:`dataEdited` is
 emitted so the host can mark the file dirty and refresh derived docks.
 """
 from __future__ import annotations
@@ -43,20 +43,20 @@ from spectUI.widgets.timeline.state import YAxisState
 # Palette
 # ─────────────────────────────────────────────────────────────────────────────
 
-_C_ECG = "#c0392b"        # deep red — clinical ECG convention
-_C_RESP = "#27ae60"       # green — respiration
-_C_INH = "#d6eaf8"        # pale blue — inhalation shading
-_C_IBI = "#2c3e50"        # near-black — IBI arrows/labels
+_C_ECG = "#c0392b"        # deep red, clinical ECG convention
+_C_RESP = "#27ae60"       # green, respiration
+_C_INH = "#d6eaf8"        # pale blue, inhalation shading
+_C_IBI = "#2c3e50"        # near-black, IBI arrows/labels
 
 # Normal beats stay quiet; abnormal beats escalate in salience.
 _RTOP_COLORS: dict[str, str] = {
-    "N": "#7f8c8d",     # grey — normal
-    "L": "#2980b9",     # blue — long
-    "S": "#8e44ad",     # purple — short
-    "TL": "#e67e22",    # orange — too long
-    "SL": "#16a085",    # teal — short-then-long
-    "SNS": "#27ae60",   # green — short-normal-short
-    "T": "#bdc3c7",     # light grey — degenerate
+    "N": "#7f8c8d",     # grey, normal
+    "L": "#2980b9",     # blue, long
+    "S": "#8e44ad",     # purple, short
+    "TL": "#e67e22",    # orange, too long
+    "SL": "#16a085",    # teal, short-then-long
+    "SNS": "#27ae60",   # green, short-normal-short
+    "T": "#bdc3c7",     # light grey, degenerate
 }
 
 # Max R-peaks to draw before the marker layer is skipped (keeps drags smooth).
@@ -400,8 +400,8 @@ class PrepPlotWidget(TimelineView):
         again once the labels settle.
         """
         self.redraw()
-        self.dataEdited.emit()   # immediate — structural change is committed
-        self._classify_async()   # later — refreshes again after labels update
+        self.dataEdited.emit()   # immediate, structural change is committed
+        self._classify_async()   # later, refreshes again after labels update
 
     # ------------------------------------------------------------------
     # Keyboard (breathing y-zoom)
@@ -478,7 +478,7 @@ class PrepPlotWidget(TimelineView):
         if m is None or m.rtop_ctrl is None:
             return
         ctrl = m.rtop_ctrl
-        events_snap = ctrl.events                 # frozen — safe to cross threads
+        events_snap = ctrl.events                 # frozen, safe to cross threads
         classify_kwargs = m.cardio.classify_kwargs
 
         def compute():

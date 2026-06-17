@@ -241,7 +241,7 @@ class PSDEngine:
         zero-mean residual has the original mean added back so cubic
         interpolation in the back-ends stays numerically well-behaved; the
         DC term is removed again inside the spectral estimator. The CARSPAN
-        paths never call this — they keep the faithful manual pipeline.
+        paths never call this, they keep the faithful manual pipeline.
         """
         lam = float(getattr(method, "detrend_lambda", 0.0) or 0.0)
         if lam <= 0 or ibi_values_ms.size < 4:

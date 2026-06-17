@@ -1,12 +1,12 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`BPSeriesWidget` — the blood-pressure waveform dock.
+:class:`BPSeriesWidget`, the blood-pressure waveform dock.
 
 A :class:`~spectUI.widgets.timeline.base.TimelineView` that plots the
 calibrated blood-pressure channel.  Calibration (raw ADC → mmHg) is applied
 once in the load pipeline (``apply_bp_calibration``), so the widget only
-windows and decimates the channel for display — it computes nothing.
+windows and decimates the channel for display, it computes nothing.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from spectUI.common import style_axis_clean
 from spectUI.widgets.timeline.base import TimelineView
 from spectUI.widgets.timeline.model import TimelineModel
 
-_C_BP = "#1f3a93"   # dark blue — blood pressure
+_C_BP = "#1f3a93"   # dark blue, blood pressure
 
 
 @dataclass

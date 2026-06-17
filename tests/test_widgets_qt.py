@@ -4,8 +4,8 @@
 Offscreen smoke tests for the BP / Poincaré / Results docks.
 
 Subprocess-isolated (Qt must not enter the shared pytest process).  Each
-dock is loaded with a synthetic session, rendered, and — where it derives
-from the R-peaks — checked to refresh after an edit.
+dock is loaded with a synthetic session, rendered, and, where it derives
+from the R-peaks, checked to refresh after an edit.
 """
 from __future__ import annotations
 

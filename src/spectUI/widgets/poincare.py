@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later!
 """
-:class:`PoincareWidget` — the IBI Poincaré scatter dock.
+:class:`PoincareWidget`, the IBI Poincaré scatter dock.
 
 All active epochs are overlaid on one square axis (origin at 0,0), each a
 colour-coded ``IBIₙ`` vs ``IBIₙ₊₁`` cloud with its SD1/SD2 ellipse and a
@@ -13,7 +13,7 @@ the widget only draws and handles interaction.
 Interaction
 -----------
 * Left-click a point → annotate it with its epoch, IBI pair and time.  The
-  annotation is **draggable** and is **removed by right-clicking** it — this is
+  annotation is **draggable** and is **removed by right-clicking** it, this is
   delegated to :mod:`mplcursors` (``multiple=True``), exactly as V2 did, so the
   drag/remove behaviour is the library's, not a hand-rolled re-implementation.
 * Double-click a point → :attr:`annotationActivated` carries the beat time,
@@ -100,7 +100,7 @@ class PoincareWidget(QWidget):
         self.setVisible(True)
         self.refresh()
 
-    def set_epoch(self, name: str) -> None:  # noqa: ARG002 — all epochs shown at once
+    def set_epoch(self, name: str) -> None:  # noqa: ARG002, all epochs shown at once
         """No-op: every active epoch is shown with its own checkbox."""
 
     def refresh(self) -> None:
@@ -203,14 +203,14 @@ class PoincareWidget(QWidget):
         self._setup_cursor()
 
     # ------------------------------------------------------------------
-    # Annotations — delegated to mplcursors (draggable, right-click removes)
+    # Annotations, delegated to mplcursors (draggable, right-click removes)
     # ------------------------------------------------------------------
 
     def _setup_cursor(self) -> None:
         """(Re)create the mplcursors cursor over the current scatter clouds.
 
         ``multiple=True`` lets several annotations coexist; mplcursors makes
-        each one draggable and removes it on a right-click — the V2 behaviour.
+        each one draggable and removes it on a right-click, the V2 behaviour.
         The cursor is rebuilt every redraw because ``ax.clear()`` discards the
         old scatter artists it was bound to.
         """

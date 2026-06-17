@@ -4,8 +4,8 @@
 Interaction state for the pre-processing timeline view.
 
 These containers hold everything about *how the user is looking at* the
-recording — the visible time window, an in-progress overview drag, and the
-per-axis y-zoom — without holding any of the recording itself.  Keeping
+recording, the visible time window, an in-progress overview drag, and the
+per-axis y-zoom, without holding any of the recording itself.  Keeping
 them separate from :class:`~spectHR.session.Session` means the data model
 stays pure and immutable while the view stays mutable and cheap, and it
 lets the navigation arithmetic be unit-tested with no Qt or matplotlib in

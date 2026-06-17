@@ -97,7 +97,7 @@ fig.patch.set_facecolor(C_BG)
 ax.set_facecolor(C_BG)
 
 # ── title ─────────────────────────────────────────────────────────────────────
-ax.text(FIG_W / 2, 27.4, "{basename}.h5  — spectHR export structure",
+ax.text(FIG_W / 2, 27.4, "{basename}.h5, spectHR export structure",
         ha="center", va="center", fontsize=13, fontweight="bold", color="#1b3d6e")
 
 # ═══════════════════════════════════════════════════════════════════════

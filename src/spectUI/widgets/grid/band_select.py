@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`BandSelectorMixin` — a row of band checkboxes for grid docks.
+:class:`BandSelectorMixin`, a row of band checkboxes for grid docks.
 
 Shared by the Profile and Transfer-Profile docks: a horizontal strip of
 coloured checkboxes (one per frequency band) that selects which bands are

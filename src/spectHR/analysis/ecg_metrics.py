@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/ecg_metrics.py
 """
-ECG-derived HRV metrics — everything computed from the inter-beat-interval (IBI)
+ECG-derived HRV metrics, everything computed from the inter-beat-interval (IBI)
 series that the R-peak detector extracts from the ECG.
 
 All of these share one input series (the cleaned IBIs), so they live together
@@ -32,11 +32,11 @@ PRSA (phase-rectified signal averaging, Bauer et al. 2006)
 
 Frequency-domain (band powers of the IBI PSD)
     ``band_powers`` group → one ``{band}_power`` column per configured band
-    ``lf_hf_ratio`` LF/HF (report descriptively — *not* a clean sympatho-vagal
+    ``lf_hf_ratio`` LF/HF (report descriptively, *not* a clean sympatho-vagal
                     index, Billman 2013)
 
 Every ``@epoch_metric`` here takes a single ``series``-like argument (``.times``,
-``.ibi``, ``.labels``) — or, on the table path, an
+``.ibi``, ``.labels``), or, on the table path, an
 :class:`~spectHR.analysis.epoch_context.EpochContext` that also carries the
 workspace ``psd_method`` and a cached PSD the frequency metrics reuse.
 
@@ -80,7 +80,7 @@ __all__ = [
 
 
 # ===========================================================================
-# Time-domain — magnitude statistics
+# Time-domain, magnitude statistics
 # ===========================================================================
 
 
@@ -145,7 +145,7 @@ def stationarity_z(series) -> float:
     count against its null mean and variance.
 
     The return value is a z-score: under stationarity it is ~N(0, 1), so
-    ``|z| > 1.96`` flags a non-stationary epoch at the 5% level — a warning
+    ``|z| > 1.96`` flags a non-stationary epoch at the 5% level, a warning
     that whole-epoch spectral estimates (which assume stationarity) should
     be interpreted with care. Returns ``NaN`` for epochs shorter than 10
     valid intervals.
@@ -166,7 +166,7 @@ def stationarity_z(series) -> float:
 
 
 # ===========================================================================
-# Time-domain — variability
+# Time-domain, variability
 # ===========================================================================
 
 
@@ -243,7 +243,7 @@ def ellipse_area(series) -> float:
 
 
 # ===========================================================================
-# Non-linear — detrended fluctuation analysis (DFA-α1)
+# Non-linear, detrended fluctuation analysis (DFA-α1)
 # ===========================================================================
 
 
@@ -323,7 +323,7 @@ def dfa_a1(series) -> float:
 
 
 # ===========================================================================
-# PRSA — phase-rectified signal averaging (deceleration / acceleration capacity)
+# PRSA, phase-rectified signal averaging (deceleration / acceleration capacity)
 # ===========================================================================
 
 # Default half-window: 30 beats each side of the anchor (Bauer 2006).
@@ -372,7 +372,7 @@ def _prsa(ibi: np.ndarray, deceleration: bool, T: int = _T_DEFAULT) -> float:
 
 @epoch_metric
 def dc(series) -> float:
-    """Deceleration Capacity (DC) in ms — PRSA parasympathetic index.
+    """Deceleration Capacity (DC) in ms, PRSA parasympathetic index.
 
     Anchors on beats where IBI increased (heart decelerated), averages a
     window of ±T beats (T = CardioParameters → PrsaAnalysis → prsa_window,
@@ -388,7 +388,7 @@ def dc(series) -> float:
 
 @epoch_metric
 def ac(series) -> float:
-    """Acceleration Capacity (AC) in ms — PRSA sympatho-vagal index.
+    """Acceleration Capacity (AC) in ms, PRSA sympatho-vagal index.
 
     Anchors on beats where IBI decreased (heart accelerated), averages a
     window of ±T beats (T = CardioParameters → PrsaAnalysis → prsa_window,
@@ -403,7 +403,7 @@ def ac(series) -> float:
 
 
 # ===========================================================================
-# Frequency-domain — band powers of the IBI PSD
+# Frequency-domain, band powers of the IBI PSD
 #
 # These are **dual-mode**: called directly with a bare series (and optionally an
 # explicit ``psd_method``) they integrate the band on a freshly-computed PSD;
@@ -511,7 +511,7 @@ def hf_power(series, psd_method=None) -> float:
 def lf_hf_ratio(series, psd_method=None) -> float:
     """LF/HF ratio. Historically read as sympatho-vagal balance, but that
     interpretation is not supported by current evidence (Billman 2013;
-    Reyes del Paso et al. 2013) — LF reflects mixed autonomic influences,
+    Reyes del Paso et al. 2013), LF reflects mixed autonomic influences,
     not a clean sympathetic index. Report the ratio descriptively."""
     try:
         method = _resolve_method(series, psd_method)

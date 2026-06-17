@@ -5,7 +5,7 @@ Shared spectral-tile drawing, ported from the V2 plot widgets.
 
 These are *display* routines (matplotlib only): they take an already-computed
 ``spectHR`` result plus the workspace band table and render a tile the V2 way
-— confidence-interval shading, a black PSD line, per-band under-curve fills
+- confidence-interval shading, a black PSD line, per-band under-curve fills
 labelled with their integrated power, and a unit-bearing y-axis.  The PSD and
 the (Bode) transfer modulus panel share the same band-fill style.
 """
@@ -34,7 +34,7 @@ def band_x_range(bands: dict) -> tuple[float, float]:
 
 
 def strip_per_hz(unit: str) -> str:
-    """Drop a ``/Hz`` suffix — band power is the PSD integrated over Hz."""
+    """Drop a ``/Hz`` suffix, band power is the PSD integrated over Hz."""
     u = (unit or "").strip()
     for suffix in ("/Hz", "/hz", " /Hz", " /hz"):
         if u.endswith(suffix):
@@ -159,7 +159,7 @@ def draw_psd_tile(
     ``power`` / ``unit`` and optional ``ci_lower`` / ``ci_upper``).
 
     When *smooth* is True the displayed curve and confidence interval are
-    passed through CARSPAN's 3-point moving average (manual §3.2) — the
+    passed through CARSPAN's 3-point moving average (manual §3.2), the
     plot-only smoother V2 applies to the CARSPAN spectra.  Band-power legend
     values are always integrated on the *raw* (unsmoothed) periodogram, so
     the numbers match the compute layer exactly while the drawn curve is the

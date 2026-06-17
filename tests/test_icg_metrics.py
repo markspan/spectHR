@@ -123,7 +123,7 @@ def test_b_point_guard_excludes_zone_before_c():
     Two upstroke acceleration features are built from logistic steps, whose
     positive 2nd-derivative lobe peaks at ``centre − 1.317·w``:
       - a true B inflection at ~70 ms (weaker), and
-      - a stronger secondary bump at ~105 ms — only 15 ms before C (120 ms).
+      - a stronger secondary bump at ~105 ms, only 15 ms before C (120 ms).
     Without the guard the global 2nd-derivative max latches onto the late
     secondary bump; the 30 ms guard (ceiling 90 ms) excludes it and recovers
     the true early B.

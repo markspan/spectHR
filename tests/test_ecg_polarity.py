@@ -3,7 +3,7 @@
 """
 Tests for ECG polarity detection (:func:`detect_ecg_polarity`).
 
-Pure spectHR signal logic — no Qt.  The Session-level transform
+Pure spectHR signal logic, no Qt.  The Session-level transform
 :func:`spectHR.DataSet.preprocessing.apply_ecg_polarity` that calls this is
 covered in ``test_preprocessing.py``.
 """
@@ -61,7 +61,7 @@ def test_return_debug_reports_skewness_sign():
 def test_flat_signal_defaults_to_normal():
     t = np.arange(0.0, 10.0, 1.0 / 250.0)
     v = np.zeros_like(t)
-    # No QRS to decide on — must not crash and must not spuriously flip.
+    # No QRS to decide on, must not crash and must not spuriously flip.
     assert detect_ecg_polarity(t, v) == "normal"
 
 

@@ -4,7 +4,7 @@
 """
 Per-epoch transfer-function band metrics.
 
-Registers one ``@epoch_metric_group`` — ``transfer_band_metrics`` — that
+Registers one ``@epoch_metric_group``, ``transfer_band_metrics``, that
 emits three columns per configured frequency band:
 
 ``{band}_tf_modulus``
@@ -45,14 +45,14 @@ TRANSFER_COLUMN_TOOLTIPS: dict[str, str] = {
         "Transfer function modulus |H(f)| averaged over this band, gated to "
         "bins where squared coherence ≥ threshold. "
         "Units: ms/mmHg (BP input) or dimensionless (respiration input). "
-        "Reflects the gain of the input→IBI transfer — baroreflex sensitivity "
+        "Reflects the gain of the input→IBI transfer, baroreflex sensitivity "
         "when the input is blood pressure."
     ),
     "_tf_coherence": (
         "Power-weighted mean squared coherence over this band "
         "(Σ coh[k]·PSD_in[k] / Σ PSD_in[k]). "
         "Ranges 0–1; values below the threshold (~0.5) indicate a weak or "
-        "non-linear coupling — treat the modulus and phase with caution."
+        "non-linear coupling, treat the modulus and phase with caution."
     ),
     "_tf_phase_w": (
         "Mean wrapped phase ∠H(f) in radians over the coherent bins in this "

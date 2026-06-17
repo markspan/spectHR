@@ -46,7 +46,7 @@ def summarize_profile_band(
     """Scalar summary of one band's sliding-window power profile.
 
     Returns ``mean`` / ``std`` (population, ``ddof=0``) / ``min`` / ``max``
-    over the finite windows, plus ``t_max`` — the epoch-relative time (read
+    over the finite windows, plus ``t_max``, the epoch-relative time (read
     from ``t_rel``) of the window holding the maximum power. Returns an
     empty dict when no window is finite, so callers can splat it directly.
     """
@@ -107,7 +107,7 @@ def profile_summary_scalars(
     Produces, for each emitted band, ``{band}_prof_{mean,std,min,max,t_max}``
     (via :func:`profile_band_data`), plus the run-level metadata columns
     ``prof_method``, ``prof_unit``, ``prof_window_s``, ``prof_step_s``,
-    ``prof_n_windows`` and — when an adaptive band was used —
+    ``prof_n_windows`` and, when an adaptive band was used,
     ``prof_adaptive_band`` / ``prof_adaptive_source``.
 
     Centralising the column-naming here keeps the CSV/HDF5 column set defined in

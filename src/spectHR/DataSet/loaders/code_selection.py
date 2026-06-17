@@ -5,7 +5,7 @@
 A CARSPAN ``.evt`` file with more than two distinct non-RTop event codes
 is ambiguous: a human has to say which codes mark epoch starts and which
 mark stops. That choice is a *UI* concern, so the loader must not import a
-dialog — doing so would invert the dependency (``spectHR`` → ``spectUI``)
+dialog, doing so would invert the dependency (``spectHR`` → ``spectUI``)
 and break headless / batch use of the library.
 
 Instead the loader asks whatever resolver has been registered here. The

@@ -1,11 +1,11 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`HRSeriesWidget` — the instantaneous heart-rate (tachogram) dock.
+:class:`HRSeriesWidget`, the instantaneous heart-rate (tachogram) dock.
 
 A thin :class:`~spectUI.widgets.timeline.base.TimelineView`: it inherits the
 window / overview / navigation machinery and supplies only the heart-rate
-trace.  The series itself is computed in ``spectHR`` — the widget calls
+trace.  The series itself is computed in ``spectHR``, the widget calls
 :func:`~spectHR.analysis.derived_series.heart_rate_series` and plots the
 result, computing nothing.  Because it derives from ``events["hrv"]``, the
 coordinator refreshes it whenever an R-peak edit changes that channel.
@@ -30,8 +30,8 @@ from spectUI.common import style_axis_clean
 from spectUI.widgets.timeline.base import TimelineView
 from spectUI.widgets.timeline.model import TimelineModel
 
-_C_HR = "#c0392b"        # deep red — heart rate
-_C_INHALE = "#ADD8E6"    # light blue — inhalation shading (V2)
+_C_HR = "#c0392b"        # deep red, heart rate
+_C_INHALE = "#ADD8E6"    # light blue, inhalation shading (V2)
 
 
 @dataclass
@@ -44,7 +44,7 @@ class HRModel(TimelineModel):
         Aligned beat times (s) and instantaneous heart rate (bpm), with
         artefact intervals removed.
     events
-        The ``"hrv"`` :class:`Events` (or ``None``) — used for abnormal-beat
+        The ``"hrv"`` :class:`Events` (or ``None``), used for abnormal-beat
         navigation.
     """
 

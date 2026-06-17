@@ -61,7 +61,7 @@ class _TransferBase(EpochGridView):
         """Configured input signal, falling back to ``rsp`` when BP is absent.
 
         Blood pressure is the default input (baroreflex), but many recordings
-        carry no BP channel — there we revert to respiration so the dock still
+        carry no BP channel, there we revert to respiration so the dock still
         produces a transfer function instead of an empty tile.
         """
         sig = str(self._ts["input_signal"]).lower()
@@ -166,9 +166,9 @@ class TransferPlotWidget(_TransferBase):
         # in a closed-loop system.  The wording differs by input channel.
         sig_lower = self._sig.lower()
         if sig_lower.startswith("bp"):
-            caveat = "Open-loop estimate — BP and HR are mutually coupled."
+            caveat = "Open-loop estimate, BP and HR are mutually coupled."
         else:
-            caveat = "Open-loop estimate — respiration and HR are mutually coupled."
+            caveat = "Open-loop estimate, respiration and HR are mutually coupled."
         fig.text(0.5, 0.01, caveat,
                  ha="center", va="bottom", fontsize=5, color="#888888",
                  style="italic")

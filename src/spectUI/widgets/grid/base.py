@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-:class:`EpochGridView` — base for per-epoch computed-figure docks.
+:class:`EpochGridView`, base for per-epoch computed-figure docks.
 
 The shape shared by the PSD / profile / transfer / spectrogram docks: a
 scrollable grid with one tile per active epoch, each tile a small figure of
@@ -66,7 +66,7 @@ class EpochGridView(QWidget):
     #: At most this many tiles per row (the rest wrap onto scrolled rows).
     MAX_COLUMNS = 2
     #: Multiplier on the per-tile height (1.0 = viewport aspect).  >1 makes a
-    #: taller tile — e.g. the 3-D spectrogram, whose surface needs height but
+    #: taller tile, e.g. the 3-D spectrogram, whose surface needs height but
     #: leaves whitespace at the sides, so two still sit comfortably side by side.
     TILE_HEIGHT_FACTOR = 1.0
     #: True when each tile has one magnitude y-axis that can be linked/zoomed
@@ -125,7 +125,7 @@ class EpochGridView(QWidget):
         self.setVisible(True)
         self.refresh()
 
-    def set_epoch(self, name: str) -> None:  # noqa: ARG002 — grid shows all epochs
+    def set_epoch(self, name: str) -> None:  # noqa: ARG002, grid shows all epochs
         """No-op: the grid always shows every active epoch."""
 
     def refresh(self) -> None:
@@ -149,7 +149,7 @@ class EpochGridView(QWidget):
                         results.append((name, None))
                     else:
                         results.append((name, self._compute_epoch(hrv, scoped)))
-                except Exception as exc:  # noqa: BLE001 — surface per-tile, never crash
+                except Exception as exc:  # noqa: BLE001, surface per-tile, never crash
                     results.append((name, _ComputeError(str(exc))))
             return results
 
@@ -249,7 +249,7 @@ class EpochGridView(QWidget):
         if not self._subplots or self._scroll is None:
             return
         h = self._scroll.viewport().height()
-        if h < 50:                       # not laid out yet — use the dock height
+        if h < 50:                       # not laid out yet, use the dock height
             h = max(self.height(), 400)
         base_h = (h - 6) / max(1, self._columns)
         tile_h = max(_MIN_TILE_PX, int(base_h * self.TILE_HEIGHT_FACTOR))
