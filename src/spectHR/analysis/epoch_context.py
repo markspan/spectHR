@@ -161,7 +161,7 @@ class EpochContext:
         if self.rsp_ts is None:
             return None
         try:
-            from spectHR.analysis.bp_metrics import resp_beat_parameters
+            from spectHR.analysis.respiration_metrics import resp_beat_parameters
             return resp_beat_parameters(
                 np.asarray(self.rsp_ts.times,  dtype=float),
                 np.asarray(self.rsp_ts.values, dtype=float),
@@ -176,7 +176,7 @@ class EpochContext:
         if self.rsp_phases is None or len(self.rsp_phases) < 2:
             return None
         try:
-            from spectHR.analysis.bp_metrics import grossman_rsa_per_breath
+            from spectHR.analysis.respiration_metrics import grossman_rsa_per_breath
             return grossman_rsa_per_breath(
                 np.asarray(self.rpeak_times, dtype=float),
                 np.asarray(self.labels,      dtype=object),

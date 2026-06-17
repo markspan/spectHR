@@ -2,38 +2,33 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/bp_metrics.py
 """
-Beat-by-beat blood-pressure and respiration parameters.
+Beat-by-beat **blood-pressure** parameters (the BP waveform series).
 
-This module ports the CARSPAN (``T_EventFile.pas``) beat-by-beat data-column
+This module ports the CARSPAN (``T_EventFile.pas``) blood-pressure data-column
 algorithms to spectHR's time-domain data model.  CARSPAN gates every value on
 the R-peaks of the active cardio series: each cardiac interval ``[R_i, R_{i+1}]``
 yields exactly one value, which makes the parameters directly comparable to the
 HRV metrics computed on the same R-peaks.
 
-Blood pressure (``CalcDataColBPSYS/BPDIA/BPPUL/BPMPR``)
-------------------------------------------------------
-* **SBP** systolic - the maximum sample in ``[R_i, R_{i+1}]``.
-* **DBP** diastolic - the minimum sample *before* the systolic maximum,
-  i.e. the foot of the pressure wave that precedes the systolic peak.
-* **PP**  pulse pressure - ``SBP - DBP`` for that beat.
-* **MAP** mean arterial pressure - the mean of the **raw** samples between two
-  successive diastolic minima.  This is CARSPAN's ``CalcDataColBPMPR``; it is
-  **not** the textbook ``(SBP + 2*DBP) / 3`` approximation but the true
-  integral mean of the waveform over a full beat-to-beat cycle.
+Registered epoch metrics (one CSV/HDF5 column each, the function name)
+---------------------------------------------------------------------
+* ``bp_sbp`` — systolic blood pressure: epoch mean of the per-beat maxima.
+* ``bp_dbp`` — diastolic blood pressure: epoch mean of the foot minima that
+  precede each systolic peak.
+* ``bp_pp``  — pulse pressure (SBP − DBP), epoch mean over beats.
+* ``bp_map`` — mean arterial pressure: the true integral mean of the waveform
+  between two successive diastolic minima (CARSPAN ``CalcDataColBPMPR``), **not**
+  the textbook ``(SBP + 2·DBP) / 3`` approximation.
 
-Respiration (``CalcDataColRESMVO/RESSVO/RESPVO``)
--------------------------------------------------
-* **MVO** mean respiratory volume - the mean of the respiration signal over the
-  cardiac interval ``[R_i, R_{i+1}]``.  (CARSPAN's ``RESPVO`` is an exact
-  duplicate of ``RESMVO``; only ``MVO`` is exposed here.)
-* **SVO** sample respiratory volume - the mean of the respiration signal over a
-  short window of ``ResSamples / 2`` samples ending at each R-peak.
+Respiration (``resp_mvo`` / ``resp_svo``) and respiratory sinus arrhythmia
+(``rsa`` / ``rsa0``) used to live here too; they are now in
+:mod:`spectHR.analysis.respiration_metrics` so each module covers one series.
 
 Flat-line guard
 ---------------
 CARSPAN's ``IsFlatLine`` slides a 300 ms / 10 ms-step window across each cardiac
 interval and rejects the beat when the mean is zero or the coefficient of
-variation (``std / mean``) drops below 0.005 anywhere - the signature of a
+variation (``std / mean``) drops below 0.005 anywhere — the signature of a
 disconnected or clamped pressure transducer.  Because the test is
 scale-invariant it works directly on the physically-scaled values spectHR
 stores (CARSPAN ran it on raw, unscaled samples).  Rejected beats become
@@ -42,11 +37,9 @@ aggregation simply ignores them instead of being dragged toward zero.
 
 Aggregation
 -----------
-:func:`bp_epoch_metrics` / :func:`resp_epoch_metrics` return the ``nanmean`` of
-the beat-by-beat values that fall inside an epoch, keyed with the column names
-that flow through
-:meth:`~spectHR.session.Session.epochs_table` into the CSV and
-HDF5 exports.
+:func:`bp_epoch_metrics` returns the ``nanmean`` of the beat-by-beat values that
+fall inside an epoch, keyed with the column names that flow through
+:meth:`~spectHR.session.Session.epochs_table` into the CSV and HDF5 exports.
 """
 
 from __future__ import annotations
@@ -55,6 +48,7 @@ from typing import Optional
 
 import numpy as np
 
+from spectHR.analysis._beat_sampling import median_dt, nanmean, rpeak_sample_indices
 from spectHR.analysis.registry import epoch_metric
 
 # CARSPAN IsFlatLine constants (T_EventFile.pas).
@@ -62,34 +56,10 @@ _FLATLINE_WINDOW_S = 0.300  # Twin  - 300 ms analysis window
 _FLATLINE_STEP_S = 0.010  # Tstep - 10 ms slide step
 _FLATLINE_VC = 0.005  # variation-coefficient threshold
 
-# CARSPAN default DataCol.ResSamples (TEventFile sets ResSamples := 10).
-_DEFAULT_RES_SAMPLES = 10
-
 
 # ---------------------------------------------------------------------------
-# Low-level helpers
+# Flat-line guard
 # ---------------------------------------------------------------------------
-
-
-def _median_dt(times: np.ndarray) -> Optional[float]:
-    """Median positive sample interval of *times* (seconds), or None."""
-    if times.size < 2:
-        return None
-    dt = np.diff(times)
-    dt = dt[(dt > 0) & np.isfinite(dt)]
-    if dt.size == 0:
-        return None
-    return float(np.median(dt))
-
-
-def _rpeak_sample_indices(sig_times: np.ndarray, rpeak_times: np.ndarray) -> np.ndarray:
-    """Map R-peak times onto the nearest sample index of *sig_times*.
-
-    ``np.searchsorted`` gives the insertion point; we clamp it to the valid
-    index range so callers can slice ``values`` safely.
-    """
-    idx = np.searchsorted(sig_times, rpeak_times)
-    return np.clip(idx, 0, sig_times.size - 1)
 
 
 def is_flatline(
@@ -107,7 +77,7 @@ def is_flatline(
     the interval is shorter than the window the test runs once.
 
     *dt* is the (uniform) sample interval in seconds.  When ``None`` it is
-    derived from ``sig_times`` via :func:`_median_dt`; callers that test many
+    derived from ``sig_times`` via :func:`median_dt`; callers that test many
     beats of the same signal should compute it once and pass it in, since the
     median is an O(N log N) scan of the *whole* waveform and is otherwise
     repeated for every beat.
@@ -117,7 +87,7 @@ def is_flatline(
         return True
 
     if dt is None:
-        dt = _median_dt(sig_times)
+        dt = median_dt(sig_times)
     if dt is None or dt <= 0:
         return True
 
@@ -194,12 +164,12 @@ def bp_beat_parameters(
     if n_beats == 0 or bp_values.size < 2:
         return {"sbp": sbp, "dbp": dbp, "pp": pp, "map": mapr}
 
-    idx = _rpeak_sample_indices(bp_times, rpeak_times)
+    idx = rpeak_sample_indices(bp_times, rpeak_times)
 
     # Sample interval is uniform across the waveform; compute it once and
     # reuse for every beat's flat-line test (otherwise is_flatline rescans
     # the whole bp_times array per beat - the profile hot path).
-    dt = _median_dt(bp_times)
+    dt = median_dt(bp_times)
 
     # Diastolic-minimum sample index per beat - reused by the MAP pass.
     dia_idx = np.full(n_beats, -1, dtype=int)
@@ -267,110 +237,10 @@ def bp_epoch_metrics(
         np.asarray(rpeak_times, dtype=float),
     )
     return {
-        "bp_sbp": _nanmean(beats["sbp"]),
-        "bp_dbp": _nanmean(beats["dbp"]),
-        "bp_pp": _nanmean(beats["pp"]),
-        "bp_map": _nanmean(beats["map"]),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Respiration beat-by-beat parameters
-# ---------------------------------------------------------------------------
-
-
-def resp_beat_parameters(
-    rsp_times: np.ndarray,
-    rsp_values: np.ndarray,
-    rpeak_times: np.ndarray,
-    *,
-    res_samples: int = _DEFAULT_RES_SAMPLES,
-) -> dict[str, np.ndarray]:
-    """Compute per-beat respiratory-volume parameters for the given R-peaks.
-
-    Parameters
-    ----------
-    rsp_times, rsp_values : np.ndarray
-        The respiration waveform (seconds, physical units), sorted by time.
-    rpeak_times : np.ndarray
-        R-peak times (seconds).
-    res_samples : int
-        CARSPAN ``DataCol.ResSamples`` (default 10).  The SVO window spans
-        ``res_samples // 2`` samples ending at each R-peak.
-
-    Returns
-    -------
-    dict[str, np.ndarray]
-        ``"mvo"`` - mean respiration over each cardiac interval ``[R_i, R_{i+1}]``
-        (length ``len(rpeak_times) - 1``).
-        ``"svo"`` - mean respiration over the ``res_samples // 2`` samples ending
-        at each R-peak (length ``len(rpeak_times)``).
-    """
-    rsp_times = np.asarray(rsp_times, dtype=float)
-    rsp_values = np.asarray(rsp_values, dtype=float)
-    rpeak_times = np.asarray(rpeak_times, dtype=float)
-
-    n_int = max(0, rpeak_times.size - 1)
-    mvo = np.full(n_int, np.nan)
-    svo = np.full(rpeak_times.size, np.nan)
-    if rsp_values.size < 2 or rpeak_times.size == 0:
-        return {"mvo": mvo, "svo": svo}
-
-    # Shift the signal so its minimum is 0.  CARSPAN's MVO/SVO are designed
-    # for impedance signals that are always positive (= actual lung volume).
-    # Z-scored surrogates (e.g. accelerometer-derived RSP from Polar) are
-    # centred at 0, so beats landing during exhalation yield negative means.
-    # Shifting by the signal minimum makes MVO/SVO non-negative without
-    # altering the waveform shape used by all other analyses. Only done when
-    # negative values are present, to preserve the original scale when it is
-    # already positive.
-    rsp_min = rsp_values.min()
-    if rsp_min < 0:
-        rsp_values = rsp_values - rsp_min
-
-    idx = _rpeak_sample_indices(rsp_times, rpeak_times)
-
-    # MVO: mean over each cardiac interval.
-    for i in range(n_int):
-        lo, hi = int(idx[i]), int(idx[i + 1])
-        if hi < lo:
-            continue
-        seg = rsp_values[lo : hi + 1]
-        if seg.size:
-            mvo[i] = float(np.mean(seg))
-
-    # SVO: mean over the half-window of samples ending at each R-peak.
-    half = max(1, int(res_samples) // 2)
-    for i in range(rpeak_times.size):
-        e = int(idx[i])
-        b = max(0, e - half)
-        seg = rsp_values[b : e + 1]
-        if seg.size:
-            svo[i] = float(np.mean(seg))
-
-    return {"mvo": mvo, "svo": svo}
-
-
-def resp_epoch_metrics(
-    rsp_ts,
-    rpeak_times: np.ndarray,
-    *,
-    res_samples: int = _DEFAULT_RES_SAMPLES,
-) -> dict[str, float]:
-    """Aggregate per-beat respiration parameters into per-epoch scalars.
-
-    Returns ``{"resp_mvo", "resp_svo"}`` - the ``nanmean`` of the beat-by-beat
-    respiratory-volume values (NaN when the epoch carries no usable beats).
-    """
-    beats = resp_beat_parameters(
-        np.asarray(rsp_ts.times, dtype=float),
-        np.asarray(rsp_ts.values, dtype=float),
-        np.asarray(rpeak_times, dtype=float),
-        res_samples=res_samples,
-    )
-    return {
-        "resp_mvo": _nanmean(beats["mvo"]),
-        "resp_svo": _nanmean(beats["svo"]),
+        "bp_sbp": nanmean(beats["sbp"]),
+        "bp_dbp": nanmean(beats["dbp"]),
+        "bp_pp": nanmean(beats["pp"]),
+        "bp_map": nanmean(beats["map"]),
     }
 
 
@@ -380,24 +250,17 @@ def resp_epoch_metrics(
 #
 # Each metric reads the per-beat parameter dict cached on the
 # :class:`~spectHR.analysis.epoch_context.EpochContext` (so the underlying
-# ``bp_beat_parameters`` / ``resp_beat_parameters`` pass runs at most once per
-# epoch) and returns the epoch ``nanmean`` of one parameter.  When the
-# corresponding waveform channel is absent the context yields ``None`` and the
-# metric reports ``NaN``.  The column name is the function name.
+# ``bp_beat_parameters`` pass runs at most once per epoch) and returns the epoch
+# ``nanmean`` of one parameter.  When the BP channel is absent the context
+# yields ``None`` and the metric reports ``NaN``.  The column name is the
+# function name.
 
 
 def _bp_metric(ctx, key: str) -> float:
     beats = getattr(ctx, "bp_beats", None)
     if not beats:
         return float("nan")
-    return _nanmean(beats[key])
-
-
-def _resp_metric(ctx, key: str) -> float:
-    beats = getattr(ctx, "resp_beats", None)
-    if not beats:
-        return float("nan")
-    return _nanmean(beats[key])
+    return nanmean(beats[key])
 
 
 @epoch_metric
@@ -422,218 +285,3 @@ def bp_pp(ctx) -> float:
 def bp_map(ctx) -> float:
     """Mean arterial pressure, epoch mean of the waveform integral mean (CARSPAN)."""
     return _bp_metric(ctx, "map")
-
-
-@epoch_metric
-def resp_mvo(ctx) -> float:
-    """Mean respiratory volume per cardiac interval, epoch mean (CARSPAN) (no unit!)."""
-    return _resp_metric(ctx, "mvo")
-
-
-@epoch_metric
-def resp_svo(ctx) -> float:
-    """Sample respiratory volume at each R-peak, epoch mean (CARSPAN) (no unit!)."""
-    return _resp_metric(ctx, "svo")
-
-
-# ---------------------------------------------------------------------------
-# Grossman (1990) peak-to-valley RSA
-# ---------------------------------------------------------------------------
-
-_DEFAULT_RSA_LAG_S: float = 1.0  # dZ-HR phase shift; VU-DAMS default 1000 ms
-
-# VU-DAMS default thresholds for the two automatic rejection guards.
-# Both are expressed as fractional deviations (0.50 = 50 %).
-# Source: VU-DAMS manual v2 / DAMS 5.0, Appendix A.
-_STRICT_IBI_DEV: float = 0.50   # max consecutive-IBI deviation (code -5)
-_STRICT_RATE_DEV: float = 0.50  # max respiration-rate deviation from 20-breath running avg (code -6)
-
-
-def grossman_rsa_per_breath(
-    rpeak_times: np.ndarray,
-    rpeak_labels: np.ndarray,
-    rsp_phases,
-    *,
-    lag_s: float = _DEFAULT_RSA_LAG_S,
-    max_ibi_deviation: Optional[float] = None,
-    max_rate_deviation: Optional[float] = None,
-) -> np.ndarray:
-    """Per-breath RSA in ms using the Grossman et al. (1990) peak-to-valley method.
-
-    For each INH→EXH breath cycle:
-
-    * **Shortest IBI** — the minimum IBI within ``[INH_start, INH_end + lag_s]``
-      that sits on an *accelerating* slope (IBI shorter than the preceding one).
-    * **Longest IBI**  — the maximum IBI within ``[EXH_start, EXH_end + lag_s]``
-      that sits on a *decelerating* slope (IBI longer than the preceding one).
-    * **RSA** = longest − shortest (ms).  Negative values and breaths where
-      either IBI could not be located are stored as ``NaN``.
-
-    Parameters
-    ----------
-    rpeak_times : np.ndarray
-        R-peak timestamps in seconds (epoch view, may include artefact beats).
-    rpeak_labels : np.ndarray
-        Per-beat classification labels; beats labelled ``"T"`` or ``"TL"`` are
-        excluded before the search.
-    rsp_phases :
-        A ``RespirationSeriesView`` (or any object exposing ``.starts``,
-        ``.ends``, ``.labels`` arrays) covering the same epoch.
-    lag_s : float
-        Phase-shift applied to the end of each INH and EXH window (default
-        1.0 s, matching VU-DAMS).  Increasing this helps at low respiratory
-        rates; the VU-DAMS manual suggests adjusting it for children.
-    max_ibi_deviation : float or None
-        VU-DAMS code -5 guard (Automatic IBI Artefact Detection, default 50 %).
-        An IBI[j] is **excluded from the shortest/longest candidate pool** (but
-        does not by itself reject the whole breath) when it deviates from the
-        preceding IBI by more than this fraction:
-        ``|IBI[j] / IBI[j-1] - 1| > max_ibi_deviation``.
-        ``None`` disables the guard (default, legacy behaviour).
-    max_rate_deviation : float or None
-        VU-DAMS code -6 guard (Automatic Respiration Rate Artefact Detection,
-        default 50 %).  A **whole breath is rejected** (→ NaN) when its
-        respiration rate deviates from the running average of the 20 preceding
-        breaths by more than this fraction:
-        ``|avg_dur / breath_dur - 1| > max_rate_deviation``.
-        The first breath is never rejected (no preceding average available).
-        ``None`` disables the guard (default, legacy behaviour).
-
-    Returns
-    -------
-    np.ndarray
-        One value per detected INH→EXH pair.  ``NaN`` for invalid breaths.
-    """
-    from spectHR.analysis.ibi_helpers import valid_label_mask
-
-    clean_t = np.asarray(rpeak_times, dtype=float)[
-        valid_label_mask(np.asarray(rpeak_labels, dtype=object))
-    ]
-
-    if clean_t.size < 3:
-        return np.array([], dtype=float)
-
-    ibi_ms = np.diff(clean_t) * 1000.0  # ibi_ms[j] starts at clean_t[j]
-
-    starts = np.asarray(rsp_phases.starts, dtype=float)
-    ends = np.asarray(rsp_phases.ends, dtype=float)
-    labels = np.asarray(rsp_phases.labels, dtype=object)
-
-    # Code -5: pre-compute which IBIs are artefact-free.
-    # An IBI is an artefact when it deviates more than max_ibi_deviation from
-    # the preceding IBI.  Artefact IBIs are excluded from the shortest/longest
-    # candidate pools but do NOT by themselves reject the whole breath.
-    valid_ibi = np.ones(ibi_ms.size, dtype=bool)
-    if max_ibi_deviation is not None:
-        for j in range(1, ibi_ms.size):
-            if ibi_ms[j - 1] > 0:
-                dev = abs(ibi_ms[j] / ibi_ms[j - 1] - 1.0)
-                if dev > max_ibi_deviation:
-                    valid_ibi[j] = False
-
-    # Collect all INH→EXH pairs so we can compute the running average.
-    breath_pairs: list[tuple[float, float, float, float]] = []
-    for i in range(len(starts) - 1):
-        if labels[i] == "INH" and labels[i + 1] == "EXH":
-            breath_pairs.append((
-                float(starts[i]), float(ends[i]),
-                float(starts[i + 1]), float(ends[i + 1]),
-            ))
-
-    results: list[float] = []
-
-    for bi, (inh_s, inh_e, exh_s, exh_e) in enumerate(breath_pairs):
-        breath_dur = exh_e - inh_s
-
-        # Code -6: irregular respiration rate.
-        # Reject if rate deviates > max_rate_deviation from the running average
-        # of the 20 preceding breath durations.  Skip for the very first breath
-        # (no preceding average available).
-        if max_rate_deviation is not None and bi > 0 and breath_dur > 0:
-            window = breath_pairs[max(0, bi - 20): bi]
-            avg_dur = float(np.mean([p[3] - p[0] for p in window]))
-            if avg_dur > 0 and abs(avg_dur / breath_dur - 1.0) > max_rate_deviation:
-                results.append(np.nan)
-                continue
-
-        wi_lo, wi_hi = inh_s, inh_e + lag_s
-        we_lo, we_hi = exh_s, exh_e + lag_s
-
-        # Apply the IBI artefact mask (code -5) when building candidate sets.
-        inh_idx = np.where(
-            (clean_t[:-1] >= wi_lo) & (clean_t[:-1] <= wi_hi) & valid_ibi
-        )[0]
-        exh_idx = np.where(
-            (clean_t[:-1] >= we_lo) & (clean_t[:-1] <= we_hi) & valid_ibi
-        )[0]
-
-        # Shortest IBI on an accelerating slope (IBI[j] < IBI[j-1])
-        shortest: float | None = None
-        for j in inh_idx:
-            if j > 0 and ibi_ms[j] < ibi_ms[j - 1]:
-                if shortest is None or ibi_ms[j] < shortest:
-                    shortest = float(ibi_ms[j])
-
-        # Longest IBI on a decelerating slope (IBI[j] > IBI[j-1])
-        longest: float | None = None
-        for j in exh_idx:
-            if j > 0 and ibi_ms[j] > ibi_ms[j - 1]:
-                if longest is None or ibi_ms[j] > longest:
-                    longest = float(ibi_ms[j])
-
-        if shortest is None or longest is None:
-            # Undetectable IBI (no qualifying accelerating/decelerating beat).
-            # NaN here is excluded from the positive-only RSA mean but counts
-            # as zero in RSA0 (which divides by the total breath count).
-            results.append(np.nan)
-        else:
-            # Keep the raw difference, including negatives, so the per-breath
-            # export stays informative.  RSA discards negatives; RSA0 counts
-            # them (and the NaN above) as zero over the total breath count.
-            results.append(float(longest - shortest))
-
-    return np.asarray(results, dtype=float)
-
-
-def _rsa_metric(ctx, key: str) -> float:
-    beats = getattr(ctx, "rsa_beats", None)
-    if beats is None or beats.size == 0:
-        return float("nan")
-    if key == "rsa":
-        # Mean of positive-only values (VU-DAMS RSA: excludes negative and missing).
-        valid = beats[np.isfinite(beats) & (beats > 0)]
-        return float(np.mean(valid)) if valid.size > 0 else float("nan")
-    # RSA0 (VU-DAMS): every *invalid* breath — negative RSA OR an undetectable
-    # shortest/longest IBI — is **included** in the mean with value zero, i.e.
-    # the denominator is the total number of breath cycles in the label
-    # (manual §5.4.1: "included in the mean calculation with value zero").
-    # Returns NaN only when no breath was measurable at all.
-    if not np.any(np.isfinite(beats)):
-        return float("nan")
-    contrib = np.where(np.isfinite(beats) & (beats > 0), beats, 0.0)
-    return float(np.mean(contrib))
-
-
-@epoch_metric
-def rsa(ctx) -> float:
-    """Respiratory sinus arrhythmia: mean over valid breath cycles (Grossman 1990 peak-to-valley, ms)."""
-    return _rsa_metric(ctx, "rsa")
-
-
-@epoch_metric
-def rsa0(ctx) -> float:
-    """RSA with every invalid breath (negative or undetectable) counted as zero over the total breath count; reduces over-estimation bias (VU-DAMS RSA0, ms)."""
-    return _rsa_metric(ctx, "rsa0")
-
-
-# ---------------------------------------------------------------------------
-# Aggregation helper
-# ---------------------------------------------------------------------------
-
-
-def _nanmean(arr: np.ndarray) -> float:
-    """``np.nanmean`` that returns NaN (not a warning) for an all-NaN array."""
-    a = np.asarray(arr, dtype=float)
-    if a.size == 0 or not np.any(np.isfinite(a)):
-        return float("nan")
-    return float(np.nanmean(a))

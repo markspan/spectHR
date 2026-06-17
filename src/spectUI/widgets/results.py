@@ -186,7 +186,7 @@ class ResultsTableWidget(QWidget):
         if col in docs:
             return docs[col]
         from spectHR.analysis.transfer_metrics import TRANSFER_COLUMN_TOOLTIPS
-        from spectHR.analysis.frequency_metrics import BAND_POWER_COLUMN_TOOLTIP
+        from spectHR.analysis.ecg_metrics import BAND_POWER_COLUMN_TOOLTIP
         for lookup in (TRANSFER_COLUMN_TOOLTIPS, BAND_POWER_COLUMN_TOOLTIP):
             for suffix, tip in lookup.items():
                 if col.endswith(suffix):

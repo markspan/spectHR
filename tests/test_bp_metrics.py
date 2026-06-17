@@ -1,15 +1,18 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-tests/test_bp_metrics.py -- beat-by-beat BP / RESP parameters.
+tests/test_bp_metrics.py -- beat-by-beat BP / RESP / RSA parameters.
 
-Covers the CARSPAN-faithful blood-pressure and respiration parameter
-calculators in ``spectHR.analysis.bp_metrics``:
+Covers the CARSPAN-faithful beat-by-beat calculators. After the analysis
+modules were split by series type, blood pressure lives in
+``spectHR.analysis.bp_metrics`` while respiratory volume and RSA live in
+``spectHR.analysis.respiration_metrics``:
 
 - SBP/DBP/PP value definitions (max, min-before-max, max-min)
 - MAP as the integral mean between successive diastolic minima
 - Flat-line rejection (zero/low coefficient of variation -> NaN beat)
 - Respiratory volume MVO (per cardiac interval) and SVO (window at R-peak)
+- Grossman peak-to-valley RSA per breath + RSA/RSA0 aggregation
 - Per-epoch nanmean aggregation and empty/degenerate edge cases
 """
 from __future__ import annotations
@@ -19,8 +22,10 @@ import numpy as np
 from spectHR.analysis.bp_metrics import (
     bp_beat_parameters,
     bp_epoch_metrics,
-    grossman_rsa_per_breath,
     is_flatline,
+)
+from spectHR.analysis.respiration_metrics import (
+    grossman_rsa_per_breath,
     resp_beat_parameters,
     resp_epoch_metrics,
 )
@@ -273,7 +278,7 @@ def test_grossman_rsa_negative_kept_not_nan():
 def test_rsa_positive_only_rsa0_zeros_all_invalid():
     """RSA = mean of positive values only; RSA0 counts *every* invalid breath
     (negative or missing) as zero over the total breath count (VU-DAMS def)."""
-    from spectHR.analysis.bp_metrics import _rsa_metric
+    from spectHR.analysis.respiration_metrics import _rsa_metric
 
     class _Ctx:
         pass
@@ -293,7 +298,7 @@ def test_rsa_positive_only_rsa0_zeros_all_invalid():
 
 
 def test_rsa0_all_nan_returns_nan():
-    from spectHR.analysis.bp_metrics import _rsa_metric
+    from spectHR.analysis.respiration_metrics import _rsa_metric
 
     class _Ctx:
         rsa_beats = np.array([np.nan, np.nan])
@@ -305,7 +310,7 @@ def test_rsa0_all_nan_returns_nan():
 def test_rsa0_denominator_is_total_breath_count():
     """RSA0 divides the sum of positive RSA by the *total* number of breath
     cycles, so missing/negative breaths drag the mean down (VU-DAMS RSA0)."""
-    from spectHR.analysis.bp_metrics import _rsa_metric
+    from spectHR.analysis.respiration_metrics import _rsa_metric
 
     class _Ctx:
         pass

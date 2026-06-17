@@ -9,8 +9,7 @@ performs read-only operations on its ``.times``, ``.ibi``, and ``.labels``
 arrays. There are no side effects and no imports of dataset classes.
 
 These functions are called by:
-- ``spectHR.analysis.time_metrics`` (metric computations)
-- ``spectHR.analysis.frequency_metrics``
+- ``spectHR.analysis.ecg_metrics`` (all IBI/HRV metric computations)
 - ``spectHR.analysis.psd._engine.PSDEngine`` (IBI preparation for PSD back-ends)
 """
 from __future__ import annotations

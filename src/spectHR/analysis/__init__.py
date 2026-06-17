@@ -26,14 +26,12 @@ from spectHR.analysis.registry import (
 
 # Importing the metric submodules populates _REGISTRY as a side effect.
 # The registry is filled on first access to spectHR.analysis.
-from spectHR.analysis import time_metrics       # noqa: F401
-from spectHR.analysis import frequency_metrics  # noqa: F401
-from spectHR.analysis import bp_metrics         # noqa: F401
-from spectHR.analysis import nonlinear          # noqa: F401  (dfa_a1)
-from spectHR.analysis import respiration_metrics  # noqa: F401  (resp_freq, hf_resp_in_band)
-from spectHR.analysis import icg_metrics        # noqa: F401  (pep)
+# One submodule per series type; see analysis/README.md for the full map.
+from spectHR.analysis import ecg_metrics        # noqa: F401  (all IBI/HRV: time, Poincaré, DFA, PRSA, band powers)
+from spectHR.analysis import bp_metrics         # noqa: F401  (bp_sbp/dbp/pp/map)
+from spectHR.analysis import respiration_metrics  # noqa: F401  (resp_freq, hf_resp_in_band, resp_mvo/svo, rsa/rsa0)
+from spectHR.analysis import icg_metrics        # noqa: F401  (pep, pep_b/c/q_ms, pep_n_beats)
 from spectHR.analysis import transfer_metrics   # noqa: F401  (transfer_band_metrics)
-from spectHR.analysis import prsa_metrics       # noqa: F401  (dc, ac)
 
 __all__ = [
     "epoch_metric",
@@ -41,5 +39,5 @@ __all__ = [
     "get_metrics",
     "get_metric_groups",
     # Metric submodules are importable but not re-exported by name here;
-    # call them as hrv.time_metrics.rmssd if you need the raw function.
+    # call them as hrv.ecg_metrics.rmssd if you need the raw function.
 ]

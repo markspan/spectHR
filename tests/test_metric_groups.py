@@ -26,7 +26,7 @@ from spectHR.analysis.registry import (
     epoch_metric_group,
     get_metric_groups,
 )
-from spectHR.analysis.frequency_metrics import (
+from spectHR.analysis.ecg_metrics import (
     band_powers,
     STANDARD_BAND_POWER_COLUMNS,
 )

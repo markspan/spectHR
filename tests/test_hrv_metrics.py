@@ -33,12 +33,12 @@ from spectHR.analysis.psd import (
     PSDEngine,
 )
 from spectHR.analysis.psd._band_power import band_power_rectangular
-from spectHR.analysis.time_metrics import (
+from spectHR.analysis.ecg_metrics import (
     count, mean, median, sdnn, rmssd, sdsd, sd1, sd2, sd_ratio, ellipse_area,
     min as ibi_min,
     max as ibi_max,
 )
-from spectHR.analysis.frequency_metrics import (
+from spectHR.analysis.ecg_metrics import (
     lf_power, hf_power, lf_hf_ratio, vlf_power, fullrange_power,
 )
 
