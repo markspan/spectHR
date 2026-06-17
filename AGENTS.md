@@ -25,13 +25,13 @@ the [readme.MD](readme.MD) first for what the project *is*; this file describes
   reserved for genuinely ordered steps.
 * **`<details>`** blocks are used for optional depth (algorithm internals,
   derivations) so the surface stays approachable.
-* **Em-dashes** (`—`) never; commas for step labelling
+* **Em-dashes** (`U+2014`) never; commas for step labelling
   ("Step 1, Check and clean the ECG"); `---` rules between top-level
   sections in Markdown.
 * **Names**: the project is *spectHR* (lower-s, upper-HR). The reference
   Pascal program is *CARSPAN* (all caps). Acronyms keep their case.
 * **Maths** uses LaTeX in `$...$` / `$$...$$`. Inline values use the
-  ASCII or Unicode symbol that reads most naturally — `α = 0.10`, not
+  ASCII or Unicode symbol that reads most naturally, `α = 0.10`, not
   `\\alpha = 0.10`, when the surrounding text is plain.
 * **Tables** are the preferred shape for parameter lists, defaults,
   band edges, anything where alignment helps comprehension.
@@ -44,7 +44,7 @@ the [readme.MD](readme.MD) first for what the project *is*; this file describes
 
 > Always use docstrings if possible. Be generous with comments.
 > Readability is favoured over compactness.
->                     — `~/.claude/CLAUDE.md`
+>, `~/.claude/CLAUDE.md`
 
 That sentence is the project's first principle. Practical consequences:
 
@@ -66,7 +66,7 @@ That sentence is the project's first principle. Practical consequences:
   ```
 
 * **Short methods.** When something grows beyond ~80 lines, look for a
-  helper to extract — a lower-level routine, a small dataclass, or a
+  helper to extract, a lower-level routine, a small dataclass, or a
   module under a cleaner name (we did this for `epoch_builders/`).
 
 ### 2.2 Modern Python, but conservatively
@@ -123,13 +123,13 @@ That sentence is the project's first principle. Practical consequences:
   the defaults from it (see `IBIClassificationParams.DEFAULT_IBI_PARAMS`).
 * **Magic numbers get a comment** with their physical meaning, units
   and (where possible) a literature reference. A bare `300.0` is
-  not OK; `300.0  # ms — refractory period (CARSPAN T_refr)` is.
+  not OK; `300.0  # ms, refractory period (CARSPAN T_refr)` is.
 
 ### 2.6 Extension points
 
 * **Epoch metrics**: decorate a standalone function with
-  `@epoch_metric` (in `spectHR.analysis`). It takes one argument — a
-  `CardioSeriesLike` or the per-epoch `EpochContext` — and returns a
+  `@epoch_metric` (in `spectHR.analysis`). It takes one argument, a
+  `CardioSeriesLike` or the per-epoch `EpochContext`, and returns a
   single scalar (one CSV column, never more). It is auto-discovered by
   `PhysioData.epoched_parameters_table()` and exported in the
   Parameters table, CSV, and HDF5. This covers time-domain HRV, the
@@ -171,7 +171,7 @@ That sentence is the project's first principle. Practical consequences:
   version".
 * **Floating-point edge cases** are guarded explicitly. The
   uniform-IBI `sd_ratio` returns `NaN` because we know the Brennan
-  formula collapses into ULP-level noise — and we say so in the
+  formula collapses into ULP-level noise, and we say so in the
   docstring.
 
 ### 2.9 Testing
@@ -198,7 +198,7 @@ That sentence is the project's first principle. Practical consequences:
 * **Constants** in `UPPER_SNAKE_CASE`. Module-private constants
   start with a leading underscore (`_Y_ZOOM_STEP_UP`,
   `_FILENAME_BAD_CHARS`). Public configuration dicts that the
-  workspace mutates do *not* — `WELCH_PARAMS` is intentionally
+  workspace mutates do *not*, `WELCH_PARAMS` is intentionally
   un-prefixed.
 * **Filenames** for new modules are `lower_snake_case.py` for plain
   modules, `CamelCase.py` only when the file contains a single
@@ -225,7 +225,7 @@ When an AI assistant edits this codebase, the rules above apply, plus:
   does.
 * **Don't silently revert recent edits.** If a file shows recent
   user / linter changes (the system reminder will say so), respect
-  them. If you genuinely think a recent change is wrong, raise it —
+  them. If you genuinely think a recent change is wrong, raise it,
   don't reverse it.
 * **Keep `import spectHR` headless.** Adding a top-level GUI import
   to anything under `src/spectHR/` is a regression even if tests pass
@@ -266,7 +266,7 @@ errors on the next import, or duplicate blocks.
 is through the bash mount path (`/sessions/.../mnt/spectHR/...`):
 
 ```python
-# Targeted patch (preferred — only the changed fragment)
+# Targeted patch (preferred, only the changed fragment)
 python3 - << 'PYEOF'
 p = '/sessions/.../mnt/spectHR/src/some/module.py'
 src = open(p).read()

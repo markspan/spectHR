@@ -1,4 +1,4 @@
-# `spectHR/analysis/` — metric reference
+# `spectHR/analysis/`: metric reference
 
 This package holds spectHR's **headless** analysis library (no Qt, no
 matplotlib). It computes every per-epoch scalar shown in the Results dock and
@@ -6,7 +6,7 @@ written to the CSV / HDF5 export, plus the windowed/spectral series the plot
 docks draw.
 
 The modules are organised **by the physiological series the metrics come
-from** — one module per series type. If you are looking for where a column in
+from**, one module per series type. If you are looking for where a column in
 the Results table or the CSV is calculated, find its series below.
 
 ---
@@ -19,7 +19,7 @@ the Results table or the CSV is calculated, find its series below.
   [`registry.py`](registry.py); the **column name is the function name**.
 * `Session.epochs_table(config)` evaluates every registered metric per active
   epoch. Each metric receives an
-  **[`EpochContext`](epoch_context.py)** — the epoch's R-peak view plus the
+  **[`EpochContext`](epoch_context.py)**, the epoch's R-peak view plus the
   workspace settings (`psd_method`, RSA lag, …) and lazily-cached, shared
   intermediates: the PSD, the per-beat BP/respiration dicts, the per-breath RSA
   array and the PEP ensemble. Caching means the expensive passes run **once per
@@ -30,7 +30,7 @@ the Results table or the CSV is calculated, find its series below.
   per-epoch arrays into the `<name>.csv` (scalars) and `<name>.h5` (all arrays
   and summary scalars) files.
 
-Scientific citations are not duplicated here — the algorithm docstrings and the
+Scientific citations are not duplicated here, the algorithm docstrings and the
 top-level [`readme.MD` § References](../../../readme.MD#references) carry the full
 bibliography (Mulder, Grossman, Billman, Robbe, Riese, Lozano, Peng, Bauer, van
 Roon, Task Force 1996, …).
@@ -49,60 +49,60 @@ Roon, Task Force 1996, …).
 
 ---
 
-## ECG / IBI series — [`ecg_metrics.py`](ecg_metrics.py)
+## ECG / IBI series: [`ecg_metrics.py`](ecg_metrics.py)
 
 Everything here is computed from the cleaned inter-beat intervals (artefact
 beats dropped by [`ibi_helpers.py`](ibi_helpers.py)). Grouped by HRV method:
 
-* **Time-domain** — `count`, `mean`, `median`, `min`, `max` (IBI magnitude);
+* **Time-domain**, `count`, `mean`, `median`, `min`, `max` (IBI magnitude);
   `rmssd` (RMS of successive differences), `sdnn` (SD of IBIs), `sdsd` (SD of
   successive differences). All in ms.
-* **Stationarity** — `stationarity` (IBI-vs-time linear correlation) and
+* **Stationarity**, `stationarity` (IBI-vs-time linear correlation) and
   `stationarity_z` (reverse-arrangements z-score; `|z| > 1.96` flags a
   non-stationary epoch where whole-epoch spectra should be read with care).
-* **Poincaré** — `sd1` (minor axis = `std(ΔIBI)/√2`), `sd2` (major axis via
+* **Poincaré**, `sd1` (minor axis = `std(ΔIBI)/√2`), `sd2` (major axis via
   Brennan's identity `SD2² = 2·Var(IBI) − ½·Var(ΔIBI)`), `sd_ratio` (SD1/SD2),
   `ellipse_area` (`π·SD1·SD2`).
-* **Non-linear** — `dfa_a1`: short-term detrended-fluctuation scaling exponent
+* **Non-linear**, `dfa_a1`: short-term detrended-fluctuation scaling exponent
   α₁ over box sizes 4–16 beats (slope of `log F(n)` vs `log n`).
-* **PRSA** — `dc` / `ac`: deceleration / acceleration capacity by phase-rectified
+* **PRSA**, `dc` / `ac`: deceleration / acceleration capacity by phase-rectified
   signal averaging (anchor on IBI increases/decreases, average ±T beats, apply
   the four-point formula; `T = PrsaAnalysis.prsa_window`, default 30).
-* **Frequency-domain** — `band_powers` emits one `{band}_power` column per
+* **Frequency-domain**, `band_powers` emits one `{band}_power` column per
   configured band (rectangular integration of the IBI PSD), and `lf_hf_ratio`
-  the LF/HF quotient (report descriptively — not a clean sympatho-vagal index).
+  the LF/HF quotient (report descriptively, not a clean sympatho-vagal index).
   The PSD itself is computed by the [`psd/`](psd/) sub-package (CARSPAN, Welch
   or Lomb-Scargle back-ends) and cached on the `EpochContext`.
 
-## Blood-pressure series — [`bp_metrics.py`](bp_metrics.py)
+## Blood-pressure series: [`bp_metrics.py`](bp_metrics.py)
 
 CARSPAN-faithful beat-by-beat values, each gated on a cardiac interval
 `[Rᵢ, Rᵢ₊₁]`, then averaged (`nanmean`) over the epoch:
 
 * `bp_sbp` systolic (per-beat max), `bp_dbp` diastolic (foot minimum before the
   systolic peak), `bp_pp` pulse pressure (SBP − DBP), `bp_map` mean arterial
-  pressure (true integral mean of the waveform between successive diastoles — not
+  pressure (true integral mean of the waveform between successive diastoles, not
   the `(SBP+2·DBP)/3` textbook form).
 * A scale-invariant **flat-line guard** (`is_flatline`) rejects beats from a
   clamped/disconnected transducer to `NaN`.
 
-## Respiration series — [`respiration_metrics.py`](respiration_metrics.py)
+## Respiration series: [`respiration_metrics.py`](respiration_metrics.py)
 
 All respiration-derived metrics, on the channel alone or coupled to the R-peaks:
 
-* **Breathing-frequency context** (Grossman & Taylor 2007) — `resp_freq` (mean
+* **Breathing-frequency context** (Grossman & Taylor 2007), `resp_freq` (mean
   breathing frequency, Hz) and `hf_resp_in_band` (True/False flag: is the mean
   breathing frequency inside the HF band? a False warns the epoch's HF power may
   not index RSA).
-* **Respiratory volume** (CARSPAN) — `resp_mvo` (mean respiration per cardiac
+* **Respiratory volume** (CARSPAN), `resp_mvo` (mean respiration per cardiac
   interval) and `resp_svo` (mean over the half-window of samples ending at each
   R-peak).
-* **Respiratory sinus arrhythmia** (Grossman 1990 peak-to-valley) — `rsa` (mean
+* **Respiratory sinus arrhythmia** (Grossman 1990 peak-to-valley), `rsa` (mean
   over valid breath cycles, ms) and `rsa0` (VU-DAMS variant counting invalid
   breaths as zero over the total breath count). Per-breath shortest/longest IBI
   search with optional VU-DAMS code-5/-6 artefact guards.
 
-## ICG series — [`icg_metrics.py`](icg_metrics.py)
+## ICG series: [`icg_metrics.py`](icg_metrics.py)
 
 Pre-ejection period from the impedance-cardiogram `dZ/dt`, R-peak-locked
 ensemble averaging (integer indexing on a uniform grid):
@@ -112,7 +112,7 @@ ensemble averaging (integer indexing on a uniform grid):
   the max upstroke acceleration before the C-point, searched within the
   `IcgAnalysis.b_point_guard_ms` window.
 
-## Coupling (transfer) — [`transfer_metrics.py`](transfer_metrics.py)
+## Coupling (transfer): [`transfer_metrics.py`](transfer_metrics.py)
 
 `transfer_band_metrics` emits per-band modulus / phase / weighted-coherence
 columns for the input→HR transfer function. The heavy computation lives in
@@ -147,5 +147,5 @@ falling back to respiration when no BP channel is present.
    for data-driven multi-column output). Read cached intermediates off `ctx`
    rather than recomputing.
 3. List it in the module's header docstring.
-4. It now appears automatically in the Results table and the CSV/HDF5 export —
+4. It now appears automatically in the Results table and the CSV/HDF5 export,
    no wiring needed. Add a test under `tests/`.

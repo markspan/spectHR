@@ -1,4 +1,4 @@
-# spectHR roadmap — metrics & features for psychophysiology research
+# spectHR roadmap: metrics & features for psychophysiology research
 
 This roadmap captures candidate metrics and features that would bring spectHR
 closer to the feature set researchers expect from established HRV / cardiovascular
@@ -22,7 +22,7 @@ Already implemented (so *not* on this roadmap):
 
 - **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD.
 - **Poincaré:** SD1, SD2, SD2/SD1, ellipse area.
-- **Non-linear:** DFA-α1; **PRSA** deceleration/acceleration capacity (DC/AC) —
+- **Non-linear:** DFA-α1; **PRSA** deceleration/acceleration capacity (DC/AC),
   notably *not* in Kubios.
 - **Stationarity:** linear drift correlation + reverse-arrangements z-score.
 - **Frequency-domain:** CARSPAN / Welch / Lomb–Scargle PSD, per-band absolute
@@ -43,11 +43,11 @@ mid-band heritage; BP, respiration and ICG analysed alongside HRV).
 
 ---
 
-## Tier 1 — high value for psychophysiology
+## Tier 1: high value for psychophysiology
 
 ### 1.1 Automatic artefact correction + trend removal *(biggest single gap)*
 Modern HRV pipelines do not rely on manual editing alone.
-- **Automatic beat correction** — the Lipponen & Tarvainen (2019) dRR-distribution
+- **Automatic beat correction**, the Lipponen & Tarvainen (2019) dRR-distribution
   threshold method (Kubios's graded *low/medium/strong* correction), reporting the
   **percentage of beats corrected** per epoch.
 - **Smoothness-priors detrending** (Tarvainen et al. 2002) before spectral
@@ -65,7 +65,7 @@ the standard impedance-cardiography panel (Sherwood et al. 1990) are in reach:
 - **LVET** (left-ventricular ejection time, B→X), **stroke volume** (Kubicek or
   Sramek–Bernstein), **cardiac output** (SV × HR), **Heather index**
   (dZ/dt-max ÷ Q-to-C time, contractility), **thoracic fluid content (TFC)**, and
-  **total peripheral resistance** (needs MAP — spectHR has BP).
+  **total peripheral resistance** (needs MAP, spectHR has BP).
 
 *Fit:* extend `spectHR/analysis/icg_metrics.py` (new landmarks + calculators),
 new `@epoch_metric`s.
@@ -74,7 +74,7 @@ new `@epoch_metric`s.
 The classic psychophysiology paradigm spectHR cannot currently do: stimulus-locked,
 second-by-second HR/IBI averaging around event markers (the deceleration→acceleration
 curve), with pre-stimulus baseline correction and condition contrasts; extendable
-to evoked PEP. spectHR already parses EVT event codes for epochs — this reuses that
+to evoked PEP. spectHR already parses EVT event codes for epochs, this reuses that
 machinery for an *evoked-response* mode.
 
 *Fit:* a new analysis mode + dock; a new headless module for event-locked averaging.
@@ -88,7 +88,7 @@ Reviewers expect these as default columns:
 
 ---
 
-## Tier 2 — expected metrics, mostly small `@epoch_metric` additions
+## Tier 2: expected metrics, mostly small `@epoch_metric` additions
 
 ### 2.1 Time-domain staples
 **pNN50 / NN50** (and pNN20), **mean HR & SD HR** (bpm), **CVNN / CVSD**, and the
@@ -97,11 +97,11 @@ geometric measures **HRV triangular index** and **TINN**.
 ### 2.2 Non-linear / complexity family
 - **DFA-α2** (long-term; spectHR has α1 only).
 - **Sample Entropy**, **Approximate Entropy**, **Multiscale Entropy**.
-- **CSI / CVI** (Cardiac Sympathetic / Vagal Index, Toichi — Lorenz-plot based).
+- **CSI / CVI** (Cardiac Sympathetic / Vagal Index, Toichi, Lorenz-plot based).
 - **Heart-rate fragmentation** (PIP, IALS, PSS, PAS) and **heart-rate asymmetry**
   (Guzik / Porta).
 
-### 2.3 Spontaneous baroreflex — sequence method
+### 2.3 Spontaneous baroreflex: sequence method
 The time-domain complement to the existing spectral/transfer BRS: 3+ beats of
 concordant rising/falling SBP and IBI, slope in ms/mmHg, averaged over up- and
 down-sequences. spectHR has beat-by-beat SBP + IBI already.
@@ -116,7 +116,7 @@ that surface automatically in the table and export.
 
 ---
 
-## Tier 3 — workflow & methodology (drives adoption)
+## Tier 3: workflow & methodology (drives adoption)
 
 ### 3.1 Batch / group processing
 Run a folder of recordings under one settings file → one long-format results table
@@ -125,7 +125,7 @@ headless `Session` / `EpochExporter` design is already most of the way there.
 
 ### 3.2 PDF analysis report
 A per-recording report (settings used, artefact %, metric tables, key plots) for
-sharing and archiving — a notable Kubios selling point.
+sharing and archiving, a notable Kubios selling point.
 
 ### 3.3 Respiration completeness
 **Respiration rate** as an explicit breaths/min column (alongside `resp_freq` Hz),
@@ -133,7 +133,7 @@ sharing and archiving — a notable Kubios selling point.
 `hf_resp_in_band` work on ECG-only recordings.
 
 ### 3.4 Composite indices
-Kubios's **PNS index** and **SNS index**, and **Baevsky's Stress Index (SI)** —
+Kubios's **PNS index** and **SNS index**, and **Baevsky's Stress Index (SI)**,
 popular, simple, frequently requested (report with the same descriptive caveats
 spectHR already applies to LF/HF).
 
@@ -152,7 +152,7 @@ spectHR already applies to LF/HF).
 
 ## References
 
-Tarvainen, M. P., et al. (2014). *Kubios HRV — heart rate variability analysis
+Tarvainen, M. P., et al. (2014). *Kubios HRV, heart rate variability analysis
 software.* Computer Methods and Programs in Biomedicine, 113(1), 210–220.
 Lipponen, J. A., & Tarvainen, M. P. (2019). *A robust algorithm for heart rate
 variability time series artefact correction using novel beat classification.*

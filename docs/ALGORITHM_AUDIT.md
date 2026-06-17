@@ -9,7 +9,7 @@ three questions:
 2. Are they described correctly in `readme.MD`?
 3. Which additional algorithms would be useful for a researcher in this area?
 
-**Guiding principle — CARSPAN is load-bearing.** spectHR exists to bring the
+**Guiding principle, CARSPAN is load-bearing.** spectHR exists to bring the
 Groningen CARSPAN method to a modern, inspectable desktop tool. Every
 recommendation here is **additive**: documentation clarifications and *optional,
 opt-in* extra methods. **No CARSPAN-based calculation is to be removed,
@@ -26,10 +26,10 @@ classification all stay exactly as they are.
 |---|---|---|
 | R-peak detection | NeuroKit-style, then manual correction | preprocessing path |
 | IBI classification | centred 51-beat rolling window, 4.0 σ; labels N/L/S/TL/SL/SNS/T; T & TL excluded | classification path |
-| PSD — Welch | 4 Hz cubic resample → `scipy.signal.welch`; ms²/Hz → mMI²/Hz | `analysis/psd/_welch.py` |
-| PSD — CARSPAN events | unit-impulse SOC, manual Eq. 3.19 | `analysis/psd/_carspan.py` |
-| PSD — CARSPAN strict | IBI-amplitude DFT, manual Eq. 3.21 (default for profiles/transfer) | `analysis/psd/_carspan.py` |
-| PSD — Lomb–Scargle | available variant | `analysis/psd/_lombscargle.py` |
+| PSD, Welch | 4 Hz cubic resample → `scipy.signal.welch`; ms²/Hz → mMI²/Hz | `analysis/psd/_welch.py` |
+| PSD, CARSPAN events | unit-impulse SOC, manual Eq. 3.19 | `analysis/psd/_carspan.py` |
+| PSD, CARSPAN strict | IBI-amplitude DFT, manual Eq. 3.21 (default for profiles/transfer) | `analysis/psd/_carspan.py` |
+| PSD, Lomb–Scargle | available variant | `analysis/psd/_lombscargle.py` |
 | Frequency bands | VLF 0.02–0.06, LF 0.07–0.14, HF 0.15–0.40 Hz (CARSPAN; user-configurable) | workspace config |
 | Band power | rectangular integration | `analysis/psd/_band_power.py` |
 | Time-domain | count/mean/median/min/max/RMSSD/SDNN/SDSD/stationarity | `analysis/time_metrics.py` |
@@ -43,9 +43,9 @@ classification all stay exactly as they are.
 
 ---
 
-## Part 1 — Are the algorithms used correctly?
+## Part 1: Are the algorithms used correctly?
 
-### 1.1 R-peak detection and IBI classification — ✅ correct, conservative
+### 1.1 R-peak detection and IBI classification: ✅ correct, conservative
 
 The classification uses a centred rolling window (51 beats) with a 4.0 σ
 threshold and excludes the **T** (too large) and **TL** (too large-large)
@@ -64,7 +64,7 @@ methodologically correct one.
 interpretation. See §3.1 (Tarvainen detrending) and §3.4 (a real stationarity
 test).
 
-### 1.2 Welch PSD — ✅ correct, with the expected interpolation caveat
+### 1.2 Welch PSD: ✅ correct, with the expected interpolation caveat
 
 `_welch.py` resamples the unevenly-spaced IBI series to **4 Hz** by cubic
 interpolation, then calls `scipy.signal.welch` (Hann window, 256-sample
@@ -72,7 +72,7 @@ segments, 50 % overlap). 4 Hz is comfortably above Nyquist for a 0.50 Hz
 ceiling. Cubic interpolation is the field-standard approach and performs
 comparably to alternatives (Laguna et al., 1998; Clifford & Tarassenko, 2005).
 
-The known limitation — interpolation distorts the spectrum at low beat counts —
+The known limitation, interpolation distorts the spectrum at low beat counts,
 is precisely why the **interpolation-free CARSPAN method is offered and is the
 default** for the Profiles and Transfer views. This is the right architectural
 choice.
@@ -82,11 +82,11 @@ engine layer and is correct. The configurable `units` key (mMI² vs ms²) is
 appropriate: whether to HR-correct HRV is genuinely unresolved (de Geus et al.,
 2019), so exposing both is better than hard-coding either.
 
-### 1.3 CARSPAN PSD — ✅ faithful and well-suited to the data
+### 1.3 CARSPAN PSD: ✅ faithful and well-suited to the data
 
 The `ibi_amplitude` variant (Eq. 3.21, `carspan_strict`) runs a native DFT on
-the **actual cumulative-IBI time grid** — no uniform-resampling, no
-stationary-grid assumption — and the `events` variant (Eq. 3.19) treats
+the **actual cumulative-IBI time grid**, no uniform-resampling, no
+stationary-grid assumption, and the `events` variant (Eq. 3.19) treats
 R-peaks as unit impulses. Both are faithful ports of the CARSPAN Pascal source
 and reproduce the manual's worked example to within ~2 % on every band.
 
@@ -94,10 +94,10 @@ For unevenly-sampled event series, a native DFT on the true event times is more
 principled than forcing the data onto a uniform grid. The cosine-bell taper
 (5 % per side, Pascal `TaperPercent`) correctly limits spectral leakage, and
 the `smooth_for_display` 3-point moving average is applied **only to the
-displayed curve, not to the band-power integrals** — so it does not bias any
+displayed curve, not to the band-power integrals**, so it does not bias any
 exported metric. This is exactly how it should be.
 
-### 1.4 Frequency bands — ⚠️ correct for this tradition, but the divergence from Task Force needs an explicit warning
+### 1.4 Frequency bands: ⚠️ correct for this tradition, but the divergence from Task Force needs an explicit warning
 
 spectHR's bands (CARSPAN / Groningen):
 
@@ -113,7 +113,7 @@ Mayer-wave / baroreceptor oscillation that Mulder (1980, 1989) identified as the
 band most sensitive to invested mental effort. HF is identical to Task Force.
 
 **The risk is comparison error, not method error.** spectHR's LF is *not the
-same quantity* as Task Force LF — it is narrower and shifted. A researcher who
+same quantity* as Task Force LF, it is narrower and shifted. A researcher who
 reads "LF power" from spectHR and compares it numerically against published
 Task-Force-based LF values is making a methodological mistake. The README
 states that spectHR follows CARSPAN and links Mulder (1989), but it does **not
@@ -125,7 +125,7 @@ stating that spectHR's LF/VLF follow the CARSPAN convention and are not directly
 comparable to Task Force (1996) LF/VLF without reconfiguring the band edges.
 The bands themselves stay as they are.
 
-### 1.5 LF/HF ratio — ⚠️ fine to export; the "sympatho-vagal balance" label is outdated
+### 1.5 LF/HF ratio: ⚠️ fine to export; the "sympatho-vagal balance" label is outdated
 
 `frequency_metrics.py:136` documents `lf_hf_ratio` as a "sympatho-vagal balance
 indicator." Since Billman (2013), Reyes del Paso et al. (2013), and Heathers
@@ -139,11 +139,11 @@ case.
 
 **Recommendation (wording only):** change the docstring to, e.g., *"LF/HF ratio.
 Historically read as sympatho-vagal balance; that interpretation is not
-supported (Billman 2013) — report it descriptively."* The calculation is
+supported (Billman 2013), report it descriptively."* The calculation is
 unchanged. Optionally add the same caveat next to `lf_hf_ratio` in the README
 export table.
 
-### 1.6 Time-domain & Poincaré metrics — ✅ correct; the Poincaré disclosure is exemplary
+### 1.6 Time-domain & Poincaré metrics: ✅ correct; the Poincaré disclosure is exemplary
 
 RMSSD, SDNN, SDSD are standard and correctly restricted to N-labelled beats.
 The Poincaré derivations use exact algebraic identities:
@@ -154,20 +154,20 @@ The README's note (citing van Roon et al., 2025) that SD1/SD2 carry no
 information beyond RMSSD/SDNN and should not be treated as independent metrics
 is one of the most honest disclosures in any HRV package. **Keep it verbatim.**
 
-**Gap.** `stationarity` is a Pearson correlation of IBI vs time — a *linear
+**Gap.** `stationarity` is a Pearson correlation of IBI vs time, a *linear
 trend* detector only. It will miss non-linear drift, periodic trends, and
 variance non-stationarity, which are the conditions that actually violate the
 wide-sense-stationarity assumption behind Welch and CARSPAN PSD. See §3.4.
 
-### 1.7 Grossman peak-to-valley RSA — ✅ correct, with a sound default
+### 1.7 Grossman peak-to-valley RSA: ✅ correct, with a sound default
 
 The 1.0 s lag matches Grossman et al. (1990) and the VU-DAMS implementation
 (the manual is bundled in `docs/`). The configurable `rsa_lag_s` with the
 explicit note that children (20–30 bpm) need 0.3–0.5 s reflects current
 knowledge of vagal conduction delay. Invalid cycles are NaN-flagged rather than
-silently zeroed (`rsa` keeps NaN; `rsa0` zero-fills) — a clean separation.
+silently zeroed (`rsa` keeps NaN; `rsa0` zero-fills), a clean separation.
 
-### 1.8 Transfer function / spectral baroreflex sensitivity — ✅ faithful and standards-aligned
+### 1.8 Transfer function / spectral baroreflex sensitivity: ✅ faithful and standards-aligned
 
 `transfer.py` is a careful port of the CARSPAN `RunTransfer` pipeline
 (taper → IBI-amplitude SOC DFT → auto/cross-spectra → optional 3-point
@@ -179,7 +179,7 @@ Two correctness points worth highlighting:
 
 - **Coherence gate = 0.5.** This matches the Robbe et al. (1987) standard for
   spectral BRS and is the right default.
-- **Single-epoch coherence is 1 by construction** — correctly documented, and
+- **Single-epoch coherence is 1 by construction**, correctly documented, and
   the `smooth=True` path (3-point triangular smoother) is what yields sub-unity
   coherence for sliding-window analysis. This is mathematically sound and
   faithful to CARSPAN's `WindowSize=3` profile branch.
@@ -211,12 +211,12 @@ No algorithm is used *incorrectly*. The only substantive issues are
 
 ---
 
-## Part 2 — Are they described correctly in `readme.MD`?
+## Part 2: Are they described correctly in `readme.MD`?
 
 The README is unusually thorough and, in most places, more careful than the
 published literature it draws on. Findings:
 
-### 2.1 Confirmed typo — FullRange band range
+### 2.1 Confirmed typo: FullRange band range
 
 `readme.MD:274` (Step 5, PSD tab):
 
@@ -226,24 +226,24 @@ The code and the band-config table both use **0.02–0.50 Hz** (the transfer
 `f_max` default is 0.5 Hz, and the FullRange band tops out at 0.50). The
 "0.65" is a typo. **Fix to 0.02–0.50 Hz.**
 
-### 2.2 Bands table vs. PSD-tab text — consistent
+### 2.2 Bands table vs. PSD-tab text: consistent
 
 The Theoretical-background table (`:144`) and the PSD-tab list (`:274`) agree on
 VLF/LF/HF. Good. Only the FullRange figure above is wrong.
 
-### 2.3 LF/HF ratio — README is fine, code lags
+### 2.3 LF/HF ratio: README is fine, code lags
 
 The README never calls LF/HF "sympatho-vagal balance" in its main prose; the
 overstatement is confined to the code docstring (§1.5). Optionally add a caveat
 next to `lf_hf_ratio` in the Parameters export table for completeness.
 
-### 2.4 Task Force comparability — missing caveat
+### 2.4 Task Force comparability: missing caveat
 
 As noted in §1.4, the README should explicitly state that CARSPAN LF/VLF are not
 numerically interchangeable with Task Force LF/VLF. Currently a reader could
 assume they are.
 
-### 2.5 Normalisation, units, RSA lag, HDF5/CSV schema — accurate
+### 2.5 Normalisation: units, RSA lag, HDF5/CSV schema, accurate
 
 The mMI² vs ms² explainer (`:160`–`:169`) is correct and genuinely educational.
 The RSA-lag section (`:365`–`:371`) correctly cites Grossman (1990) and the
@@ -251,7 +251,7 @@ children caveat. The HDF5/CSV schema documentation matches the export code,
 including the "every scalar is also an epoch-group attribute" design and the
 per-epoch failure handling.
 
-### 2.6 Transfer section — accurate, could add the open-loop note
+### 2.6 Transfer section: accurate, could add the open-loop note
 
 The Transfer documentation (`:305`–`:351`) accurately describes modulus / phase
 / coherence, the coherence gate, the smoothing toggle, and the input-signal
@@ -265,17 +265,17 @@ selector. Adding the one-line open-loop-BRS caveat (§1.8) would round it out.
 | Task Force comparability | ⚠️ missing | add one warning sentence |
 | LF/HF "balance" | ✅ README ok; code docstring off | fix docstring |
 | Open-loop BRS | ⚠️ missing | add one note |
-| Everything else | ✅ accurate | — |
+| Everything else | ✅ accurate |, |
 
 ---
 
-## Part 3 — Additional algorithms worth considering
+## Part 3: Additional algorithms worth considering
 
 All are **optional, opt-in additions** that sit alongside the CARSPAN engine.
 None displaces a CARSPAN default. Ranked by value to non-clinical
 cardiovascular-psychophysiology research.
 
-### 3.1 Tarvainen smoothness-priors detrending — ⭐ highest priority
+### 3.1 Tarvainen smoothness-priors detrending: ⭐ highest priority
 
 **What.** A regularised detrending method (Tarvainen et al., 2002) that removes
 slow non-stationary trends from the IBI series without the band-edge distortion
@@ -292,30 +292,30 @@ than compete with it.
 λ=…") applied before PSD. CARSPAN stays the spectral engine; detrending just
 conditions its input. Single small numpy/scipy function.
 
-### 3.2 Event-related / baseline-referenced reactivity scoring — ⭐ high
+### 3.2 Event-related / baseline-referenced reactivity scoring: ⭐ high
 
 **What.** Report each task epoch as a **change from a baseline epoch**
 (ΔRMSSD, ΔLF, ΔHF, ΔHR…), not only as absolutes.
 
-**Why it fits.** Mental-effort research is fundamentally about *reactivity* —
+**Why it fits.** Mental-effort research is fundamentally about *reactivity*,
 the cost of effort relative to rest (Mulder 1992; Stuiver & Mulder 2014). The
 tool already computes everything per epoch; adding a "baseline epoch" selector
 and emitting Δ and %-change columns turns raw metrics into the quantities
 researchers actually analyse. Pure post-processing on existing outputs.
 
-### 3.3 Respiration-corrected HF-HRV — medium
+### 3.3 Respiration-corrected HF-HRV: medium
 
 **What.** Report HF power (or RSA) adjusted for respiration rate/depth, since HF
 amplitude depends on breathing parameters independently of vagal tone (Grossman
 & Taylor, 2007).
 
 **Why it fits.** spectHR already extracts respiration and computes breath
-frequency. Surfacing the breathing rate alongside HF — and optionally flagging
-when the breathing peak falls outside the HF band — lets users judge whether an
+frequency. Surfacing the breathing rate alongside HF, and optionally flagging
+when the breathing peak falls outside the HF band, lets users judge whether an
 HF change is vagal or merely a breathing artifact. Low effort given the existing
 respiration pipeline; can reuse the transfer machinery already present.
 
-### 3.4 A real stationarity / non-stationarity test — medium
+### 3.4 A real stationarity / non-stationarity test: medium
 
 **What.** Replace or supplement the linear-trend `stationarity` metric with a
 proper test (e.g. reverse-arrangements test, or a windowed variance-ratio
@@ -326,7 +326,7 @@ current Pearson-r metric only catches linear trends. A genuine test (paired
 naturally with §3.1) would warn users before they over-interpret a spectrum
 from a non-stationary epoch. Additive: a new `@epoch_metric` column.
 
-### 3.5 DFA-α1 (detrended fluctuation analysis) — lower
+### 3.5 DFA-α1 (detrended fluctuation analysis): lower
 
 **What.** Short-term scaling exponent α1 (Peng et al., 1995), a non-linear HRV
 index increasingly reported in psychophysiology.
@@ -335,16 +335,16 @@ index increasingly reported in psychophysiology.
 Poincaré measures. Requires ≥ a few hundred beats per epoch, so its
 applicability depends on epoch length. Self-contained algorithm; nice-to-have.
 
-### 3.6 PRSA (phase-rectified signal averaging) — lower / exploratory
+### 3.6 PRSA (phase-rectified signal averaging): lower / exploratory
 
-**What.** Bauer et al. (2006) acceleration/deceleration capacity — robust to
+**What.** Bauer et al. (2006) acceleration/deceleration capacity, robust to
 non-stationarity and artifacts.
 
 **Why it fits.** Strong artifact tolerance is attractive for field/ambulatory
 data, but PRSA is more established in clinical risk stratification than in
 mental-effort work. Worth noting as a future direction.
 
-### 3.7 PEP / pre-ejection period — note only (needs ICG)
+### 3.7 PEP / pre-ejection period: note only (needs ICG)
 
 PEP is the cleanest non-invasive sympathetic index and would complement the
 parasympathetic-dominant HRV measures. It requires impedance cardiography (ICG),
