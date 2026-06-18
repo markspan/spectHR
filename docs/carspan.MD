@@ -1011,7 +1011,7 @@ module.
 | `T_EventFile.pas` CalcDataColBPSYS/DIA | `src/spectHR/analysis/bp_metrics.py` | `bp_beat_parameters` | Ported | Per-beat systolic/diastolic extraction |
 | `T_EventFile.pas` CalcDataColRESPVO / CalcDataColRESMVO | `src/spectHR/DataSet/preprocessing.py` | `apply_breath_phases` | Ported | INH/EXH detection |
 | `T_DataCorrect.pas` CheckFirstWindow | `src/spectHR/DataSet/classification.py` | IBI classification (rolling window, 4 sigma) | Partial | Different algorithm: centred 51-beat window, not TWL-length time window |
-| `T_AnaFunctions.pas` GetRespirationMinBandValue / GetRespirationMaxBandValue | `src/spectHR/analysis/psd/_carspan.py` | not explicitly ported | Missing | Respiration-relative band limits not implemented in spectHR |
+| `T_AnaFunctions.pas` GetRespirationMinBandValue / GetRespirationMaxBandValue | `src/spectHR/analysis/psd/_config.py` | `respiration_min`, `respiration_max` | Ported | Direct port (docstring cites Pascal lines 2837-2884); used by `profile.py` `compute_band_power_profile` for adaptive-band windows |
 
 ---
 
