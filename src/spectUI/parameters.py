@@ -74,20 +74,20 @@ _DEFAULT: dict = {
             "LF":        {"low": 0.07, "high": 0.14, "color": "darkgreen", "alpha": 0.20},
             "HF":        {"low": 0.15, "high": 0.40, "color": "red",       "alpha": 0.20},
         },
+        "plot_units":   "mMI²/Hz",
         "carspan": {
             "freq_resolution":    0.01,
             "signal":             "events",
             "window":             "10% cosine bell",
-            "plot_units":         "mMI²/Hz",
             "smooth_for_display": True,
             "dc_removal":         True,
         },
         "welch": {
             "fs": 4.0, "nperseg": 256, "noverlap": 128, "nfft": 512,
-            "window": "hann", "units": "mMI²",
+            "window": "hann",
         },
         "lombscargle": {
-            "nfreqs": 100, "fmin_floor": 0.0001, "units": "mMI²",
+            "nfreqs": 100, "fmin_floor": 0.0001,
         },
         "confidence_interval_alpha": 0.05,
         "detrend":        False,

@@ -152,9 +152,7 @@ _ENUM_CHOICES: dict[str, list[str]] = {
         "boxcar",
     ],
     "FrequencyAnalysis.carspan.signal": ["events", "ibi_amplitude"],
-    "FrequencyAnalysis.carspan.plot_units": ["mMI²/Hz", "ms²/Hz"],
-    "FrequencyAnalysis.welch.units": ["mMI²", "ms²"],
-    "FrequencyAnalysis.lombscargle.units": ["mMI²", "ms²"],
+    "FrequencyAnalysis.plot_units": ["mMI²/Hz", "ms²/Hz"],
     # Spectrogram tile colormap. Diverging and sequential maps that
     # read well at the small tile sizes the Spectrogram dock uses.
     "Spectrogram.colormap": [
@@ -763,13 +761,12 @@ class ParametersEditorDialog(QDialog):
         "FrequencyAnalysis.detrend": ["detrend_lambda"],
         # PSD - CARSPAN
         "FrequencyAnalysis.carspan.freq_resolution":    ["signal"],
-        "FrequencyAnalysis.carspan.window":             ["plot_units"],
+        "FrequencyAnalysis.carspan.window":             ["smooth_for_display"],
         "FrequencyAnalysis.carspan.smooth_for_display": ["dc_removal"],
         # PSD - Welch
         "FrequencyAnalysis.welch.fs":     ["nperseg", "noverlap", "nfft"],
-        "FrequencyAnalysis.welch.window": ["units"],
-        # PSD - Lomb-Scargle (all three on one line)
-        "FrequencyAnalysis.lombscargle.nfreqs": ["fmin_floor", "units"],
+        # PSD - Lomb-Scargle (both on one line)
+        "FrequencyAnalysis.lombscargle.nfreqs": ["fmin_floor"],
     }
 
     # Per-path display-label overrides. Workspace key stays untouched
@@ -777,10 +774,9 @@ class ParametersEditorDialog(QDialog):
     # remapped. Useful when the editor reads better with a different
     # phrasing than the underlying field name.
     _LABEL_ALIASES: dict[str, str] = {
-        "FrequencyAnalysis.welch.units":       "plot units",
-        "FrequencyAnalysis.lombscargle.units": "plot units",
         "FrequencyAnalysis.detrend":           "smoothness-priors detrend",
         "FrequencyAnalysis.detrend_lambda":    "detrend λ (Tarvainen 2002)",
+        "FrequencyAnalysis.plot_units":        "plot units (all PSD methods)",
         "FrequencyAnalysis.log_band_power":    "log band power (ln, CARSPAN acLn)",
         "CardioParameters.EcgPreprocessing.display_filtered": "show filtered ECG in plot",
     }

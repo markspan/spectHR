@@ -478,14 +478,32 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
     # FullRange. Override whatever the JSON has.
     f_max = max((b.high for b in bands.values()), default=0.5)
 
-    welch_cfg = _filter_kwargs(WelchOptions, dict(fa.get("welch", {})))
+    # Single top-level plot_units drives all three method backends.
+    # Per-method "units"/"plot_units" keys in existing workspace files are
+    # accepted as overrides for backward compatibility, but the top-level
+    # value is the canonical source.
+    top_units = str(fa.get("plot_units", "mMI²/Hz"))
+    # ms-based units start with "ms"; everything else → mMI²/Hz.
+    # Normalise so all backends receive a consistent string.
+    if top_units.lower().startswith("ms"):
+        canonical_units = "ms²/Hz"
+    else:
+        canonical_units = "mMI²/Hz"
+
+    welch_raw = dict(fa.get("welch", {}))
+    welch_raw.setdefault("units", canonical_units)
+    welch_cfg = _filter_kwargs(WelchOptions, welch_raw)
     welch_opts = WelchOptions(**welch_cfg)
 
-    ls_cfg = _filter_kwargs(LombscargleOptions, dict(fa.get("lombscargle", {})))
+    ls_raw = dict(fa.get("lombscargle", {}))
+    ls_raw.setdefault("units", canonical_units)
+    ls_cfg = _filter_kwargs(LombscargleOptions, ls_raw)
     ls_opts = LombscargleOptions(**ls_cfg)
 
-    carspan_cfg = _filter_kwargs(CarspanOptions, dict(fa.get("carspan", {})))
-    carspan_cfg["f_max"] = f_max
+    carspan_raw = dict(fa.get("carspan", {}))
+    carspan_raw.setdefault("plot_units", canonical_units)
+    carspan_raw["f_max"] = f_max
+    carspan_cfg = _filter_kwargs(CarspanOptions, carspan_raw)
     carspan_opts = CarspanOptions(**carspan_cfg)
 
     algorithm = str(fa.get("method", "carspan"))
