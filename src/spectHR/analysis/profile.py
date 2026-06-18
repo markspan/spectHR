@@ -30,6 +30,8 @@ from spectHR.Tools.Logger import logger
 from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis._smoothing import smooth3 as _ma3  # CARSPAN MAW kernel (T_AnaFunctions.pas:595-643)
+from spectHR.analysis._smoothing import smooth3_triangular as _tri3  # AutoSpectrum WindowSize=3 smoother
+from spectHR.analysis.psd._utils import PSDResult as _PSDResult
 
 
 __all__ = [
@@ -281,11 +283,16 @@ def compute_band_power_profile(
 
     method = psd_method if psd_method is not None else _DEFAULT_PSD_METHOD
 
-    # CARSPAN manual 3.3.5: "the interpolation to a fixed frequency of
-    # 0.01 Hz is not applied" for the profile compute path.
+    # Pascal calls Resample for profiles too but with OldRes = 1/WindowLength
+    # (native DFT resolution), so the display grid matches the native grid and
+    # no actual bin-averaging occurs. Setting freq_resolution=1/window_s with
+    # resample_to_display_grid=True mirrors this: the resample step is invoked
+    # but is a no-op because display_resolution == delta_f.
     profile_method = replace(
         method,
-        carspan=replace(method.carspan, resample_to_display_grid=False),
+        carspan=replace(method.carspan,
+                       freq_resolution=1.0 / window_s,
+                       resample_to_display_grid=True),
     )
 
     band_names = list(method.bands.keys())
@@ -330,6 +337,9 @@ def compute_band_power_profile(
                 psd_result = PSDEngine(win_view).for_band_power(profile_method)
             except Exception:
                 continue
+            # CARSPAN AutoSpectrum applies a WindowSize=3 triangular smoother
+            # inside the DFT loop for profiles, affecting band integration.
+            psd_result = replace(psd_result, power=_tri3(psd_result.power))
             psd_cache[i] = psd_result
             if not unit:
                 unit = _strip_hz(psd_result.unit)
@@ -407,6 +417,7 @@ def compute_band_power_profile(
                 psd_result = PSDEngine(win_view).for_band_power(profile_method)
             except Exception:
                 continue
+            psd_result = replace(psd_result, power=_tri3(psd_result.power))
 
             for b, (name, band) in enumerate(bands_list):
                 lo, hi = band.low, band.high

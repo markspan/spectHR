@@ -92,6 +92,7 @@ _DEFAULT: dict = {
         "confidence_interval_alpha": 0.05,
         "detrend":        False,
         "detrend_lambda": 500.0,
+        "log_band_power": False,
     },
     "CardioParameters": {
         "IbiClassification": {

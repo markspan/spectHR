@@ -651,6 +651,12 @@ class WorkspaceView:
     # ---- logging ----------------------------------------------------
 
     @property
+    def log_band_power(self) -> bool:
+        """Apply natural log to band-power values (CARSPAN ``acLn`` option, §10.13)."""
+        fa = self._ws.get("FrequencyAnalysis", {}) or {}
+        return bool(fa.get("log_band_power", False))
+
+    @property
     def log_level(self) -> int:
         """Configured minimum log level as a ``logging`` constant."""
         return log_level_from_workspace(self._ws)

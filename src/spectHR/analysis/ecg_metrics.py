@@ -72,6 +72,8 @@ __all__ = [
     "dfa_fluctuation", "dfa_alpha1", "dfa_a1",
     # PRSA
     "dc", "ac",
+    # ECG waveform
+    "twave_amplitude",
     # frequency-domain
     "fullrange_power", "vlf_power", "lf_power", "hf_power",
     "lf_hf_ratio", "band_powers",
@@ -403,6 +405,58 @@ def ac(series) -> float:
 
 
 # ===========================================================================
+# ECG waveform metrics (require the continuous ECG channel via EpochContext)
+# ===========================================================================
+
+
+@epoch_metric
+def twave_amplitude(ctx) -> float:
+    """Mean T-wave amplitude per beat (ECG channel), in ECG signal units.
+
+    For each beat, the T-wave peak is located in the ST segment
+    (150–500 ms after the R-peak, capped 100 ms before the next R-peak).
+    Amplitude is measured relative to the pre-R baseline (mean ECG in the
+    50 ms window before each R-peak), then averaged across all beats.
+
+    Returns NaN when no ECG channel is available (``ctx.ecg_ts is None``)
+    or fewer than two R-peaks are present in the epoch.  Ported from
+    CARSPAN ``CalcDataColECGTWAVE`` (``T_AnaFunctions.pas``).
+    """
+    if not isinstance(ctx, EpochContext) or ctx.ecg_ts is None:
+        return np.nan
+    ecg_t = np.asarray(ctx.ecg_ts.times,  dtype=float)
+    ecg_v = np.asarray(ctx.ecg_ts.values, dtype=float)
+    if ecg_t.size < 2:
+        return np.nan
+    rpeaks = np.asarray(ctx.rpeak_times, dtype=float)
+    if rpeaks.size < 2:
+        return np.nan
+
+    amps: list[float] = []
+    for i in range(len(rpeaks) - 1):
+        r_t    = rpeaks[i]
+        r_next = rpeaks[i + 1]
+
+        # Pre-R baseline: 50 ms before R-peak.
+        bl_mask = (ecg_t >= r_t - 0.05) & (ecg_t < r_t)
+        if not bl_mask.any():
+            continue
+        baseline = float(np.mean(ecg_v[bl_mask]))
+
+        # ST segment search window.
+        st_lo = r_t    + 0.15
+        st_hi = min(r_t + 0.50, r_next - 0.10)
+        if st_hi <= st_lo:
+            continue
+        st_mask = (ecg_t >= st_lo) & (ecg_t <= st_hi)
+        if not st_mask.any():
+            continue
+        amps.append(float(np.max(ecg_v[st_mask])) - baseline)
+
+    return float(np.mean(amps)) if amps else np.nan
+
+
+# ===========================================================================
 # Frequency-domain, band powers of the IBI PSD
 #
 # These are **dual-mode**: called directly with a bare series (and optionally an
@@ -547,12 +601,16 @@ def band_powers(ctx) -> dict[str, float]:
     psd_res = getattr(ctx, "psd", None)
     if method is None or psd_res is None:
         return out
+    log_bp = bool(getattr(ctx, "log_band_power", False))
     for band_name, band_spec in method.bands.items():
         col = f"{band_name.lower()}_power"
         try:
-            out[col] = float(band_power_rectangular(
+            val = float(band_power_rectangular(
                 psd_res.freqs, psd_res.power, band_spec.low, band_spec.high,
             ))
+            if log_bp and val > 0:
+                val = float(np.log(val))
+            out[col] = val
         except Exception:
             pass   # leave absent → NaN in the matrix
     return out

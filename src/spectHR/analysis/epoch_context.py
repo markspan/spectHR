@@ -103,6 +103,7 @@ class EpochContext:
     # None disables transfer metrics.
     transfer_config:         Any   = field(default=None,  kw_only=True)
     prsa_window:             int   = field(default=30,    kw_only=True)
+    log_band_power:          bool  = field(default=False, kw_only=True)
 
     # ------------------------------------------------------------------ #
     # CardioSeriesProtocol, explicit forwarding to self.view            #

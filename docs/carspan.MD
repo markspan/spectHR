@@ -1046,8 +1046,14 @@ different (manually auditable) corrections rather than the CARSPAN automatic one
 CARSPAN supports `RespirationBand=True` for any frequency band, dynamically
 adjusting the limits per profile step: `[FRespFreq - Min, FRespFreq + Max]`.
 `FRespFreq` is the instantaneous respiration rate (1 / mean_period from the
-`RespPeriod` time series). spectHR does not implement this feature. All bands
-use fixed Hz limits.
+`RespPeriod` time series).
+
+**spectHR implements this feature.** `BandSpec.respiration_band=True` enables
+it; `resp_low` and `resp_high` are the lower and upper half-widths (default 0.04
+Hz each). `respiration_min` / `respiration_max` in `psd/_config.py` are a direct
+port of Pascal's `GetRespirationMinBandValue` / `GetRespirationMaxBandValue`
+(`T_AnaFunctions.pas` 2837-2884). The profile builder in `profile.py` applies
+the per-window adaptive limits when `respiration_band=True`.
 
 ### 10.3 Display-only smoothing vs. integration smoothing
 
@@ -1065,18 +1071,21 @@ always runs on the unsmoothed resampled grid. This matches CARSPAN's default
 
 The CARSPAN manual (section 3.3.5) states that resampling to 0.01 Hz is not
 applied to the profile path. However the Pascal code calls `Resample` for
-profiles too (using `OldRes = 1 / WindowLength`). spectHR implements the
-manual's stated behaviour with `resample_to_display_grid=False` for profiles.
-This is a deliberate, documented divergence.
+profiles too with `OldRes = 1 / WindowLength` (the native DFT resolution).
+Because `display_resolution == delta_f`, the bin-averaging step is a no-op --
+it is invoked but produces no change. spectHR now mirrors this: the profile
+method sets `freq_resolution = 1 / window_s` with `resample_to_display_grid=True`
+so the Pascal call structure is reproduced faithfully. The net result is
+identical to skipping the step, but the code path is now consistent with Pascal.
 
 ### 10.5 AutoSpectrum profile smoother
 
 For profiles, CARSPAN passes `WindowSize=3` to `AutoSpectrum`, implementing a
 triangular 3-point smoother `[0.25, 0.5, 0.25]` applied to the power spectrum
-inside the DFT loop (using Pascal's `CreateWindow`). spectHR's
-`smooth3_triangular` function in `_smoothing.py` mirrors this but runs on the
-full power array after `_auto_spectrum`, which is equivalent for non-windowed
-spectra.
+inside the DFT loop (using Pascal's `CreateWindow`). This smoother affects band
+integration, not just display. spectHR now applies `smooth3_triangular` from
+`_smoothing.py` to `psd_result.power` after each per-window PSD computation in
+`profile.py`, before band-power integration. Ported.
 
 ### 10.6 SameIn / SameOut DFT deduplication
 
@@ -1126,13 +1135,20 @@ peak-finding logic with a flat-line guard. This is ported.
 ### 10.12 T-wave and ECG waveform columns
 
 CARSPAN derives `tkECGTWAVE` (T-wave amplitude) from the ECG channel in
-`CalcDataColECGTWAVE`. spectHR does not compute T-wave amplitude.
+`CalcDataColECGTWAVE`. spectHR now implements this as the `@epoch_metric`
+`twave_amplitude` in `ecg_metrics.py`. For each beat, the T-wave peak is
+located in the ST segment (150–500 ms after the R-peak, capped 100 ms before
+the next R-peak) and measured relative to the pre-R baseline (mean ECG in the
+50 ms before each R-peak). Returns NaN when no ECG channel is present.
 
 ### 10.13 Logarithmic spectrum option
 
 When `acLn` is in `FACalcs`, CARSPAN applies `ln()` to band-power values in
-`Calculate_Energy`. spectHR's frequency metrics do not offer a logarithmic band
-power option. This would be a straightforward addition.
+`Calculate_Energy`. spectHR now provides this as the boolean workspace setting
+`FrequencyAnalysis.log_band_power` (default `false`). When enabled, the
+`band_powers` group metric applies `np.log()` to each band-power value before
+writing it to the metrics table. Set in the workspace editor under Frequency
+Analysis.
 
 ### 10.14 Manual correction dialog
 

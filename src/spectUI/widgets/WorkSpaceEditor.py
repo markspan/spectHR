@@ -781,6 +781,7 @@ class ParametersEditorDialog(QDialog):
         "FrequencyAnalysis.lombscargle.units": "plot units",
         "FrequencyAnalysis.detrend":           "smoothness-priors detrend",
         "FrequencyAnalysis.detrend_lambda":    "detrend λ (Tarvainen 2002)",
+        "FrequencyAnalysis.log_band_power":    "log band power (ln, CARSPAN acLn)",
         "CardioParameters.EcgPreprocessing.display_filtered": "show filtered ECG in plot",
     }
 

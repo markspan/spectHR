@@ -78,6 +78,7 @@ class AnalysisConfig:
     # f_max, and bands {name: (lo, hi)}.  None disables transfer metrics.
     transfer_config:        Any   = None
     prsa_window:            int   = 30
+    log_band_power:         bool  = False
 
     @classmethod
     def from_workspace(cls, workspace: dict | None) -> AnalysisConfig:
@@ -107,6 +108,7 @@ class AnalysisConfig:
             b_point_guard_ms=ws.b_point_guard_ms,
             transfer_config=tf_cfg,
             prsa_window=ws.prsa_window,
+            log_band_power=ws.log_band_power,
         )
 
 
@@ -273,6 +275,7 @@ class Session:
                 b_point_guard_ms=config.b_point_guard_ms,
                 transfer_config=config.transfer_config,
                 prsa_window=config.prsa_window,
+                log_band_power=config.log_band_power,
             )
             contexts[label] = ctx
 
