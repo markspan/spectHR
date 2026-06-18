@@ -982,7 +982,7 @@ module.
 | `T_EventFile.pas` ProcessEventFile | `src/spectHR/DataSet/readers/reader_evt.py` | EVT file parser | Ported | |
 | `T_DataCol.pas` TDataCol | `src/spectHR/session/samples.py`, `events.py` | `Samples`, `Events` | Ported | Immutable redesign |
 | `T_DataCor.pas` TDataCor | `src/spectHR/session/events.py` | correction labels on `Events` | Partial | Functional correction model, no TCorKind taxonomy |
-| `T_DataCorrect.pas` AutoCorrect | `src/spectHR/DataSet/preprocessing.py` | `apply_beat_detection` + UI beat editor | Partial | Auto-detect via bandpass + `scipy.signal.find_peaks` with adaptive IQR threshold (`Tools/RPeakDetection.py`); manual correction in UI; CARSPAN rolling-window IBI corrector not ported |
+| `T_DataCorrect.pas` AutoCorrect | `src/spectHR/DataSet/preprocessing.py` + UI beat editor | `apply_beat_detection` + `PrepPlotWidget` | Deliberate replacement | Automatic interpolation replaced by manual beat editing in the UI -- a conscious design choice favouring analyst control over automated artefact substitution |
 | `T_AnaFunctions.pas` Taper | `src/spectHR/analysis/psd/_carspan.py` | `_carspan_taper` | Ported | Bit-for-bit faithful |
 | `T_AnaFunctions.pas` SOC (Path 1) | `src/spectHR/analysis/psd/_carspan.py` | `_events_periodogram` | Ported | Eq. 3.19, unit-impulse SOC |
 | `T_AnaFunctions.pas` SOC (Path 2) | `src/spectHR/analysis/psd/_carspan.py` | `_ibi_amplitude_periodogram` | Ported | Eq. 3.21, ~2 % agreement on manual example |
@@ -1030,10 +1030,16 @@ fixed 4 sigma threshold. Labels are N/L/S/TL/SL/SNS/T. No automatic interpolatio
 flagged beats are excluded from downstream analysis rather than replaced. The
 CARSPAN `TCorKind` taxonomy is not implemented.
 
+This is a **deliberate design choice**: spectHR replaces the automatic
+interpolation corrector with a manual beat editor (`PrepPlotWidget`), giving the
+analyst direct control over every correction rather than deferring to a
+heuristic algorithm. This is more appropriate for research use where the
+provenance of every beat matters.
+
 **Impact:** CARSPAN-corrected EVT files imported into spectHR will have
 corrections already applied and stored in the file; spectHR reads the `NewData`
-values directly. Re-running auto-correction from scratch in spectHR will give
-different results because the algorithm is different.
+values directly. Re-running beat detection from scratch in spectHR produces
+different (manually auditable) corrections rather than the CARSPAN automatic ones.
 
 ### 10.2 Respiration-relative frequency bands
 
