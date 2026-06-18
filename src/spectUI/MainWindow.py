@@ -636,27 +636,37 @@ class MainWindow(QMainWindow):
             return
         out = Path(dlg.directory())
         out.mkdir(parents=True, exist_ok=True)
-        selected = dlg.selected()
+        selected  = dlg.selected()
+        ext, fmt  = dlg.export_format()
+        dpi       = dlg.dpi()
 
+        import matplotlib as mpl
         data_stem = _slug(getattr(self._session, "name", "") or "data") or "data"
         saved = 0
-        for obj_name, label, widget in candidates:
-            if obj_name not in selected:
-                continue
-            figs = _dock_figures(widget)
-            dock_slug = _slug(label) or obj_name
-            for i, (cv, epoch) in enumerate(figs):
-                parts = [data_stem, dock_slug]
-                if epoch:
-                    parts.append(_slug(epoch))
-                elif len(figs) > 1:
-                    parts.append(str(i + 1))
-                try:
-                    cv.figure.savefig(out / f"{'_'.join(parts)}.pdf",
-                                      bbox_inches="tight")
-                    saved += 1
-                except Exception:  # noqa: BLE001, skip a bad figure, keep going
-                    logger.exception("Failed to save figure for %s", obj_name)
+        # Embed fonts as TrueType (type 42) so PDF/EPS text stays editable in
+        # Illustrator / Inkscape rather than being converted to outlines.
+        with mpl.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42}):
+            for obj_name, label, widget in candidates:
+                if obj_name not in selected:
+                    continue
+                figs = _dock_figures(widget)
+                dock_slug = _slug(label) or obj_name
+                for i, (cv, epoch) in enumerate(figs):
+                    parts = [data_stem, dock_slug]
+                    if epoch:
+                        parts.append(_slug(epoch))
+                    elif len(figs) > 1:
+                        parts.append(str(i + 1))
+                    try:
+                        cv.figure.savefig(
+                            out / f"{'_'.join(parts)}{ext}",
+                            format=fmt,
+                            dpi=dpi,
+                            bbox_inches="tight",
+                        )
+                        saved += 1
+                    except Exception:  # noqa: BLE001, skip a bad figure, keep going
+                        logger.exception("Failed to save figure for %s", obj_name)
         QMessageBox.information(self, "Plots exported",
                                 f"Saved {saved} figure(s) to {out}")
 
