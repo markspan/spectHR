@@ -982,7 +982,7 @@ module.
 | `T_EventFile.pas` ProcessEventFile | `src/spectHR/DataSet/readers/reader_evt.py` | EVT file parser | Ported | |
 | `T_DataCol.pas` TDataCol | `src/spectHR/session/samples.py`, `events.py` | `Samples`, `Events` | Ported | Immutable redesign |
 | `T_DataCor.pas` TDataCor | `src/spectHR/session/events.py` | correction labels on `Events` | Partial | Functional correction model, no TCorKind taxonomy |
-| `T_DataCorrect.pas` AutoCorrect | `src/spectHR/DataSet/preprocessing.py` | `apply_beat_detection` + UI beat editor | Partial | Auto-detect via NeuroKit; manual correction in UI; CARSPAN rolling-window corrector not ported |
+| `T_DataCorrect.pas` AutoCorrect | `src/spectHR/DataSet/preprocessing.py` | `apply_beat_detection` + UI beat editor | Partial | Auto-detect via bandpass + `scipy.signal.find_peaks` with adaptive IQR threshold (`Tools/RPeakDetection.py`); manual correction in UI; CARSPAN rolling-window IBI corrector not ported |
 | `T_AnaFunctions.pas` Taper | `src/spectHR/analysis/psd/_carspan.py` | `_carspan_taper` | Ported | Bit-for-bit faithful |
 | `T_AnaFunctions.pas` SOC (Path 1) | `src/spectHR/analysis/psd/_carspan.py` | `_events_periodogram` | Ported | Eq. 3.19, unit-impulse SOC |
 | `T_AnaFunctions.pas` SOC (Path 2) | `src/spectHR/analysis/psd/_carspan.py` | `_ibi_amplitude_periodogram` | Ported | Eq. 3.21, ~2 % agreement on manual example |
