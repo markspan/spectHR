@@ -186,8 +186,17 @@ class ResultsTableWidget(QWidget):
         if col in docs:
             return docs[col]
         from spectHR.analysis.transfer_metrics import TRANSFER_COLUMN_TOOLTIPS
-        from spectHR.analysis.ecg_metrics import BAND_POWER_COLUMN_TOOLTIP
-        for lookup in (TRANSFER_COLUMN_TOOLTIPS, BAND_POWER_COLUMN_TOOLTIP):
+        from spectHR.analysis.ecg_metrics import (
+            BAND_POWER_COLUMN_TOOLTIP,
+            NN_STATS_COLUMN_TOOLTIPS,
+            BAND_FREQ_STATS_COLUMN_TOOLTIPS,
+        )
+        # Exact matches first (highest priority), then suffix patterns.
+        for exact in (NN_STATS_COLUMN_TOOLTIPS, BAND_FREQ_STATS_COLUMN_TOOLTIPS):
+            if col in exact:
+                return exact[col]
+        for lookup in (TRANSFER_COLUMN_TOOLTIPS, BAND_POWER_COLUMN_TOOLTIP,
+                       BAND_FREQ_STATS_COLUMN_TOOLTIPS):
             for suffix, tip in lookup.items():
                 if col.endswith(suffix):
                     return tip

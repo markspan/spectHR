@@ -80,6 +80,7 @@ __all__ = [
     "fullrange_power", "vlf_power", "lf_power", "hf_power",
     "lf_hf_ratio", "band_powers", "band_freq_stats",
     "STANDARD_BAND_POWER_COLUMNS", "BAND_POWER_COLUMN_TOOLTIP",
+    "NN_STATS_COLUMN_TOOLTIPS", "BAND_FREQ_STATS_COLUMN_TOOLTIPS",
 ]
 
 
@@ -581,6 +582,41 @@ BAND_POWER_COLUMN_TOOLTIP: dict[str, str] = {
         "(dimensionless, normalised by squared mean heart rate) or ms² when "
         "the Welch units setting is switched. Computed by the active PSD "
         "method (CARSPAN, Welch, or Lomb-Scargle)."
+    ),
+}
+
+# Exact-match tooltips for the columns emitted by the nn_stats group metric.
+NN_STATS_COLUMN_TOOLTIPS: dict[str, str] = {
+    "nn50":  "Number of successive IBI differences exceeding 50 ms (Task Force 1996).",
+    "pnn50": "Percentage of successive IBI differences exceeding 50 ms (nn50 / total × 100).",
+    "nn20":  "Number of successive IBI differences exceeding 20 ms.",
+    "pnn20": "Percentage of successive IBI differences exceeding 20 ms (nn20 / total × 100).",
+}
+
+# Suffix- and exact-match tooltips for the columns emitted by band_freq_stats.
+BAND_FREQ_STATS_COLUMN_TOOLTIPS: dict[str, str] = {
+    "_peak_hz":   (
+        "Dominant (peak-power) frequency within this band, in Hz. "
+        "Identifies where in the band the IBI spectrum has its maximum."
+    ),
+    "_rel_power": (
+        "Band power as a fraction of the total power across all configured "
+        "bands (0–1).  Relative power is scale-independent and directly "
+        "comparable across sessions with different absolute HRV."
+    ),
+    "total_power": (
+        "Sum of spectral power across all configured frequency bands "
+        "(same units as the individual band powers)."
+    ),
+    "lf_norm": (
+        "Normalised LF power: LF / (LF + HF).  Bounded [0, 1]; the LF and "
+        "HF normalised values sum to one.  Only present when both LF and HF "
+        "bands are configured."
+    ),
+    "hf_norm": (
+        "Normalised HF power: HF / (LF + HF).  Bounded [0, 1]; the LF and "
+        "HF normalised values sum to one.  Only present when both LF and HF "
+        "bands are configured."
     ),
 }
 
