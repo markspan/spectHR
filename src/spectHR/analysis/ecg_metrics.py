@@ -600,13 +600,13 @@ BAND_FREQ_STATS_COLUMN_TOOLTIPS: dict[str, str] = {
         "Identifies where in the band the IBI spectrum has its maximum."
     ),
     "_rel_power": (
-        "Band power as a fraction of the total power across all configured "
-        "bands (0–1).  Relative power is scale-independent and directly "
-        "comparable across sessions with different absolute HRV."
+        "Band power as a fraction of the total power across all component "
+        "bands (FullRange excluded; 0–1).  Component band relative powers "
+        "sum to 1. Scale-independent and directly comparable across sessions."
     ),
     "total_power": (
-        "Sum of spectral power across all configured frequency bands "
-        "(same units as the individual band powers)."
+        "Sum of spectral power across all component frequency bands "
+        "(FullRange excluded). Same units as the individual band powers."
     ),
     "lf_norm": (
         "Normalised LF power: LF / (LF + HF).  Bounded [0, 1]; the LF and "
@@ -763,7 +763,9 @@ def band_freq_stats(ctx) -> dict[str, float]:
     ``{band}_rel_power``
         Band power as a proportion of the sum across all bands (0–1).
     ``total_power``
-        Sum of all configured band powers (same units as the band powers).
+        Sum of all component band powers, *excluding* FullRange (which
+        overlaps all other bands and would double-count).  Matches the HRV
+        convention where total power = VLF + LF + HF (+ ULF if present).
     ``lf_norm`` / ``hf_norm``
         LF / (LF + HF) and HF / (LF + HF), emitted only when both ``LF``
         and ``HF`` bands are present in the configuration.  Unlike the raw
@@ -797,11 +799,16 @@ def band_freq_stats(ctx) -> dict[str, float]:
         except Exception:
             pass
 
-    total = float(np.sum(list(raw_powers.values()))) if raw_powers else 0.0
+    # "FullRange" is an umbrella band that overlaps all component bands.
+    # Including it in the denominator would double-count its power, giving
+    # fullrange_rel_power ≈ 0.5 instead of a meaningful fraction.
+    # HRV convention: total_power = Σ(component bands), FullRange excluded.
+    component_powers = {k: v for k, v in raw_powers.items() if k != "FullRange"}
+    total = float(sum(component_powers.values())) if component_powers else 0.0
     out["total_power"] = total
 
     if total > 0.0:
-        for band_name, bp in raw_powers.items():
+        for band_name, bp in component_powers.items():
             out[f"{band_name.lower()}_rel_power"] = float(bp / total)
 
     lf = raw_powers.get("LF")
