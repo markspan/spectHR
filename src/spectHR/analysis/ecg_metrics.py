@@ -51,6 +51,8 @@ sympatho-vagal balance. *Frontiers in Physiology*, 4, 26.
 """
 from __future__ import annotations
 
+import builtins  # this module defines `min`/`max` metrics that shadow the builtins
+
 import numpy as np
 
 from spectHR.analysis.epoch_context import EpochContext
@@ -445,7 +447,7 @@ def twave_amplitude(ctx) -> float:
 
         # ST segment search window.
         st_lo = r_t    + 0.15
-        st_hi = min(r_t + 0.50, r_next - 0.10)
+        st_hi = builtins.min(r_t + 0.50, r_next - 0.10)  # builtin, not the min() metric
         if st_hi <= st_lo:
             continue
         st_mask = (ecg_t >= st_lo) & (ecg_t <= st_hi)
