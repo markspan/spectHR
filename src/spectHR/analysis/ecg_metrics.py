@@ -544,9 +544,10 @@ def twave_amplitude(ctx) -> float:
             continue
         baseline = float(np.mean(ecg_v[bl_mask]))
 
-        # ST segment search window.
-        st_lo = r_t    + 0.15
-        st_hi = min(r_t + 0.50, r_next - 0.10)
+        # ST segment search window.  np.minimum avoids shadowing the
+        # module-level `min` epoch_metric.
+        st_lo = r_t + 0.15
+        st_hi = float(np.minimum(r_t + 0.50, r_next - 0.10))
         if st_hi <= st_lo:
             continue
         st_mask = (ecg_t >= st_lo) & (ecg_t <= st_hi)
