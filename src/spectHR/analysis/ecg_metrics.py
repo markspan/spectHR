@@ -64,19 +64,21 @@ from spectHR.analysis.registry import epoch_metric, epoch_metric_group
 __all__ = [
     # time-domain
     "count", "mean", "median", "min", "max", "rmssd", "sdnn", "sdsd",
+    "nn_stats",
     # stationarity
     "stationarity", "stationarity_z",
     # Poincaré
     "sd1", "sd2", "sd_ratio", "ellipse_area",
     # non-linear
-    "dfa_fluctuation", "dfa_alpha1", "dfa_a1",
+    "dfa_fluctuation", "dfa_alpha1", "dfa_a1", "dfa_a2",
+    "sample_entropy",
     # PRSA
     "dc", "ac",
     # ECG waveform
     "twave_amplitude",
     # frequency-domain
     "fullrange_power", "vlf_power", "lf_power", "hf_power",
-    "lf_hf_ratio", "band_powers",
+    "lf_hf_ratio", "band_powers", "band_freq_stats",
     "STANDARD_BAND_POWER_COLUMNS", "BAND_POWER_COLUMN_TOOLTIP",
 ]
 
@@ -191,6 +193,29 @@ def sdsd(series) -> float:
     """Standard deviation of successive differences (ms)."""
     d = successive_diffs_ms(series)
     return float(np.std(d)) if d.size else np.nan
+
+
+@epoch_metric_group
+def nn_stats(series) -> dict[str, float]:
+    """NN50/pNN50 and NN20/pNN20 threshold-crossing counts.
+
+    ``nn50`` / ``nn20`` are counts of successive differences exceeding 50 ms
+    or 20 ms respectively; ``pnn50`` / ``pnn20`` are the corresponding
+    percentages of the total number of differences.  Part of the standard
+    Task Force (1996) time-domain HRV parameters.
+    """
+    d = np.abs(successive_diffs_ms(series))
+    n = d.size
+    if n == 0:
+        return {"nn50": np.nan, "pnn50": np.nan, "nn20": np.nan, "pnn20": np.nan}
+    nn50 = int(np.sum(d > 50.0))
+    nn20 = int(np.sum(d > 20.0))
+    return {
+        "nn50":  float(nn50),
+        "pnn50": float(nn50 / n * 100.0),
+        "nn20":  float(nn20),
+        "pnn20": float(nn20 / n * 100.0),
+    }
 
 
 # ===========================================================================
@@ -322,6 +347,81 @@ def dfa_alpha1(
 def dfa_a1(series) -> float:
     """DFA short-term scaling exponent α1 (Peng et al. 1995, box sizes 4-16 beats)."""
     return dfa_alpha1(ibi_clean_ms(series))
+
+
+@epoch_metric
+def dfa_a2(series) -> float:
+    """DFA long-term scaling exponent α2 (box sizes 17-64 beats).
+
+    The long-term counterpart to ``dfa_a1``: computed over the same
+    detrended-fluctuation algorithm but at box sizes 17–64 beats.  Healthy
+    young adults typically show α2 ≈ 1.0 at rest; the long-term exponent is
+    more sensitive to slow autonomic modulation than α1.  Requires at least
+    128 clean beats, otherwise blank.
+    """
+    return dfa_alpha1(ibi_clean_ms(series), scale_min=17, scale_max=64)
+
+
+def _sample_entropy(x: np.ndarray, m: int = 2, r_factor: float = 0.2) -> float:
+    """SampEn via Richman & Moorman (2000). Pure NumPy, fully vectorised.
+
+    Counts template matches of length *m* (B) and *m+1* (A) using the
+    Chebyshev (max-norm) distance with tolerance ``r = r_factor × σ``.
+    Returns ``nan`` when *x* is shorter than 10 points or constant,
+    ``inf`` when no length-*m* template matches extend to length *m+1*
+    (maximum complexity, extremely rare in physiological series).
+    """
+    n = x.size
+    if n < 10:
+        return float("nan")
+    r = r_factor * float(np.std(x, ddof=0))
+    if r == 0.0:
+        return 0.0
+
+    # Build overlapping template windows via stride tricks.
+    T  = np.lib.stride_tricks.sliding_window_view(x, m + 1)  # (n-m, m+1)
+    Tm = T[:, :m]                                              # (n-m, m)
+
+    # Pairwise Chebyshev distances — O(N²) but fully vectorised.
+    # For typical HRV epoch lengths (50–500 beats) the arrays are small.
+    B_dist = np.max(np.abs(Tm[:, None] - Tm[None, :]), axis=2)
+    A_dist = np.max(np.abs(T[:, None]  - T[None, :]),  axis=2)
+
+    nm = B_dist.shape[0]
+    B = int(np.sum(B_dist <= r)) - nm   # exclude self-matches on diagonal
+    A = int(np.sum(A_dist <= r)) - nm
+
+    if B <= 0:
+        return float("nan")
+    if A <= 0:
+        return float("inf")
+    return float(-np.log(A / B))
+
+
+@epoch_metric
+def sample_entropy(series) -> float:
+    """Sample Entropy (SampEn, m=2, r=0.2·σ) of the cleaned IBI series.
+
+    A template-matching complexity measure (Richman & Moorman, 2000):
+    lower values indicate higher regularity (more self-similar patterns);
+    higher values indicate greater complexity.  The embedding dimension is
+    m=2 and the tolerance is r=0.2×σ_IBI, the standard physiological
+    convention.
+
+    Returns NaN for epochs shorter than 50 beats (estimates below that
+    length are unreliable).  Requires no external dependencies; the
+    computation is pure NumPy.
+
+    References
+    ----------
+    Richman, J. S., & Moorman, J. R. (2000). Physiological time-series
+    analysis using approximate entropy and sample entropy. *American Journal
+    of Physiology — Heart and Circulatory Physiology*, 278(6), H2039–H2049.
+    """
+    ibi = ibi_clean_ms(series)
+    if ibi.size < 50:
+        return np.nan
+    return _sample_entropy(ibi)
 
 
 # ===========================================================================
@@ -613,4 +713,67 @@ def band_powers(ctx) -> dict[str, float]:
             out[col] = val
         except Exception:
             pass   # leave absent → NaN in the matrix
+    return out
+
+
+@epoch_metric_group
+def band_freq_stats(ctx) -> dict[str, float]:
+    """Per-band peak frequency, relative power, normalised LF/HF, and total power.
+
+    Emits alongside the absolute band powers of ``band_powers``:
+
+    ``{band}_peak_hz``
+        Dominant (peak-power) frequency within each band, in Hz.
+    ``{band}_rel_power``
+        Band power as a proportion of the sum across all bands (0–1).
+    ``total_power``
+        Sum of all configured band powers (same units as the band powers).
+    ``lf_norm`` / ``hf_norm``
+        LF / (LF + HF) and HF / (LF + HF), emitted only when both ``LF``
+        and ``HF`` bands are present in the configuration.  Unlike the raw
+        ratio, normalised power is bounded [0, 1] and the two values sum to
+        one — making them directly comparable across studies that use
+        different absolute power scales.
+    """
+    out: dict[str, float] = {}
+    method = getattr(ctx, "psd_method", None)
+    psd_res = getattr(ctx, "psd", None)
+    if method is None or psd_res is None:
+        return out
+
+    freqs = np.asarray(psd_res.freqs, dtype=float)
+    power = np.asarray(psd_res.power, dtype=float)
+
+    raw_powers: dict[str, float] = {}
+    for band_name, band_spec in method.bands.items():
+        lo, hi = float(band_spec.low), float(band_spec.high)
+        mask = (freqs >= lo) & (freqs <= hi)
+        if not mask.any():
+            continue
+        # Peak frequency within the band
+        peak_idx = int(np.argmax(power[mask]))
+        out[f"{band_name.lower()}_peak_hz"] = float(freqs[mask][peak_idx])
+        # Absolute band power (rectangular integration, same as band_powers)
+        try:
+            raw_powers[band_name] = float(
+                band_power_rectangular(freqs, power, lo, hi)
+            )
+        except Exception:
+            pass
+
+    total = float(np.sum(list(raw_powers.values()))) if raw_powers else 0.0
+    out["total_power"] = total
+
+    if total > 0.0:
+        for band_name, bp in raw_powers.items():
+            out[f"{band_name.lower()}_rel_power"] = float(bp / total)
+
+    lf = raw_powers.get("LF")
+    hf = raw_powers.get("HF")
+    if lf is not None and hf is not None:
+        denom = lf + hf
+        if denom > 0.0:
+            out["lf_norm"] = float(lf / denom)
+            out["hf_norm"] = float(hf / denom)
+
     return out

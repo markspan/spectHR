@@ -414,11 +414,11 @@ All plots, including the Transfer and Transfer-profile tiles, are exported from 
 
 The **Results tab** shows a table with one row per epoch:
 
-- **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD
-- **Poincaré:** SD1, SD2, SD2/SD1, ellipse area
-- **Non-linear / stationarity:** DFA short-term scaling exponent (`dfa_a1`) and the reverse-arrangements stationarity z-score (`stationarity_z`), see [Non-linear and stationarity metrics](#non-linear-and-stationarity-metrics) below.
+- **Time-domain:** count, mean, median, min, max, RMSSD, SDNN, SDSD; NN50/pNN50 and NN20/pNN20 threshold-crossing counts (`nn_stats` group).
+- **Poincaré:** SD1, SD2, SD2/SD1, ellipse area.
+- **Non-linear / stationarity:** DFA short-term scaling exponent (`dfa_a1`), DFA long-term scaling exponent (`dfa_a2`), Sample Entropy (`sample_entropy`), and the reverse-arrangements stationarity z-score (`stationarity_z`). See [Non-linear and stationarity metrics](#non-linear-and-stationarity-metrics) below.
 - **PRSA:** Deceleration Capacity (`dc`, ms) and Acceleration Capacity (`ac`, ms) from Phase-Rectified Signal Averaging, see [PRSA metrics](#prsa-metrics) below.
-- **Frequency-domain:** One `{band}_power` column per configured frequency band (mMI² by default) and `lf_hf_ratio`. Band columns are data-driven: renaming or adding a band in **PSD Settings** changes the column names automatically. *The LF/HF ratio is reported because the literature expects it, but it should be read descriptively: it is **not** a clean index of sympatho-vagal balance ([Billman, 2013](#ref-billman2013)).*
+- **Frequency-domain:** One `{band}_power` column per configured frequency band (mMI² by default) and `lf_hf_ratio`. Additionally, `{band}_peak_hz` (dominant frequency), `{band}_rel_power` (fraction of total), `lf_norm` / `hf_norm` (normalised power), and `total_power`. Band columns are data-driven: renaming or adding a band in **PSD Settings** changes the column names automatically. *The LF/HF ratio is reported because the literature expects it, but it should be read descriptively: it is **not** a clean index of sympatho-vagal balance ([Billman, 2013](#ref-billman2013)).*
 - **Blood pressure & respiration:** mean SBP, DBP, PP, MAP (`bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`), mean / sample respiratory volume (`resp_mvo`, `resp_svo`), Grossman peak-to-valley respiratory sinus arrhythmia (`rsa`, `rsa0`) ([Grossman et al., 1990](#ref-grossman1990); [Buron & Menuet, 2026](#ref-buron2026)), the mean breathing frequency (`resp_freq`, Hz) and an HF-validity flag (`hf_resp_in_band`), see [Respiration-context HF](#respiration-context-hf) below. These columns are always present; the values are blank when the corresponding channel is absent.
 - **Transfer (per band):** `{band}_tf_modulus` (coherence-gated mean |H(f)|), `{band}_tf_coherence` (power-weighted mean squared coherence), and `{band}_tf_phase_w` (coherence-gated mean wrapped phase, radians), one set per configured frequency band (excluding FullRange). Present when a blood-pressure or respiration channel is available; blank otherwise. Hover over a column header for a full description.
 - **Sympathetic (ICG):** pre-ejection period (`pep`, ms) when the recording carries an ICG `dZ/dt` channel, see [Pre-ejection period (PEP)](#pre-ejection-period-pep) below.
@@ -464,9 +464,10 @@ R and Python users who want the full spectral arrays load the HDF5 file. The two
 | **Identity** | `Subject`, `epoch` |
 | **Time-domain HRV** | `count`, `mean`, `median`, `min`, `max`, `rmssd`, `sdnn`, `sdsd`, `stationarity`, … |
 | **Poincaré** | `sd1`, `sd2`, `sd_ratio`, `ellipse_area` |
-| **Non-linear / stationarity** | `dfa_a1`, `stationarity_z` |
+| **Non-linear / stationarity** | `dfa_a1`, `dfa_a2`, `sample_entropy`, `stationarity_z` |
 | **PRSA** | `dc` (Deceleration Capacity, ms), `ac` (Acceleration Capacity, ms) |
-| **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default), `lf_hf_ratio` |
+| **Band powers (PSD)** | `{band}_power` per configured band (mMI² by default), `lf_hf_ratio`; `{band}_peak_hz`, `{band}_rel_power`, `lf_norm`, `hf_norm`, `total_power` |
+| **Threshold crossings** | `nn50`, `pnn50`, `nn20`, `pnn20` |
 | **Blood pressure / respiration** | `bp_sbp`, `bp_dbp`, `bp_pp`, `bp_map`, `resp_mvo`, `resp_svo`, `resp_freq`, `hf_resp_in_band`, `rsa`, `rsa0` (always present; blank when the corresponding channel is absent) |
 | **Sympathetic (ICG)** | the scored landmarks `pep_q_ms` (Q-onset), `pep_b_ms` (B-point), `pep_c_ms` (C-point; all latencies in ms relative to the R-peak) and `pep_n_beats` (ensemble size), followed by `pep` itself. All present; blank when no ICG `dZ/dt` channel |
 | **Profile summaries** | `{band}_prof_mean/std/min/max/t_max` per band; `prof_method`, `prof_unit`, `prof_window_s`, `prof_step_s`, `prof_n_windows` |
@@ -482,7 +483,8 @@ The HDF5 file uses one top-level group per epoch. Inside each epoch group, **eve
 /{epoch}/
   attrs: subject,
          rmssd, sdnn, sdsd, mean, median, count, min, max,   ← time-domain
-         stationarity, stationarity_z, dfa_a1,                ← stationarity / non-linear
+         stationarity, stationarity_z, dfa_a1, dfa_a2, sample_entropy,   ← stationarity / non-linear
+         nn50, pnn50, nn20, pnn20,                             ← threshold crossings
          dc, ac,                                               ← PRSA
          sd1, sd2, sd_ratio, ellipse_area,                    ← Poincaré
          {band}_power, lf_hf_ratio,                           ← band powers
@@ -1000,9 +1002,11 @@ See the note in Step 4 above: SD1 and SD2 add no statistical information beyond 
 
 ## Non-linear and stationarity metrics
 
-Two columns probe structure in the IBI series that the time-domain, Poincaré and spectral measures miss: the *fractal scaling* of the fluctuations and whether the epoch is *statistically stationary* in the first place (a precondition the whole-epoch spectral estimates quietly assume).
+Several columns probe structure in the IBI series that time-domain, Poincaré and spectral measures miss: the *fractal scaling* of the fluctuations, their *complexity*, and whether the epoch is *statistically stationary* in the first place (a precondition the whole-epoch spectral estimates quietly assume).
 
 **`dfa_a1`**, the short-term **detrended-fluctuation-analysis** scaling exponent $\alpha_1$ ([Peng et al., 1995](#ref-peng1995)), computed over box sizes of 4–16 beats. It captures the long-range correlation structure of the IBI series: $\alpha_1 \approx 1.0$ indicates healthy "1/f" correlation, $\alpha_1 \to 0.5$ uncorrelated (white-noise-like) variability, and $\alpha_1 \to 1.5$ a Brownian/random-walk regime. Needs at least $2 \cdot \text{scale}_\max = 32$ beats, otherwise blank.
+
+**`dfa_a2`**, the long-term DFA scaling exponent $\alpha_2$, computed over box sizes of 17–64 beats using the same algorithm. $\alpha_2$ reflects slower autonomic modulation that $\alpha_1$ misses; healthy resting values are typically near 1.0. Requires at least 128 clean beats.
 
 <details>
 <summary>DFA-α1, algorithm detail</summary>
@@ -1028,6 +1032,10 @@ $$F(n) = \sqrt{\frac{1}{N}\sum_{k=1}^{N}\big(y(k) - \hat y_n(k)\big)^2}$$
 A self-similar series obeys $F(n) \propto n^{\alpha}$, so $\alpha_1$ is the slope of a least-squares line through $\log F(n)$ versus $\log n$ over the short-term scales $n \in [4, 16]$ beats.
 
 </details>
+
+**`sample_entropy`** (SampEn, $m=2$, $r=0.2\sigma$). A template-matching complexity measure ([Richman & Moorman, 2000](#ref-richman2000)): it estimates the conditional probability that two sequences matching across $m$ consecutive beats also match across $m+1$ beats. Lower SampEn means higher regularity (many self-repeating patterns); higher values mean greater beat-to-beat unpredictability. The tolerance $r = 0.2 \times \sigma_\text{IBI}$ self-normalises across recording sessions and subjects. Returns blank for epochs shorter than 50 beats (estimates below that length are unreliable); implemented in pure NumPy with no external dependency.
+
+> **Why not the Largest Lyapunov Exponent (LLE)?**  LLE estimates the exponential divergence rate of nearby trajectories in reconstructed phase space (Rosenstein algorithm). Although it appears in the HRV literature, its reliable estimation requires hundreds to thousands of beats, is highly sensitive to the chosen embedding dimension and lag, and its clinical interpretation in short HRV recordings is contested. For typical epoch lengths (30–5 min), LLE estimates are dominated by noise rather than true chaotic dynamics. SampEn and DFA provide the same qualitative "regularity vs. complexity" axis with far lower data requirements and better reproducibility.
 
 **`stationarity_z`**, the **reverse-arrangements** test statistic ([Bendat & Piersol, 2010](#ref-bendat2010)). Whereas the plain `stationarity` column is just a linear IBI-vs-time correlation (it catches monotone drift only), `stationarity_z` is a distribution-free z-score sensitive to *any* trend. Under stationarity it is $\sim \mathcal{N}(0, 1)$, so **$|z| > 1.96$ flags a non-stationary epoch** at the 5 % level, a warning that the whole-epoch spectral estimates should be read with care. It pairs naturally with the optional [detrending](#practical-considerations) setting. Blank for epochs shorter than 10 valid intervals.
 
