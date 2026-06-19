@@ -51,8 +51,6 @@ sympatho-vagal balance. *Frontiers in Physiology*, 4, 26.
 """
 from __future__ import annotations
 
-import builtins  # this module defines `min`/`max` metrics that shadow the builtins
-
 import numpy as np
 
 from spectHR.analysis.epoch_context import EpochContext
@@ -415,42 +413,62 @@ def ac(series) -> float:
 def twave_amplitude(ctx) -> float:
     """Mean T-wave amplitude per beat (ECG channel), in ECG signal units.
 
-    For each beat, the T-wave peak is located in the ST segment
-    (150–500 ms after the R-peak, capped 100 ms before the next R-peak).
-    Amplitude is measured relative to the pre-R baseline (mean ECG in the
-    50 ms window before each R-peak), then averaged across all beats.
+    Faithful port of CARSPAN ``CalcDataColECGTWAVE`` / ``GetBaseLineValue``
+    (``T_EventFile.pas``).  For each R-peak:
 
-    Returns NaN when no ECG channel is available (``ctx.ecg_ts is None``)
-    or fewer than two R-peaks are present in the epoch.  Ported from
-    CARSPAN ``CalcDataColECGTWAVE`` (``T_AnaFunctions.pas``).
+    * the **T-wave peak** is the maximum ECG sample in ``[R+150 ms, R+450 ms]``;
+    * the **baseline** is the mean ECG over a 20 ms PR-segment window
+      ``[Q-50 ms, Q-30 ms]``, where ``Q`` (QRS onset) is found by walking back
+      from the R-peak to the first local minimum;
+    * the amplitude is ``T peak - baseline``.
+
+    The values are averaged across beats.  Because the baseline is taken on the
+    isoelectric PR segment (not on the QRS upstroke), an upright T-wave gives a
+    positive amplitude and only a genuinely **inverted** T-wave goes negative.
+
+    Returns NaN when no ECG channel is available (``ctx.ecg_ts is None``) or no
+    beat yields a usable window.
     """
     if not isinstance(ctx, EpochContext) or ctx.ecg_ts is None:
         return np.nan
     ecg_t = np.asarray(ctx.ecg_ts.times,  dtype=float)
     ecg_v = np.asarray(ctx.ecg_ts.values, dtype=float)
-    if ecg_t.size < 2:
+    n = ecg_t.size
+    if n < 2:
         return np.nan
     rpeaks = np.asarray(ctx.rpeak_times, dtype=float)
-    if rpeaks.size < 2:
+    if rpeaks.size < 1:
         return np.nan
 
     amps: list[float] = []
-    for i in range(len(rpeaks) - 1):
-        r_t    = rpeaks[i]
-        r_next = rpeaks[i + 1]
+    for r_t in rpeaks:
+        # Nearest sample to the R-peak time.
+        ri = int(np.searchsorted(ecg_t, r_t))
+        if ri >= n:
+            ri = n - 1
+        if ri > 0 and abs(ecg_t[ri - 1] - r_t) <= abs(ecg_t[ri] - r_t):
+            ri -= 1
 
-        # Pre-R baseline: 50 ms before R-peak.
-        bl_mask = (ecg_t >= r_t - 0.05) & (ecg_t < r_t)
-        if not bl_mask.any():
-            continue
-        baseline = float(np.mean(ecg_v[bl_mask]))
+        # Q-point (QRS onset): walk back to the first local minimum, as CARSPAN.
+        q = ri
+        while q - 1 >= 1 and ecg_v[q] >= ecg_v[q - 1]:
+            q -= 1
+        q_t = ecg_t[q]
 
-        # ST segment search window.
-        st_lo = r_t    + 0.15
-        st_hi = builtins.min(r_t + 0.50, r_next - 0.10)  # builtin, not the min() metric
-        if st_hi <= st_lo:
+        # Baseline: mean ECG over the PR segment [Q-50 ms, Q-30 ms].  When that
+        # window runs off the start of the signal, CARSPAN falls back to the
+        # first sample.
+        bl_mask = (ecg_t >= q_t - 0.05) & (ecg_t <= q_t - 0.03)
+        if bl_mask.any():
+            baseline = float(np.mean(ecg_v[bl_mask]))
+        elif q_t - 0.05 < float(ecg_t[0]):
+            baseline = float(ecg_v[0])
+        else:
             continue
-        st_mask = (ecg_t >= st_lo) & (ecg_t <= st_hi)
+
+        # T-wave peak: max in the fixed [R+150 ms, R+450 ms] window (CARSPAN does
+        # not cap this at the next R-peak).
+        st_mask = (ecg_t >= r_t + 0.15) & (ecg_t <= r_t + 0.45)
         if not st_mask.any():
             continue
         amps.append(float(np.max(ecg_v[st_mask])) - baseline)

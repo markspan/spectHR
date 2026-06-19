@@ -17,13 +17,18 @@ from spectHR.session import Epoch, Events, Samples, Session
 
 
 def _synthetic_ecg(duration=30.0, fs=200.0, rr=0.8, t_amp=0.3):
-    """Flat-baseline ECG: a tall R-spike per beat and a T-wave bump ~300 ms later."""
+    """Flat-baseline ECG with a Q-trough, an R-spike, and a T-wave per beat.
+
+    The Q-trough (a small negative dip ~40 ms before R) gives the metric a real
+    QRS-onset minimum to find, so the baseline lands on the isoelectric PR
+    segment (~0) exactly as in the CARSPAN algorithm.
+    """
     t = np.arange(0.0, duration, 1.0 / fs)
     sig = np.zeros_like(t)
     peaks = np.arange(0.5, duration - 1.0, rr)
     for r in peaks:
-        # Narrow R-spike so its tail stays out of the 50 ms pre-R baseline window.
-        sig += 1.0 * np.exp(-0.5 * ((t - r) / 0.004) ** 2)          # R-spike
+        sig -= 0.15 * np.exp(-0.5 * ((t - (r - 0.04)) / 0.012) ** 2)  # Q-trough
+        sig += 1.0 * np.exp(-0.5 * ((t - r) / 0.004) ** 2)            # R-spike
         sig += t_amp * np.exp(-0.5 * ((t - (r + 0.30)) / 0.04) ** 2)  # T-wave
     return t, sig, peaks
 
