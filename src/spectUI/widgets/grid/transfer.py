@@ -175,9 +175,10 @@ class TransferPlotWidget(_TransferBase):
 
 
 class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
-    """Per-epoch transfer modulus per band over time, with band selection."""
+    """Per-epoch transfer profile: modulus, phase and coherence over time."""
 
     DOCK_NAME = "transferprofile"
+    TILE_HEIGHT_FACTOR = 1.6   # three sub-panels need more vertical room
     Y_ZOOM = True
 
     def _build_toolbar(self) -> None:
@@ -203,26 +204,62 @@ class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
         )
 
     def _render_tile(self, fig: Figure, label: str, result) -> None:
-        ax = fig.add_subplot(111)
+        # Three-panel Bode layout mirroring the single-epoch TransferPlotWidget:
+        # modulus (top) / phase (middle) / coherence (bottom), all vs. time.
+        gs = fig.add_gridspec(3, 1, hspace=0.12, height_ratios=[3, 2, 2])
+        ax_m = fig.add_subplot(gs[0])
+        ax_p = fig.add_subplot(gs[1], sharex=ax_m)
+        ax_c = fig.add_subplot(gs[2], sharex=ax_m)
+
+        ts = result.timestamps
+        wrapped = self._ts.get("phase_view", "wrapped") != "unwrapped"
+        min_coh = float(self._ts["min_coherence"])
+        unit = modulus_unit(self._sig)
+        sig_label = input_signal_label(self._sig)
+
         drawn = 0
         for i, name in enumerate(result.band_names):
             if not self._band_selected(name):
                 continue
             color = band_color(self._display_bands, name)
-            # Translucent fill under the curve (per-band alpha) so overlapping
-            # bands stay visible; the solid line sits on top.
             alpha = float((self._display_bands.get(name) or {}).get("alpha", 0.25))
-            ax.fill_between(result.timestamps, result.modulus[i],
-                            color=color, alpha=alpha, zorder=1)
-            ax.plot(result.timestamps, result.modulus[i], linewidth=1.0,
-                    color=color, label=name, zorder=2)
+
+            mod = result.modulus[i]
+            ax_m.fill_between(ts, mod, color=color, alpha=alpha, zorder=1)
+            ax_m.plot(ts, mod, linewidth=1.0, color=color, label=name, zorder=2)
+
+            phase = result.phase[i] if wrapped else result.phase_unwrapped[i]
+            ax_p.plot(ts, phase, linewidth=1.0, color=color, zorder=2)
+
+            ax_c.plot(ts, result.weighted_coherence[i],
+                      linewidth=1.0, color=color, zorder=2)
             drawn += 1
-        unit = modulus_unit(self._sig)
-        sig_label = input_signal_label(self._sig)
-        ax.set_title(f"{label}\ninput: {sig_label}", fontsize=9)
-        ax.set_xlabel("Time (s)", fontsize=8)
-        ax.set_ylabel(f"|H| [{unit}]" if unit else "|H|", fontsize=8)
-        ax.tick_params(labelsize=7)
+
+        ax_m.set_title(f"{label}\ninput: {sig_label}", fontsize=9)
+        ax_m.set_ylabel(f"|H| [{unit}]" if unit else "|H|", fontsize=7)
+        ax_m.set_ylim(bottom=0.0)
         if drawn:
-            ax.legend(fontsize=6, loc="upper right")
-        fig.tight_layout()
+            ax_m.legend(fontsize=5, loc="upper right", framealpha=0.5)
+
+        ax_p.axhline(0.0, color="dimgray", lw=0.6, zorder=1)
+        if wrapped:
+            ax_p.set_ylim(-np.pi - 0.2, np.pi + 0.2)
+            ax_p.set_yticks([-np.pi, -np.pi / 2, 0.0, np.pi / 2, np.pi])
+            ax_p.set_yticklabels(
+                [r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"], fontsize=7)
+        ax_p.set_ylabel("∠H [rad]", fontsize=7)
+
+        if self._ts.get("show_coherence_threshold", True):
+            ax_c.axhline(min_coh, ls="--", color="red",
+                         linewidth=1.0, alpha=0.7, zorder=1)
+        ax_c.set_ylim(0.0, 1.05)
+        ax_c.set_yticks([0.0, 0.5, 1.0])
+        ax_c.set_ylabel(r"$|C|^2$", fontsize=7)
+        ax_c.set_xlabel("Time (s)", fontsize=7)
+
+        for ax in (ax_m, ax_p, ax_c):
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+        for ax in (ax_m, ax_p):
+            ax.tick_params(labelbottom=False, labelsize=6)
+        ax_c.tick_params(labelsize=6)
