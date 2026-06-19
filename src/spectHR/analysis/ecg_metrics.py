@@ -51,6 +51,8 @@ sympatho-vagal balance. *Frontiers in Physiology*, 4, 26.
 """
 from __future__ import annotations
 
+import builtins  # this module's `min`/`max` metrics shadow the builtins; qualify when needed
+
 import numpy as np
 
 from spectHR.analysis.epoch_context import EpochContext
@@ -440,38 +442,49 @@ def twave_amplitude(ctx) -> float:
     if rpeaks.size < 1:
         return np.nan
 
+    # Nearest ECG sample to each R-peak time (vectorised).
+    ri = np.clip(np.searchsorted(ecg_t, rpeaks), 0, n - 1)
+    left = np.clip(ri - 1, 0, n - 1)
+    take_left = (ri > 0) & (np.abs(ecg_t[left] - rpeaks) <= np.abs(ecg_t[ri] - rpeaks))
+    ri = np.where(take_left, left, ri)
+
+    # Bound the Q-point walk-back to the QRS region so a flat segment can never
+    # turn the per-beat search into an O(n) scan.
+    dt = float(np.median(np.diff(ecg_t)))
+    max_back = builtins.max(1, int(round(0.20 / dt))) if dt > 0 else 1
+    t0 = float(ecg_t[0])
+
     amps: list[float] = []
-    for r_t in rpeaks:
-        # Nearest sample to the R-peak time.
-        ri = int(np.searchsorted(ecg_t, r_t))
-        if ri >= n:
-            ri = n - 1
-        if ri > 0 and abs(ecg_t[ri - 1] - r_t) <= abs(ecg_t[ri] - r_t):
-            ri -= 1
+    for k in range(rpeaks.size):
+        r_t = float(rpeaks[k])
 
         # Q-point (QRS onset): walk back to the first local minimum, as CARSPAN.
-        q = ri
-        while q - 1 >= 1 and ecg_v[q] >= ecg_v[q - 1]:
+        q = int(ri[k])
+        q_stop = builtins.max(1, q - max_back)
+        while q > q_stop and ecg_v[q] >= ecg_v[q - 1]:
             q -= 1
         q_t = ecg_t[q]
 
-        # Baseline: mean ECG over the PR segment [Q-50 ms, Q-30 ms].  When that
-        # window runs off the start of the signal, CARSPAN falls back to the
-        # first sample.
-        bl_mask = (ecg_t >= q_t - 0.05) & (ecg_t <= q_t - 0.03)
-        if bl_mask.any():
-            baseline = float(np.mean(ecg_v[bl_mask]))
-        elif q_t - 0.05 < float(ecg_t[0]):
+        # Baseline: mean ECG over the PR segment [Q-50 ms, Q-30 ms].  The signal
+        # is sorted in time, so slice it with searchsorted (O(log n)) rather than
+        # masking the whole array per beat.  When the window runs off the start,
+        # CARSPAN falls back to the first sample.
+        b0 = int(np.searchsorted(ecg_t, q_t - 0.05, "left"))
+        b1 = int(np.searchsorted(ecg_t, q_t - 0.03, "right"))
+        if b1 > b0:
+            baseline = float(ecg_v[b0:b1].mean())
+        elif q_t - 0.05 < t0:
             baseline = float(ecg_v[0])
         else:
             continue
 
         # T-wave peak: max in the fixed [R+150 ms, R+450 ms] window (CARSPAN does
         # not cap this at the next R-peak).
-        st_mask = (ecg_t >= r_t + 0.15) & (ecg_t <= r_t + 0.45)
-        if not st_mask.any():
+        s0 = int(np.searchsorted(ecg_t, r_t + 0.15, "left"))
+        s1 = int(np.searchsorted(ecg_t, r_t + 0.45, "right"))
+        if s1 <= s0:
             continue
-        amps.append(float(np.max(ecg_v[st_mask])) - baseline)
+        amps.append(float(ecg_v[s0:s1].max()) - baseline)
 
     return float(np.mean(amps)) if amps else np.nan
 
