@@ -73,6 +73,8 @@ class ProfilePlotWidget(BandSelectorMixin, EpochGridView):
         ax.set_ylim(bottom=0.0)
         if t.size:                       # hug the data: no margins before/after
             ax.set_xlim(float(t[0]), float(t[-1]))
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
         ax.tick_params(labelsize=7)
         if drawn:
             ax.legend(fontsize=6, loc="upper right", framealpha=0.6)
