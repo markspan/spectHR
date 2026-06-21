@@ -178,3 +178,392 @@ falling back to respiration when no BP channel is present.
 See [`PLAN.md`](PLAN.md) for the concrete, ordered plan of the next metrics to
 add (specs, formulae, which cached input each reuses), and the top-level
 [`roadmap.MD`](../../../roadmap.MD) for the broader feature wishlist.
+
+---
+
+## Metric reference
+
+One anchored section per registered metric (its docstring + a link to the source
+function), so the Results dock can deep-link a column header straight to its
+description. **This block is auto-generated**, run
+`python -m spectHR.analysis._docgen` to refresh it after changing a metric
+docstring; a test keeps it in sync. Do not edit between the markers by hand.
+
+<!-- METRIC-REFERENCE:START -->
+
+### ac
+
+Acceleration Capacity (AC) in ms, PRSA sympatho-vagal index.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`ac`)
+
+### band_peak
+
+``{band}_peak_hz``: frequency of the maximum PSD value inside each band.
+
+Group metric: emits several data-driven columns.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`band_peak`)
+
+### band_powers
+
+``{band}_power`` column for every configured frequency band.
+
+Group metric: emits several data-driven columns.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`band_powers`)
+
+### band_rel
+
+``{band}_pct``: each configured band's % of the total (non-FullRange) power.
+
+Group metric: emits several data-driven columns.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`band_rel`)
+
+### bp_dbp
+
+Diastolic blood pressure, epoch mean of the per-beat foot minima (CARSPAN).
+
+Source: [`bp_metrics.py`](bp_metrics.py) (`bp_dbp`)
+
+### bp_map
+
+Mean arterial pressure, epoch mean of the waveform integral mean (CARSPAN).
+
+Source: [`bp_metrics.py`](bp_metrics.py) (`bp_map`)
+
+### bp_pp
+
+Pulse pressure (SBP - DBP), epoch mean over beats (CARSPAN).
+
+Source: [`bp_metrics.py`](bp_metrics.py) (`bp_pp`)
+
+### bp_sbp
+
+Systolic blood pressure, epoch mean of the per-beat maxima (CARSPAN).
+
+Source: [`bp_metrics.py`](bp_metrics.py) (`bp_sbp`)
+
+### count
+
+Total number of valid inter-beat intervals.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`count`)
+
+### csi
+
+Cardiac Sympathetic Index L/T (T = 4·SD1, L = 4·SD2; Toichi 1997).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`csi`)
+
+### cvi
+
+Cardiac Vagal Index log10(L·T) = log10(16·SD1·SD2) (Toichi 1997).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`cvi`)
+
+### cvnn
+
+Coefficient of variation of the IBIs: 100 * SDNN / mean (percent).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`cvnn`)
+
+### cvsd
+
+Coefficient of variation of successive differences: 100 * SDSD / mean (percent).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`cvsd`)
+
+### dbp_sd
+
+Beat-to-beat diastolic BP variability: SD of the per-beat DBP (mmHg).
+
+Source: [`bp_metrics.py`](bp_metrics.py) (`dbp_sd`)
+
+### dc
+
+Deceleration Capacity (DC) in ms, PRSA parasympathetic index.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`dc`)
+
+### dfa_a1
+
+DFA short-term scaling exponent α1 (Peng et al. 1995, box sizes 4-16 beats).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`dfa_a1`)
+
+### dfa_a2
+
+DFA long-term scaling exponent α2 (Peng et al. 1995, box sizes 16-64 beats).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`dfa_a2`)
+
+### ellipse_area
+
+Area of the Poincaré ellipse, ``π · SD1 · SD2`` (ms²).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`ellipse_area`)
+
+### heather_index
+
+Heather index of myocardial contractility (needs ICG dZ/dt + ECG).
+
+Source: [`icg_metrics.py`](icg_metrics.py) (`heather_index`)
+
+### hf_nu
+
+HF power in normalised units: 100 * HF / (LF + HF).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`hf_nu`)
+
+### hf_resp_in_band
+
+True if mean breathing frequency lies inside the HF band, else False (Grossman & Taylor 2007). A False value flags that the epoch's HF power may not reflect RSA.
+
+Source: [`respiration_metrics.py`](respiration_metrics.py) (`hf_resp_in_band`)
+
+### hrv_ti
+
+HRV triangular index: total IBIs / height of the modal histogram bin (1/128 s bins).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`hrv_ti`)
+
+### lf_hf_ratio
+
+LF/HF ratio. Historically read as sympatho-vagal balance, but that interpretation is not supported by current evidence (Billman 2013; Reyes del Paso et al. 2013), LF reflects mixed autonomic influences, not a clean sympathetic index. Report the ratio descriptively.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`lf_hf_ratio`)
+
+### lf_nu
+
+LF power in normalised units: 100 * LF / (LF + HF).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`lf_nu`)
+
+### ln_hf
+
+Natural log of HF power, ln(HF).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`ln_hf`)
+
+### max
+
+Maximum IBI (ms).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`max`)
+
+### mean
+
+Mean IBI (ms).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`mean`)
+
+### mean_hr
+
+Mean heart rate in bpm = 60000 / mean(IBI in ms).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`mean_hr`)
+
+### median
+
+Median IBI (ms).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`median`)
+
+### min
+
+Minimum IBI (ms).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`min`)
+
+### modified_csi
+
+Modified Cardiac Sympathetic Index L²/T (Toichi 1997).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`modified_csi`)
+
+### nn20
+
+Number of successive IBI differences greater than 20 ms.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`nn20`)
+
+### nn50
+
+Number of successive IBI differences greater than 50 ms.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`nn50`)
+
+### pep
+
+Pre-ejection period from the ensemble-averaged complex (ms; needs ICG dZ/dt).
+
+Source: [`icg_metrics.py`](icg_metrics.py) (`pep`)
+
+### pep_b_ms
+
+B-point (aortic-valve opening) latency relative to the R-peak, ms (needs ICG dZ/dt).
+
+Source: [`icg_metrics.py`](icg_metrics.py) (`pep_b_ms`)
+
+### pep_c_ms
+
+C-point (peak ejection velocity) latency relative to the R-peak, ms (needs ICG dZ/dt).
+
+Source: [`icg_metrics.py`](icg_metrics.py) (`pep_c_ms`)
+
+### pep_n_beats
+
+Number of beats in the PEP ensemble average for the epoch (needs ICG dZ/dt).
+
+Source: [`icg_metrics.py`](icg_metrics.py) (`pep_n_beats`)
+
+### pep_q_ms
+
+Q-onset latency relative to the R-peak, ms (≤ 0; needs ICG dZ/dt + ECG).
+
+Source: [`icg_metrics.py`](icg_metrics.py) (`pep_q_ms`)
+
+### pnn20
+
+Percentage of successive IBI differences greater than 20 ms.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`pnn20`)
+
+### pnn50
+
+Percentage of successive IBI differences greater than 50 ms.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`pnn50`)
+
+### resp_freq
+
+Mean breathing frequency in Hz (blank when no respiration channel).
+
+Source: [`respiration_metrics.py`](respiration_metrics.py) (`resp_freq`)
+
+### resp_mvo
+
+Mean respiratory volume per cardiac interval, epoch mean (CARSPAN) (no unit!).
+
+Source: [`respiration_metrics.py`](respiration_metrics.py) (`resp_mvo`)
+
+### resp_rate_bpm
+
+Mean breathing rate in breaths per minute (60 * resp_freq).
+
+Source: [`respiration_metrics.py`](respiration_metrics.py) (`resp_rate_bpm`)
+
+### resp_svo
+
+Sample respiratory volume at each R-peak, epoch mean (CARSPAN) (no unit!).
+
+Source: [`respiration_metrics.py`](respiration_metrics.py) (`resp_svo`)
+
+### rmssd
+
+Root mean square of successive differences (ms).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`rmssd`)
+
+### rrv
+
+Respiration-rate variability: SD of the per-cycle breath durations (s).
+
+Source: [`respiration_metrics.py`](respiration_metrics.py) (`rrv`)
+
+### rsa
+
+Respiratory sinus arrhythmia: mean over valid breath cycles (Grossman 1990 peak-to-valley, ms).
+
+Source: [`respiration_metrics.py`](respiration_metrics.py) (`rsa`)
+
+### rsa0
+
+RSA with every invalid breath (negative or undetectable) counted as zero over the total breath count; reduces over-estimation bias (VU-DAMS RSA0, ms).
+
+Source: [`respiration_metrics.py`](respiration_metrics.py) (`rsa0`)
+
+### sbp_sd
+
+Beat-to-beat systolic BP variability: SD of the per-beat SBP (mmHg).
+
+Source: [`bp_metrics.py`](bp_metrics.py) (`sbp_sd`)
+
+### sd1
+
+Poincaré SD1 (minor axis, ms) = std(dIBI) / sqrt(2).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`sd1`)
+
+### sd2
+
+Poincaré SD2 (major axis, ms) via Brennan's identity: ``SD2² = 2·Var(IBI) − 0.5·Var(dIBI)``.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`sd2`)
+
+### sd_hr
+
+SD of the per-beat instantaneous heart rate (bpm).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`sd_hr`)
+
+### sd_ratio
+
+SD1 / SD2 - short-term vs long-term variability balance.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`sd_ratio`)
+
+### sdnn
+
+Standard deviation of all valid IBIs (ms).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`sdnn`)
+
+### sdsd
+
+Standard deviation of successive differences (ms).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`sdsd`)
+
+### stationarity
+
+Correlation of IBI vs. time - drift indicator.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`stationarity`)
+
+### stationarity_z
+
+Reverse-arrangements stationarity test statistic (Bendat & Piersol).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`stationarity_z`)
+
+### tinn
+
+Triangular Interpolation of the NN histogram (ms): base width of the least-squares triangle fitted to the IBI histogram (Task Force 1996).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`tinn`)
+
+### total_power
+
+Total spectral power: sum of all configured bands except FullRange (mMI² by default).
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`total_power`)
+
+### transfer_band_metrics
+
+Per-band transfer-function scalars (modulus, coherence, phase).
+
+Group metric: emits several data-driven columns.
+
+Source: [`transfer_metrics.py`](transfer_metrics.py) (`transfer_band_metrics`)
+
+### twave_amplitude
+
+Mean T-wave amplitude per beat (ECG channel), in ECG signal units.
+
+Source: [`ecg_metrics.py`](ecg_metrics.py) (`twave_amplitude`)
+
+<!-- METRIC-REFERENCE:END -->
+

@@ -17,10 +17,12 @@ from pathlib import Path
 
 import numpy as np
 from platformdirs import user_documents_dir
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -44,6 +46,8 @@ class ResultsTableWidget(QWidget):
         super().__init__(parent)
         self._session: Session | None = None
         self._config = None
+        #: Metric column names in display order (header section 0 is "epoch").
+        self._columns: list[str] = []
         # The table is heavy (PEP ensemble + RSA + PSD per epoch), so it is
         # computed off the UI thread; a stale generation is discarded when a
         # newer edit supersedes it.
@@ -60,6 +64,10 @@ class ResultsTableWidget(QWidget):
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
+        # Right-click a column header to open the metric's description / source.
+        header = self.table.horizontalHeader()
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._header_menu)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(bar)
@@ -193,20 +201,54 @@ class ResultsTableWidget(QWidget):
                     return tip
         return None
 
+    def _column_for_section(self, section: int) -> str | None:
+        """Metric name for a header *section* (section 0 is the epoch column)."""
+        idx = section - 1
+        if 0 <= idx < len(self._columns):
+            return self._columns[idx]
+        return None
+
+    def _header_menu(self, pos) -> None:
+        """Right-click a metric header: open its description / source on GitHub."""
+        header = self.table.horizontalHeader()
+        col = self._column_for_section(header.logicalIndexAt(pos))
+        if not col:
+            return
+        from spectHR.analysis.sources import metric_doc_url, metric_source_url
+
+        doc_url = metric_doc_url(col)
+        src_url = metric_source_url(col)
+        if not doc_url and not src_url:
+            return
+        menu = QMenu(self)
+        if doc_url:
+            menu.addAction(
+                f"What '{col}' measures (docs)…",
+                lambda: QDesktopServices.openUrl(QUrl(doc_url)),
+            )
+        if src_url:
+            menu.addAction(
+                "View source on GitHub…",
+                lambda: QDesktopServices.openUrl(QUrl(src_url)),
+            )
+        menu.exec(header.mapToGlobal(pos))
+
     def _populate(self, labels, columns: list[str], values: np.ndarray) -> None:
         self.table.clear()
+        self._columns = list(columns)
         self.table.setRowCount(len(labels))
         self.table.setColumnCount(1 + len(columns))
         self.table.setHorizontalHeaderLabels(["epoch", *columns])
 
-        # Header tooltips: the docstring of each metric's calculation (V2).
+        # Header tooltips: the docstring of each metric's calculation (V2),
+        # with a hint that the header is right-clickable for the full help.
         docs = self._metric_docs()
         for c, col in enumerate(columns):
             header = self.table.horizontalHeaderItem(c + 1)
             if header is not None:
                 tip = self._column_tooltip(col, docs)
-                if tip:
-                    header.setToolTip(tip)
+                hint = "Right-click for description and source"
+                header.setToolTip(f"{tip}\n\n{hint}" if tip else hint)
 
         from spectHR.analysis.respiration_metrics import BOOLEAN_METRIC_COLUMNS
         for r, label in enumerate(labels):
