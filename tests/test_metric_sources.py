@@ -27,13 +27,41 @@ def test_resolve_single_group_and_dynamic_columns():
 
 
 def test_source_location_points_at_the_function():
+    # rmssd is inline, so its location is the function itself.
     rel, start, end = S.metric_source_location("rmssd")
     assert rel == "src/spectHR/analysis/ecg_metrics.py"
     assert start <= end
-    # The reported start line is the def of the resolved function.
     fn = get_metrics()["rmssd"]
     _, def_line = inspect.getsourcelines(fn)
     assert start == def_line
+
+
+def test_algorithm_chain_follows_wrappers_to_the_maths():
+    # Thin wrappers resolve through to the function that does the computation.
+    assert [n for n, _ in S.metric_algorithm_chain("bp_sbp")] == [
+        "bp_sbp", "_bp_metric", "bp_beat_parameters",
+    ]
+    assert [n for n, _ in S.metric_algorithm_chain("pep")][-1] == "pep_ensemble"
+    assert [n for n, _ in S.metric_algorithm_chain("dfa_a2")][-1] == "dfa_alpha1"
+    assert [n for n, _ in S.metric_algorithm_chain("band_powers")][-1] == (
+        "band_power_rectangular"
+    )
+
+
+def test_inline_metrics_resolve_to_themselves():
+    for name in ("sdnn", "rmssd", "csi", "lf_nu", "tinn"):
+        assert [n for n, _ in S.metric_algorithm_chain(name)] == [name]
+
+
+def test_source_url_targets_the_algorithm_not_the_wrapper():
+    # bp_sbp's wrapper lives in bp_metrics; its algorithm is bp_beat_parameters,
+    # also in bp_metrics, but at the line range of that function.
+    loc = S.metric_source_location("bp_sbp")
+    import inspect as _inspect
+    from spectHR.analysis.bp_metrics import bp_beat_parameters
+    _, def_line = _inspect.getsourcelines(bp_beat_parameters)
+    assert loc[0] == "src/spectHR/analysis/bp_metrics.py"
+    assert loc[1] == def_line
 
 
 def test_github_base_from_origin_remote():

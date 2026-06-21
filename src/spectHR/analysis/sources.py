@@ -24,7 +24,10 @@ package is run from a checkout, falling back to the canonical project URL.
 """
 from __future__ import annotations
 
+import ast
+import importlib
 import inspect
+import textwrap
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -116,17 +119,146 @@ def github_base() -> str:
     return DEFAULT_GITHUB_BASE
 
 
-def metric_source_location(column: str):
-    """``(relpath, line_start, line_end)`` for the column's calculation, or ``None``.
+# ---------------------------------------------------------------------------
+# Following a metric to its "real algorithm"
+#
+# Most registered metrics are thin wrappers: they read a cached intermediate off
+# the EpochContext or delegate to a helper, and the actual maths lives one or two
+# hops away.  resolve_algorithm follows a metric *while it is a pure pass-through*
+# (no arithmetic of its own, exactly one non-trivial callee) until it reaches the
+# function that does the real computation, so the "view source" link lands on the
+# algorithm rather than on `return _bp_metric(ctx, "sbp")`.
+# ---------------------------------------------------------------------------
 
-    *relpath* is POSIX, relative to the repository root.  Line numbers are read
-    live from the function object, so they always match the current source.
-    """
-    resolved = resolve_metric_function(column)
-    root = repo_root()
-    if resolved is None or root is None:
+# Plumbing helpers that are never "the algorithm": IBI cleaning, PSD-method
+# resolution and the generic per-beat aggregators.  Following into these would
+# point at boilerplate, so they are skipped when choosing the next hop.
+_TRIVIAL_HELPERS = frozenset({
+    "ibi_clean_ms",
+    "successive_diffs_ms",
+    "_resolve_method",
+    "nanmean",
+    "median_dt",
+    "rpeak_sample_indices",
+})
+
+# EpochContext cached-properties bridge a metric to the function that fills them.
+# Reading ``ctx.bp_beats`` is, algorithmically, a call to ``bp_beat_parameters``.
+_CTX_BRIDGE = {
+    "bp_beats": ("spectHR.analysis.bp_metrics", "bp_beat_parameters"),
+    "resp_beats": ("spectHR.analysis.respiration_metrics", "resp_beat_parameters"),
+    "rsa_beats": ("spectHR.analysis.respiration_metrics", "grossman_rsa_per_breath"),
+    "pep_detail": ("spectHR.analysis.icg_metrics", "pep_ensemble"),
+    "pep_value": ("spectHR.analysis.icg_metrics", "pep_ensemble"),
+    "transfer_result": ("spectHR.analysis.transfer", "compute_transfer"),
+}
+
+_MAX_CHAIN = 6  # depth guard; the real chains are 1-3 hops
+
+
+def _bridge_function(attr: str):
+    spec = _CTX_BRIDGE.get(attr)
+    if spec is None:
         return None
-    _, fn = resolved
+    try:
+        return getattr(importlib.import_module(spec[0]), spec[1], None)
+    except ImportError:
+        return None
+
+
+def _ast_of(fn) -> Optional[ast.AST]:
+    try:
+        return ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    except (OSError, TypeError, SyntaxError):
+        return None
+
+
+def _has_arithmetic(fn) -> bool:
+    """True when *fn* does arithmetic of its own (so it *is* an algorithm)."""
+    tree = _ast_of(fn)
+    if tree is None:
+        return True  # cannot see the source, treat as a terminal
+    return any(isinstance(node, ast.BinOp) for node in ast.walk(tree))
+
+
+def _in_package(obj) -> bool:
+    return callable(obj) and getattr(obj, "__module__", "").startswith("spectHR")
+
+
+def _next_hops(fn) -> list:
+    """Non-trivial functions *fn* delegates to (direct calls + ctx bridges)."""
+    tree = _ast_of(fn)
+    if tree is None:
+        return []
+    glb = getattr(fn, "__globals__", {})
+    called: set[str] = set()
+    ctx_attrs: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                called.add(node.func.id)
+                if (node.func.id == "getattr" and len(node.args) >= 2
+                        and isinstance(node.args[0], ast.Name)
+                        and node.args[0].id == "ctx"
+                        and isinstance(node.args[1], ast.Constant)):
+                    ctx_attrs.add(str(node.args[1].value))
+        elif (isinstance(node, ast.Attribute)
+              and isinstance(node.value, ast.Name) and node.value.id == "ctx"):
+            ctx_attrs.add(node.attr)
+
+    hops: list = []
+    seen_ids: set[int] = set()
+    for name in sorted(called):
+        if name in _TRIVIAL_HELPERS:
+            continue
+        obj = glb.get(name)
+        if _in_package(obj) and id(obj) not in seen_ids:
+            seen_ids.add(id(obj))
+            hops.append(obj)
+    for attr in sorted(ctx_attrs):
+        obj = _bridge_function(attr)
+        if obj is not None and id(obj) not in seen_ids:
+            seen_ids.add(id(obj))
+            hops.append(obj)
+    return hops
+
+
+def resolve_algorithm(fn) -> list:
+    """The wrapper-to-algorithm chain for *fn* (``[fn]`` when it is inline).
+
+    Follows *fn* while it is a pure pass-through (no arithmetic, exactly one
+    non-trivial hop), stopping at the first function that computes something
+    itself or that branches to several callees.  The last element is the
+    function the "view source" link should open.
+    """
+    chain = [fn]
+    seen = {id(fn)}
+    cur = fn
+    for _ in range(_MAX_CHAIN):
+        if _has_arithmetic(cur):
+            break
+        hops = [h for h in _next_hops(cur) if id(h) not in seen]
+        if len(hops) != 1:
+            break
+        cur = hops[0]
+        seen.add(id(cur))
+        chain.append(cur)
+    return chain
+
+
+def metric_algorithm_chain(column: str) -> Optional[list]:
+    """``[(name, function), ...]`` from the metric wrapper to its algorithm."""
+    resolved = resolve_metric_function(column)
+    if resolved is None:
+        return None
+    return [(fn.__name__, fn) for fn in resolve_algorithm(resolved[1])]
+
+
+def _function_location(fn):
+    """``(relpath, line_start, line_end)`` for *fn*, or ``None``."""
+    root = repo_root()
+    if root is None:
+        return None
     try:
         source_file = Path(inspect.getsourcefile(fn)).resolve()
         lines, start = inspect.getsourcelines(fn)
@@ -139,8 +271,21 @@ def metric_source_location(column: str):
     return rel, start, start + len(lines) - 1
 
 
+def metric_source_location(column: str):
+    """``(relpath, line_start, line_end)`` of the column's **real algorithm**.
+
+    The metric is followed through its wrapper(s) to the function that does the
+    computation (see :func:`resolve_algorithm`).  *relpath* is POSIX, relative
+    to the repository root; line numbers are read live, so they never drift.
+    """
+    chain = metric_algorithm_chain(column)
+    if not chain:
+        return None
+    return _function_location(chain[-1][1])
+
+
 def metric_source_url(column: str, ref: str = DEFAULT_REF) -> Optional[str]:
-    """GitHub blob URL pointing at the exact lines of the column's function."""
+    """GitHub blob URL pointing at the exact lines of the column's algorithm."""
     loc = metric_source_location(column)
     if loc is None:
         return None

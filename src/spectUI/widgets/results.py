@@ -214,12 +214,22 @@ class ResultsTableWidget(QWidget):
         col = self._column_for_section(header.logicalIndexAt(pos))
         if not col:
             return
-        from spectHR.analysis.sources import metric_doc_url, metric_source_url
+        from spectHR.analysis.sources import (
+            metric_algorithm_chain,
+            metric_doc_url,
+            metric_source_url,
+        )
 
         doc_url = metric_doc_url(col)
         src_url = metric_source_url(col)
         if not doc_url and not src_url:
             return
+        # "Algorithm" when the metric delegates to a deeper function; otherwise
+        # the wrapper is the calculation, so "source" reads more honestly.
+        chain = metric_algorithm_chain(col) or []
+        src_label = (
+            "View algorithm on GitHub…" if len(chain) > 1 else "View source on GitHub…"
+        )
         menu = QMenu(self)
         if doc_url:
             menu.addAction(
@@ -228,7 +238,7 @@ class ResultsTableWidget(QWidget):
             )
         if src_url:
             menu.addAction(
-                "View source on GitHub…",
+                src_label,
                 lambda: QDesktopServices.openUrl(QUrl(src_url)),
             )
         menu.exec(header.mapToGlobal(pos))

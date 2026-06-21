@@ -183,11 +183,14 @@ add (specs, formulae, which cached input each reuses), and the top-level
 
 ## Metric reference
 
-One anchored section per registered metric (its docstring + a link to the source
-function), so the Results dock can deep-link a column header straight to its
-description. **This block is auto-generated**, run
+One anchored section per registered metric: its docstring, the wrapper-to-
+algorithm call chain (most metrics are thin wrappers that delegate to a helper or
+a cached intermediate), and a link to the function that does the real
+computation. So the Results dock can deep-link a column header straight to its
+description, and from there to the maths. **This block is auto-generated**, run
 `python -m spectHR.analysis._docgen` to refresh it after changing a metric
-docstring; a test keeps it in sync. Do not edit between the markers by hand.
+docstring or its delegation; a test keeps it in sync. Do not edit between the
+markers by hand.
 
 <!-- METRIC-REFERENCE:START -->
 
@@ -195,7 +198,9 @@ docstring; a test keeps it in sync. Do not edit between the markers by hand.
 
 Acceleration Capacity (AC) in ms, PRSA sympatho-vagal index.
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`ac`)
+Call chain: `ac` -> `_prsa`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`_prsa`)
 
 ### band_peak
 
@@ -211,7 +216,9 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`band_peak`)
 
 Group metric: emits several data-driven columns.
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`band_powers`)
+Call chain: `band_powers` -> `band_power_rectangular`
+
+Algorithm: [`_band_power.py`](_band_power.py) (`band_power_rectangular`)
 
 ### band_rel
 
@@ -225,25 +232,33 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`band_rel`)
 
 Diastolic blood pressure, epoch mean of the per-beat foot minima (CARSPAN).
 
-Source: [`bp_metrics.py`](bp_metrics.py) (`bp_dbp`)
+Call chain: `bp_dbp` -> `_bp_metric` -> `bp_beat_parameters`
+
+Algorithm: [`bp_metrics.py`](bp_metrics.py) (`bp_beat_parameters`)
 
 ### bp_map
 
 Mean arterial pressure, epoch mean of the waveform integral mean (CARSPAN).
 
-Source: [`bp_metrics.py`](bp_metrics.py) (`bp_map`)
+Call chain: `bp_map` -> `_bp_metric` -> `bp_beat_parameters`
+
+Algorithm: [`bp_metrics.py`](bp_metrics.py) (`bp_beat_parameters`)
 
 ### bp_pp
 
 Pulse pressure (SBP - DBP), epoch mean over beats (CARSPAN).
 
-Source: [`bp_metrics.py`](bp_metrics.py) (`bp_pp`)
+Call chain: `bp_pp` -> `_bp_metric` -> `bp_beat_parameters`
+
+Algorithm: [`bp_metrics.py`](bp_metrics.py) (`bp_beat_parameters`)
 
 ### bp_sbp
 
 Systolic blood pressure, epoch mean of the per-beat maxima (CARSPAN).
 
-Source: [`bp_metrics.py`](bp_metrics.py) (`bp_sbp`)
+Call chain: `bp_sbp` -> `_bp_metric` -> `bp_beat_parameters`
+
+Algorithm: [`bp_metrics.py`](bp_metrics.py) (`bp_beat_parameters`)
 
 ### count
 
@@ -279,25 +294,33 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`cvsd`)
 
 Beat-to-beat diastolic BP variability: SD of the per-beat DBP (mmHg).
 
-Source: [`bp_metrics.py`](bp_metrics.py) (`dbp_sd`)
+Call chain: `dbp_sd` -> `_bp_std` -> `bp_beat_parameters`
+
+Algorithm: [`bp_metrics.py`](bp_metrics.py) (`bp_beat_parameters`)
 
 ### dc
 
 Deceleration Capacity (DC) in ms, PRSA parasympathetic index.
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`dc`)
+Call chain: `dc` -> `_prsa`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`_prsa`)
 
 ### dfa_a1
 
 DFA short-term scaling exponent α1 (Peng et al. 1995, box sizes 4-16 beats).
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`dfa_a1`)
+Call chain: `dfa_a1` -> `dfa_alpha1`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`dfa_alpha1`)
 
 ### dfa_a2
 
 DFA long-term scaling exponent α2 (Peng et al. 1995, box sizes 16-64 beats).
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`dfa_a2`)
+Call chain: `dfa_a2` -> `dfa_alpha1`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`dfa_alpha1`)
 
 ### ellipse_area
 
@@ -321,7 +344,9 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`hf_nu`)
 
 True if mean breathing frequency lies inside the HF band, else False (Grossman & Taylor 2007). A False value flags that the epoch's HF power may not reflect RSA.
 
-Source: [`respiration_metrics.py`](respiration_metrics.py) (`hf_resp_in_band`)
+Call chain: `hf_resp_in_band` -> `_mean_breath_hz` -> `mean_breath_frequency_hz`
+
+Algorithm: [`RespirationSegmentation.py`](RespirationSegmentation.py) (`mean_breath_frequency_hz`)
 
 ### hrv_ti
 
@@ -345,7 +370,9 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`lf_nu`)
 
 Natural log of HF power, ln(HF).
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`ln_hf`)
+Call chain: `ln_hf` -> `_band_power`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`_band_power`)
 
 ### max
 
@@ -387,67 +414,89 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`modified_csi`)
 
 Number of successive IBI differences greater than 20 ms.
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`nn20`)
+Call chain: `nn20` -> `_nn_pnn`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`_nn_pnn`)
 
 ### nn50
 
 Number of successive IBI differences greater than 50 ms.
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`nn50`)
+Call chain: `nn50` -> `_nn_pnn`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`_nn_pnn`)
 
 ### pep
 
 Pre-ejection period from the ensemble-averaged complex (ms; needs ICG dZ/dt).
 
-Source: [`icg_metrics.py`](icg_metrics.py) (`pep`)
+Call chain: `pep` -> `pep_ensemble`
+
+Algorithm: [`icg_metrics.py`](icg_metrics.py) (`pep_ensemble`)
 
 ### pep_b_ms
 
 B-point (aortic-valve opening) latency relative to the R-peak, ms (needs ICG dZ/dt).
 
-Source: [`icg_metrics.py`](icg_metrics.py) (`pep_b_ms`)
+Call chain: `pep_b_ms` -> `_pep_detail_field` -> `pep_ensemble`
+
+Algorithm: [`icg_metrics.py`](icg_metrics.py) (`pep_ensemble`)
 
 ### pep_c_ms
 
 C-point (peak ejection velocity) latency relative to the R-peak, ms (needs ICG dZ/dt).
 
-Source: [`icg_metrics.py`](icg_metrics.py) (`pep_c_ms`)
+Call chain: `pep_c_ms` -> `_pep_detail_field` -> `pep_ensemble`
+
+Algorithm: [`icg_metrics.py`](icg_metrics.py) (`pep_ensemble`)
 
 ### pep_n_beats
 
 Number of beats in the PEP ensemble average for the epoch (needs ICG dZ/dt).
 
-Source: [`icg_metrics.py`](icg_metrics.py) (`pep_n_beats`)
+Call chain: `pep_n_beats` -> `_pep_detail_field` -> `pep_ensemble`
+
+Algorithm: [`icg_metrics.py`](icg_metrics.py) (`pep_ensemble`)
 
 ### pep_q_ms
 
 Q-onset latency relative to the R-peak, ms (≤ 0; needs ICG dZ/dt + ECG).
 
-Source: [`icg_metrics.py`](icg_metrics.py) (`pep_q_ms`)
+Call chain: `pep_q_ms` -> `_pep_detail_field` -> `pep_ensemble`
+
+Algorithm: [`icg_metrics.py`](icg_metrics.py) (`pep_ensemble`)
 
 ### pnn20
 
 Percentage of successive IBI differences greater than 20 ms.
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`pnn20`)
+Call chain: `pnn20` -> `_nn_pnn`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`_nn_pnn`)
 
 ### pnn50
 
 Percentage of successive IBI differences greater than 50 ms.
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`pnn50`)
+Call chain: `pnn50` -> `_nn_pnn`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`_nn_pnn`)
 
 ### resp_freq
 
 Mean breathing frequency in Hz (blank when no respiration channel).
 
-Source: [`respiration_metrics.py`](respiration_metrics.py) (`resp_freq`)
+Call chain: `resp_freq` -> `_mean_breath_hz` -> `mean_breath_frequency_hz`
+
+Algorithm: [`RespirationSegmentation.py`](RespirationSegmentation.py) (`mean_breath_frequency_hz`)
 
 ### resp_mvo
 
 Mean respiratory volume per cardiac interval, epoch mean (CARSPAN) (no unit!).
 
-Source: [`respiration_metrics.py`](respiration_metrics.py) (`resp_mvo`)
+Call chain: `resp_mvo` -> `_resp_metric` -> `resp_beat_parameters`
+
+Algorithm: [`respiration_metrics.py`](respiration_metrics.py) (`resp_beat_parameters`)
 
 ### resp_rate_bpm
 
@@ -459,7 +508,9 @@ Source: [`respiration_metrics.py`](respiration_metrics.py) (`resp_rate_bpm`)
 
 Sample respiratory volume at each R-peak, epoch mean (CARSPAN) (no unit!).
 
-Source: [`respiration_metrics.py`](respiration_metrics.py) (`resp_svo`)
+Call chain: `resp_svo` -> `_resp_metric` -> `resp_beat_parameters`
+
+Algorithm: [`respiration_metrics.py`](respiration_metrics.py) (`resp_beat_parameters`)
 
 ### rmssd
 
@@ -477,19 +528,25 @@ Source: [`respiration_metrics.py`](respiration_metrics.py) (`rrv`)
 
 Respiratory sinus arrhythmia: mean over valid breath cycles (Grossman 1990 peak-to-valley, ms).
 
-Source: [`respiration_metrics.py`](respiration_metrics.py) (`rsa`)
+Call chain: `rsa` -> `_rsa_metric`
+
+Algorithm: [`respiration_metrics.py`](respiration_metrics.py) (`_rsa_metric`)
 
 ### rsa0
 
 RSA with every invalid breath (negative or undetectable) counted as zero over the total breath count; reduces over-estimation bias (VU-DAMS RSA0, ms).
 
-Source: [`respiration_metrics.py`](respiration_metrics.py) (`rsa0`)
+Call chain: `rsa0` -> `_rsa_metric`
+
+Algorithm: [`respiration_metrics.py`](respiration_metrics.py) (`_rsa_metric`)
 
 ### sbp_sd
 
 Beat-to-beat systolic BP variability: SD of the per-beat SBP (mmHg).
 
-Source: [`bp_metrics.py`](bp_metrics.py) (`sbp_sd`)
+Call chain: `sbp_sd` -> `_bp_std` -> `bp_beat_parameters`
+
+Algorithm: [`bp_metrics.py`](bp_metrics.py) (`bp_beat_parameters`)
 
 ### sd1
 
@@ -549,7 +606,9 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`tinn`)
 
 Total spectral power: sum of all configured bands except FullRange (mMI² by default).
 
-Source: [`ecg_metrics.py`](ecg_metrics.py) (`total_power`)
+Call chain: `total_power` -> `_total_power` -> `_band_power`
+
+Algorithm: [`ecg_metrics.py`](ecg_metrics.py) (`_band_power`)
 
 ### transfer_band_metrics
 
@@ -557,7 +616,9 @@ Per-band transfer-function scalars (modulus, coherence, phase).
 
 Group metric: emits several data-driven columns.
 
-Source: [`transfer_metrics.py`](transfer_metrics.py) (`transfer_band_metrics`)
+Call chain: `transfer_band_metrics` -> `compute_transfer`
+
+Algorithm: [`transfer.py`](transfer.py) (`compute_transfer`)
 
 ### twave_amplitude
 

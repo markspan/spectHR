@@ -21,7 +21,8 @@ from pathlib import Path
 from spectHR.analysis.registry import get_metric_groups, get_metrics
 from spectHR.analysis.sources import (
     ANALYSIS_README,
-    metric_source_location,
+    _function_location as _location,
+    metric_algorithm_chain,
     repo_root,
 )
 
@@ -53,11 +54,17 @@ def build_metric_reference() -> str:
         if is_group:
             out.append("")
             out.append("Group metric: emits several data-driven columns.")
-        loc = metric_source_location(name)
+        chain = metric_algorithm_chain(name) or [(name, fn)]
+        if len(chain) > 1:
+            out.append("")
+            out.append("Call chain: " + " -> ".join(f"`{n}`" for n, _ in chain))
+        algo_name, algo_fn = chain[-1]
+        loc = _location(algo_fn)
         if loc is not None:
             rel = loc[0]
+            label = "Algorithm" if len(chain) > 1 else "Source"
             out.append("")
-            out.append(f"Source: [`{Path(rel).name}`]({Path(rel).name}) (`{name}`)")
+            out.append(f"{label}: [`{Path(rel).name}`]({Path(rel).name}) (`{algo_name}`)")
         out.append("")
     return "\n".join(out).strip() + "\n"
 
