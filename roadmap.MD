@@ -6,7 +6,9 @@ researchers expect from established HRV / cardiovascular psychophysiology tools
 workflows, the PhysioNet / RHRV ecosystem), prioritised by value to the target
 user: a scientist doing psychophysiology research.
 
-This is a living wish list with rationale, not a commitment.
+This is a living wish list with rationale, not a commitment. For the concrete,
+ordered build plan of the next per-epoch metric columns (specs and formulae),
+see [`src/spectHR/analysis/PLAN.md`](src/spectHR/analysis/PLAN.md).
 
 ## How to read this
 

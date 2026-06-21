@@ -149,3 +149,7 @@ falling back to respiration when no BP channel is present.
 3. List it in the module's header docstring.
 4. It now appears automatically in the Results table and the CSV/HDF5 export,
    no wiring needed. Add a test under `tests/`.
+
+See [`PLAN.md`](PLAN.md) for the concrete, ordered plan of the next metrics to
+add (specs, formulae, which cached input each reuses), and the top-level
+[`roadmap.MD`](../../../roadmap.MD) for the broader feature wishlist.
