@@ -49,6 +49,26 @@ Every ``@epoch_metric`` here takes a single ``series``-like argument (``.times``
 :class:`~spectHR.analysis.epoch_context.EpochContext` that also carries the
 workspace ``psd_method`` and a cached PSD the frequency metrics reuse.
 
+Conventions (read before "correcting" anything)
+------------------------------------------------
+* **Standard deviation uses the population estimator (``ddof=0``, divide by
+  N), never the N-1 sample estimator.**  This is deliberate CARSPAN parity:
+  every original SD routine divides by the count, not count-1 (``T_EventFile.pas``
+  ``GetSampMeanAndStdDev`` → ``SqrSum/((IdxE-IdxB)+1) - Sqr(Mean)``;
+  ``T_DataCorrect.pas`` ``SDSum/ValCount``; ``T_AnaFunctions.pas``
+  ``DataSum2/NData.Count``).  ``sdnn``, ``sdsd``, ``sd1``/``sd2``, ``sd_hr``,
+  ``cvnn``/``cvsd`` (and the BP/respiration SDs in the sibling modules) all
+  follow it, so they stay mutually consistent (e.g. ``cvnn == 100·sdnn/mean``).
+  The name "Samp" in the Pascal refers to signal *samples*, not the statistical
+  sample estimator.  Do not switch any of these to ``ddof=1``.
+* **Normalised units** (``lf_nu``/``hf_nu``) use the LF/(LF+HF) form, not the
+  Task-Force LF/(TotalPower-VLF) form, so they are robust to whichever bands the
+  workspace defines and always sum to 100; ``total_power`` is the sum of the
+  configured named bands (excluding the ``FullRange`` umbrella band).
+* **DFA** uses forward-only, non-overlapping windows (the remainder beats are
+  dropped, not re-segmented from the tail); ``dfa_a1`` and ``dfa_a2`` share the
+  one :func:`dfa_fluctuation` implementation so their exponents are comparable.
+
 References
 ----------
 Peng, C.-K., et al. (1995). Quantification of scaling exponents … *Chaos*,
@@ -183,6 +203,10 @@ def stationarity_z(series) -> float:
 
 # ===========================================================================
 # Time-domain, variability
+#
+# All SDs below (and the CV / Poincaré metrics derived from them) use numpy's
+# default population estimator (ddof=0); this is CARSPAN parity, see the module
+# docstring "Conventions". Do not switch to ddof=1.
 # ===========================================================================
 
 

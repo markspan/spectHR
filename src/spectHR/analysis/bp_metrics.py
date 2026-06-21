@@ -295,7 +295,11 @@ def bp_map(ctx) -> float:
 
 
 def _bp_std(ctx, key: str) -> float:
-    """SD of the per-beat BP parameter over the epoch (NaN with < 2 valid beats)."""
+    """SD of the per-beat BP parameter over the epoch (NaN with < 2 valid beats).
+
+    Population SD (``ddof=0``), matching CARSPAN and the HRV SDs in
+    :mod:`spectHR.analysis.ecg_metrics` (see that module's "Conventions").
+    """
     beats = getattr(ctx, "bp_beats", None)
     if not beats:
         return float("nan")

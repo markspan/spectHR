@@ -118,6 +118,7 @@ def rrv(ctx) -> float:
 
     Cycle durations mirror :func:`resp_freq` (each phase paired with its
     successor, ``ends[1:] - starts[:-1]``).  NaN with fewer than two cycles.
+    Population SD (``ddof=0``), as in :mod:`spectHR.analysis.ecg_metrics`.
     """
     phases = getattr(ctx, "rsp_phases", None)
     if phases is None:

@@ -30,6 +30,13 @@ the Results table or the CSV is calculated, find its series below.
   per-epoch arrays into the `<name>.csv` (scalars) and `<name>.h5` (all arrays
   and summary scalars) files.
 
+**Convention, standard deviation.** Every SD / variance in this package uses the
+**population estimator** (numpy default `ddof=0`, divide by N), not the N-1
+sample estimator. This is CARSPAN parity, the original Pascal SD routines all
+divide by the count (`T_EventFile.pas` `GetSampMeanAndStdDev`, `T_DataCorrect.pas`,
+`T_AnaFunctions.pas`). It keeps the derived metrics mutually consistent (e.g.
+`cvnn == 100·sdnn/mean`, `sd1 == sdsd/√2`). Do not switch any metric to `ddof=1`.
+
 Scientific citations are not duplicated here, the algorithm docstrings and the
 top-level [`readme.MD` § References](../../../readme.MD#references) carry the full
 bibliography (Mulder, Grossman, Billman, Robbe, Riese, Lozano, Peng, Bauer, van
@@ -45,7 +52,7 @@ Roon, Task Force 1996, …).
 | **Blood pressure** waveform | [`bp_metrics.py`](bp_metrics.py) | `bp_sbp` `bp_dbp` `bp_pp` `bp_map` `sbp_sd` `dbp_sd` |
 | **Respiration** (+ RSA) | [`respiration_metrics.py`](respiration_metrics.py) | `resp_freq` `resp_rate_bpm` `rrv` `hf_resp_in_band` `resp_mvo` `resp_svo` `rsa` `rsa0` |
 | **ICG** (`dZ/dt`, sympathetic) | [`icg_metrics.py`](icg_metrics.py) | `pep` `pep_b_ms` `pep_c_ms` `pep_q_ms` `pep_n_beats` `heather_index` |
-| **input → HR coupling** (BP or resp) | [`transfer_metrics.py`](transfer_metrics.py) | `transfer_band_metrics` group (`tf_{band}_modulus`, `_phase`, `_coherence`, …) |
+| **input → HR coupling** (BP or resp) | [`transfer_metrics.py`](transfer_metrics.py) | `transfer_band_metrics` group (`{band}_tf_modulus`, `{band}_tf_coherence`, `{band}_tf_phase_w`) |
 
 ---
 
@@ -56,23 +63,36 @@ beats dropped by [`ibi_helpers.py`](ibi_helpers.py)). Grouped by HRV method:
 
 * **Time-domain**, `count`, `mean`, `median`, `min`, `max` (IBI magnitude);
   `rmssd` (RMS of successive differences), `sdnn` (SD of IBIs), `sdsd` (SD of
-  successive differences). All in ms.
+  successive differences), all in ms. `nn50`/`pnn50` and `nn20`/`pnn20` (count
+  and % of successive differences exceeding 50 / 20 ms), `mean_hr`/`sd_hr`
+  (mean and SD of the per-beat instantaneous heart rate, bpm), `cvnn`/`cvsd`
+  (coefficients of variation `100·SDNN/mean` and `100·SDSD/mean`, %).
+* **Geometric** (Task Force 1996, 1/128 s histogram bins), `hrv_ti` (triangular
+  index, total IBIs / modal-bin height) and `tinn` (base width of the
+  least-squares triangle fitted to the IBI histogram, ms).
 * **Stationarity**, `stationarity` (IBI-vs-time linear correlation) and
   `stationarity_z` (reverse-arrangements z-score; `|z| > 1.96` flags a
   non-stationary epoch where whole-epoch spectra should be read with care).
 * **Poincaré**, `sd1` (minor axis = `std(ΔIBI)/√2`), `sd2` (major axis via
   Brennan's identity `SD2² = 2·Var(IBI) − ½·Var(ΔIBI)`), `sd_ratio` (SD1/SD2),
-  `ellipse_area` (`π·SD1·SD2`).
-* **Non-linear**, `dfa_a1`: short-term detrended-fluctuation scaling exponent
-  α₁ over box sizes 4–16 beats (slope of `log F(n)` vs `log n`).
+  `ellipse_area` (`π·SD1·SD2`). `csi`/`cvi`/`modified_csi` (Toichi 1997 cardiac
+  sympathetic `SD2/SD1`, vagal `log₁₀(16·SD1·SD2)` and modified `L²/T` indices).
+* **Non-linear**, `dfa_a1` / `dfa_a2`: short- and long-term detrended-fluctuation
+  scaling exponents (slope of `log F(n)` vs `log n`) over box sizes 4–16 and
+  16–64 beats respectively, sharing one forward-segmentation implementation.
 * **PRSA**, `dc` / `ac`: deceleration / acceleration capacity by phase-rectified
   signal averaging (anchor on IBI increases/decreases, average ±T beats, apply
   the four-point formula; `T = PrsaAnalysis.prsa_window`, default 30).
 * **Frequency-domain**, `band_powers` emits one `{band}_power` column per
-  configured band (rectangular integration of the IBI PSD), and `lf_hf_ratio`
-  the LF/HF quotient (report descriptively, not a clean sympatho-vagal index).
-  The PSD itself is computed by the [`psd/`](psd/) sub-package (CARSPAN, Welch
-  or Lomb-Scargle back-ends) and cached on the `EpochContext`.
+  configured band (rectangular integration of the IBI PSD); `band_rel`
+  (`{band}_pct`, each band as % of the named-band total) and `band_peak`
+  (`{band}_peak_hz`, frequency of the in-band PSD maximum). `total_power` (sum
+  of the named non-FullRange bands), `lf_nu`/`hf_nu` (normalised units
+  `100·LF/(LF+HF)` and `100·HF/(LF+HF)`), `ln_hf` (`ln` of HF power), and
+  `lf_hf_ratio` the LF/HF quotient (report descriptively, not a clean
+  sympatho-vagal index). The PSD itself is computed by the [`psd/`](psd/)
+  sub-package (CARSPAN, Welch or Lomb-Scargle back-ends) and cached on the
+  `EpochContext`.
 
 ## Blood-pressure series: [`bp_metrics.py`](bp_metrics.py)
 
@@ -83,6 +103,8 @@ CARSPAN-faithful beat-by-beat values, each gated on a cardiac interval
   systolic peak), `bp_pp` pulse pressure (SBP − DBP), `bp_map` mean arterial
   pressure (true integral mean of the waveform between successive diastoles, not
   the `(SBP+2·DBP)/3` textbook form).
+* `sbp_sd` / `dbp_sd` beat-to-beat BP variability (SD of the per-beat systolic /
+  diastolic values over the epoch, mmHg).
 * A scale-invariant **flat-line guard** (`is_flatline`) rejects beats from a
   clamped/disconnected transducer to `NaN`.
 
@@ -91,9 +113,10 @@ CARSPAN-faithful beat-by-beat values, each gated on a cardiac interval
 All respiration-derived metrics, on the channel alone or coupled to the R-peaks:
 
 * **Breathing-frequency context** (Grossman & Taylor 2007), `resp_freq` (mean
-  breathing frequency, Hz) and `hf_resp_in_band` (True/False flag: is the mean
-  breathing frequency inside the HF band? a False warns the epoch's HF power may
-  not index RSA).
+  breathing frequency, Hz), `resp_rate_bpm` (`60·resp_freq`, breaths per minute),
+  `rrv` (respiration-rate variability, SD of the per-cycle breath durations, s)
+  and `hf_resp_in_band` (True/False flag: is the mean breathing frequency inside
+  the HF band? a False warns the epoch's HF power may not index RSA).
 * **Respiratory volume** (CARSPAN), `resp_mvo` (mean respiration per cardiac
   interval) and `resp_svo` (mean over the half-window of samples ending at each
   R-peak).
@@ -111,6 +134,8 @@ ensemble averaging (integer indexing on a uniform grid):
   landmark latencies) and `pep_n_beats` (beats in the ensemble). The B-point is
   the max upstroke acceleration before the C-point, searched within the
   `IcgAnalysis.b_point_guard_ms` window.
+* `heather_index` contractility index, the peak `dZ/dt` at the C-point divided by
+  the Q-to-C interval (s), read off the same ensemble.
 
 ## Coupling (transfer): [`transfer_metrics.py`](transfer_metrics.py)
 
