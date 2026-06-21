@@ -27,6 +27,7 @@ class ProfilePlotWidget(BandSelectorMixin, EpochGridView):
 
     DOCK_NAME = "profiles"
     Y_ZOOM = True
+    SHOW_GRID_TOGGLE = True
 
     def _build_toolbar(self) -> None:
         self._build_band_selector()

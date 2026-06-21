@@ -179,6 +179,7 @@ class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
 
     DOCK_NAME = "transferprofile"
     Y_ZOOM = True
+    SHOW_GRID_TOGGLE = True
 
     def _build_toolbar(self) -> None:
         self._build_band_selector()
