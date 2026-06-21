@@ -1,26 +1,30 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# spectHR/analysis/sources.py
+# spectUI/metric_links.py
 """
 Where a Results column comes from: docstring anchor and source-code location.
 
 The Results dock lets the analyst right-click a column header to open the
-metric's *description* (the anchored section in
-:doc:`analysis/README.md <README>`) and its *implementation* (the exact lines of
-the decorated function on GitHub).  Both links are built here, in the headless
-library, so the UI only has to open the URL.
+metric's *description* (the anchored section in ``spectHR/analysis/README.md``)
+and its *implementation* (the decorated function on GitHub).  Building those
+links is a presentation/help concern, not analysis, so it lives here in spectUI
+rather than in the headless library; it imports spectHR but never the reverse.
 
-Two design points keep the links honest with zero hand-maintenance:
+Three design points keep the links honest with minimal hand-maintenance:
 
-* The registry holds the live function objects, so :func:`inspect.getsourcelines`
-  yields the function's current line range every launch; the "view source" link
-  therefore never drifts, even as code moves.
+* In a normal checkout the registry holds the live function objects, so
+  :func:`inspect.getsourcelines` yields each function's current line range every
+  launch; the "view source" link therefore never drifts as code moves.
+* In the **Nuitka onefile** build there is no git checkout and ``inspect`` cannot
+  read the source of compiled modules, so the live path yields nothing.  The
+  generated :mod:`spectUI._metric_sources` map (file + call chain, no line
+  numbers) is the fallback, which keeps the menu working in the packaged app.
 * Data-driven group columns (``lf_power``, ``vlf_pct``, ``lf_tf_modulus``, ...)
   have no single function of their own, so :func:`resolve_metric_function` maps
   them back to the ``@epoch_metric_group`` that emits them.
 
-The GitHub base URL is parsed from the repository's ``origin`` remote when the
-package is run from a checkout, falling back to the canonical project URL.
+The GitHub base URL is parsed from the repository's ``origin`` remote when run
+from a checkout, falling back to the canonical project URL.
 """
 from __future__ import annotations
 
@@ -41,8 +45,12 @@ DEFAULT_GITHUB_BASE = "https://github.com/markspan/spectHR"
 #: Branch the help links point at (PRs target V2; it is the working reference).
 DEFAULT_REF = "V2"
 
-#: Path of the metric-reference document, relative to the repository root.
+#: Deep-link target document, relative to the repository root.  The metric
+#: reference stays with the analysis library it documents.
 ANALYSIS_README = "src/spectHR/analysis/README.md"
+
+#: Generated static metric->algorithm map, relative to the repository root.
+SOURCES_MODULE = "src/spectUI/_metric_sources.py"
 
 # Suffix -> emitting group, for the data-driven columns that have no single
 # function of their own.  Mirrors the suffix lookups the Results tooltips use.
@@ -117,6 +125,16 @@ def github_base() -> str:
                 if value.strip():
                     return _normalise_remote(value)
     return DEFAULT_GITHUB_BASE
+
+
+@lru_cache(maxsize=1)
+def _static_sources() -> dict:
+    """The generated static metric->algorithm map, or ``{}`` when unavailable."""
+    try:
+        from spectUI._metric_sources import METRIC_ALGORITHM
+    except Exception:
+        return {}
+    return METRIC_ALGORITHM
 
 
 # ---------------------------------------------------------------------------
@@ -247,17 +265,28 @@ def resolve_algorithm(fn) -> list:
 
 
 def metric_algorithm_chain(column: str) -> Optional[list]:
-    """``[(name, function), ...]`` from the metric wrapper to its algorithm."""
+    """``[(name, function_or_None), ...]`` from the wrapper to its algorithm.
+
+    Uses live introspection when the source is available; in the packaged build
+    it falls back to the generated static map, whose chain entries carry the
+    function *name* but ``None`` for the object (no source to point at).
+    """
     resolved = resolve_metric_function(column)
     if resolved is None:
         return None
-    return [(fn.__name__, fn) for fn in resolve_algorithm(resolved[1])]
+    name, fn = resolved
+    if _ast_of(fn) is not None:        # live source available (checkout / dev)
+        return [(f.__name__, f) for f in resolve_algorithm(fn)]
+    static = _static_sources().get(name)   # packaged: compiled, no source
+    if static and static.get("chain"):
+        return [(n, None) for n in static["chain"]]
+    return [(name, fn)]
 
 
 def _function_location(fn):
     """``(relpath, line_start, line_end)`` for *fn*, or ``None``."""
     root = repo_root()
-    if root is None:
+    if root is None or fn is None:
         return None
     try:
         source_file = Path(inspect.getsourcefile(fn)).resolve()
@@ -275,8 +304,9 @@ def metric_source_location(column: str):
     """``(relpath, line_start, line_end)`` of the column's **real algorithm**.
 
     The metric is followed through its wrapper(s) to the function that does the
-    computation (see :func:`resolve_algorithm`).  *relpath* is POSIX, relative
-    to the repository root; line numbers are read live, so they never drift.
+    computation (see :func:`resolve_algorithm`).  ``None`` when no live source is
+    available (the packaged build), where :func:`metric_source_url` falls back to
+    the static map's file-level link instead.
     """
     chain = metric_algorithm_chain(column)
     if not chain:
@@ -285,12 +315,21 @@ def metric_source_location(column: str):
 
 
 def metric_source_url(column: str, ref: str = DEFAULT_REF) -> Optional[str]:
-    """GitHub blob URL pointing at the exact lines of the column's algorithm."""
+    """GitHub URL for the column's algorithm.
+
+    Exact line range when the source can be introspected (checkout); otherwise
+    the static map's file-level link (packaged build).
+    """
     loc = metric_source_location(column)
-    if loc is None:
-        return None
-    rel, start, end = loc
-    return f"{github_base()}/blob/{ref}/{rel}#L{start}-L{end}"
+    if loc is not None:
+        rel, start, end = loc
+        return f"{github_base()}/blob/{ref}/{rel}#L{start}-L{end}"
+    resolved = resolve_metric_function(column)
+    if resolved is not None:
+        static = _static_sources().get(resolved[0])
+        if static and static.get("file"):
+            return f"{github_base()}/blob/{ref}/{static['file']}"
+    return None
 
 
 def metric_doc_url(column: str, ref: str = DEFAULT_REF) -> Optional[str]:

@@ -214,7 +214,7 @@ class ResultsTableWidget(QWidget):
         col = self._column_for_section(header.logicalIndexAt(pos))
         if not col:
             return
-        from spectHR.analysis.sources import (
+        from spectUI.metric_links import (
             metric_algorithm_chain,
             metric_doc_url,
             metric_source_url,

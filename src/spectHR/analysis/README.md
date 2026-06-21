@@ -187,10 +187,11 @@ One anchored section per registered metric: its docstring, the wrapper-to-
 algorithm call chain (most metrics are thin wrappers that delegate to a helper or
 a cached intermediate), and a link to the function that does the real
 computation. So the Results dock can deep-link a column header straight to its
-description, and from there to the maths. **This block is auto-generated**, run
-`python -m spectHR.analysis._docgen` to refresh it after changing a metric
-docstring or its delegation; a test keeps it in sync. Do not edit between the
-markers by hand.
+description, and from there to the maths. **This block is auto-generated** by the
+spectUI help tooling (the source linking is a presentation concern, not
+analysis): run `python -m spectUI.metric_docgen` to refresh it after changing a
+metric docstring or its delegation; a test keeps it in sync. Do not edit between
+the markers by hand.
 
 <!-- METRIC-REFERENCE:START -->
 
