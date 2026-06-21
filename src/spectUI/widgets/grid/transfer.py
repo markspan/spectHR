@@ -203,26 +203,50 @@ class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
         )
 
     def _render_tile(self, fig: Figure, label: str, result) -> None:
-        ax = fig.add_subplot(111)
+        # Two stacked panels sharing the time axis, like the Transfer Bode tile:
+        # modulus over time on top, the matching phase over time below.
+        gs = fig.add_gridspec(2, 1, hspace=0.12, height_ratios=[3, 2])
+        ax_m = fig.add_subplot(gs[0])
+        ax_p = fig.add_subplot(gs[1], sharex=ax_m)
+
         drawn = 0
         for i, name in enumerate(result.band_names):
             if not self._band_selected(name):
                 continue
             color = band_color(self._display_bands, name)
-            # Translucent fill under the curve (per-band alpha) so overlapping
-            # bands stay visible; the solid line sits on top.
+            # Translucent fill under the modulus curve (per-band alpha) so
+            # overlapping bands stay visible; the solid line sits on top.
             alpha = float((self._display_bands.get(name) or {}).get("alpha", 0.25))
-            ax.fill_between(result.timestamps, result.modulus[i],
-                            color=color, alpha=alpha, zorder=1)
-            ax.plot(result.timestamps, result.modulus[i], linewidth=1.0,
-                    color=color, label=name, zorder=2)
+            ax_m.fill_between(result.timestamps, result.modulus[i],
+                              color=color, alpha=alpha, zorder=1)
+            ax_m.plot(result.timestamps, result.modulus[i], linewidth=1.0,
+                      color=color, label=name, zorder=2)
+            # Phase as a dot scatter (per-band colour), echoing the Bode tile.
+            ax_p.plot(result.timestamps, result.phase[i], ".",
+                      color=color, markersize=3, zorder=2)
             drawn += 1
+
+        # ---- modulus panel ----
         unit = modulus_unit(self._sig)
         sig_label = input_signal_label(self._sig)
-        ax.set_title(f"{label}\ninput: {sig_label}", fontsize=9)
-        ax.set_xlabel("Time (s)", fontsize=8)
-        ax.set_ylabel(f"|H| [{unit}]" if unit else "|H|", fontsize=8)
-        ax.tick_params(labelsize=7)
+        ax_m.set_title(f"{label}\ninput: {sig_label}", fontsize=9)
+        ax_m.set_ylabel(f"|H| [{unit}]" if unit else "|H|", fontsize=8)
+        ax_m.set_ylim(bottom=0.0)
         if drawn:
-            ax.legend(fontsize=6, loc="upper right")
+            ax_m.legend(fontsize=6, loc="upper right", framealpha=0.5)
+
+        # ---- phase panel: wrapped, y-axis in pi (as the Bode tile) ----
+        ax_p.axhline(0.0, color="dimgray", lw=0.6, zorder=1)
+        ax_p.set_ylim(-np.pi - 0.2, np.pi + 0.2)
+        ax_p.set_yticks([-np.pi, -np.pi / 2, 0.0, np.pi / 2, np.pi])
+        ax_p.set_yticklabels(
+            [r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"], fontsize=7)
+        ax_p.set_ylabel("∠H [rad]", fontsize=8)
+        ax_p.set_xlabel("Time (s)", fontsize=8)
+
+        for ax in (ax_m, ax_p):
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.tick_params(labelsize=7)
+        ax_m.tick_params(labelbottom=False)  # x labels only on the bottom panel
         fig.tight_layout()

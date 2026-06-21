@@ -133,6 +133,12 @@ assert len(cv_p2.figure.axes[0].lines) < n_lines0, "unticking a band did not dro
 tp = TransferProfilePlotWidget(); tp.show(); tp.set_session(session, params)
 assert pump(lambda: tp._content is not None)
 assert len(tp._band_checks) >= 1, "transfer-profile has no band checkboxes"
+# Each tile mirrors the Bode layout: a modulus panel on top and a phase panel
+# below (phase y-axis in pi).
+cv_tp = tp._content.findChildren(FigureCanvas)[0]
+assert len(cv_tp.figure.axes) == 2, "transfer-profile tile needs modulus + phase panels"
+tp_phase_labels = [t.get_text() for t in cv_tp.figure.axes[1].get_yticklabels()]
+assert any("\\pi" in lbl for lbl in tp_phase_labels), tp_phase_labels
 
 print("GRID_OK")
 """
