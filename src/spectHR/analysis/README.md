@@ -41,10 +41,10 @@ Roon, Task Force 1996, …).
 
 | Series (channel) | Module | Registered columns |
 |---|---|---|
-| **ECG → R-peaks → IBI** | [`ecg_metrics.py`](ecg_metrics.py) | `count` `mean` `median` `min` `max` `rmssd` `sdnn` `sdsd` `sd1` `sd2` `sd_ratio` `ellipse_area` `stationarity` `stationarity_z` `dfa_a1` `dc` `ac` `lf_hf_ratio` + `band_powers` group (`{band}_power`) |
-| **Blood pressure** waveform | [`bp_metrics.py`](bp_metrics.py) | `bp_sbp` `bp_dbp` `bp_pp` `bp_map` |
-| **Respiration** (+ RSA) | [`respiration_metrics.py`](respiration_metrics.py) | `resp_freq` `hf_resp_in_band` `resp_mvo` `resp_svo` `rsa` `rsa0` |
-| **ICG** (`dZ/dt`, sympathetic) | [`icg_metrics.py`](icg_metrics.py) | `pep` `pep_b_ms` `pep_c_ms` `pep_q_ms` `pep_n_beats` |
+| **ECG → R-peaks → IBI** | [`ecg_metrics.py`](ecg_metrics.py) | `count` `mean` `median` `min` `max` `rmssd` `sdnn` `sdsd` `nn50` `pnn50` `nn20` `pnn20` `mean_hr` `sd_hr` `cvnn` `cvsd` `hrv_ti` `tinn` `sd1` `sd2` `sd_ratio` `ellipse_area` `csi` `cvi` `modified_csi` `stationarity` `stationarity_z` `dfa_a1` `dfa_a2` `dc` `ac` `lf_hf_ratio` `total_power` `lf_nu` `hf_nu` `ln_hf` `twave_amplitude` + `band_powers`/`band_rel`/`band_peak` groups (`{band}_power`/`_pct`/`_peak_hz`) |
+| **Blood pressure** waveform | [`bp_metrics.py`](bp_metrics.py) | `bp_sbp` `bp_dbp` `bp_pp` `bp_map` `sbp_sd` `dbp_sd` |
+| **Respiration** (+ RSA) | [`respiration_metrics.py`](respiration_metrics.py) | `resp_freq` `resp_rate_bpm` `rrv` `hf_resp_in_band` `resp_mvo` `resp_svo` `rsa` `rsa0` |
+| **ICG** (`dZ/dt`, sympathetic) | [`icg_metrics.py`](icg_metrics.py) | `pep` `pep_b_ms` `pep_c_ms` `pep_q_ms` `pep_n_beats` `heather_index` |
 | **input → HR coupling** (BP or resp) | [`transfer_metrics.py`](transfer_metrics.py) | `transfer_band_metrics` group (`tf_{band}_modulus`, `_phase`, `_coherence`, …) |
 
 ---

@@ -19,6 +19,8 @@ Registered epoch metrics (one CSV/HDF5 column each, the function name)
 * ``bp_map``, mean arterial pressure: the true integral mean of the waveform
   between two successive diastolic minima (CARSPAN ``CalcDataColBPMPR``), **not**
   the textbook ``(SBP + 2·DBP) / 3`` approximation.
+* ``sbp_sd`` / ``dbp_sd``, beat-to-beat BP variability: SD of the per-beat
+  systolic / diastolic values over the epoch.
 
 Respiration (``resp_mvo`` / ``resp_svo``) and respiratory sinus arrhythmia
 (``rsa`` / ``rsa0``) used to live here too; they are now in
@@ -285,3 +287,30 @@ def bp_pp(ctx) -> float:
 def bp_map(ctx) -> float:
     """Mean arterial pressure, epoch mean of the waveform integral mean (CARSPAN)."""
     return _bp_metric(ctx, "map")
+
+
+# ---------------------------------------------------------------------------
+# Blood-pressure variability, time-domain (PLAN.md phase 2c)
+# ---------------------------------------------------------------------------
+
+
+def _bp_std(ctx, key: str) -> float:
+    """SD of the per-beat BP parameter over the epoch (NaN with < 2 valid beats)."""
+    beats = getattr(ctx, "bp_beats", None)
+    if not beats:
+        return float("nan")
+    a = np.asarray(beats[key], dtype=float)
+    a = a[np.isfinite(a)]
+    return float(np.std(a)) if a.size >= 2 else float("nan")
+
+
+@epoch_metric
+def sbp_sd(ctx) -> float:
+    """Beat-to-beat systolic BP variability: SD of the per-beat SBP (mmHg)."""
+    return _bp_std(ctx, "sbp")
+
+
+@epoch_metric
+def dbp_sd(ctx) -> float:
+    """Beat-to-beat diastolic BP variability: SD of the per-beat DBP (mmHg)."""
+    return _bp_std(ctx, "dbp")

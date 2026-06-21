@@ -13,6 +13,8 @@ Registered epoch metrics (one CSV/HDF5 column each, the function name)
 ---------------------------------------------------------------------
 Breathing-frequency context (Grossman & Taylor, 2007)
 * ``resp_freq``, mean breathing frequency in Hz.
+* ``resp_rate_bpm``, the same rate in breaths per minute (60 * resp_freq).
+* ``rrv``, respiration-rate variability: SD of the per-cycle breath durations (s).
 * ``hf_resp_in_band``, 1.0/0.0 flag: is the mean breathing frequency inside
   the configured HF band?  A 0.0 warns that the epoch's HF power may not index
   RSA at all (NaN when undeterminable).
@@ -61,6 +63,8 @@ from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
 
 __all__ = [
     "resp_freq",
+    "resp_rate_bpm",
+    "rrv",
     "hf_resp_in_band",
     "resp_mvo",
     "resp_svo",
@@ -99,6 +103,35 @@ def resp_freq(ctx) -> float:
     """Mean breathing frequency in Hz (blank when no respiration channel)."""
     f = _mean_breath_hz(ctx)
     return float(f) if f is not None else float("nan")
+
+
+@epoch_metric
+def resp_rate_bpm(ctx) -> float:
+    """Mean breathing rate in breaths per minute (60 * resp_freq)."""
+    f = _mean_breath_hz(ctx)
+    return float(60.0 * f) if f is not None else float("nan")
+
+
+@epoch_metric
+def rrv(ctx) -> float:
+    """Respiration-rate variability: SD of the per-cycle breath durations (s).
+
+    Cycle durations mirror :func:`resp_freq` (each phase paired with its
+    successor, ``ends[1:] - starts[:-1]``).  NaN with fewer than two cycles.
+    """
+    phases = getattr(ctx, "rsp_phases", None)
+    if phases is None:
+        return float("nan")
+    try:
+        starts = np.asarray(phases.starts, dtype=float)
+        ends = np.asarray(phases.ends, dtype=float)
+    except Exception:
+        return float("nan")
+    if starts.size < 3 or ends.size < 3:
+        return float("nan")
+    periods = ends[1:] - starts[:-1]
+    periods = periods[periods > 0]
+    return float(np.std(periods)) if periods.size >= 2 else float("nan")
 
 
 @epoch_metric

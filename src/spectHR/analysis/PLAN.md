@@ -1,5 +1,13 @@
 # Implementation plan: additional Results metrics
 
+> **Status (2026-06): Phases 1 and 2 are implemented.** Frequency completeness
+> (`total_power`, `lf_nu`, `hf_nu`, `ln_hf`, `band_rel`/`band_peak` groups),
+> time-domain staples (`nn50`/`pnn50`/`nn20`/`pnn20`, `mean_hr`/`sd_hr`,
+> `cvnn`/`cvsd`, `hrv_ti`, `tinn`), Poincaré `csi`/`cvi`/`modified_csi`,
+> `dfa_a2`, ICG `heather_index`, respiration `resp_rate_bpm`/`rrv`, and BP
+> `sbp_sd`/`dbp_sd` are live, with tests in `tests/test_ecg_extra_metrics.py`
+> and `tests/test_phase2_metrics.py`. **Phase 3 (entropy) remains.**
+
 A concrete, ordered plan for the next per-epoch metrics, turning the candidate
 list in the top-level [`roadmap.MD`](../../../roadmap.MD) into specs an
 implementer can pick up. Scope here is the **cheap, high-value columns that

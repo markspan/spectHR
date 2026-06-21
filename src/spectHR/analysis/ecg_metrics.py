@@ -13,6 +13,9 @@ Time-domain (ms)
     ``count``  number of valid IBIs · ``mean`` · ``median`` · ``min`` · ``max``
     ``rmssd``  root-mean-square of successive differences
     ``sdnn``   SD of all IBIs · ``sdsd`` SD of successive differences
+    ``nn50``/``pnn50`` · ``nn20``/``pnn20`` successive diffs above 50/20 ms
+    ``mean_hr``/``sd_hr`` heart rate (bpm) · ``cvnn``/``cvsd`` coefficients of variation
+    ``hrv_ti`` triangular index · ``tinn`` triangular interpolation (ms)
 
 Stationarity (drift diagnostics)
     ``stationarity``   IBI-vs-time linear correlation (monotone drift)
@@ -22,16 +25,22 @@ Stationarity (drift diagnostics)
 Poincaré
     ``sd1`` minor axis · ``sd2`` major axis (Brennan) · ``sd_ratio`` SD1/SD2
     ``ellipse_area`` π·SD1·SD2 (ms²)
+    ``csi``/``cvi``/``modified_csi`` cardiac sympathetic / vagal indices (Toichi 1997)
 
 Non-linear
-    ``dfa_a1`` short-term detrended-fluctuation scaling exponent α1
-               (Peng et al. 1995, box sizes 4-16 beats)
+    ``dfa_a1`` short-term · ``dfa_a2`` long-term detrended-fluctuation scaling
+               exponent (Peng et al. 1995; α1 over 4-16, α2 over 16-64 beats)
 
 PRSA (phase-rectified signal averaging, Bauer et al. 2006)
     ``dc`` deceleration capacity (parasympathetic) · ``ac`` acceleration capacity
 
+ECG waveform
+    ``twave_amplitude`` mean T-wave amplitude per beat (CARSPAN, device-dependent)
+
 Frequency-domain (band powers of the IBI PSD)
-    ``band_powers`` group → one ``{band}_power`` column per configured band
+    ``band_powers`` group → one ``{band}_power`` column per configured band;
+    ``band_rel`` → ``{band}_pct`` · ``band_peak`` → ``{band}_peak_hz``
+    ``total_power`` · ``lf_nu``/``hf_nu`` normalised units · ``ln_hf``
     ``lf_hf_ratio`` LF/HF (report descriptively, *not* a clean sympatho-vagal
                     index, Billman 2013)
 
@@ -66,12 +75,14 @@ from spectHR.analysis.registry import epoch_metric, epoch_metric_group
 __all__ = [
     # time-domain
     "count", "mean", "median", "min", "max", "rmssd", "sdnn", "sdsd",
+    "nn50", "pnn50", "nn20", "pnn20", "mean_hr", "sd_hr", "cvnn", "cvsd",
+    "hrv_ti", "tinn",
     # stationarity
     "stationarity", "stationarity_z",
     # Poincaré
-    "sd1", "sd2", "sd_ratio", "ellipse_area",
+    "sd1", "sd2", "sd_ratio", "ellipse_area", "csi", "cvi", "modified_csi",
     # non-linear
-    "dfa_fluctuation", "dfa_alpha1", "dfa_a1",
+    "dfa_fluctuation", "dfa_alpha1", "dfa_a1", "dfa_a2",
     # PRSA
     "dc", "ac",
     # ECG waveform
@@ -79,6 +90,7 @@ __all__ = [
     # frequency-domain
     "fullrange_power", "vlf_power", "lf_power", "hf_power",
     "lf_hf_ratio", "band_powers",
+    "total_power", "lf_nu", "hf_nu", "ln_hf", "band_rel", "band_peak",
     "STANDARD_BAND_POWER_COLUMNS", "BAND_POWER_COLUMN_TOOLTIP",
 ]
 
@@ -647,3 +659,326 @@ def band_powers(ctx) -> dict[str, float]:
         except Exception:
             pass   # leave absent → NaN in the matrix
     return out
+
+
+# ===========================================================================
+# Frequency-domain completeness (PLAN.md phase 1a)
+#
+# Normalised units, total power, ln(HF) and per-band % / peak frequency, all
+# read off the same cached PSD as band_powers / lf_hf_ratio.
+# ===========================================================================
+
+
+def _total_power(series, method) -> float:
+    """Sum of every configured non-FullRange band power (the conventional total)."""
+    total, found = 0.0, False
+    for name in method.bands:
+        if name == "FullRange":
+            continue
+        p = _band_power(series, name, method)
+        if np.isfinite(p):
+            total += p
+            found = True
+    return total if found else float("nan")
+
+
+@epoch_metric
+def total_power(series, psd_method=None) -> float:
+    """Total spectral power: sum of all configured bands except FullRange (mMI² by default)."""
+    try:
+        method = _resolve_method(series, psd_method)
+        if method is None:
+            return np.nan
+        return _total_power(series, method)
+    except (KeyError, AttributeError, ValueError):
+        return np.nan
+
+
+def _lf_hf(series, psd_method):
+    """``(method, LF, HF)`` or ``None`` when LF/HF cannot be evaluated."""
+    method = _resolve_method(series, psd_method)
+    if method is None or "LF" not in method.bands or "HF" not in method.bands:
+        return None
+    return method, _band_power(series, "LF", method), _band_power(series, "HF", method)
+
+
+@epoch_metric
+def lf_nu(series, psd_method=None) -> float:
+    """LF power in normalised units: 100 * LF / (LF + HF)."""
+    try:
+        got = _lf_hf(series, psd_method)
+        if got is None:
+            return np.nan
+        _, lf, hf = got
+        s = lf + hf
+        return float(100.0 * lf / s) if np.isfinite(s) and s > 0 else np.nan
+    except (KeyError, AttributeError, ValueError):
+        return np.nan
+
+
+@epoch_metric
+def hf_nu(series, psd_method=None) -> float:
+    """HF power in normalised units: 100 * HF / (LF + HF)."""
+    try:
+        got = _lf_hf(series, psd_method)
+        if got is None:
+            return np.nan
+        _, lf, hf = got
+        s = lf + hf
+        return float(100.0 * hf / s) if np.isfinite(s) and s > 0 else np.nan
+    except (KeyError, AttributeError, ValueError):
+        return np.nan
+
+
+@epoch_metric
+def ln_hf(series, psd_method=None) -> float:
+    """Natural log of HF power, ln(HF)."""
+    try:
+        method = _resolve_method(series, psd_method)
+        if method is None or "HF" not in method.bands:
+            return np.nan
+        hf = _band_power(series, "HF", method)
+        return float(np.log(hf)) if np.isfinite(hf) and hf > 0 else np.nan
+    except (KeyError, AttributeError, ValueError):
+        return np.nan
+
+
+@epoch_metric_group
+def band_rel(ctx) -> dict[str, float]:
+    """``{band}_pct``: each configured band's % of the total (non-FullRange) power."""
+    out: dict[str, float] = {}
+    method = getattr(ctx, "psd_method", None)
+    psd_res = getattr(ctx, "psd", None)
+    if method is None or psd_res is None:
+        return out
+    powers: dict[str, float] = {}
+    for name, spec in method.bands.items():
+        if name == "FullRange":
+            continue
+        try:
+            powers[name] = float(band_power_rectangular(
+                psd_res.freqs, psd_res.power, spec.low, spec.high))
+        except Exception:
+            pass
+    total = sum(p for p in powers.values() if np.isfinite(p))
+    if total <= 0:
+        return out
+    for name, p in powers.items():
+        if np.isfinite(p):
+            out[f"{name.lower()}_pct"] = float(100.0 * p / total)
+    return out
+
+
+@epoch_metric_group
+def band_peak(ctx) -> dict[str, float]:
+    """``{band}_peak_hz``: frequency of the maximum PSD value inside each band."""
+    out: dict[str, float] = {}
+    method = getattr(ctx, "psd_method", None)
+    psd_res = getattr(ctx, "psd", None)
+    if method is None or psd_res is None:
+        return out
+    freqs = np.asarray(psd_res.freqs, dtype=float)
+    power = np.asarray(psd_res.power, dtype=float)
+    for name, spec in method.bands.items():
+        if name == "FullRange":
+            continue
+        mask = (freqs >= spec.low) & (freqs <= spec.high)
+        if mask.any() and np.isfinite(power[mask]).any():
+            out[f"{name.lower()}_peak_hz"] = float(
+                freqs[mask][int(np.nanargmax(power[mask]))])
+    return out
+
+
+# ===========================================================================
+# Time-domain staples (PLAN.md phase 1b)
+# ===========================================================================
+
+
+def _nn_pnn(series, threshold_ms: float):
+    """``(count, percent)`` of successive |ΔIBI| above *threshold_ms*."""
+    d = np.abs(successive_diffs_ms(series))
+    if d.size == 0:
+        return float("nan"), float("nan")
+    nn = int(np.count_nonzero(d > threshold_ms))
+    return float(nn), float(100.0 * nn / d.size)
+
+
+@epoch_metric
+def nn50(series) -> float:
+    """Number of successive IBI differences greater than 50 ms."""
+    return _nn_pnn(series, 50.0)[0]
+
+
+@epoch_metric
+def pnn50(series) -> float:
+    """Percentage of successive IBI differences greater than 50 ms."""
+    return _nn_pnn(series, 50.0)[1]
+
+
+@epoch_metric
+def nn20(series) -> float:
+    """Number of successive IBI differences greater than 20 ms."""
+    return _nn_pnn(series, 20.0)[0]
+
+
+@epoch_metric
+def pnn20(series) -> float:
+    """Percentage of successive IBI differences greater than 20 ms."""
+    return _nn_pnn(series, 20.0)[1]
+
+
+@epoch_metric
+def mean_hr(series) -> float:
+    """Mean heart rate in bpm = 60000 / mean(IBI in ms)."""
+    ibi = ibi_clean_ms(series)
+    if ibi.size == 0:
+        return np.nan
+    m = float(np.mean(ibi))
+    return float(60000.0 / m) if m > 0 else np.nan
+
+
+@epoch_metric
+def sd_hr(series) -> float:
+    """SD of the per-beat instantaneous heart rate (bpm)."""
+    ibi = ibi_clean_ms(series)
+    ibi = ibi[ibi > 0]
+    return float(np.std(60000.0 / ibi)) if ibi.size >= 2 else np.nan
+
+
+@epoch_metric
+def cvnn(series) -> float:
+    """Coefficient of variation of the IBIs: 100 * SDNN / mean (percent)."""
+    ibi = ibi_clean_ms(series)
+    if ibi.size < 2:
+        return np.nan
+    m = float(np.mean(ibi))
+    return float(100.0 * np.std(ibi) / m) if m > 0 else np.nan
+
+
+@epoch_metric
+def cvsd(series) -> float:
+    """Coefficient of variation of successive differences: 100 * SDSD / mean (percent)."""
+    ibi = ibi_clean_ms(series)
+    d = successive_diffs_ms(series)
+    if ibi.size < 2 or d.size == 0:
+        return np.nan
+    m = float(np.mean(ibi))
+    return float(100.0 * np.std(d) / m) if m > 0 else np.nan
+
+
+_TI_BIN_MS = 1000.0 / 128.0   # 7.8125 ms, the standard HRV histogram bin
+
+
+def _ibi_histogram(ibi_ms: np.ndarray):
+    """``(counts, centres)`` of the IBI histogram on the 1/128 s grid, or None."""
+    if ibi_ms.size < 2:
+        return None
+    lo, hi = float(np.min(ibi_ms)), float(np.max(ibi_ms))
+    if hi <= lo:
+        return None
+    edges = np.arange(lo, hi + _TI_BIN_MS, _TI_BIN_MS)
+    if edges.size < 2:
+        return None
+    counts, edges = np.histogram(ibi_ms, bins=edges)
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    return counts.astype(float), centres
+
+
+@epoch_metric
+def hrv_ti(series) -> float:
+    """HRV triangular index: total IBIs / height of the modal histogram bin (1/128 s bins)."""
+    h = _ibi_histogram(ibi_clean_ms(series))
+    if h is None:
+        return np.nan
+    counts, _ = h
+    peak = float(counts.max()) if counts.size else 0.0
+    return float(counts.sum() / peak) if peak > 0 else np.nan
+
+
+@epoch_metric
+def tinn(series) -> float:
+    """Triangular Interpolation of the NN histogram (ms): base width of the
+    least-squares triangle fitted to the IBI histogram (Task Force 1996)."""
+    h = _ibi_histogram(ibi_clean_ms(series))
+    if h is None:
+        return np.nan
+    counts, centres = h
+    x = int(np.argmax(counts))
+    y = float(counts[x])
+    if y <= 0:
+        return np.nan
+    last = counts.size - 1
+
+    # Left side: triangle rises 0 -> y from bin N (<= x) up to the mode.
+    left = np.arange(0, x + 1)
+    best_n, best_err = x, np.inf
+    for n_lo in range(0, x + 1):
+        q = np.zeros(x + 1)
+        if x > n_lo:
+            on = left >= n_lo
+            q[on] = y * (left[on] - n_lo) / (x - n_lo)
+        else:
+            q[x] = y
+        err = float(np.sum((counts[: x + 1] - q) ** 2))
+        if err < best_err:
+            best_err, best_n = err, n_lo
+
+    # Right side: triangle falls y -> 0 from the mode down to bin M (>= x).
+    right = np.arange(x, last + 1)
+    best_m, best_err = x, np.inf
+    for n_hi in range(x, last + 1):
+        q = np.zeros(last - x + 1)
+        if n_hi > x:
+            on = right <= n_hi
+            q[on] = y * (n_hi - right[on]) / (n_hi - x)
+        else:
+            q[0] = y
+        err = float(np.sum((counts[x:] - q) ** 2))
+        if err < best_err:
+            best_err, best_m = err, n_hi
+
+    return float(centres[best_m] - centres[best_n])
+
+
+# ===========================================================================
+# Poincaré complements (PLAN.md phase 1c): Toichi (1997) CSI / CVI
+# ===========================================================================
+
+
+@epoch_metric
+def csi(series) -> float:
+    """Cardiac Sympathetic Index L/T (T = 4·SD1, L = 4·SD2; Toichi 1997)."""
+    s1, s2 = sd1(series), sd2(series)
+    if np.isnan(s1) or np.isnan(s2) or s1 <= 0:
+        return np.nan
+    return float(s2 / s1)            # (4·SD2) / (4·SD1)
+
+
+@epoch_metric
+def cvi(series) -> float:
+    """Cardiac Vagal Index log10(L·T) = log10(16·SD1·SD2) (Toichi 1997)."""
+    s1, s2 = sd1(series), sd2(series)
+    if np.isnan(s1) or np.isnan(s2) or s1 <= 0 or s2 <= 0:
+        return np.nan
+    return float(np.log10(16.0 * s1 * s2))
+
+
+@epoch_metric
+def modified_csi(series) -> float:
+    """Modified Cardiac Sympathetic Index L²/T (Toichi 1997)."""
+    s1, s2 = sd1(series), sd2(series)
+    if np.isnan(s1) or np.isnan(s2) or s1 <= 0:
+        return np.nan
+    t, ell = 4.0 * s1, 4.0 * s2
+    return float(ell * ell / t)
+
+
+# ===========================================================================
+# Non-linear: long-term DFA (PLAN.md phase 1d)
+# ===========================================================================
+
+
+@epoch_metric
+def dfa_a2(series) -> float:
+    """DFA long-term scaling exponent α2 (Peng et al. 1995, box sizes 16-64 beats)."""
+    return dfa_alpha1(ibi_clean_ms(series), scale_min=16, scale_max=64)
