@@ -250,4 +250,7 @@ class TransferProfilePlotWidget(BandSelectorMixin, _TransferBase):
             ax.spines["right"].set_visible(False)
             ax.tick_params(labelsize=7)
         ax_m.tick_params(labelbottom=False)  # x labels only on the bottom panel
+        ts = result.timestamps
+        if ts.size:                          # hug the data: no margins before/after
+            ax_m.set_xlim(float(ts[0]), float(ts[-1]))  # ax_p shares this x-axis
         fig.tight_layout()

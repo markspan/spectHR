@@ -71,6 +71,8 @@ class ProfilePlotWidget(BandSelectorMixin, EpochGridView):
         ax.set_xlabel("Time (s)", fontsize=8)
         ax.set_ylabel(strip_per_hz(result.unit) or "power", fontsize=8)
         ax.set_ylim(bottom=0.0)
+        if t.size:                       # hug the data: no margins before/after
+            ax.set_xlim(float(t[0]), float(t[-1]))
         ax.tick_params(labelsize=7)
         if drawn:
             ax.legend(fontsize=6, loc="upper right", framealpha=0.6)
