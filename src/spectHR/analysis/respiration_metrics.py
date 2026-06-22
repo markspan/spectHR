@@ -58,7 +58,7 @@ import numpy as np
 
 from spectHR.analysis._beat_sampling import nanmean, rpeak_sample_indices
 from spectHR.analysis.registry import epoch_metric
-from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
+from spectHR.signal.respiration import mean_breath_frequency_hz
 
 
 __all__ = [

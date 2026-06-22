@@ -10,7 +10,7 @@ import numpy as np
 from spectHR.DataSet.loaders.registry import register_loader
 from spectHR.DataSet.loaders.nff_loader import _load_nff_samples
 from spectHR.DataSet.loaders.code_selection import resolve_epoch_codes
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 
 _IBI_SCALE_TO_SECONDS = 10_000.0
 _BP_SCALE_TO_MMHG = 10.0

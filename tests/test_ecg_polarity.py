@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from spectHR.Tools.ECGProcessing import detect_ecg_polarity
+from spectHR.signal.ecg import detect_ecg_polarity
 
 
 def _synth_ecg(duration: float = 20.0, fs: float = 250.0, hr_bpm: float = 60.0):

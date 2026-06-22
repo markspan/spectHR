@@ -219,7 +219,7 @@ Group metric: emits several data-driven columns.
 
 Call chain: `band_powers` -> `band_power_rectangular`
 
-Algorithm: [`_band_power.py`](_band_power.py) (`band_power_rectangular`)
+Algorithm: [`_band_power.py`](psd/_band_power.py) (`band_power_rectangular`)
 
 ### band_rel
 
@@ -347,7 +347,7 @@ True if mean breathing frequency lies inside the HF band, else False (Grossman &
 
 Call chain: `hf_resp_in_band` -> `_mean_breath_hz` -> `mean_breath_frequency_hz`
 
-Algorithm: [`RespirationSegmentation.py`](RespirationSegmentation.py) (`mean_breath_frequency_hz`)
+Algorithm: [`respiration.py`](../signal/respiration.py) (`mean_breath_frequency_hz`)
 
 ### hrv_ti
 
@@ -489,7 +489,7 @@ Mean breathing frequency in Hz (blank when no respiration channel).
 
 Call chain: `resp_freq` -> `_mean_breath_hz` -> `mean_breath_frequency_hz`
 
-Algorithm: [`RespirationSegmentation.py`](RespirationSegmentation.py) (`mean_breath_frequency_hz`)
+Algorithm: [`respiration.py`](../signal/respiration.py) (`mean_breath_frequency_hz`)
 
 ### resp_mvo
 

@@ -25,8 +25,8 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from spectHR.Tools.Logger import logger
-from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
+from spectHR.logger import logger
+from spectHR.signal.respiration import mean_breath_frequency_hz
 from spectHR.analysis.psd._config import PsdMethod, _DEFAULT_PSD_METHOD
 from spectHR.analysis.psd._engine import PSDEngine
 

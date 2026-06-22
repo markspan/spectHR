@@ -104,7 +104,7 @@ That sentence is the project's first principle. Practical consequences:
 
 ### 2.4 Logging, not printing
 
-* Module logger is `from spectHR.Tools.Logger import logger`.
+* Module logger is `from spectHR.logger import logger`.
 * **`logger.info`** for milestones a user might want to see.
 * **`logger.debug`** for diagnostic detail.
 * **`logger.warning`** for recoverable but suspicious situations

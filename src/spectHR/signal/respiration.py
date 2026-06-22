@@ -1,6 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# spectHR/Tools/RespirationSegmentation.py
+# spectHR/signal/respiration.py
 """
 Standalone respiration-phase segmentation algorithm.
 
@@ -26,7 +26,7 @@ import numpy as np
 from numpy.linalg import eigh
 from scipy.signal import butter, sosfiltfilt, savgol_filter, find_peaks, buttord
 
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 
 
 __all__ = [

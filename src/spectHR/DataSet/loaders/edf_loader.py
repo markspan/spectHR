@@ -9,7 +9,7 @@ import numpy as np
 from spectHR.session import Session, Samples
 from spectHR.DataSet.loaders._epochs import build_epochs
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +186,7 @@ _LABEL_ANN  = {"edf annotations"}
 
 # The accelerometer→respiration PCA lives in the headless Tools layer so it can
 # be re-run per epoch (posture-adaptive); imported here under the old name.
-from spectHR.Tools.RespirationSegmentation import accel_to_respiration as _acc_to_rsp
+from spectHR.signal.respiration import accel_to_respiration as _acc_to_rsp
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import numpy as np
 import pyxdf
 
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 
 # ------------------------------------------------------------
 # INTERNAL: 3-axis Respiration signal computation

@@ -110,7 +110,7 @@ class ResultsTableWidget(QWidget):
 
     @staticmethod
     def _on_error(exc: Exception) -> None:
-        from spectHR.Tools.Logger import logger
+        from spectHR.logger import logger
         logger.exception("epochs_table failed", exc_info=exc)
 
     # ------------------------------------------------------------------

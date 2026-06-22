@@ -39,7 +39,7 @@ from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from spectHR.session import Session
-from spectHR.Tools.Decimation import decimate_minmax
+from spectHR.signal.decimation import decimate_minmax
 from spectUI.common import (
     OverviewWindow,
     make_nav_button,

@@ -1296,7 +1296,7 @@ The same answer in summary form:
 Both variants go through the same `compute_carspan_psd` function. The `signal` field of `CarspanOptions` picks the algorithm:
 
 ```python
-from spectHR.Tools.PSD.CarspanPSD import (
+from spectHR.analysis.psd import (
     CarspanOptions, compute_carspan_psd, carspan_strict_options,
 )
 

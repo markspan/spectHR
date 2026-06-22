@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QDialog,

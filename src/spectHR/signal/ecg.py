@@ -1,6 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# spectHR/Tools/ECGProcessing.py
+# spectHR/signal/ecg.py
 """Standalone ECG signal-processing utilities.
 
 :func:`detect_ecg_polarity` determines whether a raw ECG signal has normal
@@ -13,7 +13,7 @@ import numpy as np
 import scipy.signal as signal
 import scipy.stats
 
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 
 
 __all__ = ["detect_ecg_polarity"]

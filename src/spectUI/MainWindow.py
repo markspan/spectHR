@@ -42,7 +42,7 @@ from PySide6QtAds import CDockManager, CDockWidget, DockWidgetArea
 
 from spectHR._version import __version__
 from spectHR.DataSet.loaders import load as _load_session
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 from spectHR.session import Session
 from spectHR.DataSet.preprocessing import (
     apply_beat_detection,

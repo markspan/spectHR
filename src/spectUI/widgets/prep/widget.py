@@ -32,7 +32,7 @@ from PySide6.QtWidgets import QComboBox, QWidget
 
 from spectHR.config import CardioParams, WorkspaceView
 from spectHR.session import Session
-from spectHR.Tools.Decimation import decimate_minmax
+from spectHR.signal.decimation import decimate_minmax
 from spectUI.common import style_axis_clean
 from spectUI.plot_worker import DockScheduler
 from spectUI.widgets.prep.model import PrepModel

@@ -38,7 +38,7 @@ from spectHR.analysis.transfer import (
     transfer_summary_scalars,
 )
 from spectHR.config import WorkspaceView
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 
 
 class EpochExporter:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 
 
 @register_loader(".pkl")

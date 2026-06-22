@@ -68,9 +68,9 @@ class CardioParams:
     Attributes
     ----------
     window_length, n_std, max_ibi_sec
-        Passed straight to :func:`~spectHR.Tools.IbiClassification.classify_ibi`.
+        Passed straight to :func:`~spectHR.signal.ibi_classification.classify_ibi`.
     min_peak_distance_ms
-        Refractory period for :func:`~spectHR.Tools.RPeakDetection.detect_rpeaks`.
+        Refractory period for :func:`~spectHR.signal.rpeak.detect_rpeaks`.
     ecg_filter_type
         ``"highpass"`` / ``"lowpass"`` prefilter applied to the ECG before
         detection, or ``None`` to skip filtering.

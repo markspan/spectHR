@@ -26,8 +26,8 @@ from spectHR.analysis.psd._config import (
 )
 from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.psd._utils import ProfileResult
-from spectHR.Tools.Logger import logger
-from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
+from spectHR.logger import logger
+from spectHR.signal.respiration import mean_breath_frequency_hz
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis._smoothing import smooth3 as _ma3  # CARSPAN MAW kernel (T_AnaFunctions.pas:595-643)
 from spectHR.analysis._smoothing import smooth3_triangular as _tri3  # AutoSpectrum WindowSize=3 smoother

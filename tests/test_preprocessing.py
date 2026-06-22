@@ -336,7 +336,7 @@ def _accel_session(per_epoch_breaths=True):
 
 def test_accel_axes_resolved_and_pca():
     from spectHR.DataSet.preprocessing import resolve_accel_axes
-    from spectHR.Tools.RespirationSegmentation import accel_to_respiration
+    from spectHR.signal.respiration import accel_to_respiration
     s = _accel_session()
     axes = resolve_accel_axes(s)
     assert axes is not None and len(axes) == 3

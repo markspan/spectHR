@@ -26,7 +26,7 @@ Shared design rules:
 - **Cached derivations.** `Events.ibi` is a `cached_property` (works under
   `frozen=True` because it writes through `__dict__`).
 - **Factories.** `Events.detect(...)`, `Intervals.detect_breath_phases(...)`,
-  `Samples.filtered(...)` delegate to [`../Tools`](../Tools) for the algorithms.
+  `Samples.filtered(...)` delegate to [`../signal`](../signal) for the algorithms.
 
 ## The aggregate ([`_session.py`](_session.py))
 

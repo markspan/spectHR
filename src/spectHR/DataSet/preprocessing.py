@@ -34,9 +34,9 @@ import numpy as np
 
 from spectHR.config import CardioParams, WorkspaceView
 from spectHR.session import Events, Intervals, Samples, Session
-from spectHR.Tools.ECGProcessing import detect_ecg_polarity
-from spectHR.Tools.Logger import logger
-from spectHR.Tools.RespirationSegmentation import (
+from spectHR.signal.ecg import detect_ecg_polarity
+from spectHR.logger import logger
+from spectHR.signal.respiration import (
     accel_to_respiration,
     segment_respiration,
 )
@@ -175,7 +175,7 @@ def apply_ecg_polarity(session: Session, params: _ParamsLike = None) -> Session:
     A loader-agnostic, early pre-processing step: it inspects each channel
     whose key starts with ``"ecg"`` (canonical ``"ecg"`` and device-suffixed
     ``"ecg-[…]"`` alike), decides its polarity with
-    :func:`~spectHR.Tools.ECGProcessing.detect_ecg_polarity` (skewness of the
+    :func:`~spectHR.signal.ecg.detect_ecg_polarity` (skewness of the
     band-passed QRS, with a peak-prominence tiebreaker), and negates the
     values of any channel detected as ``"inverted"`` so downstream R-peak
     detection sees upright R-waves.

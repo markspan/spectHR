@@ -17,6 +17,7 @@ drifts from what this module would generate, so they cannot fall out of sync.
 """
 from __future__ import annotations
 
+from os.path import dirname, relpath
 from pathlib import Path
 
 from spectHR.analysis.registry import get_metric_groups, get_metrics
@@ -65,9 +66,12 @@ def build_metric_reference() -> str:
         loc = _location(algo_fn)
         if loc is not None:
             rel = loc[0]
+            # Link relative to the README's own directory, so it stays valid for
+            # algorithms outside analysis/ (e.g. signal/respiration.py).
+            href = relpath(rel, dirname(ANALYSIS_README)).replace("\\", "/")
             label = "Algorithm" if len(chain) > 1 else "Source"
             out.append("")
-            out.append(f"{label}: [`{Path(rel).name}`]({Path(rel).name}) (`{algo_name}`)")
+            out.append(f"{label}: [`{Path(rel).name}`]({href}) (`{algo_name}`)")
         out.append("")
     return "\n".join(out).strip() + "\n"
 
