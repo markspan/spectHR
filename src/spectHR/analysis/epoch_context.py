@@ -4,11 +4,16 @@
 """
 Per-epoch evaluation context for ``@epoch_metric`` functions.
 
-``Session.epochs_table`` builds one :class:`EpochContext` per
-active epoch and passes it to every registered metric.  The context is a
-``@dataclass`` that satisfies :class:`CardioSeriesProtocol` via explicit
+``Session.epochs_table`` builds one :class:`EpochContext` per active epoch (from
+``Session.scoped_to``) and passes it to every registered metric.  The context is
+a ``@dataclass`` that satisfies :class:`CardioSeriesProtocol` via explicit
 ``times`` / ``ibi`` / ``labels`` properties, so time-domain metrics written
 against a bare ``Events`` window work unchanged when handed a context.
+
+It holds the epoch's windowed channels plus one
+:class:`~spectHR.session.AnalysisConfig`; every setting the config carries is
+reachable as ``ctx.<name>`` (delegated via ``__getattr__``), so a new analysis
+parameter is added once on ``AnalysisConfig`` and needs no change here.
 
 On top of the series interface it adds the extra inputs the BP / RESP /
 band-power metrics need, each computed **lazily and cached** via
@@ -41,6 +46,8 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from spectHR.session._session import AnalysisConfig
+
 
 # ------------------------------------------------------------------ #
 # Protocol, documents the series interface @epoch_metric relies on  #
@@ -72,38 +79,55 @@ class CardioSeriesProtocol(Protocol):
 class EpochContext:
     """Single argument handed to every ``@epoch_metric`` by the table.
 
+    It carries two things: the epoch's **data** (the windowed channels) and
+    the **settings** (one :class:`~spectHR.session.AnalysisConfig`).  Splitting
+    them this way means a new analysis parameter is declared once, on
+    ``AnalysisConfig``, and reaches metrics with no change here.
+
     Parameters
     ----------
     view
-        The epoch's ``Events`` window (the active HRV series restricted to
-        the epoch bounds).
-    psd_method
-        Parameters-configured ``PsdMethod`` (or ``None``).  Drives :attr:`psd`
-        and is read by the band-power metrics.
-    bp_ts, rsp_ts
-        Optional blood-pressure / respiration ``TimeSeries`` (objects exposing
-        ``.times`` and ``.values``).  ``None`` when the channel is not loaded.
+        The epoch's ``Events`` window (the active HRV series restricted to the
+        epoch bounds).
+    bp_ts, rsp_ts, rsp_phases, icg_ts, ecg_ts
+        Per-epoch blood-pressure / respiration / breath-phase / ICG / ECG
+        channels (windowed to the epoch).  ``None`` when the channel is absent.
+    config
+        All analysis settings (``psd_method``, ``rsa_lag_s``,
+        ``b_point_guard_ms``, ``transfer_config``, ``prsa_window``,
+        ``log_band_power``, ``rsa_max_*``).
     """
 
-    # Positional-only field, no default, must be supplied first
+    # Positional-only field, no default, must be supplied first.
     view: Any
 
-    # All remaining fields are keyword-only (mirrors the original * separator)
-    psd_method:              Any   = field(default=None,  kw_only=True)
-    bp_ts:                   Any   = field(default=None,  kw_only=True)
-    rsp_ts:                  Any   = field(default=None,  kw_only=True)
-    rsp_phases:              Any   = field(default=None,  kw_only=True)
-    rsa_lag_s:               float = field(default=1.0,   kw_only=True)
-    rsa_max_ibi_deviation:   Any   = field(default=None,  kw_only=True)
-    rsa_max_rate_deviation:  Any   = field(default=None,  kw_only=True)
-    icg_ts:                  Any   = field(default=None,  kw_only=True)
-    ecg_ts:                  Any   = field(default=None,  kw_only=True)
-    b_point_guard_ms:        float = field(default=30.0,  kw_only=True)
-    # Dict with keys: input_signal, min_coherence, f_max, bands.
-    # None disables transfer metrics.
-    transfer_config:         Any   = field(default=None,  kw_only=True)
-    prsa_window:             int   = field(default=30,    kw_only=True)
-    log_band_power:          bool  = field(default=False, kw_only=True)
+    # Per-epoch waveform channels (windowed), keyword-only, None when absent.
+    bp_ts:      Any = field(default=None, kw_only=True)
+    rsp_ts:     Any = field(default=None, kw_only=True)
+    rsp_phases: Any = field(default=None, kw_only=True)
+    icg_ts:     Any = field(default=None, kw_only=True)
+    ecg_ts:     Any = field(default=None, kw_only=True)
+
+    # All analysis settings in one place.  Their values are reachable directly
+    # as ``ctx.<name>`` via __getattr__ below, so metric code that reads e.g.
+    # ``getattr(ctx, "psd_method")`` works unchanged whether it is handed a
+    # context or a bare ``Events`` series.
+    config: AnalysisConfig = field(default_factory=AnalysisConfig, kw_only=True)
+
+    def __getattr__(self, name: str):
+        """Expose every ``AnalysisConfig`` field as ``ctx.<field>``.
+
+        Only fires for names not found normally (real fields, properties,
+        cached_properties), so it never shadows them, and only delegates the
+        config's *declared fields* (not its methods).  ``config`` itself is
+        guarded to avoid recursion during construction.
+        """
+        if name == "config":
+            raise AttributeError(name)
+        config = self.__dict__.get("config")
+        if config is not None and name in type(config).__dataclass_fields__:
+            return getattr(config, name)
+        raise AttributeError(name)
 
     # ------------------------------------------------------------------ #
     # CardioSeriesProtocol, explicit forwarding to self.view            #
@@ -132,12 +156,12 @@ class EpochContext:
 
     @cached_property
     def psd(self):
-        """Band-power PSD for ``psd_method`` (cached), or ``None``."""
-        if self.psd_method is None:
+        """Band-power PSD for ``config.psd_method`` (cached), or ``None``."""
+        if self.config.psd_method is None:
             return None
         try:
             from spectHR.analysis.psd._engine import PSDEngine
-            return PSDEngine(self.view).for_band_power(self.psd_method)
+            return PSDEngine(self.view).for_band_power(self.config.psd_method)
         except Exception:
             return None
 
@@ -182,9 +206,9 @@ class EpochContext:
                 np.asarray(self.rpeak_times, dtype=float),
                 np.asarray(self.labels,      dtype=object),
                 self.rsp_phases,
-                lag_s=self.rsa_lag_s,
-                max_ibi_deviation=self.rsa_max_ibi_deviation,
-                max_rate_deviation=self.rsa_max_rate_deviation,
+                lag_s=self.config.rsa_lag_s,
+                max_ibi_deviation=self.config.rsa_max_ibi_deviation,
+                max_rate_deviation=self.config.rsa_max_rate_deviation,
             )
         except Exception:
             return None
@@ -208,7 +232,7 @@ class EpochContext:
                 np.asarray(self.icg_ts.times,  dtype=float),
                 np.asarray(self.icg_ts.values, dtype=float),
                 np.asarray(self.rpeak_times,   dtype=float),
-                b_guard_ms=self.b_point_guard_ms,
+                b_guard_ms=self.config.b_point_guard_ms,
                 return_detail=True,
                 **ecg_kw,
             )
@@ -238,7 +262,7 @@ class EpochContext:
         is present, the required input channel is absent, or fewer than 4
         clean R-peaks are available.
         """
-        cfg = self.transfer_config
+        cfg = self.config.transfer_config
         if cfg is None:
             return None
         sig = cfg.get("input_signal", "rsp")

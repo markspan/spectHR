@@ -15,6 +15,7 @@ import numpy as np
 from spectHR.analysis.psd import BandSpec, PsdMethod
 from spectHR.analysis.epoch_context import EpochContext
 from spectHR.analysis import ecg_metrics as M
+from spectHR.session import AnalysisConfig
 
 from conftest import WORKSPACE_BANDS, make_cs, make_spectral_cs, make_two_sinusoid_cs
 
@@ -29,7 +30,8 @@ def _method():
 # ---------------------------------------------------------------------------
 
 def test_normalised_units_sum_to_100_and_total_positive():
-    ctx = EpochContext(make_two_sinusoid_cs(0.10, 0.25), psd_method=_method())
+    ctx = EpochContext(make_two_sinusoid_cs(0.10, 0.25),
+                       config=AnalysisConfig(psd_method=_method()))
     lfn, hfn = M.lf_nu(ctx), M.hf_nu(ctx)
     assert np.isfinite(lfn) and np.isfinite(hfn)
     assert abs(lfn + hfn - 100.0) < 1e-6
@@ -39,14 +41,16 @@ def test_normalised_units_sum_to_100_and_total_positive():
 
 
 def test_band_rel_percentages_sum_to_100():
-    ctx = EpochContext(make_two_sinusoid_cs(0.10, 0.25), psd_method=_method())
+    ctx = EpochContext(make_two_sinusoid_cs(0.10, 0.25),
+                       config=AnalysisConfig(psd_method=_method()))
     rel = M.band_rel(ctx)
     assert {"vlf_pct", "lf_pct", "hf_pct"} <= set(rel)
     assert abs(sum(rel.values()) - 100.0) < 1e-6
 
 
 def test_band_peak_frequencies_fall_in_their_bands():
-    ctx = EpochContext(make_two_sinusoid_cs(0.10, 0.25), psd_method=_method())
+    ctx = EpochContext(make_two_sinusoid_cs(0.10, 0.25),
+                       config=AnalysisConfig(psd_method=_method()))
     peak = M.band_peak(ctx)
     lf, hf = WORKSPACE_BANDS["LF"], WORKSPACE_BANDS["HF"]
     assert lf.low <= peak["lf_peak_hz"] <= lf.high
@@ -54,7 +58,7 @@ def test_band_peak_frequencies_fall_in_their_bands():
 
 
 def test_frequency_metrics_nan_without_method():
-    ctx = EpochContext(make_spectral_cs(0.25), psd_method=None)
+    ctx = EpochContext(make_spectral_cs(0.25), config=AnalysisConfig(psd_method=None))
     assert np.isnan(M.lf_nu(ctx)) and np.isnan(M.total_power(ctx))
     assert M.band_rel(ctx) == {} and M.band_peak(ctx) == {}
 

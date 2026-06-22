@@ -255,27 +255,18 @@ class Session:
         contexts: dict[str, EpochContext] = {}
         rows: list[dict[str, float]] = []
 
-        for label, epoch in active.items():
-            s, e = epoch.start, epoch.end
-
-            def _win(ch: Samples | None) -> Samples | None:
-                return ch.window(s, e) if ch is not None else None
-
+        for label in active:
+            # Zero-copy window every channel to the epoch in one place, then
+            # hand the windowed channels plus the shared config to the context.
+            scoped = self.scoped_to(label)
             ctx = EpochContext(
-                view=self.events["hrv"].window(s, e),
-                psd_method=config.psd_method,
-                bp_ts=_win(self.bp),
-                rsp_ts=_win(self.resp),
-                rsp_phases=(self.breath.window(s, e) if self.breath is not None else None),
-                rsa_lag_s=config.rsa_lag_s,
-                rsa_max_ibi_deviation=config.rsa_max_ibi_deviation,
-                rsa_max_rate_deviation=config.rsa_max_rate_deviation,
-                icg_ts=_win(self.icg),
-                ecg_ts=_win(self.ecg),
-                b_point_guard_ms=config.b_point_guard_ms,
-                transfer_config=config.transfer_config,
-                prsa_window=config.prsa_window,
-                log_band_power=config.log_band_power,
+                view=scoped.events["hrv"],
+                bp_ts=scoped.bp,
+                rsp_ts=scoped.resp,
+                rsp_phases=scoped.breath,
+                icg_ts=scoped.icg,
+                ecg_ts=scoped.ecg,
+                config=config,
             )
             contexts[label] = ctx
 

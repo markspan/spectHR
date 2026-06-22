@@ -94,6 +94,7 @@ def test_b_point_guard_flows_through_epoch_context():
     yields two different B-points / PEP values for the same ICG.
     """
     from types import SimpleNamespace
+    from spectHR.session import AnalysisConfig
 
     from spectHR.analysis.epoch_context import EpochContext
 
@@ -108,7 +109,7 @@ def test_b_point_guard_flows_through_epoch_context():
 
     def pep_for(guard):
         ctx = EpochContext(view, icg_ts=icg_ts, ecg_ts=ecg_ts,
-                           b_point_guard_ms=guard)
+                           config=AnalysisConfig(b_point_guard_ms=guard))
         return ctx.pep_value
 
     near, far = pep_for(0.0), pep_for(60.0)
