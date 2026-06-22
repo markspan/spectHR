@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Event-code picker dialog used by the CARSPAN ``.evt`` loader.
 
-Originally lived under ``spectHR/DataSet/loaders/`` next to the
+Originally lived under ``spectHR/dataset/loaders/`` next to the
 ``evt_loader`` that constructs it. Moved here so the ``spectHR``
 library has no PySide6 imports at module load - keeping the library
 usable in headless Python. The loader still reaches the dialog via a
-deferred import (``from spectUI.widgets.EventCodeWindow import EventCodeWindow``
+deferred import (``from spectUI.widgets.event_code_window import EventCodeWindow``
 inside the function body); pure-Python clients of the loader never hit
 this file.
 """

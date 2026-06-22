@@ -6,7 +6,7 @@ import pickle
 from pathlib import Path
 from typing import Any
 
-from spectHR.DataSet.loaders.registry import register_loader
+from spectHR.dataset.loaders.registry import register_loader
 from spectHR.logger import logger
 
 

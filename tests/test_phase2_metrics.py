@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from spectHR.session import Epoch, Events, Samples, Session
-from spectHR.DataSet.preprocessing import apply_breath_phases
+from spectHR.dataset.preprocessing import apply_breath_phases
 from spectHR.analysis.epoch_context import EpochContext
 from spectHR.analysis.icg_metrics import heather_index
 

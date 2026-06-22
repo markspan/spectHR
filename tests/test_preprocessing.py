@@ -3,7 +3,7 @@
 """
 Tests for the headless Session→Session pre-processing transforms.
 
-These live in :mod:`spectHR.DataSet.preprocessing` (no Qt), so unlike the
+These live in :mod:`spectHR.dataset.preprocessing` (no Qt), so unlike the
 widget tests they run directly in-process.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from spectHR.session import Epoch, Events, Intervals, Samples, Session
-from spectHR.DataSet.preprocessing import (
+from spectHR.dataset.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
     apply_breath_phases,
@@ -280,7 +280,7 @@ def test_breath_phases_noop_without_beats():
 
 def test_canonical_channels_alias_device_suffixed_and_icg():
     """ecg-[dev]/dzdt-[dev]/rsp-[dev] become accessible as ecg/icg/resp."""
-    from spectHR.DataSet.preprocessing import apply_canonical_channels
+    from spectHR.dataset.preprocessing import apply_canonical_channels
 
     t = np.arange(0.0, 5.0, 0.01)
     s = Session(name="vu", samples={
@@ -298,7 +298,7 @@ def test_canonical_channels_alias_device_suffixed_and_icg():
 def test_canonical_channels_noop_when_canonical_present():
     t = np.arange(0.0, 5.0, 0.01)
     s = Session(name="c", samples={"ecg": Samples(t, np.sin(t), "ecg")})
-    from spectHR.DataSet.preprocessing import apply_canonical_channels
+    from spectHR.dataset.preprocessing import apply_canonical_channels
     assert apply_canonical_channels(s) is s
 
 
@@ -335,7 +335,7 @@ def _accel_session(per_epoch_breaths=True):
 
 
 def test_accel_axes_resolved_and_pca():
-    from spectHR.DataSet.preprocessing import resolve_accel_axes
+    from spectHR.dataset.preprocessing import resolve_accel_axes
     from spectHR.signal.respiration import accel_to_respiration
     s = _accel_session()
     axes = resolve_accel_axes(s)

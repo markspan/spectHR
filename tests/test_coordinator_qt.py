@@ -136,7 +136,7 @@ prep._apply_add(5.4)                       # commits a new peak into session hrv
 assert hr._model.times.size == n_before + 1, "HR dock must reflect the edit at once"
 
 # --- HR breathing shading: inhalation phases drawn behind the trace --------
-from spectHR.DataSet.preprocessing import apply_breath_phases
+from spectHR.dataset.preprocessing import apply_breath_phases
 fs2 = 50.0
 t2 = np.arange(0.0, 60.0, 1.0 / fs2)
 peaks2 = np.arange(0.5, 60.0, 0.8)

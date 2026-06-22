@@ -1713,7 +1713,7 @@ def sample_entropy(series) -> float:
 
 After adding this file, `sample_entropy` appears as a column in the table widget, a column in `{basename}.csv`, and as `/{epoch}/.attrs["sample_entropy"]` in the HDF5 file, in all three places without any further code.
 
-New file formats can be added by registering a loader function with `@register_loader(".ext")` in `src/spectHR/DataSet/loaders/`.
+New file formats can be added by registering a loader function with `@register_loader(".ext")` in `src/spectHR/dataset/loaders/`.
 
 Fork the repository and open a pull request with a clear description of the change.
 

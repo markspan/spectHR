@@ -1,6 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-from spectUI.common.LineHandler import LineHandler
+from spectUI.common.line_handler import LineHandler
 from spectUI.common.plot_zoom import (
     YZoomMixin,
     Y_TOP_FLOOR,

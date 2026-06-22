@@ -1,4 +1,4 @@
-# `spectHR/DataSet/`: loaders and pre-processing
+# `spectHR/dataset/`: loaders and pre-processing
 
 This package turns a file on disk into an analysis-ready
 [`Session`](../session). It does **not** define the data model, those types

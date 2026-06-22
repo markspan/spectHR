@@ -41,10 +41,10 @@ from PySide6.QtWidgets import (
 from PySide6QtAds import CDockManager, CDockWidget, DockWidgetArea
 
 from spectHR._version import __version__
-from spectHR.DataSet.loaders import load as _load_session
+from spectHR.dataset.loaders import load as _load_session
 from spectHR.logger import logger
 from spectHR.session import Session
-from spectHR.DataSet.preprocessing import (
+from spectHR.dataset.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
     apply_breath_phases,
@@ -80,7 +80,7 @@ from spectUI.widgets import (
     TransferPlotWidget,
     TransferProfilePlotWidget,
 )
-from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
+from spectUI.widgets.workspace_editor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.timeline.base import TimelineView
 from spectUI.parameters import Parameters, populate_tree

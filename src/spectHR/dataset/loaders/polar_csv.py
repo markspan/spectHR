@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from spectHR.DataSet.loaders.registry import register_loader
+from spectHR.dataset.loaders.registry import register_loader
 from spectHR.logger import logger
 
 
@@ -20,7 +20,7 @@ def load_polar_raw_csv(path: Path, **kwargs) -> "Session":
         - 'ecg [uV]'
     """
     from spectHR.session import Session, Samples
-    from spectHR.DataSet.loaders._epochs import build_epochs
+    from spectHR.dataset.loaders._epochs import build_epochs
 
     logger.info(f"Loading Polar raw CSV: {path}")
 

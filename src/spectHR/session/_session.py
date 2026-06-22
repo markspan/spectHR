@@ -178,7 +178,7 @@ class Session:
     # These resolve a channel by its *canonical* key (plus a couple of close
     # synonyms).  Device-suffixed keys (``ecg-[vuams]``, ``dzdt-[…]``) are
     # aliased onto the canonical keys once, early in the load pipeline, by
-    # :func:`spectHR.DataSet.preprocessing.apply_canonical_channels`; the
+    # :func:`spectHR.dataset.preprocessing.apply_canonical_channels`; the
     # device-aware resolvers it uses (``resolve_ecg`` / ``resolve_resp`` / …)
     # are the layer that knows the device-naming conventions.  After that step
     # these getters are all downstream code needs.

@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from spectHR.session import AnalysisConfig, Epoch, Events, Samples, Session
-from spectHR.DataSet.preprocessing import apply_breath_phases
+from spectHR.dataset.preprocessing import apply_breath_phases
 from spectHR.analysis.exporter import (
     EpochExporter,
     write_results_csv,

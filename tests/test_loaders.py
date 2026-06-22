@@ -7,7 +7,7 @@ synthetic fixtures, so they verify the binary NFF reader and the two-phase EVT
 parser end to end.
 
 Both example ``.evt`` files contain more than two distinct non-R-top event
-codes, so :func:`spectHR.DataSet.loaders.evt_loader._parse_evt` opens the
+codes, so :func:`spectHR.dataset.loaders.evt_loader._parse_evt` opens the
 ``EventCodeWindow`` Qt dialog to ask which codes mark epoch boundaries.  The
 ``stub_event_code_window`` fixture replaces that dialog with a headless no-op
 so the tests can run without a display.
@@ -22,8 +22,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from spectHR.DataSet.loaders import load
-from spectHR.DataSet.loaders.nff_loader import TNFF
+from spectHR.dataset.loaders import load
+from spectHR.dataset.loaders.nff_loader import TNFF
 from spectHR.session import Session
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "ExampleData" / "data"
@@ -50,12 +50,12 @@ def stub_event_code_window(monkeypatch):
     spectui.__path__ = []
     widgets  = types.ModuleType("spectUI.widgets")
     widgets.__path__ = []
-    leaf     = types.ModuleType("spectUI.widgets.EventCodeWindow")
+    leaf     = types.ModuleType("spectUI.widgets.event_code_window")
     leaf.EventCodeWindow = _FakeEventCodeWindow
 
     monkeypatch.setitem(sys.modules, "spectUI",                          spectui)
     monkeypatch.setitem(sys.modules, "spectUI.widgets",                  widgets)
-    monkeypatch.setitem(sys.modules, "spectUI.widgets.EventCodeWindow",  leaf)
+    monkeypatch.setitem(sys.modules, "spectUI.widgets.event_code_window",  leaf)
     return _FakeEventCodeWindow
 
 

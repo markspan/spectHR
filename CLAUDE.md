@@ -89,7 +89,7 @@ normalisation, downsampling for rendering) but never signal processing.
 
 ## UI layout (`src/spectUI/`)
 
-- `MainWindow.py`, wires every dock; `_LoadWorker` runs the load+preprocess
+- `main_window.py`, wires every dock; `_LoadWorker` runs the load+preprocess
   pipeline on a background thread; `DataCoordinator` (`coordinator.py`) does
   dependency-aware refresh across docks via a `DataChange` flag mask.
 - Three dock families:
@@ -103,7 +103,7 @@ normalisation, downsampling for rendering) but never signal processing.
   - **Standalone** (`widgets/poincare.py`, `widgets/epochs.py`,
     `widgets/results.py`).
 
-## Preprocessing pipeline (`spectHR/DataSet/preprocessing.py`)
+## Preprocessing pipeline (`spectHR/dataset/preprocessing.py`)
 
 Loader-agnostic `Session → Session` transforms, applied in `_LoadWorker.run`
 (raw files only; a cached `.pkl` is trusted as already-processed):

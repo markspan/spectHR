@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-from spectHR.DataSet.loaders.registry import register_loader
+from spectHR.dataset.loaders.registry import register_loader
 from spectHR.logger import logger
 
 
@@ -263,7 +263,7 @@ def load_nff_session(path: Path, **kwargs) -> "Session":
     ``session.with_detected_beats()`` to detect R-peaks.
     """
     from spectHR.session import Session, Samples
-    from spectHR.DataSet.loaders._epochs import build_epochs
+    from spectHR.dataset.loaders._epochs import build_epochs
     samples, _calibrated = _load_nff_samples(path)
 
     # Normalize: shift times so the earliest channel starts at 0

@@ -26,8 +26,8 @@ EventCodeWindow
 LogWidget
     Scrollable log output dock.
 """
-from spectUI.widgets.EventCodeWindow import EventCodeWindow
-from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
+from spectUI.widgets.event_code_window import EventCodeWindow
+from spectUI.widgets.workspace_editor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.bp import BPSeriesWidget
 from spectUI.widgets.epochs import EpochEditorWidget
 from spectUI.widgets.grid import (

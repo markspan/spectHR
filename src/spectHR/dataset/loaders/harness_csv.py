@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from spectHR.DataSet.loaders.registry import register_loader
+from spectHR.dataset.loaders.registry import register_loader
 from spectHR.logger import logger
 
 _MISSING_SENTINEL = -1
@@ -23,7 +23,7 @@ def load_harness_raw_csv(path: Path, **kwargs) -> "Session":
         - ``ECG Data``  - raw ECG amplitude, ``-1`` for missing; scaled by 40
     """
     from spectHR.session import Session, Samples
-    from spectHR.DataSet.loaders._epochs import build_epochs
+    from spectHR.dataset.loaders._epochs import build_epochs
 
     logger.info(f"Loading raw Harness CSV: {path}")
 

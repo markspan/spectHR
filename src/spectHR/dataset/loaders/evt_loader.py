@@ -7,9 +7,9 @@ from typing import Any
 
 import numpy as np
 
-from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.DataSet.loaders.nff_loader import _load_nff_samples
-from spectHR.DataSet.loaders.code_selection import resolve_epoch_codes
+from spectHR.dataset.loaders.registry import register_loader
+from spectHR.dataset.loaders.nff_loader import _load_nff_samples
+from spectHR.dataset.loaders.code_selection import resolve_epoch_codes
 from spectHR.logger import logger
 
 _IBI_SCALE_TO_SECONDS = 10_000.0
@@ -20,7 +20,7 @@ _BP_SCALE_TO_MMHG = 10.0
 def load_evt(path: Path, **kwargs: Any) -> "Session":
     """Load a CARSPAN .evt file (+ paired .nff if present) as a Session."""
     from spectHR.session import Session, Events, Samples
-    from spectHR.DataSet.loaders._epochs import build_epochs
+    from spectHR.dataset.loaders._epochs import build_epochs
 
     evt_path = Path(path)
     logger.info(f"Loading EVT: {evt_path}")

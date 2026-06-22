@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 
 from spectHR.session import Session, Samples
-from spectHR.DataSet.loaders._epochs import build_epochs
-from spectHR.DataSet.loaders.registry import register_loader
+from spectHR.dataset.loaders._epochs import build_epochs
+from spectHR.dataset.loaders.registry import register_loader
 from spectHR.logger import logger
 
 
@@ -279,7 +279,7 @@ def load_edf(path: Path, **kwargs) -> Session:
     Both respiration candidates are stored so the active ``rsp-[vuams]``
     channel can be switched after load (workspace
     ``RespirationAnalysis.rsp_source`` = ``"icg"`` | ``"accelerometer"``,
-    applied by ``spectHR.DataSet.preprocessing.apply_rsp_source``).  The
+    applied by ``spectHR.dataset.preprocessing.apply_rsp_source``).  The
     ``rsp_source`` keyword argument overrides the default at load time for
     headless use.  The default is ICG / thoracic impedance (matches VU-AMS).
 
@@ -356,7 +356,7 @@ def load_edf(path: Path, **kwargs) -> Session:
     #
     # Both candidates are stored so the choice is reconfigurable after load
     # (workspace ``RespirationAnalysis.rsp_source``, applied by the UI via
-    # ``spectHR.DataSet.preprocessing.apply_rsp_source``).  The active rsp-[vuams] defaults to the ICG
+    # ``spectHR.dataset.preprocessing.apply_rsp_source``).  The active rsp-[vuams] defaults to the ICG
     # (impedance) signal → accelerometer → DZDT.  The ``rsp_source`` kwarg,
     # when given, overrides the default at load time without the UI.
     # ------------------------------------------------------------------

@@ -34,13 +34,13 @@ HEADLESS_MODULES = [
     "spectHR",
     "spectHR.config",
     "spectHR.analysis",
-    "spectHR.DataSet",
-    "spectHR.DataSet.preprocessing",
-    "spectHR.DataSet.loaders",
-    "spectHR.DataSet.loaders.edf_loader",
-    "spectHR.DataSet.loaders.evt_loader",
-    "spectHR.DataSet.loaders.nff_loader",
-    "spectHR.DataSet.loaders.xdf_loader",
+    "spectHR.dataset",
+    "spectHR.dataset.preprocessing",
+    "spectHR.dataset.loaders",
+    "spectHR.dataset.loaders.edf_loader",
+    "spectHR.dataset.loaders.evt_loader",
+    "spectHR.dataset.loaders.nff_loader",
+    "spectHR.dataset.loaders.xdf_loader",
 ]
 
 _CHECK_SRC = """

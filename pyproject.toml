@@ -41,7 +41,7 @@ find = { where = ["src"] , include = ["spectUI*", "spectHR*"]}
 version = { attr = "spectHR._version.__version__" }
  
 [project.scripts]
-specthr = "spectUI.MainWindow:main"
+specthr = "spectUI.main_window:main"
 
 [project.urls]
 Homepage = "https://github.com/MarkSpan/spectHR"

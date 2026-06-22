@@ -95,7 +95,7 @@ assert w.canvas is not first_canvas
 #    The load worker (apply_beat_detection) resolves "ecg-[...]" by prefix,
 #    prefilters and detects beats; the model then resolves "ecg-[...]" /
 #    "RSP-[...]" for display so the ECG renders and R-peaks appear.
-from spectHR.DataSet.preprocessing import apply_beat_detection
+from spectHR.dataset.preprocessing import apply_beat_detection
 
 fs = 130.0
 t = np.arange(0.0, 30.0, 1.0 / fs)
