@@ -6,8 +6,9 @@ Offscreen tests for the Results metric help links (``spectUI.metric_links``).
 Runs in a fresh subprocess (Qt must not enter the shared pytest process, per
 ``test_headless_imports``; importing ``spectUI`` pulls Qt).  Covers column ->
 function resolution, the wrapper-to-algorithm call chain, the GitHub URLs, the
-packaged-build static-map fallback, and the README / static-map staying in sync
-with the registry.
+description link still working with no checkout (the compiled-build case, where
+the source link is absent), and the README reference staying in sync with the
+registry.
 """
 from __future__ import annotations
 
@@ -70,14 +71,7 @@ for name in names:
     assert ML.metric_doc_url(name) is not None
     assert ML.metric_source_url(name) is not None
 
-# --- generated artefacts in sync with the registry -------------------------
-from spectUI._metric_sources import METRIC_ALGORITHM
-for name in names:
-    assert name in METRIC_ALGORITHM, name
-    st = METRIC_ALGORITHM[name]
-    assert st["chain"] == [n for n, _ in ML.metric_algorithm_chain(name)]
-    assert st["file"] and st["file"].startswith("src/spectHR/")
-
+# --- README reference in sync with the registry ----------------------------
 root = ML.repo_root()
 readme = (root / ML.ANALYSIS_README).read_text(encoding="utf-8")
 assert DG.extract_section(readme) is not None, "README markers missing"
@@ -86,18 +80,14 @@ assert DG.extract_section(readme).strip() == DG.render_section().strip(), (
     "run `python -m spectUI.metric_docgen`")
 for name in names:
     assert ("### %s\n" % name) in readme, name
-module_text = (root / ML.SOURCES_MODULE).read_text(encoding="utf-8")
-assert module_text == DG.render_sources_module(), (
-    "spectUI/_metric_sources.py is stale; run `python -m spectUI.metric_docgen`")
 
-# --- packaged build: no checkout, compiled modules (no live source) --------
+# --- compiled build: no checkout, compiled modules (no live source) --------
+# The source link is best-effort and simply absent there; the description link
+# keeps working, so the Results menu still has its one entry.
 ML.repo_root = lambda: None
 ML._ast_of = lambda fn: None
 ML.github_base.cache_clear()
-assert ML.metric_source_url("bp_sbp") == (
-    "https://github.com/markspan/spectHR/blob/V2/src/spectHR/analysis/bp_metrics.py")
-assert [n for n, _ in ML.metric_algorithm_chain("bp_sbp")] == [
-    "bp_sbp", "_bp_metric", "bp_beat_parameters"]
+assert ML.metric_source_url("bp_sbp") is None
 assert ML.metric_doc_url("bp_sbp").endswith("README.md#bp_sbp")
 
 print("LINKS_OK")
