@@ -566,23 +566,19 @@ class WorkspaceView:
     @property
     def psd_ci_alpha(self) -> float:
         """Confidence-interval alpha (default 0.05)."""
-        fa = self._ws.get("FrequencyAnalysis", {}) or {}
-        return float(fa.get("confidence_interval_alpha", 0.05))
+        return psd_ci_alpha(self._ws)
 
     @property
     def display_bands(self) -> Dict[str, dict]:
         """Raw ``{name: {low, high, color, …}}`` bands dict for plot rendering."""
-        return dict(
-            (self._ws.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
-        )
+        return display_bands_from_workspace(self._ws)
 
     # ---- calibration ------------------------------------------------
 
     @property
     def bp_calibration(self) -> "tuple[float, float]":
         """``(bp_scale, bp_zero)`` for manual BP calibration."""
-        cal = self._ws.get("Calibration", {}) or {}
-        return float(cal.get("bp_scale", 0.125)), float(cal.get("bp_zero", 0.0))
+        return bp_calibration_from_workspace(self._ws)
 
     # ---- respiration / RSA ------------------------------------------
 

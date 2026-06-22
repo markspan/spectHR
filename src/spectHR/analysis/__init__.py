@@ -13,8 +13,12 @@ decorated with ``@epoch_metric`` is then automatically discovered by
 Direct usage
 ------------
 >>> import spectHR.analysis as hrv
->>> hrv.rmssd(series)        # call a metric directly
->>> hrv.get_metrics()        # {name: fn} dict of all registered metrics
+>>> hrv.get_metrics()              # {name: fn} dict of all registered metrics
+>>> hrv.ecg_metrics.rmssd(series)  # call a metric from its module
+
+Metrics are not re-exported at the package root; reach them through their
+module (``hrv.ecg_metrics.rmssd``, ``hrv.bp_metrics.bp_sbp``, ...) or look them
+up by name via :func:`get_metrics`.
 """
 
 from spectHR.analysis.registry import (
