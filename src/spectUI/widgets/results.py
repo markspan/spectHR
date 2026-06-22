@@ -190,15 +190,25 @@ class ResultsTableWidget(QWidget):
 
     @staticmethod
     def _column_tooltip(col: str, docs: dict[str, str]) -> str | None:
-        """Return a tooltip for *col*, with fallback to suffix pattern matching."""
+        """Return the hover tooltip for column *col*.
+
+        A single metric uses its own docstring.  A data-driven group column
+        (``{band}_power`` / ``{band}_pct`` / ``{band}_peak_hz``) resolves to the
+        ``@epoch_metric_group`` that emits it and uses *that* function's
+        docstring, so the help comes from one source.  The transfer group is the
+        exception: it emits three distinct scalars from one function, so a single
+        docstring cannot describe each column and per-suffix text is used.
+        """
         if col in docs:
             return docs[col]
         from spectHR.analysis.transfer_metrics import TRANSFER_COLUMN_TOOLTIPS
-        from spectHR.analysis.ecg_metrics import BAND_POWER_COLUMN_TOOLTIP
-        for lookup in (TRANSFER_COLUMN_TOOLTIPS, BAND_POWER_COLUMN_TOOLTIP):
-            for suffix, tip in lookup.items():
-                if col.endswith(suffix):
-                    return tip
+        for suffix, tip in TRANSFER_COLUMN_TOOLTIPS.items():
+            if col.endswith(suffix):
+                return tip
+        from spectUI.metric_links import resolve_metric_function
+        resolved = resolve_metric_function(col)
+        if resolved is not None:
+            return docs.get(resolved[0])
         return None
 
     def _column_for_section(self, section: int) -> str | None:

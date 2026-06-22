@@ -111,7 +111,7 @@ __all__ = [
     "fullrange_power", "vlf_power", "lf_power", "hf_power",
     "lf_hf_ratio", "band_powers",
     "total_power", "lf_nu", "hf_nu", "ln_hf", "band_rel", "band_peak",
-    "STANDARD_BAND_POWER_COLUMNS", "BAND_POWER_COLUMN_TOOLTIP",
+    "STANDARD_BAND_POWER_COLUMNS",
 ]
 
 
@@ -540,20 +540,6 @@ def twave_amplitude(ctx) -> float:
 # @epoch_metric_group), so this set is empty.  Kept for import compatibility.
 STANDARD_BAND_POWER_COLUMNS: frozenset[str] = frozenset()
 
-# Suffix → tooltip for dynamically-named band-power columns.
-# The Results widget uses this to annotate {band}_power column headers whose
-# names depend on the workspace band configuration and are not known at import.
-BAND_POWER_COLUMN_TOOLTIP: dict[str, str] = {
-    "_power": (
-        "Spectral power integrated over this frequency band (rectangular "
-        "summation on the display-grid spectrum). Units are mMI² by default "
-        "(dimensionless, normalised by squared mean heart rate) or ms² when "
-        "the Welch units setting is switched. Computed by the active PSD "
-        "method (CARSPAN, Welch, or Lomb-Scargle)."
-    ),
-}
-
-
 def _resolve_method(series, psd_method):
     """Pick the PSD method for *series*.
 
@@ -653,7 +639,12 @@ def lf_hf_ratio(series, psd_method=None) -> float:
 
 @epoch_metric_group
 def band_powers(ctx) -> dict[str, float]:
-    """``{band}_power`` column for every configured frequency band.
+    """``{band}_power``: spectral power integrated over each configured band.
+
+    Rectangular summation of the IBI spectrum over the band; units are mMI² by
+    default (dimensionless, normalised by squared mean heart rate) or ms² with
+    the Welch units setting, computed by the active PSD method (CARSPAN, Welch
+    or Lomb-Scargle).
 
     Emits one ``{band_name.lower()}_power`` column per band in the configured
     PSD method.  Because all band powers flow through this group metric, the

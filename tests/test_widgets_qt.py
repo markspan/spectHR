@@ -189,6 +189,12 @@ tips = {res.table.horizontalHeaderItem(c).text():
 assert "rmssd" in tips and (
     "Root mean square of successive differences" in tips["rmssd"]
 ), "header hover must show the metric docstring, not just the hint"
+# Data-driven group columns get a tooltip too: band columns from their group's
+# docstring, transfer columns from the per-suffix help.
+_docs = res._metric_docs()
+for _col in ("lf_power", "lf_pct", "lf_peak_hz", "lf_tf_modulus",
+             "lf_tf_coherence", "lf_tf_phase_w"):
+    assert res._column_tooltip(_col, _docs), f"no tooltip for dynamic column {_col}"
 
 # --- PSD grid: per-epoch spectra computed off-thread, then gridded ---------
 def make_psd_session():

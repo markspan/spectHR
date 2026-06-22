@@ -213,7 +213,7 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`band_peak`)
 
 ### band_powers
 
-``{band}_power`` column for every configured frequency band.
+``{band}_power``: spectral power integrated over each configured band.
 
 Group metric: emits several data-driven columns.
 
