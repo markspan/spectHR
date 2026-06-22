@@ -194,8 +194,8 @@ def _compute_RSP_signal(
 @register_loader(".xdf")
 def load_xdf(path: Path, **kwargs) -> "Session":
     """Load a Polar/LSL .xdf file as a Session."""
-    from spectHR.session import Session, Samples
     from spectHR.dataset.loaders._epochs import build_epochs
+    from spectHR.session import Samples, Session
 
     logger.info(f"Loading XDF: {path}")
     streams, _ = pyxdf.load_xdf(str(path))

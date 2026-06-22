@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from spectHR.logger import logger
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QDialog,
@@ -47,6 +46,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from spectHR.logger import logger
 
 # ---------------------------------------------------------------------------
 # Built-in perspective names

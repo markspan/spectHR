@@ -23,9 +23,11 @@ from pathlib import Path
 from spectHR.analysis.registry import get_metric_groups, get_metrics
 from spectUI.metric_links import (
     ANALYSIS_README,
-    _function_location as _location,
     metric_algorithm_chain,
     repo_root,
+)
+from spectUI.metric_links import (
+    _function_location as _location,
 )
 
 START_MARKER = "<!-- METRIC-REFERENCE:START -->"

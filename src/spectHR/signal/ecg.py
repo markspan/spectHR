@@ -15,7 +15,6 @@ import scipy.stats
 
 from spectHR.logger import logger
 
-
 __all__ = ["detect_ecg_polarity"]
 
 # filtfilt with a 3rd-order Butterworth (len(b) = len(a) = 4) needs at least

@@ -25,11 +25,10 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
+from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD, PsdMethod
+from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.logger import logger
 from spectHR.signal.respiration import mean_breath_frequency_hz
-from spectHR.analysis.psd._config import PsdMethod, _DEFAULT_PSD_METHOD
-from spectHR.analysis.psd._engine import PSDEngine
-
 
 __all__ = ["SpectrogramData", "fetch_spectrogram"]
 

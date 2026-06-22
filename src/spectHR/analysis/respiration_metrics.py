@@ -60,7 +60,6 @@ from spectHR.analysis._beat_sampling import nanmean, rpeak_sample_indices
 from spectHR.analysis.registry import epoch_metric
 from spectHR.signal.respiration import mean_breath_frequency_hz
 
-
 __all__ = [
     "resp_freq",
     "resp_rate_bpm",

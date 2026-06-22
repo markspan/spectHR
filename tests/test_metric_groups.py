@@ -19,27 +19,24 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from conftest import WORKSPACE_BANDS, make_spectral_cs
+from spectHR.analysis.ecg_metrics import (
+    band_powers,
+)
+from spectHR.analysis.epoch_context import EpochContext
+from spectHR.analysis.profile import profile_summary_scalars
 from spectHR.analysis.psd import BandSpec, PsdMethod
 from spectHR.analysis.psd._utils import ProfileResult
-from spectHR.analysis.epoch_context import EpochContext
-from spectHR.session import AnalysisConfig
 from spectHR.analysis.registry import (
     epoch_metric_group,
     get_metric_groups,
 )
-from spectHR.analysis.ecg_metrics import (
-    band_powers,
-    STANDARD_BAND_POWER_COLUMNS,
-)
-from spectHR.analysis.profile import profile_summary_scalars
 from spectHR.analysis.transfer import (
     BandTransfer,
     TransferResult,
     transfer_summary_scalars,
 )
-
-from conftest import WORKSPACE_BANDS, make_spectral_cs
-
+from spectHR.session import AnalysisConfig
 
 # ===========================================================================
 # Group-metric registry

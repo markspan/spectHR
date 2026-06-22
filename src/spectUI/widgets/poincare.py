@@ -169,7 +169,7 @@ class PoincareWidget(QWidget):
 
         hi = 0.0
         for i, (name, ep) in enumerate(self._session.epochs.items()):
-            if not getattr(ep, "active", True): 
+            if not getattr(ep, "active", True):
                 continue
             ev = hrv.window(float(ep.start), float(ep.end))
             x, y, t = poincare_points(ev)

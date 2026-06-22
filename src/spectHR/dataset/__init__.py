@@ -16,16 +16,16 @@ This package turns files on disk into a :class:`~spectHR.session.Session`:
 that ``import spectHR.dataset`` for both the loaders and the types; ``session``
 is their single home.
 """
+from spectHR.dataset.loaders import load, register_loader
 from spectHR.session import (
-    Samples,
+    AnalysisConfig,
+    Epoch,
     Events,
     Intervals,
-    Epoch,
-    Session,
-    AnalysisConfig,
     MetricsTable,
+    Samples,
+    Session,
 )
-from spectHR.dataset.loaders import load, register_loader
 
 __all__ = [
     "Samples",

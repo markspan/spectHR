@@ -20,11 +20,10 @@ import sys
 import time
 from pathlib import Path
 
-from platformdirs import user_config_dir
-
 import numpy as np
 import qtawesome as qta
-from PySide6.QtCore import Qt, QObject, QSize, QThread, QTimer, Signal
+from platformdirs import user_config_dir
+from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,8 +41,6 @@ from PySide6QtAds import CDockManager, CDockWidget, DockWidgetArea
 
 from spectHR._version import __version__
 from spectHR.dataset.loaders import load as _load_session
-from spectHR.logger import logger
-from spectHR.session import Session
 from spectHR.dataset.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
@@ -56,7 +53,10 @@ from spectHR.dataset.preprocessing import (
     retrigger_beats,
     retrigger_beats_per_epoch,
 )
-
+from spectHR.logger import logger
+from spectHR.session import Session
+from spectUI.coordinator import DataChange, DataCoordinator
+from spectUI.parameters import Parameters, populate_tree
 from spectUI.perspectives import (
     BUILTIN_COMPARE,
     BUILTIN_DEFAULT,
@@ -65,7 +65,6 @@ from spectUI.perspectives import (
 )
 from spectUI.plot_worker import DockScheduler
 from spectUI.settings import AppSettings
-from spectUI.coordinator import DataChange, DataCoordinator
 from spectUI.widgets import (
     BPSeriesWidget,
     EpochEditorWidget,
@@ -80,10 +79,9 @@ from spectUI.widgets import (
     TransferPlotWidget,
     TransferProfilePlotWidget,
 )
-from spectUI.widgets.workspace_editor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.timeline.base import TimelineView
-from spectUI.parameters import Parameters, populate_tree
+from spectUI.widgets.workspace_editor import DirectorySelectorDialog, ParametersEditorDialog
 
 # ---------------------------------------------------------------------------
 # Dock object-name constants
@@ -603,6 +601,7 @@ class MainWindow(QMainWindow):
         import re
 
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as _Canvas
+
         from spectUI.widgets.plot_export_dialog import PlotExportDialog
 
         def _slug(text) -> str:

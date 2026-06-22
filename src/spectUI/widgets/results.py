@@ -136,10 +136,13 @@ class ResultsTableWidget(QWidget):
         if not directory:
             return
 
-        from spectHR.analysis.exporter import (
-            EpochExporter, write_results_csv, write_results_h5,
-        )
         import re
+
+        from spectHR.analysis.exporter import (
+            EpochExporter,
+            write_results_csv,
+            write_results_h5,
+        )
         base = re.sub(r"[^\w.-]+", "_", self._session.name or "results") or "results"
         try:
             table = self._session.epochs_table(self._analysis_config())

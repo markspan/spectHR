@@ -22,8 +22,8 @@ def load_harness_raw_csv(path: Path, **kwargs) -> "Session":
         - ``ms``        - timestamp in milliseconds, ``-1`` for missing
         - ``ECG Data``  - raw ECG amplitude, ``-1`` for missing; scaled by 40
     """
-    from spectHR.session import Session, Samples
     from spectHR.dataset.loaders._epochs import build_epochs
+    from spectHR.session import Samples, Session
 
     logger.info(f"Loading raw Harness CSV: {path}")
 

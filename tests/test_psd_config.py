@@ -19,14 +19,12 @@ import pytest
 
 from spectHR.analysis.psd import (
     BandSpec,
+    CarspanOptions,
+    LombscargleOptions,
     PsdMethod,
     WelchOptions,
-    LombscargleOptions,
-    CarspanOptions,
 )
-
 from spectHR.config import psd_method_from_workspace
-
 
 # ===========================================================================
 # BandSpec

@@ -18,11 +18,11 @@ import numpy as np
 
 from spectHR.analysis.icg_metrics import (
     _b_point_index,
-    pep_ensemble,
     pep_b_ms,
     pep_c_ms,
-    pep_q_ms,
+    pep_ensemble,
     pep_n_beats,
+    pep_q_ms,
 )
 
 
@@ -94,9 +94,9 @@ def test_b_point_guard_flows_through_epoch_context():
     yields two different B-points / PEP values for the same ICG.
     """
     from types import SimpleNamespace
-    from spectHR.session import AnalysisConfig
 
     from spectHR.analysis.epoch_context import EpochContext
+    from spectHR.session import AnalysisConfig
 
     rpeaks, t, dz, ecg = _synthetic_icg()
     view = SimpleNamespace(

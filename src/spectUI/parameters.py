@@ -24,8 +24,7 @@ import copy
 import json
 from pathlib import Path
 
-from platformdirs import user_cache_dir, user_config_dir, user_documents_dir
-
+from platformdirs import user_cache_dir, user_documents_dir
 
 _REPLACE_WHOLE = {"bands"}  # keys whose dict value is an atomic table, not merged
 

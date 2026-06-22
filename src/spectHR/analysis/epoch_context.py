@@ -48,7 +48,6 @@ import numpy as np
 
 from spectHR.session._session import AnalysisConfig
 
-
 # ------------------------------------------------------------------ #
 # Protocol, documents the series interface @epoch_metric relies on  #
 # ------------------------------------------------------------------ #

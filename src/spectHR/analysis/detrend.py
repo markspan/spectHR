@@ -37,7 +37,6 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 
-
 __all__ = ["smoothness_priors_detrend"]
 
 

@@ -34,8 +34,7 @@ from __future__ import annotations
 import numpy as np
 
 # Algorithm half lives in spectHR; re-exported so renderers import it here.
-from spectHR.analysis.spectrogram import SpectrogramData, fetch_spectrogram
-
+from spectHR.analysis.spectrogram import SpectrogramData
 
 # ---------------------------------------------------------------------------
 # Public constants

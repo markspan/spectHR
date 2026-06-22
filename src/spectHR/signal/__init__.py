@@ -19,16 +19,16 @@ The public functions are re-exported here so callers can ``from spectHR.signal
 import detect_rpeaks`` without naming the submodule.  (Cross-cutting logging
 lives in :mod:`spectHR.logger`, not here, it is not signal processing.)
 """
-from spectHR.signal.filters import butterworth_filter                      # noqa: F401
-from spectHR.signal.decimation import decimate_minmax                      # noqa: F401
-from spectHR.signal.ecg import detect_ecg_polarity                         # noqa: F401
-from spectHR.signal.rpeak import detect_rpeaks                             # noqa: F401
-from spectHR.signal.ibi_classification import classify_ibi                 # noqa: F401
-from spectHR.signal.respiration import (                                    # noqa: F401
+from spectHR.signal.decimation import decimate_minmax  # noqa: F401
+from spectHR.signal.ecg import detect_ecg_polarity  # noqa: F401
+from spectHR.signal.filters import butterworth_filter  # noqa: F401
+from spectHR.signal.ibi_classification import classify_ibi  # noqa: F401
+from spectHR.signal.respiration import (  # noqa: F401
     accel_to_respiration,
-    segment_respiration,
     mean_breath_frequency_hz,
+    segment_respiration,
 )
+from spectHR.signal.rpeak import detect_rpeaks  # noqa: F401
 
 __all__ = [
     "butterworth_filter",

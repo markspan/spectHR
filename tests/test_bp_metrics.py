@@ -418,7 +418,7 @@ def test_rsa_rejection_from_workspace_none_mode():
 
 
 def test_rsa_rejection_from_workspace_strict_mode():
-    from spectHR.config import rsa_rejection_from_workspace, _STRICT_IBI_DEV, _STRICT_RATE_DEV
+    from spectHR.config import _STRICT_IBI_DEV, _STRICT_RATE_DEV, rsa_rejection_from_workspace
     ibi_dev, rate_dev = rsa_rejection_from_workspace(
         {"RespirationAnalysis": {"rsa_rejection_mode": "strict"}}
     )

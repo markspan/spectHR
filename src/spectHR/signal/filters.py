@@ -23,7 +23,6 @@ import scipy.signal as signal
 
 from spectHR.logger import logger
 
-
 __all__ = ["butterworth_filter"]
 
 

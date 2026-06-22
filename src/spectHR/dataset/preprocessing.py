@@ -33,9 +33,9 @@ from __future__ import annotations
 import numpy as np
 
 from spectHR.config import CardioParams, WorkspaceView
+from spectHR.logger import logger
 from spectHR.session import Events, Intervals, Samples, Session
 from spectHR.signal.ecg import detect_ecg_polarity
-from spectHR.logger import logger
 from spectHR.signal.respiration import (
     accel_to_respiration,
     segment_respiration,

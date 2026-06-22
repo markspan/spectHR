@@ -262,8 +262,8 @@ def load_nff_session(path: Path, **kwargs) -> "Session":
     The resulting session has no epochs or events; call
     ``session.with_detected_beats()`` to detect R-peaks.
     """
-    from spectHR.session import Session, Samples
     from spectHR.dataset.loaders._epochs import build_epochs
+    from spectHR.session import Samples, Session
     samples, _calibrated = _load_nff_samples(path)
 
     # Normalize: shift times so the earliest channel starts at 0

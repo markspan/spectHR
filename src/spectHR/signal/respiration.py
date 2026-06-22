@@ -24,10 +24,9 @@ from typing import Optional, Tuple
 
 import numpy as np
 from numpy.linalg import eigh
-from scipy.signal import butter, sosfiltfilt, savgol_filter, find_peaks, buttord
+from scipy.signal import butter, buttord, find_peaks, savgol_filter, sosfiltfilt
 
 from spectHR.logger import logger
-
 
 __all__ = [
     "segment_respiration",

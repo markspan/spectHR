@@ -7,8 +7,6 @@ Shown after a results export when the analyst opts to export the figures too.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -26,7 +24,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 
 # (label, file extension, matplotlib format string, fixed_dpi)
 # fixed_dpi=True means the DPI spinner is relevant; SVG is vector-only so DPI

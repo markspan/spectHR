@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from spectUI.common.line_handler import LineHandler
 from spectUI.common.plot_zoom import (
-    YZoomMixin,
     Y_TOP_FLOOR,
     Y_ZOOM_STEP_DOWN,
     Y_ZOOM_STEP_UP,
+    YZoomMixin,
 )
 from spectUI.common.uitools import (
     OverviewWindow,

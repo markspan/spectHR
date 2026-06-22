@@ -21,9 +21,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QMainWindow
-
 from PySide6QtAds import CDockManager
-
 
 _ORG = "spectHR"
 _APP = "spectHR"

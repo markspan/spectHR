@@ -71,7 +71,6 @@ import numpy as np
 
 from spectHR.analysis.registry import epoch_metric
 
-
 __all__ = [
     "pep_per_beat", "pep_ensemble", "pep",
     "pep_b_ms", "pep_c_ms", "pep_q_ms", "pep_n_beats",

@@ -12,12 +12,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from spectHR.analysis.psd import BandSpec, PsdMethod
-from spectHR.analysis.epoch_context import EpochContext
-from spectHR.analysis import ecg_metrics as M
-from spectHR.session import AnalysisConfig
-
 from conftest import WORKSPACE_BANDS, make_cs, make_spectral_cs, make_two_sinusoid_cs
+from spectHR.analysis import ecg_metrics as M
+from spectHR.analysis.epoch_context import EpochContext
+from spectHR.analysis.psd import PsdMethod
+from spectHR.session import AnalysisConfig
 
 
 def _method():

@@ -91,7 +91,6 @@ from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.registry import epoch_metric, epoch_metric_group
 
-
 __all__ = [
     # time-domain
     "count", "mean", "median", "min", "max", "rmssd", "sdnn", "sdsd",

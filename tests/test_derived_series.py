@@ -5,13 +5,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from spectHR.session import Events
 from spectHR.analysis.derived_series import (
     heart_rate_series,
     poincare_descriptors,
     poincare_pairs,
     poincare_points,
 )
+from spectHR.session import Events
 
 
 def _events(ibi_ms, labels=None) -> Events:

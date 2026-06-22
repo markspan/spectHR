@@ -47,3 +47,26 @@ specthr = "spectUI.main_window:main"
 Homepage = "https://github.com/MarkSpan/spectHR"
 Repository = "https://github.com/MarkSpan/spectHR"
 Issues = "https://github.com/MarkSpan/spectHR/issues"
+
+[tool.ruff]
+target-version = "py312"   # code uses 3.12 f-string syntax; release builds on 3.14
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N"]
+ignore = [
+    # Scientific maths notation (matrices / constants: H, T, N, Q, B, C, ...)
+    # reads better than snake_case here; PEP 8 itself permits single-cap names.
+    "N803",  # argument name not lowercase
+    "N806",  # local variable not lowercase
+    # Qt conventions: signals are camelCase and method overrides must match Qt
+    # (mousePressEvent, sizeHint, ...), so they cannot be snake_case.
+    "N802",  # function name not lowercase
+    "N815",  # mixedCase class attribute
+    # spectHR / spectUI are the deliberate brand / distribution package names.
+    "N999",  # invalid module name
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["spectHR", "spectUI"]

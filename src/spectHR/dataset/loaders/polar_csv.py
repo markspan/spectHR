@@ -19,8 +19,8 @@ def load_polar_raw_csv(path: Path, **kwargs) -> "Session":
         - 'timestamp [ms]'
         - 'ecg [uV]'
     """
-    from spectHR.session import Session, Samples
     from spectHR.dataset.loaders._epochs import build_epochs
+    from spectHR.session import Samples, Session
 
     logger.info(f"Loading Polar raw CSV: {path}")
 

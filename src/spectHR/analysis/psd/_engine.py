@@ -27,27 +27,28 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
-from spectHR.analysis.psd._welch import compute_welch_psd as _compute_welch_psd
-from spectHR.analysis.psd._lombscargle import compute_lombscargle_psd as _compute_lombscargle_psd
+from spectHR.analysis.ibi_helpers import (
+    event_times_clean,
+    ibi_clean_pairs,
+    mean_ibi_ms,
+    mean_ibi_ms_arithmetic,
+    mmi2_factor,
+)
 from spectHR.analysis.psd._carspan import (
     CarspanOptions,
-    compute_carspan_psd as _compute_carspan_psd,
     carspan_strict_options,
+)
+from spectHR.analysis.psd._carspan import (
+    compute_carspan_psd as _compute_carspan_psd,
 )
 from spectHR.analysis.psd._config import (
     BandSpec,
     MeanConvention,
     PsdMethod,
 )
+from spectHR.analysis.psd._lombscargle import compute_lombscargle_psd as _compute_lombscargle_psd
 from spectHR.analysis.psd._utils import PSDResult
-from spectHR.analysis.ibi_helpers import (
-    ibi_clean_pairs,
-    event_times_clean,
-    mean_ibi_ms,
-    mean_ibi_ms_arithmetic,
-    mmi2_factor,
-)
-
+from spectHR.analysis.psd._welch import compute_welch_psd as _compute_welch_psd
 
 __all__ = ["PSDEngine"]
 

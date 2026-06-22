@@ -19,7 +19,6 @@ import numpy as np
 
 from spectHR.logger import logger
 
-
 __all__ = ["classify_ibi"]
 
 

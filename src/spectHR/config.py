@@ -24,11 +24,10 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Dict
 
-from spectHR.analysis.psd._config import BandSpec, PsdMethod
-from spectHR.analysis.psd._welch import WelchOptions
-from spectHR.analysis.psd._lombscargle import LombscargleOptions
 from spectHR.analysis.psd._carspan import CarspanOptions
-
+from spectHR.analysis.psd._config import BandSpec, PsdMethod
+from spectHR.analysis.psd._lombscargle import LombscargleOptions
+from spectHR.analysis.psd._welch import WelchOptions
 
 __all__ = [
     "WorkspaceView",

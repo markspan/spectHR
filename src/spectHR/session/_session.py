@@ -34,7 +34,6 @@ import numpy as np
 
 from spectHR.session._core import Events, Intervals, Samples  # noqa: F401 (re-used in methods)
 
-
 # ---------------------------------------------------------------------------
 # Epoch
 # ---------------------------------------------------------------------------
@@ -83,8 +82,11 @@ class AnalysisConfig:
     @classmethod
     def from_workspace(cls, workspace: dict | None) -> AnalysisConfig:
         """Build from a raw workspace dict."""
-        from spectHR.config import WorkspaceView, transfer_settings_from_workspace
-        from spectHR.config import display_bands_from_workspace
+        from spectHR.config import (
+            WorkspaceView,
+            display_bands_from_workspace,
+            transfer_settings_from_workspace,
+        )
         ws = WorkspaceView(workspace)
         ibi_dev, rate_dev = ws.rsa_rejection
         ts = transfer_settings_from_workspace(workspace)
@@ -245,7 +247,7 @@ class Session:
             Analysis parameters.  ``None`` uses :class:`AnalysisConfig` defaults.
         """
         from spectHR.analysis.epoch_context import EpochContext
-        from spectHR.analysis.registry import get_metrics, get_metric_groups
+        from spectHR.analysis.registry import get_metric_groups, get_metrics
 
         config = config or AnalysisConfig()
         active = {k: v for k, v in self.epochs.items() if v.active}

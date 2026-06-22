@@ -23,7 +23,6 @@ import sys
 
 import pytest
 
-
 # Top-level package names that must never appear in sys.modules after a
 # pure spectHR import.
 FORBIDDEN_ROOTS = ("PySide6", "shiboken6", "spectUI", "qtawesome")

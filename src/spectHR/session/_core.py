@@ -40,7 +40,6 @@ from typing import Iterator, Protocol
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -198,8 +197,8 @@ class Events:
         Delegates to the existing peak-detector so all tuning parameters
         and artefact-classification logic are preserved.
         """
-        from spectHR.signal.rpeak import detect_rpeaks
         from spectHR.signal.ibi_classification import classify_ibi as _classify_ibi
+        from spectHR.signal.rpeak import detect_rpeaks
 
         peak_times = detect_rpeaks(signal, min_peak_distance_ms=min_peak_distance_ms)
         labels = np.full(peak_times.shape, "N", dtype=object)

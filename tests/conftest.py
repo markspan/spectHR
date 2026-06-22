@@ -12,9 +12,8 @@ from typing import Sequence
 import numpy as np
 import pytest
 
-from spectHR.session import Events
 from spectHR.analysis.psd import BandSpec, PsdMethod
-
+from spectHR.session import Events
 
 # ---------------------------------------------------------------------------
 # Bands that match the spectUI workspace defaults

@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import numpy as np
 
-from spectHR.session import Session, Samples
 from spectHR.dataset.loaders._epochs import build_epochs
 from spectHR.dataset.loaders.registry import register_loader
 from spectHR.logger import logger
-
+from spectHR.session import Samples, Session
 
 # ---------------------------------------------------------------------------
 # Low-level EDF / EDF+C binary parser
@@ -187,7 +187,6 @@ _LABEL_ANN  = {"edf annotations"}
 # The accelerometer→respiration PCA lives in the headless Tools layer so it can
 # be re-run per epoch (posture-adaptive); imported here under the old name.
 from spectHR.signal.respiration import accel_to_respiration as _acc_to_rsp
-
 
 # ---------------------------------------------------------------------------
 # VU-AMS EDF / EDF+C loader

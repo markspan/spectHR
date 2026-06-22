@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from spectHR.session import Epoch, Events, Intervals, Samples, Session
+from spectHR.config import CardioParams
 from spectHR.dataset.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
@@ -24,7 +24,7 @@ from spectHR.dataset.preprocessing import (
     resolve_resp,
     retrigger_beats,
 )
-from spectHR.config import CardioParams
+from spectHR.session import Epoch, Events, Intervals, Samples, Session
 
 
 def _synth_ecg(duration=20.0, fs=250.0, hr=60.0):

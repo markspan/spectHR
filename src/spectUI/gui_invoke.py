@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, TypeVar
 
-from PySide6.QtCore import QCoreApplication, QObject, Qt, Signal, Slot, QThread
+from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, Signal, Slot
 
 T = TypeVar("T")
 
