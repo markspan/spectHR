@@ -182,11 +182,13 @@ assert hasattr(res, "plotsExportRequested")             # → host plot-export d
 headers = [res.table.horizontalHeaderItem(c).text()
            for c in range(res.table.columnCount())]
 assert headers[0] == "epoch"
-# Metric column headers carry their calculation's docstring as a tooltip.
+# Metric column headers show their calculation's docstring on hover (tooltip).
 tips = {res.table.horizontalHeaderItem(c).text():
         res.table.horizontalHeaderItem(c).toolTip()
         for c in range(1, res.table.columnCount())}
-assert "rmssd" in tips and tips["rmssd"].strip(), "no docstring tooltip on header"
+assert "rmssd" in tips and (
+    "Root mean square of successive differences" in tips["rmssd"]
+), "header hover must show the metric docstring, not just the hint"
 
 # --- PSD grid: per-epoch spectra computed off-thread, then gridded ---------
 def make_psd_session():

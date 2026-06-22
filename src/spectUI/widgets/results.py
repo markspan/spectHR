@@ -250,14 +250,14 @@ class ResultsTableWidget(QWidget):
         self.table.setColumnCount(1 + len(columns))
         self.table.setHorizontalHeaderLabels(["epoch", *columns])
 
-        # Header tooltips: the docstring of each metric's calculation (V2),
-        # with a hint that the header is right-clickable for the full help.
+        # Header tooltips: the docstring of each metric's calculation (V2) shows
+        # on hover, with a hint that the header is right-clickable for the docs.
         docs = self._metric_docs()
         for c, col in enumerate(columns):
             header = self.table.horizontalHeaderItem(c + 1)
             if header is not None:
                 tip = self._column_tooltip(col, docs)
-                hint = "Right-click for description and source"
+                hint = "Right-click to open the description"
                 header.setToolTip(f"{tip}\n\n{hint}" if tip else hint)
 
         from spectHR.analysis.respiration_metrics import BOOLEAN_METRIC_COLUMNS
