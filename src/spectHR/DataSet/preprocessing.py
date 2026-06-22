@@ -72,7 +72,7 @@ def _as_view(params: _ParamsLike) -> WorkspaceView:
 
 
 # ---------------------------------------------------------------------------
-# Channel resolution
+# Channel resolution (the device-aware layer)
 # ---------------------------------------------------------------------------
 #
 # Loaders disagree on sample-channel keys: NFF/EVT use canonical ``"ecg"`` /
@@ -80,6 +80,12 @@ def _as_view(params: _ParamsLike) -> WorkspaceView:
 # (``"ecg-[8554112A]"``, ``"RSP-[8554112A]"``).  These resolvers prefer the
 # canonical accessor and fall back to a case-insensitive prefix scan, so every
 # downstream consumer finds the same channel regardless of source.
+#
+# This is the single place that knows the device-naming conventions.  It is used
+# *before* canonicalisation (and by :func:`apply_canonical_channels` itself);
+# once that step has aliased the device-suffixed keys onto the canonical ones,
+# the plain ``Session.ecg`` / ``resp`` / ``bp`` / ``icg`` getters suffice and are
+# what the rest of the codebase uses.
 
 
 def resolve_ecg(session: Session) -> Samples | None:

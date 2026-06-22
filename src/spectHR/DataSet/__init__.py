@@ -1,15 +1,20 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""spectHR.DataSet, physiological data primitives and file loaders.
+"""spectHR.DataSet, file loaders and pre-processing for physiological recordings.
 
-The data model is built on three immutable primitives:
+This package turns files on disk into a :class:`~spectHR.session.Session`:
 
-    Samples, continuous 1-D waveform (ECG, respiration, blood pressure)
-    Events, point process with categorical labels (R-peaks, triggers)
-    Intervals, labelled non-overlapping segments (INH/EXH breath phases)
+* :mod:`spectHR.DataSet.loaders`, one parser per file format (registered by
+  extension; :func:`load` dispatches on the suffix).
+* :mod:`spectHR.DataSet.preprocessing`, loader-agnostic ``Session -> Session``
+  conditioning (channel canonicalisation, ECG polarity, R-peak detection,
+  BP calibration, breath phases).
 
-They are composed into a :class:`Session` which is the root container for
-one physiological recording.  File I/O goes through :func:`load`.
+**The data model itself lives in** :mod:`spectHR.session` (``Samples``,
+``Events``, ``Intervals``, ``Session``, ``Epoch``, ``AnalysisConfig``,
+``MetricsTable``).  They are re-exported here only as a convenience for callers
+that ``import spectHR.DataSet`` for both the loaders and the types; ``session``
+is their single home.
 """
 from spectHR.session import (
     Samples,
