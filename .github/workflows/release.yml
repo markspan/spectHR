@@ -242,10 +242,13 @@ jobs:
             # copy between versions (_lib vs _external).
             --include-package=scipy
             # matplotlib loads output backends dynamically by name, so Nuitka
-            # cannot see them statically: backend_qtagg is included via the
-            # on-screen canvas import, but the PDF export backend must be
-            # forced in or savefig(...).pdf fails in the packaged build.
+            # cannot see them statically. backend_qtagg (and Agg, for PNG) come
+            # in via the on-screen canvas, but the Plot-export dialog's other
+            # formats must be forced in or savefig fails in the packaged build:
+            # PDF, SVG and EPS (PostScript). See plot_export_dialog._FORMATS.
             --include-module=matplotlib.backends.backend_pdf
+            --include-module=matplotlib.backends.backend_svg
+            --include-module=matplotlib.backends.backend_ps
             --include-data-dir="${{ env.RESOURCES_SRC_DIR }}=${{ env.RESOURCES_DST_DIR }}"
             --output-dir="$OUTDIR"
           )
