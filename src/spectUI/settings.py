@@ -8,7 +8,7 @@ Window geometry and the dock layout are per-machine UI state (not analysis
 "settings"), so they live in QSettings rather than in ``workspace.json``.  All
 *settings*, analysis parameters and the working directories, live together
 in the single :class:`~spectUI.parameters.Parameters` workspace, saved to /
-loaded from ``~/workspace.json`` (see :class:`~spectUI.MainWindow`).
+loaded from ``~/workspace.json`` (see :class:`~spectUI.main_window`).
 
 We force the **INI format** (not the platform-native backend) so the state
 always lands in a human-readable file under the user's config directory rather
@@ -21,9 +21,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QMainWindow
-
 from PySide6QtAds import CDockManager
-
 
 _ORG = "spectHR"
 _APP = "spectHR"

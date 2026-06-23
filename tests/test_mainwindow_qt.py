@@ -30,7 +30,7 @@ QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, cfg)
 
 app = QApplication.instance() or QApplication([])
 
-import spectUI.MainWindow as mw
+import spectUI.main_window as mw
 from spectHR.session import Epoch, Events, Samples, Session
 
 w = mw.MainWindow()

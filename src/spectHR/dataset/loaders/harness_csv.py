@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.Tools.Logger import logger
+from spectHR.dataset.loaders.registry import register_loader
+from spectHR.logger import logger
+
+if TYPE_CHECKING:
+    from spectHR.session import Session
 
 _MISSING_SENTINEL = -1
 _ECG_SCALE = 40.0
@@ -22,8 +26,8 @@ def load_harness_raw_csv(path: Path, **kwargs) -> "Session":
         - ``ms``        - timestamp in milliseconds, ``-1`` for missing
         - ``ECG Data``  - raw ECG amplitude, ``-1`` for missing; scaled by 40
     """
-    from spectHR.session import Session, Samples
-    from spectHR.DataSet.loaders._epochs import build_epochs
+    from spectHR.dataset.loaders._epochs import build_epochs
+    from spectHR.session import Samples, Session
 
     logger.info(f"Loading raw Harness CSV: {path}")
 

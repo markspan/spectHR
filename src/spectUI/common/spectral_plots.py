@@ -168,7 +168,8 @@ def draw_psd_tile(
     if result is None or result.freqs.size == 0:
         ax.text(0.5, 0.5, "Insufficient data", ha="center", va="center",
                 transform=ax.transAxes, color="gray")
-        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_xticks([])
+        ax.set_yticks([])
         return
 
     f, p_raw = result.freqs, result.power

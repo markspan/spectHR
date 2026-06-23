@@ -1,16 +1,20 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
+
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.DataSet.loaders.nff_loader import _load_nff_samples
-from spectHR.DataSet.loaders.code_selection import resolve_epoch_codes
-from spectHR.Tools.Logger import logger
+from spectHR.dataset.loaders.code_selection import resolve_epoch_codes
+from spectHR.dataset.loaders.nff_loader import _load_nff_samples
+from spectHR.dataset.loaders.registry import register_loader
+from spectHR.logger import logger
+
+if TYPE_CHECKING:
+    from spectHR.session import Session
 
 _IBI_SCALE_TO_SECONDS = 10_000.0
 _BP_SCALE_TO_MMHG = 10.0
@@ -19,8 +23,8 @@ _BP_SCALE_TO_MMHG = 10.0
 @register_loader(".evt")
 def load_evt(path: Path, **kwargs: Any) -> "Session":
     """Load a CARSPAN .evt file (+ paired .nff if present) as a Session."""
-    from spectHR.session import Session, Events, Samples
-    from spectHR.DataSet.loaders._epochs import build_epochs
+    from spectHR.dataset.loaders._epochs import build_epochs
+    from spectHR.session import Events, Samples, Session
 
     evt_path = Path(path)
     logger.info(f"Loading EVT: {evt_path}")
@@ -81,7 +85,7 @@ def _parse_evt(filename: Path):
     with filename.open("r") as f:
         lines = f.readlines()
 
-    has_data_header = any(l.strip().lower().startswith("[data") for l in lines)
+    has_data_header = any(ln.strip().lower().startswith("[data") for ln in lines)
 
     in_events = False
     in_timeseries = False
@@ -180,8 +184,10 @@ def _parse_evt(filename: Path):
             e_times = sorted(times_arr[event_codes_arr == ecode].tolist())
             for bt, et in zip(b_times, e_times):
                 k += 1
-                marker_times.append(float(bt)); marker_labels.append(f"start epoch #{k}")
-                marker_times.append(float(et)); marker_labels.append(f"stop epoch #{k}")
+                marker_times.append(float(bt))
+                marker_labels.append(f"start epoch #{k}")
+                marker_times.append(float(et))
+                marker_labels.append(f"stop epoch #{k}")
         logger.info("EVT: %d epoch couple(s) from [Events] declarations", k)
     else:
         # No declared Begin/End codes: fall back to resolving the non-rtop
@@ -193,9 +199,11 @@ def _parse_evt(filename: Path):
             start_codes, stop_codes = resolve_epoch_codes(other_codes, rtop_code)
             if start_codes and stop_codes:
                 for t in other_times[np.isin(other_codes, start_codes)]:
-                    marker_times.append(float(t)); marker_labels.append("start epoch")
+                    marker_times.append(float(t))
+                    marker_labels.append("start epoch")
                 for t in other_times[np.isin(other_codes, stop_codes)]:
-                    marker_times.append(float(t)); marker_labels.append("stop epoch")
+                    marker_times.append(float(t))
+                    marker_labels.append("stop epoch")
         elif unique_other.size == 2:
             for i in range(min(other_times[::2].size, other_times[1::2].size)):
                 marker_times.extend([float(other_times[i*2]), float(other_times[i*2+1])])

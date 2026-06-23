@@ -3,15 +3,15 @@
 """
 Tests for the headless Session→Session pre-processing transforms.
 
-These live in :mod:`spectHR.DataSet.preprocessing` (no Qt), so unlike the
+These live in :mod:`spectHR.dataset.preprocessing` (no Qt), so unlike the
 widget tests they run directly in-process.
 """
 from __future__ import annotations
 
 import numpy as np
 
-from spectHR.session import Epoch, Events, Intervals, Samples, Session
-from spectHR.DataSet.preprocessing import (
+from spectHR.config import CardioParams
+from spectHR.dataset.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
     apply_breath_phases,
@@ -24,7 +24,7 @@ from spectHR.DataSet.preprocessing import (
     resolve_resp,
     retrigger_beats,
 )
-from spectHR.config import CardioParams
+from spectHR.session import Epoch, Events, Intervals, Samples, Session
 
 
 def _synth_ecg(duration=20.0, fs=250.0, hr=60.0):
@@ -280,7 +280,7 @@ def test_breath_phases_noop_without_beats():
 
 def test_canonical_channels_alias_device_suffixed_and_icg():
     """ecg-[dev]/dzdt-[dev]/rsp-[dev] become accessible as ecg/icg/resp."""
-    from spectHR.DataSet.preprocessing import apply_canonical_channels
+    from spectHR.dataset.preprocessing import apply_canonical_channels
 
     t = np.arange(0.0, 5.0, 0.01)
     s = Session(name="vu", samples={
@@ -298,7 +298,7 @@ def test_canonical_channels_alias_device_suffixed_and_icg():
 def test_canonical_channels_noop_when_canonical_present():
     t = np.arange(0.0, 5.0, 0.01)
     s = Session(name="c", samples={"ecg": Samples(t, np.sin(t), "ecg")})
-    from spectHR.DataSet.preprocessing import apply_canonical_channels
+    from spectHR.dataset.preprocessing import apply_canonical_channels
     assert apply_canonical_channels(s) is s
 
 
@@ -315,8 +315,10 @@ def _accel_session(per_epoch_breaths=True):
     z = np.zeros_like(t)
     # Epoch 1 (0-60 s): breathing on X.  Epoch 2 (60-120 s): breathing on Y.
     breath = np.sin(2 * np.pi * 0.25 * t)
-    x = np.where(np.arange(t.size) < half, breath, z) + 0.01 * np.random.default_rng(0).normal(size=t.size)
-    y = np.where(np.arange(t.size) >= half, breath, z) + 0.01 * np.random.default_rng(1).normal(size=t.size)
+    x = (np.where(np.arange(t.size) < half, breath, z)
+         + 0.01 * np.random.default_rng(0).normal(size=t.size))
+    y = (np.where(np.arange(t.size) >= half, breath, z)
+         + 0.01 * np.random.default_rng(1).normal(size=t.size))
     peaks = np.arange(0.5, 120.0, 0.8)
     return Session(
         name="acc",
@@ -335,8 +337,8 @@ def _accel_session(per_epoch_breaths=True):
 
 
 def test_accel_axes_resolved_and_pca():
-    from spectHR.DataSet.preprocessing import resolve_accel_axes
-    from spectHR.Tools.RespirationSegmentation import accel_to_respiration
+    from spectHR.dataset.preprocessing import resolve_accel_axes
+    from spectHR.signal.respiration import accel_to_respiration
     s = _accel_session()
     axes = resolve_accel_axes(s)
     assert axes is not None and len(axes) == 3

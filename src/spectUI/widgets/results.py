@@ -17,10 +17,12 @@ from pathlib import Path
 
 import numpy as np
 from platformdirs import user_documents_dir
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -44,6 +46,8 @@ class ResultsTableWidget(QWidget):
         super().__init__(parent)
         self._session: Session | None = None
         self._config = None
+        #: Metric column names in display order (header section 0 is "epoch").
+        self._columns: list[str] = []
         # The table is heavy (PEP ensemble + RSA + PSD per epoch), so it is
         # computed off the UI thread; a stale generation is discarded when a
         # newer edit supersedes it.
@@ -60,6 +64,10 @@ class ResultsTableWidget(QWidget):
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
+        # Right-click a column header to open the metric's description / source.
+        header = self.table.horizontalHeader()
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._header_menu)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(bar)
@@ -102,7 +110,7 @@ class ResultsTableWidget(QWidget):
 
     @staticmethod
     def _on_error(exc: Exception) -> None:
-        from spectHR.Tools.Logger import logger
+        from spectHR.logger import logger
         logger.exception("epochs_table failed", exc_info=exc)
 
     # ------------------------------------------------------------------
@@ -128,10 +136,13 @@ class ResultsTableWidget(QWidget):
         if not directory:
             return
 
-        from spectHR.analysis.exporter import (
-            EpochExporter, write_results_csv, write_results_h5,
-        )
         import re
+
+        from spectHR.analysis.exporter import (
+            EpochExporter,
+            write_results_csv,
+            write_results_h5,
+        )
         base = re.sub(r"[^\w.-]+", "_", self._session.name or "results") or "results"
         try:
             table = self._session.epochs_table(self._analysis_config())
@@ -182,40 +193,85 @@ class ResultsTableWidget(QWidget):
 
     @staticmethod
     def _column_tooltip(col: str, docs: dict[str, str]) -> str | None:
-        """Return a tooltip for *col*, with fallback to suffix pattern matching."""
+        """Return the hover tooltip for column *col*.
+
+        A single metric uses its own docstring.  A data-driven group column
+        (``{band}_power`` / ``{band}_pct`` / ``{band}_peak_hz``) resolves to the
+        ``@epoch_metric_group`` that emits it and uses *that* function's
+        docstring, so the help comes from one source.  The transfer group is the
+        exception: it emits three distinct scalars from one function, so a single
+        docstring cannot describe each column and per-suffix text is used.
+        """
         if col in docs:
             return docs[col]
         from spectHR.analysis.transfer_metrics import TRANSFER_COLUMN_TOOLTIPS
-        from spectHR.analysis.ecg_metrics import (
-            BAND_POWER_COLUMN_TOOLTIP,
-            NN_STATS_COLUMN_TOOLTIPS,
-            BAND_FREQ_STATS_COLUMN_TOOLTIPS,
-        )
-        # Exact matches first (highest priority), then suffix patterns.
-        for exact in (NN_STATS_COLUMN_TOOLTIPS, BAND_FREQ_STATS_COLUMN_TOOLTIPS):
-            if col in exact:
-                return exact[col]
-        for lookup in (TRANSFER_COLUMN_TOOLTIPS, BAND_POWER_COLUMN_TOOLTIP,
-                       BAND_FREQ_STATS_COLUMN_TOOLTIPS):
-            for suffix, tip in lookup.items():
-                if col.endswith(suffix):
-                    return tip
+        for suffix, tip in TRANSFER_COLUMN_TOOLTIPS.items():
+            if col.endswith(suffix):
+                return tip
+        from spectUI.metric_links import resolve_metric_function
+        resolved = resolve_metric_function(col)
+        if resolved is not None:
+            return docs.get(resolved[0])
         return None
+
+    def _column_for_section(self, section: int) -> str | None:
+        """Metric name for a header *section* (section 0 is the epoch column)."""
+        idx = section - 1
+        if 0 <= idx < len(self._columns):
+            return self._columns[idx]
+        return None
+
+    def _header_menu(self, pos) -> None:
+        """Right-click a metric header: open its description / source on GitHub."""
+        header = self.table.horizontalHeader()
+        col = self._column_for_section(header.logicalIndexAt(pos))
+        if not col:
+            return
+        from spectUI.metric_links import (
+            metric_algorithm_chain,
+            metric_doc_url,
+            metric_source_url,
+        )
+
+        doc_url = metric_doc_url(col)
+        src_url = metric_source_url(col)
+        if not doc_url and not src_url:
+            return
+        # "Algorithm" when the metric delegates to a deeper function; otherwise
+        # the wrapper is the calculation, so "source" reads more honestly.
+        chain = metric_algorithm_chain(col) or []
+        src_label = (
+            "View algorithm on GitHub…" if len(chain) > 1 else "View source on GitHub…"
+        )
+        menu = QMenu(self)
+        if doc_url:
+            menu.addAction(
+                f"What '{col}' measures (docs)…",
+                lambda: QDesktopServices.openUrl(QUrl(doc_url)),
+            )
+        if src_url:
+            menu.addAction(
+                src_label,
+                lambda: QDesktopServices.openUrl(QUrl(src_url)),
+            )
+        menu.exec(header.mapToGlobal(pos))
 
     def _populate(self, labels, columns: list[str], values: np.ndarray) -> None:
         self.table.clear()
+        self._columns = list(columns)
         self.table.setRowCount(len(labels))
         self.table.setColumnCount(1 + len(columns))
         self.table.setHorizontalHeaderLabels(["epoch", *columns])
 
-        # Header tooltips: the docstring of each metric's calculation (V2).
+        # Header tooltips: the docstring of each metric's calculation (V2) shows
+        # on hover, with a hint that the header is right-clickable for the docs.
         docs = self._metric_docs()
         for c, col in enumerate(columns):
             header = self.table.horizontalHeaderItem(c + 1)
             if header is not None:
                 tip = self._column_tooltip(col, docs)
-                if tip:
-                    header.setToolTip(tip)
+                hint = "Right-click to open the description"
+                header.setToolTip(f"{tip}\n\n{hint}" if tip else hint)
 
         from spectHR.analysis.respiration_metrics import BOOLEAN_METRIC_COLUMNS
         for r, label in enumerate(labels):

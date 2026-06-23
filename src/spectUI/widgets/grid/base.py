@@ -73,6 +73,8 @@ class EpochGridView(QWidget):
     #: (PSD / profile / transfer-modulus).  False for the frequency-axis docks
     #: (spectrogram 2-D / 3-D).
     Y_ZOOM = False
+    #: True to offer a "Grid" checkbox (faint dotted background grid on tiles).
+    SHOW_GRID_TOGGLE = False
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -94,7 +96,20 @@ class EpochGridView(QWidget):
         self._equal_y_cb.setChecked(True)        # linked by default (as before)
         self._equal_y_cb.setToolTip("Link every plot's y-axis to the largest")
         self._equal_y_cb.toggled.connect(self._on_equal_y_toggled)
-        self._toolbar.addWidget(self._equal_y_cb)
+        # Optional faint dotted background grid, stacked directly under the
+        # Equal-y checkbox; shown only for docks that set SHOW_GRID_TOGGLE.
+        self._grid_on = False
+        self._grid_cb = QCheckBox("Grid")
+        self._grid_cb.setToolTip("Overlay a faint dotted background grid on every tile")
+        self._grid_cb.toggled.connect(self._on_grid_toggled)
+        self._grid_cb.setVisible(self.SHOW_GRID_TOGGLE)
+        _ctrl_col = QWidget()
+        _ctrl_v = QVBoxLayout(_ctrl_col)
+        _ctrl_v.setContentsMargins(0, 0, 0, 0)
+        _ctrl_v.setSpacing(0)
+        _ctrl_v.addWidget(self._equal_y_cb)
+        _ctrl_v.addWidget(self._grid_cb)
+        self._toolbar.addWidget(_ctrl_col)
         self._toolbar.addStretch()
         self._toolbar_row.setVisible(False)
         self._outer.addWidget(self._toolbar_row)
@@ -173,7 +188,7 @@ class EpochGridView(QWidget):
 
         if not results:
             self._status.setText("No active epochs.")
-            self._toolbar_row.setVisible(self._toolbar_has_extras())
+            self._toolbar_row.setVisible(self._toolbar_has_extras() or self.SHOW_GRID_TOGGLE)
             return
         self._status.setText("")
 
@@ -194,12 +209,15 @@ class EpochGridView(QWidget):
         # epochs make linking meaningful.
         show_equal_y = self.Y_ZOOM and len(self._subplots) > 1
         self._equal_y_cb.setVisible(show_equal_y)
-        self._toolbar_row.setVisible(show_equal_y or self._toolbar_has_extras())
+        self._toolbar_row.setVisible(
+            show_equal_y or self._toolbar_has_extras() or self.SHOW_GRID_TOGGLE)
         if self.Y_ZOOM:
             if not self._yzoom_wired:
                 wire_y_zoom_shortcuts(self)      # Up / Down arrow y-zoom
                 self._yzoom_wired = True
             self._apply_y()
+        if self.SHOW_GRID_TOGGLE:
+            self._apply_grid()
 
     def _make_tile(self, record) -> QWidget:
         label, result = record
@@ -214,12 +232,14 @@ class EpochGridView(QWidget):
             ax = fig.add_subplot(111)
             ax.text(0.5, 0.5, f"{label}\n{result.message}", ha="center",
                     va="center", transform=ax.transAxes, fontsize=8, color="#c0392b")
-            ax.set_xticks([]); ax.set_yticks([])
+            ax.set_xticks([])
+            ax.set_yticks([])
         elif result is None:
             ax = fig.add_subplot(111)
             ax.text(0.5, 0.5, f"{label}\n(insufficient data)", ha="center",
                     va="center", transform=ax.transAxes, fontsize=8, color="#999")
-            ax.set_xticks([]); ax.set_yticks([])
+            ax.set_xticks([])
+            ax.set_yticks([])
         else:
             self._render_tile(fig, label, result)
         canvas.draw_idle()
@@ -263,6 +283,25 @@ class EpochGridView(QWidget):
     def _on_equal_y_toggled(self, checked: bool) -> None:
         self._equal_y = bool(checked)
         self._apply_y()
+
+    def _on_grid_toggled(self, checked: bool) -> None:
+        self._grid_on = bool(checked)
+        self._apply_grid()
+
+    def _apply_grid(self) -> None:
+        """Show or hide a faint dotted background grid on every tile (no recompute)."""
+        for t in self._subplots:
+            canvas = getattr(t, "canvas", None)
+            if canvas is None:
+                continue
+            for ax in canvas.figure.axes:
+                ax.set_axisbelow(True)        # grid sits behind the data
+                if self._grid_on:
+                    ax.grid(True, which="major", linestyle=":",
+                            linewidth=0.6, color="#9aa0a6", alpha=0.6)
+                else:
+                    ax.grid(False)            # style kwargs here would force it on
+            canvas.draw_idle()
 
     def _zoom_in(self) -> None:
         """Up arrow: shrink the y-max (zoom in)."""

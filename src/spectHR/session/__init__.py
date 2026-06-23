@@ -24,16 +24,16 @@ Protocols (for type annotations)::
     SamplesLike, EventsLike, IntervalsLike
 """
 from spectHR.session._core import (
-    Samples,
     Events,
-    Intervals,
-    SamplesLike,
     EventsLike,
+    Intervals,
     IntervalsLike,
+    Samples,
+    SamplesLike,
 )
 from spectHR.session._session import (
-    Epoch,
     AnalysisConfig,
+    Epoch,
     MetricsTable,
     Session,
 )

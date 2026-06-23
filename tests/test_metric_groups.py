@@ -19,26 +19,24 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from conftest import WORKSPACE_BANDS, make_spectral_cs
+from spectHR.analysis.ecg_metrics import (
+    band_powers,
+)
+from spectHR.analysis.epoch_context import EpochContext
+from spectHR.analysis.profile import profile_summary_scalars
 from spectHR.analysis.psd import BandSpec, PsdMethod
 from spectHR.analysis.psd._utils import ProfileResult
-from spectHR.analysis.epoch_context import EpochContext
 from spectHR.analysis.registry import (
     epoch_metric_group,
     get_metric_groups,
 )
-from spectHR.analysis.ecg_metrics import (
-    band_powers,
-    STANDARD_BAND_POWER_COLUMNS,
-)
-from spectHR.analysis.profile import profile_summary_scalars
 from spectHR.analysis.transfer import (
     BandTransfer,
     TransferResult,
     transfer_summary_scalars,
 )
-
-from conftest import WORKSPACE_BANDS, make_spectral_cs
-
+from spectHR.session import AnalysisConfig
 
 # ===========================================================================
 # Group-metric registry
@@ -75,7 +73,7 @@ def _method_with_custom_band() -> PsdMethod:
 class TestBandPowersGroup:
     def test_emits_all_configured_bands(self):
         cs = make_spectral_cs(0.25)
-        ctx = EpochContext(cs, psd_method=_method_with_custom_band())
+        ctx = EpochContext(cs, config=AnalysisConfig(psd_method=_method_with_custom_band()))
         cols = band_powers(ctx)
         # The custom band gets a column ...
         assert "myband_power" in cols
@@ -86,7 +84,7 @@ class TestBandPowersGroup:
 
     def test_empty_when_no_method(self):
         cs = make_spectral_cs(0.25)
-        ctx = EpochContext(cs, psd_method=None)
+        ctx = EpochContext(cs, config=AnalysisConfig(psd_method=None))
         assert band_powers(ctx) == {}
 
     def test_standard_bands_emit_columns(self):
@@ -96,7 +94,7 @@ class TestBandPowersGroup:
             bands=dict(WORKSPACE_BANDS),     # FullRange/VLF/LF/HF only
             mean_convention="harmonic",
         )
-        ctx = EpochContext(cs, psd_method=method)
+        ctx = EpochContext(cs, config=AnalysisConfig(psd_method=method))
         cols = band_powers(ctx)
         # All configured bands, including the standard ones, get a column.
         for name in method.bands:
@@ -106,7 +104,7 @@ class TestBandPowersGroup:
         # band_powers must not trigger a second PSD computation: it reads the
         # context's cached psd, identical to the standard band-power metrics.
         cs = make_spectral_cs(0.25)
-        ctx = EpochContext(cs, psd_method=_method_with_custom_band())
+        ctx = EpochContext(cs, config=AnalysisConfig(psd_method=_method_with_custom_band()))
         _ = ctx.psd          # prime the cache
         cached = ctx.psd
         band_powers(ctx)

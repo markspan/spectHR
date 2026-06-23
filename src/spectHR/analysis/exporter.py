@@ -26,19 +26,19 @@ from pathlib import Path
 
 import numpy as np
 
-from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.profile import (
     compute_band_power_profile,
     profile_band_data,
     profile_summary_scalars,
 )
+from spectHR.analysis.psd._band_power import band_power_rectangular
 from spectHR.analysis.transfer import (
     compute_transfer,
     compute_transfer_profile,
     transfer_summary_scalars,
 )
 from spectHR.config import WorkspaceView
-from spectHR.Tools.Logger import logger
+from spectHR.logger import logger
 
 
 class EpochExporter:

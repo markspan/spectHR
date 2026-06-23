@@ -3,33 +3,32 @@
 import re
 from typing import Any
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
-    QColorDialog,
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
-    QLabel,
     QCheckBox,
+    QColorDialog,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QFileDialog,
-    QStyle,
-    QGroupBox,
     QScrollArea,
-    QTabWidget,
-    QWidget,
-    QDialogButtonBox,
     QSizePolicy,
-    QComboBox,
-    QAbstractItemView,
+    QStyle,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
-
 
 # ======================================================================
 # Existing dialog - directory editor (unchanged)
@@ -124,7 +123,9 @@ _EXCLUDED_SECTIONS = {"Directories"}
 # future workspace additions stay editable even before they're explicitly
 # routed.
 _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("General Settings",     ("CardioParameters", "RespirationAnalysis", "Calibration", "IcgAnalysis", "PrsaAnalysis", "Logging")),
+    ("General Settings",     ("CardioParameters", "RespirationAnalysis",
+                              "Calibration", "IcgAnalysis", "PrsaAnalysis",
+                              "Logging")),
     ("PSD Settings",         ("FrequencyAnalysis",)),
     ("Profile Settings",     ("Profiles",)),
     ("Spectrogram Settings", ("Spectrogram",)),

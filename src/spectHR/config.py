@@ -24,11 +24,10 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Dict
 
-from spectHR.analysis.psd._config import BandSpec, PsdMethod
-from spectHR.analysis.psd._welch import WelchOptions
-from spectHR.analysis.psd._lombscargle import LombscargleOptions
 from spectHR.analysis.psd._carspan import CarspanOptions
-
+from spectHR.analysis.psd._config import BandSpec, PsdMethod
+from spectHR.analysis.psd._lombscargle import LombscargleOptions
+from spectHR.analysis.psd._welch import WelchOptions
 
 __all__ = [
     "WorkspaceView",
@@ -68,9 +67,9 @@ class CardioParams:
     Attributes
     ----------
     window_length, n_std, max_ibi_sec
-        Passed straight to :func:`~spectHR.Tools.IbiClassification.classify_ibi`.
+        Passed straight to :func:`~spectHR.signal.ibi_classification.classify_ibi`.
     min_peak_distance_ms
-        Refractory period for :func:`~spectHR.Tools.RPeakDetection.detect_rpeaks`.
+        Refractory period for :func:`~spectHR.signal.rpeak.detect_rpeaks`.
     ecg_filter_type
         ``"highpass"`` / ``"lowpass"`` prefilter applied to the ECG before
         detection, or ``None`` to skip filtering.
@@ -566,23 +565,19 @@ class WorkspaceView:
     @property
     def psd_ci_alpha(self) -> float:
         """Confidence-interval alpha (default 0.05)."""
-        fa = self._ws.get("FrequencyAnalysis", {}) or {}
-        return float(fa.get("confidence_interval_alpha", 0.05))
+        return psd_ci_alpha(self._ws)
 
     @property
     def display_bands(self) -> Dict[str, dict]:
         """Raw ``{name: {low, high, color, …}}`` bands dict for plot rendering."""
-        return dict(
-            (self._ws.get("FrequencyAnalysis", {}) or {}).get("bands", {}) or {}
-        )
+        return display_bands_from_workspace(self._ws)
 
     # ---- calibration ------------------------------------------------
 
     @property
     def bp_calibration(self) -> "tuple[float, float]":
         """``(bp_scale, bp_zero)`` for manual BP calibration."""
-        cal = self._ws.get("Calibration", {}) or {}
-        return float(cal.get("bp_scale", 0.125)), float(cal.get("bp_zero", 0.0))
+        return bp_calibration_from_workspace(self._ws)
 
     # ---- respiration / RSA ------------------------------------------
 

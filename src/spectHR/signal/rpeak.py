@@ -1,6 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# spectHR/Tools/RPeakDetection.py
+# spectHR/signal/rpeak.py
 """
 Standalone R-peak detection algorithm.
 
@@ -18,8 +18,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.signal as signal
 
-from spectHR.Tools.Logger import logger
-
+from spectHR.logger import logger
 
 __all__ = ["detect_rpeaks"]
 

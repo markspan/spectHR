@@ -1,6 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# spectHR/Tools/IbiClassification.py
+# spectHR/signal/ibi_classification.py
 """
 Standalone IBI classification algorithm.
 
@@ -17,8 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from spectHR.Tools.Logger import logger
-
+from spectHR.logger import logger
 
 __all__ = ["classify_ibi"]
 

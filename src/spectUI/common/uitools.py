@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from typing import Callable, Iterable
 
-import qtawesome as qta
 import matplotlib.patches as patches
+import qtawesome as qta
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -40,10 +40,9 @@ from PySide6.QtWidgets import (
 )
 
 # ``decimate_minmax`` is a pure-numpy data-reduction routine; it now lives
-# in ``spectHR.Tools.Decimation`` and is re-exported here (and via
+# in ``spectHR.signal.decimation`` and is re-exported here (and via
 # ``spectUI.common``) so the plot widgets' imports keep working unchanged.
-from spectHR.Tools.Decimation import decimate_minmax  # noqa: E402,F401
-
+from spectHR.signal.decimation import decimate_minmax  # noqa: E402,F401
 
 # ---------------------------------------------------------------------------
 # Post-export dialog

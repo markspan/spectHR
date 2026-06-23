@@ -40,7 +40,6 @@ from typing import Iterator, Protocol
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -135,7 +134,7 @@ class Samples:
 
     def filtered(self, *, filter_type: str, cutoff, order: int = 4) -> Samples:
         """Return a new ``Samples`` with band-pass / low-pass filtered values."""
-        from spectHR.Tools.SignalProcessing import butterworth_filter
+        from spectHR.signal.filters import butterworth_filter
         if self.srate is None:
             raise ValueError("Cannot filter Samples with unknown sampling rate.")
         filtered = butterworth_filter(self.values, self.srate,
@@ -198,8 +197,8 @@ class Events:
         Delegates to the existing peak-detector so all tuning parameters
         and artefact-classification logic are preserved.
         """
-        from spectHR.Tools.RPeakDetection import detect_rpeaks
-        from spectHR.Tools.IbiClassification import classify_ibi as _classify_ibi
+        from spectHR.signal.ibi_classification import classify_ibi as _classify_ibi
+        from spectHR.signal.rpeak import detect_rpeaks
 
         peak_times = detect_rpeaks(signal, min_peak_distance_ms=min_peak_distance_ms)
         labels = np.full(peak_times.shape, "N", dtype=object)
@@ -274,10 +273,10 @@ class Events:
         """Return a new ``Events`` with labels recomputed by ``classify_ibi``.
 
         Keyword args (``window_length`` / ``n_std`` / ``max_ibi_sec``) are
-        forwarded to :func:`~spectHR.Tools.IbiClassification.classify_ibi`;
+        forwarded to :func:`~spectHR.signal.ibi_classification.classify_ibi`;
         omit them to use the classifier's own defaults.
         """
-        from spectHR.Tools.IbiClassification import classify_ibi
+        from spectHR.signal.ibi_classification import classify_ibi
         labels = np.array(self.labels, dtype=object)        # writable copy
         classify_ibi(np.array(self.ibi, dtype=float), labels, **classify_kwargs)
         return Events(self.times, labels)
@@ -351,7 +350,7 @@ class Intervals:
         Uses the existing ``RespirationSeries`` detector.  *events* is the
         beat series used to set epoch boundaries for per-epoch segmentation.
         """
-        from spectHR.Tools.RespirationSegmentation import segment_respiration
+        from spectHR.signal.respiration import segment_respiration
 
         starts, ends, labels = segment_respiration(signal, smoothing_window=smooth_window)
         return cls(

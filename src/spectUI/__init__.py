@@ -1,22 +1,22 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-from spectUI.common import LineHandler
-from spectHR.DataSet.preprocessing import (
+from spectHR.dataset.loaders.code_selection import register_code_resolver
+from spectHR.dataset.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
     apply_ecg_polarity,
     apply_rsp_source,
 )
+from spectUI.common import LineHandler
+from spectUI.gui_invoke import run_in_gui_thread
+from spectUI.parameters import Parameters, populate_tree
+from spectUI.settings import AppSettings
 from spectUI.widgets import (
     DirectorySelectorDialog,
     EventCodeWindow,
     LogWidget,
     ParametersEditorDialog,
 )
-from spectUI.parameters import Parameters, populate_tree
-from spectUI.settings import AppSettings
-from spectHR.DataSet.loaders.code_selection import register_code_resolver
-from spectUI.gui_invoke import run_in_gui_thread
 
 
 def _evt_code_resolver(other_codes, rtop_code):

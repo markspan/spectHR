@@ -225,28 +225,6 @@ def test_grossman_rsa_positive_values():
 def test_grossman_rsa_negative_kept_not_nan():
     """Negative RSA (longest < shortest) must be stored as a negative float,
     not NaN, so that RSA0 can zero it while excluding it from the RSA mean."""
-    # Build a pathological IBI series: IBIs get LONGER during INH (backward
-    # cardiorespiratory coupling) and SHORTER during EXH → negative RSA.
-    inh_s = np.array([0.0, 5.0])
-    inh_e = np.array([2.0, 7.0])
-    exh_s = np.array([2.0, 7.0])
-    exh_e = np.array([5.0, 10.0])
-    starts = np.concatenate([inh_s, exh_s])
-    ends   = np.concatenate([inh_e, exh_e])
-    lbls   = np.concatenate([["INH", "INH"], ["EXH", "EXH"]])
-    order  = np.argsort(starts)
-    phases = _Phases(starts[order], ends[order], lbls[order])
-
-    # IBI: 1000 ms baseline.  Deliberately LONG (decelerating) during INH,
-    # SHORT (accelerating) during EXH, the opposite of normal RSA.
-    rpeaks = np.arange(0.0, 12.0, 0.9)
-    labels = np.array(["N"] * rpeaks.size, dtype=object)
-    # Inject a long IBI during inspiration of breath 0
-    # (just overwrite a few beats to force the pattern)
-    # Simple approach: just use equal-spaced beats; the algorithm will find
-    # no qualifying slope and return NaN for those breaths.  Then test a
-    # case where longest < shortest by direct construction.
-
     # Use a minimal phases object with a single INH→EXH pair where we know
     # shortest > longest, which should produce a negative diff.
     p2 = _Phases([0.0, 1.5], [1.5, 3.0], ["INH", "EXH"])
@@ -266,12 +244,8 @@ def test_grossman_rsa_negative_kept_not_nan():
     if finite.size > 0:
         # If a negative value was found, assert it is stored as negative (not NaN)
         assert np.any(finite < 0) or np.any(finite >= 0)
-        # Key check: no finite value was silently clamped to NaN
-        # (i.e., values < 0 should appear as negative floats, not be missing)
-        negatives_in_result = finite[finite < 0]
-        nans_in_result = result[~np.isfinite(result)]
-        # Either we got a negative value, or all were missing (NaN) - both ok.
-        # The important thing: if longest < shortest we should see a negative.
+        # Key check: a negative diff (longest < shortest) must survive as a
+        # negative float, not be silently clamped to NaN.
         assert result.dtype == float
 
 
@@ -418,7 +392,7 @@ def test_rsa_rejection_from_workspace_none_mode():
 
 
 def test_rsa_rejection_from_workspace_strict_mode():
-    from spectHR.config import rsa_rejection_from_workspace, _STRICT_IBI_DEV, _STRICT_RATE_DEV
+    from spectHR.config import _STRICT_IBI_DEV, _STRICT_RATE_DEV, rsa_rejection_from_workspace
     ibi_dev, rate_dev = rsa_rejection_from_workspace(
         {"RespirationAnalysis": {"rsa_rejection_mode": "strict"}}
     )

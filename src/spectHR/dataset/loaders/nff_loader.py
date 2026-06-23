@@ -16,11 +16,15 @@ from __future__ import annotations
 
 import struct
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.Tools.Logger import logger
+from spectHR.dataset.loaders.registry import register_loader
+from spectHR.logger import logger
+
+if TYPE_CHECKING:
+    from spectHR.session import Samples, Session
 
 
 class TNFF:
@@ -262,8 +266,8 @@ def load_nff_session(path: Path, **kwargs) -> "Session":
     The resulting session has no epochs or events; call
     ``session.with_detected_beats()`` to detect R-peaks.
     """
-    from spectHR.session import Session, Samples
-    from spectHR.DataSet.loaders._epochs import build_epochs
+    from spectHR.dataset.loaders._epochs import build_epochs
+    from spectHR.session import Samples, Session
     samples, _calibrated = _load_nff_samples(path)
 
     # Normalize: shift times so the earliest channel starts at 0

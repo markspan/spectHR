@@ -12,7 +12,7 @@ permissions:
 env:
   PYTHON_VERSION: "3.14"
 
-  ENTRYPOINT: "src/spectUI/MainWindow.py"
+  ENTRYPOINT: "src/spectUI/main_window.py"
 
   RESOURCES_SRC_DIR: "src/spectUI/resources"
   RESOURCES_DST_DIR: "resources"
@@ -231,11 +231,24 @@ jobs:
             --enable-plugin=pyside6
             --include-package=spectHR
             --include-package=spectUI
+            # scipy.signal -> scipy._lib._array_api -> the vendored
+            # array_api_compat does `__import__(__package__ + ".fft")` and
+            # `".linalg")` (the array_api_compat numpy backend), runtime-computed
+            # import strings Nuitka's static analysis cannot see, so the onefile
+            # build crashed at launch with
+            #   No module named 'scipy._external.array_api_compat.numpy.fft'.
+            # Pulling all of scipy in guarantees those dynamically-imported
+            # submodules ship, and is robust to scipy relocating the vendored
+            # copy between versions (_lib vs _external).
+            --include-package=scipy
             # matplotlib loads output backends dynamically by name, so Nuitka
-            # cannot see them statically: backend_qtagg is included via the
-            # on-screen canvas import, but the PDF export backend must be
-            # forced in or savefig(...).pdf fails in the packaged build.
+            # cannot see them statically. backend_qtagg (and Agg, for PNG) come
+            # in via the on-screen canvas, but the Plot-export dialog's other
+            # formats must be forced in or savefig fails in the packaged build:
+            # PDF, SVG and EPS (PostScript). See plot_export_dialog._FORMATS.
             --include-module=matplotlib.backends.backend_pdf
+            --include-module=matplotlib.backends.backend_svg
+            --include-module=matplotlib.backends.backend_ps
             --include-data-dir="${{ env.RESOURCES_SRC_DIR }}=${{ env.RESOURCES_DST_DIR }}"
             --output-dir="$OUTDIR"
           )
@@ -377,12 +390,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
       - name: Create GitHub Release and upload assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           name: ${{ needs.prepare.outputs.release_tag }}

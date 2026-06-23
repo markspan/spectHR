@@ -21,17 +21,16 @@ import numpy as np
 import pytest
 
 from spectHR.analysis.psd import (
+    CarspanOptions,
+    LombscargleOptions,
     PSDResult,
     WelchOptions,
-    compute_welch_psd,
-    LombscargleOptions,
-    compute_lombscargle_psd,
-    CarspanOptions,
     carspan_strict_options,
     compute_carspan_psd,
     compute_carspan_psd_strict,
+    compute_lombscargle_psd,
+    compute_welch_psd,
 )
-
 
 # ===========================================================================
 # Synthetic data

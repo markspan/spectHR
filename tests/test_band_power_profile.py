@@ -25,22 +25,18 @@ whole-epoch band-power tests live in :mod:`tests.test_hrv_metrics`.
 from __future__ import annotations
 
 import logging
-import math
-import types
 
 import numpy as np
 import pytest
 
-from spectHR.session import Events, Intervals
-from spectHR.analysis.psd import BandSpec, PsdMethod, ProfileResult
-from spectHR.analysis.profile import compute_band_power_profile
-
-from conftest import (   # imported via pytest rootdir/conftest.py
+from conftest import (  # imported via pytest rootdir/conftest.py
     WORKSPACE_BANDS,
     make_cs,
     make_spectral_cs,
 )
-
+from spectHR.analysis.profile import compute_band_power_profile
+from spectHR.analysis.psd import BandSpec, ProfileResult, PsdMethod
+from spectHR.session import Events, Intervals
 
 # ===========================================================================
 # Helpers

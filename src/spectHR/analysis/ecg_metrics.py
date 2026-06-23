@@ -13,6 +13,9 @@ Time-domain (ms)
     ``count``  number of valid IBIs · ``mean`` · ``median`` · ``min`` · ``max``
     ``rmssd``  root-mean-square of successive differences
     ``sdnn``   SD of all IBIs · ``sdsd`` SD of successive differences
+    ``nn50``/``pnn50`` · ``nn20``/``pnn20`` successive diffs above 50/20 ms
+    ``mean_hr``/``sd_hr`` heart rate (bpm) · ``cvnn``/``cvsd`` coefficients of variation
+    ``hrv_ti`` triangular index · ``tinn`` triangular interpolation (ms)
 
 Stationarity (drift diagnostics)
     ``stationarity``   IBI-vs-time linear correlation (monotone drift)
@@ -22,16 +25,22 @@ Stationarity (drift diagnostics)
 Poincaré
     ``sd1`` minor axis · ``sd2`` major axis (Brennan) · ``sd_ratio`` SD1/SD2
     ``ellipse_area`` π·SD1·SD2 (ms²)
+    ``csi``/``cvi``/``modified_csi`` cardiac sympathetic / vagal indices (Toichi 1997)
 
 Non-linear
-    ``dfa_a1`` short-term detrended-fluctuation scaling exponent α1
-               (Peng et al. 1995, box sizes 4-16 beats)
+    ``dfa_a1`` short-term · ``dfa_a2`` long-term detrended-fluctuation scaling
+               exponent (Peng et al. 1995; α1 over 4-16, α2 over 16-64 beats)
 
 PRSA (phase-rectified signal averaging, Bauer et al. 2006)
     ``dc`` deceleration capacity (parasympathetic) · ``ac`` acceleration capacity
 
+ECG waveform
+    ``twave_amplitude`` mean T-wave amplitude per beat (CARSPAN, device-dependent)
+
 Frequency-domain (band powers of the IBI PSD)
-    ``band_powers`` group → one ``{band}_power`` column per configured band
+    ``band_powers`` group → one ``{band}_power`` column per configured band;
+    ``band_rel`` → ``{band}_pct`` · ``band_peak`` → ``{band}_peak_hz``
+    ``total_power`` · ``lf_nu``/``hf_nu`` normalised units · ``ln_hf``
     ``lf_hf_ratio`` LF/HF (report descriptively, *not* a clean sympatho-vagal
                     index, Billman 2013)
 
@@ -39,6 +48,26 @@ Every ``@epoch_metric`` here takes a single ``series``-like argument (``.times``
 ``.ibi``, ``.labels``), or, on the table path, an
 :class:`~spectHR.analysis.epoch_context.EpochContext` that also carries the
 workspace ``psd_method`` and a cached PSD the frequency metrics reuse.
+
+Conventions (read before "correcting" anything)
+------------------------------------------------
+* **Standard deviation uses the population estimator (``ddof=0``, divide by
+  N), never the N-1 sample estimator.**  This is deliberate CARSPAN parity:
+  every original SD routine divides by the count, not count-1 (``T_EventFile.pas``
+  ``GetSampMeanAndStdDev`` → ``SqrSum/((IdxE-IdxB)+1) - Sqr(Mean)``;
+  ``T_DataCorrect.pas`` ``SDSum/ValCount``; ``T_AnaFunctions.pas``
+  ``DataSum2/NData.Count``).  ``sdnn``, ``sdsd``, ``sd1``/``sd2``, ``sd_hr``,
+  ``cvnn``/``cvsd`` (and the BP/respiration SDs in the sibling modules) all
+  follow it, so they stay mutually consistent (e.g. ``cvnn == 100·sdnn/mean``).
+  The name "Samp" in the Pascal refers to signal *samples*, not the statistical
+  sample estimator.  Do not switch any of these to ``ddof=1``.
+* **Normalised units** (``lf_nu``/``hf_nu``) use the LF/(LF+HF) form, not the
+  Task-Force LF/(TotalPower-VLF) form, so they are robust to whichever bands the
+  workspace defines and always sum to 100; ``total_power`` is the sum of the
+  configured named bands (excluding the ``FullRange`` umbrella band).
+* **DFA** uses forward-only, non-overlapping windows (the remainder beats are
+  dropped, not re-segmented from the tail); ``dfa_a1`` and ``dfa_a2`` share the
+  one :func:`dfa_fluctuation` implementation so their exponents are comparable.
 
 References
 ----------
@@ -51,6 +80,8 @@ sympatho-vagal balance. *Frontiers in Physiology*, 4, 26.
 """
 from __future__ import annotations
 
+import builtins  # this module's `min`/`max` metrics shadow the builtins; qualify when needed
+
 import numpy as np
 
 from spectHR.analysis.epoch_context import EpochContext
@@ -60,27 +91,26 @@ from spectHR.analysis.psd._config import _DEFAULT_PSD_METHOD
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.analysis.registry import epoch_metric, epoch_metric_group
 
-
 __all__ = [
     # time-domain
     "count", "mean", "median", "min", "max", "rmssd", "sdnn", "sdsd",
-    "nn_stats",
+    "nn50", "pnn50", "nn20", "pnn20", "mean_hr", "sd_hr", "cvnn", "cvsd",
+    "hrv_ti", "tinn",
     # stationarity
     "stationarity", "stationarity_z",
     # Poincaré
-    "sd1", "sd2", "sd_ratio", "ellipse_area",
+    "sd1", "sd2", "sd_ratio", "ellipse_area", "csi", "cvi", "modified_csi",
     # non-linear
     "dfa_fluctuation", "dfa_alpha1", "dfa_a1", "dfa_a2",
-    "sample_entropy",
     # PRSA
     "dc", "ac",
     # ECG waveform
     "twave_amplitude",
     # frequency-domain
     "fullrange_power", "vlf_power", "lf_power", "hf_power",
-    "lf_hf_ratio", "band_powers", "band_freq_stats",
-    "STANDARD_BAND_POWER_COLUMNS", "BAND_POWER_COLUMN_TOOLTIP",
-    "NN_STATS_COLUMN_TOOLTIPS", "BAND_FREQ_STATS_COLUMN_TOOLTIPS",
+    "lf_hf_ratio", "band_powers",
+    "total_power", "lf_nu", "hf_nu", "ln_hf", "band_rel", "band_peak",
+    "STANDARD_BAND_POWER_COLUMNS",
 ]
 
 
@@ -172,6 +202,10 @@ def stationarity_z(series) -> float:
 
 # ===========================================================================
 # Time-domain, variability
+#
+# All SDs below (and the CV / Poincaré metrics derived from them) use numpy's
+# default population estimator (ddof=0); this is CARSPAN parity, see the module
+# docstring "Conventions". Do not switch to ddof=1.
 # ===========================================================================
 
 
@@ -194,29 +228,6 @@ def sdsd(series) -> float:
     """Standard deviation of successive differences (ms)."""
     d = successive_diffs_ms(series)
     return float(np.std(d)) if d.size else np.nan
-
-
-@epoch_metric_group
-def nn_stats(series) -> dict[str, float]:
-    """NN50/pNN50 and NN20/pNN20 threshold-crossing counts.
-
-    ``nn50`` / ``nn20`` are counts of successive differences exceeding 50 ms
-    or 20 ms respectively; ``pnn50`` / ``pnn20`` are the corresponding
-    percentages of the total number of differences.  Part of the standard
-    Task Force (1996) time-domain HRV parameters.
-    """
-    d = np.abs(successive_diffs_ms(series))
-    n = d.size
-    if n == 0:
-        return {"nn50": np.nan, "pnn50": np.nan, "nn20": np.nan, "pnn20": np.nan}
-    nn50 = int(np.sum(d > 50.0))
-    nn20 = int(np.sum(d > 20.0))
-    return {
-        "nn50":  float(nn50),
-        "pnn50": float(nn50 / n * 100.0),
-        "nn20":  float(nn20),
-        "pnn20": float(nn20 / n * 100.0),
-    }
 
 
 # ===========================================================================
@@ -350,81 +361,6 @@ def dfa_a1(series) -> float:
     return dfa_alpha1(ibi_clean_ms(series))
 
 
-@epoch_metric
-def dfa_a2(series) -> float:
-    """DFA long-term scaling exponent α2 (box sizes 17-64 beats).
-
-    The long-term counterpart to ``dfa_a1``: computed over the same
-    detrended-fluctuation algorithm but at box sizes 17–64 beats.  Healthy
-    young adults typically show α2 ≈ 1.0 at rest; the long-term exponent is
-    more sensitive to slow autonomic modulation than α1.  Requires at least
-    128 clean beats, otherwise blank.
-    """
-    return dfa_alpha1(ibi_clean_ms(series), scale_min=17, scale_max=64)
-
-
-def _sample_entropy(x: np.ndarray, m: int = 2, r_factor: float = 0.2) -> float:
-    """SampEn via Richman & Moorman (2000). Pure NumPy, fully vectorised.
-
-    Counts template matches of length *m* (B) and *m+1* (A) using the
-    Chebyshev (max-norm) distance with tolerance ``r = r_factor × σ``.
-    Returns ``nan`` when *x* is shorter than 10 points or constant,
-    ``inf`` when no length-*m* template matches extend to length *m+1*
-    (maximum complexity, extremely rare in physiological series).
-    """
-    n = x.size
-    if n < 10:
-        return float("nan")
-    r = r_factor * float(np.std(x, ddof=0))
-    if r == 0.0:
-        return 0.0
-
-    # Build overlapping template windows via stride tricks.
-    T  = np.lib.stride_tricks.sliding_window_view(x, m + 1)  # (n-m, m+1)
-    Tm = T[:, :m]                                              # (n-m, m)
-
-    # Pairwise Chebyshev distances — O(N²) but fully vectorised.
-    # For typical HRV epoch lengths (50–500 beats) the arrays are small.
-    B_dist = np.max(np.abs(Tm[:, None] - Tm[None, :]), axis=2)
-    A_dist = np.max(np.abs(T[:, None]  - T[None, :]),  axis=2)
-
-    nm = B_dist.shape[0]
-    B = int(np.sum(B_dist <= r)) - nm   # exclude self-matches on diagonal
-    A = int(np.sum(A_dist <= r)) - nm
-
-    if B <= 0:
-        return float("nan")
-    if A <= 0:
-        return float("inf")
-    return float(-np.log(A / B))
-
-
-@epoch_metric
-def sample_entropy(series) -> float:
-    """Sample Entropy (SampEn, m=2, r=0.2·σ) of the cleaned IBI series.
-
-    A template-matching complexity measure (Richman & Moorman, 2000):
-    lower values indicate higher regularity (more self-similar patterns);
-    higher values indicate greater complexity.  The embedding dimension is
-    m=2 and the tolerance is r=0.2×σ_IBI, the standard physiological
-    convention.
-
-    Returns NaN for epochs shorter than 50 beats (estimates below that
-    length are unreliable).  Requires no external dependencies; the
-    computation is pure NumPy.
-
-    References
-    ----------
-    Richman, J. S., & Moorman, J. R. (2000). Physiological time-series
-    analysis using approximate entropy and sample entropy. *American Journal
-    of Physiology — Heart and Circulatory Physiology*, 278(6), H2039–H2049.
-    """
-    ibi = ibi_clean_ms(series)
-    if ibi.size < 50:
-        return np.nan
-    return _sample_entropy(ibi)
-
-
 # ===========================================================================
 # PRSA, phase-rectified signal averaging (deceleration / acceleration capacity)
 # ===========================================================================
@@ -514,46 +450,76 @@ def ac(series) -> float:
 def twave_amplitude(ctx) -> float:
     """Mean T-wave amplitude per beat (ECG channel), in ECG signal units.
 
-    For each beat, the T-wave peak is located in the ST segment
-    (150–500 ms after the R-peak, capped 100 ms before the next R-peak).
-    Amplitude is measured relative to the pre-R baseline (mean ECG in the
-    50 ms window before each R-peak), then averaged across all beats.
+    Faithful port of CARSPAN ``CalcDataColECGTWAVE`` / ``GetBaseLineValue``
+    (``T_EventFile.pas``).  For each R-peak:
 
-    Returns NaN when no ECG channel is available (``ctx.ecg_ts is None``)
-    or fewer than two R-peaks are present in the epoch.  Ported from
-    CARSPAN ``CalcDataColECGTWAVE`` (``T_AnaFunctions.pas``).
+    * the **T-wave peak** is the maximum ECG sample in ``[R+150 ms, R+450 ms]``;
+    * the **baseline** is the mean ECG over a 20 ms PR-segment window
+      ``[Q-50 ms, Q-30 ms]``, where ``Q`` (QRS onset) is found by walking back
+      from the R-peak to the first local minimum;
+    * the amplitude is ``T peak - baseline``.
+
+    The values are averaged across beats.  Because the baseline is taken on the
+    isoelectric PR segment (not on the QRS upstroke), an upright T-wave gives a
+    positive amplitude and only a genuinely **inverted** T-wave goes negative.
+
+    Returns NaN when no ECG channel is available (``ctx.ecg_ts is None``) or no
+    beat yields a usable window.
     """
     if not isinstance(ctx, EpochContext) or ctx.ecg_ts is None:
         return np.nan
     ecg_t = np.asarray(ctx.ecg_ts.times,  dtype=float)
     ecg_v = np.asarray(ctx.ecg_ts.values, dtype=float)
-    if ecg_t.size < 2:
+    n = ecg_t.size
+    if n < 2:
         return np.nan
     rpeaks = np.asarray(ctx.rpeak_times, dtype=float)
-    if rpeaks.size < 2:
+    if rpeaks.size < 1:
         return np.nan
 
+    # Nearest ECG sample to each R-peak time (vectorised).
+    ri = np.clip(np.searchsorted(ecg_t, rpeaks), 0, n - 1)
+    left = np.clip(ri - 1, 0, n - 1)
+    take_left = (ri > 0) & (np.abs(ecg_t[left] - rpeaks) <= np.abs(ecg_t[ri] - rpeaks))
+    ri = np.where(take_left, left, ri)
+
+    # Bound the Q-point walk-back to the QRS region so a flat segment can never
+    # turn the per-beat search into an O(n) scan.
+    dt = float(np.median(np.diff(ecg_t)))
+    max_back = builtins.max(1, int(round(0.20 / dt))) if dt > 0 else 1
+    t0 = float(ecg_t[0])
+
     amps: list[float] = []
-    for i in range(len(rpeaks) - 1):
-        r_t    = rpeaks[i]
-        r_next = rpeaks[i + 1]
+    for k in range(rpeaks.size):
+        r_t = float(rpeaks[k])
 
-        # Pre-R baseline: 50 ms before R-peak.
-        bl_mask = (ecg_t >= r_t - 0.05) & (ecg_t < r_t)
-        if not bl_mask.any():
-            continue
-        baseline = float(np.mean(ecg_v[bl_mask]))
+        # Q-point (QRS onset): walk back to the first local minimum, as CARSPAN.
+        q = int(ri[k])
+        q_stop = builtins.max(1, q - max_back)
+        while q > q_stop and ecg_v[q] >= ecg_v[q - 1]:
+            q -= 1
+        q_t = ecg_t[q]
 
-        # ST segment search window.  np.minimum avoids shadowing the
-        # module-level `min` epoch_metric.
-        st_lo = r_t + 0.15
-        st_hi = float(np.minimum(r_t + 0.50, r_next - 0.10))
-        if st_hi <= st_lo:
+        # Baseline: mean ECG over the PR segment [Q-50 ms, Q-30 ms].  The signal
+        # is sorted in time, so slice it with searchsorted (O(log n)) rather than
+        # masking the whole array per beat.  When the window runs off the start,
+        # CARSPAN falls back to the first sample.
+        b0 = int(np.searchsorted(ecg_t, q_t - 0.05, "left"))
+        b1 = int(np.searchsorted(ecg_t, q_t - 0.03, "right"))
+        if b1 > b0:
+            baseline = float(ecg_v[b0:b1].mean())
+        elif q_t - 0.05 < t0:
+            baseline = float(ecg_v[0])
+        else:
             continue
-        st_mask = (ecg_t >= st_lo) & (ecg_t <= st_hi)
-        if not st_mask.any():
+
+        # T-wave peak: max in the fixed [R+150 ms, R+450 ms] window (CARSPAN does
+        # not cap this at the next R-peak).
+        s0 = int(np.searchsorted(ecg_t, r_t + 0.15, "left"))
+        s1 = int(np.searchsorted(ecg_t, r_t + 0.45, "right"))
+        if s1 <= s0:
             continue
-        amps.append(float(np.max(ecg_v[st_mask])) - baseline)
+        amps.append(float(ecg_v[s0:s1].max()) - baseline)
 
     return float(np.mean(amps)) if amps else np.nan
 
@@ -572,55 +538,6 @@ def twave_amplitude(ctx) -> float:
 # double-emitting them.  All band powers now flow through band_powers (the
 # @epoch_metric_group), so this set is empty.  Kept for import compatibility.
 STANDARD_BAND_POWER_COLUMNS: frozenset[str] = frozenset()
-
-# Suffix → tooltip for dynamically-named band-power columns.
-# The Results widget uses this to annotate {band}_power column headers whose
-# names depend on the workspace band configuration and are not known at import.
-BAND_POWER_COLUMN_TOOLTIP: dict[str, str] = {
-    "_power": (
-        "Spectral power integrated over this frequency band (rectangular "
-        "summation on the display-grid spectrum). Units are mMI² by default "
-        "(dimensionless, normalised by squared mean heart rate) or ms² when "
-        "the Welch units setting is switched. Computed by the active PSD "
-        "method (CARSPAN, Welch, or Lomb-Scargle)."
-    ),
-}
-
-# Exact-match tooltips for the columns emitted by the nn_stats group metric.
-NN_STATS_COLUMN_TOOLTIPS: dict[str, str] = {
-    "nn50":  "Number of successive IBI differences exceeding 50 ms (Task Force 1996).",
-    "pnn50": "Percentage of successive IBI differences exceeding 50 ms (nn50 / total × 100).",
-    "nn20":  "Number of successive IBI differences exceeding 20 ms.",
-    "pnn20": "Percentage of successive IBI differences exceeding 20 ms (nn20 / total × 100).",
-}
-
-# Suffix- and exact-match tooltips for the columns emitted by band_freq_stats.
-BAND_FREQ_STATS_COLUMN_TOOLTIPS: dict[str, str] = {
-    "_peak_hz":   (
-        "Dominant (peak-power) frequency within this band, in Hz. "
-        "Identifies where in the band the IBI spectrum has its maximum."
-    ),
-    "_rel_power": (
-        "Band power as a fraction of the total power across all component "
-        "bands (FullRange excluded; 0–1).  Component band relative powers "
-        "sum to 1. Scale-independent and directly comparable across sessions."
-    ),
-    "total_power": (
-        "Sum of spectral power across all component frequency bands "
-        "(FullRange excluded). Same units as the individual band powers."
-    ),
-    "lf_norm": (
-        "Normalised LF power: LF / (LF + HF).  Bounded [0, 1]; the LF and "
-        "HF normalised values sum to one.  Only present when both LF and HF "
-        "bands are configured."
-    ),
-    "hf_norm": (
-        "Normalised HF power: HF / (LF + HF).  Bounded [0, 1]; the LF and "
-        "HF normalised values sum to one.  Only present when both LF and HF "
-        "bands are configured."
-    ),
-}
-
 
 def _resolve_method(series, psd_method):
     """Pick the PSD method for *series*.
@@ -721,7 +638,12 @@ def lf_hf_ratio(series, psd_method=None) -> float:
 
 @epoch_metric_group
 def band_powers(ctx) -> dict[str, float]:
-    """``{band}_power`` column for every configured frequency band.
+    """``{band}_power``: spectral power integrated over each configured band.
+
+    Rectangular summation of the IBI spectrum over the band; units are mMI² by
+    default (dimensionless, normalised by squared mean heart rate) or ms² with
+    the Welch units setting, computed by the active PSD method (CARSPAN, Welch
+    or Lomb-Scargle).
 
     Emits one ``{band_name.lower()}_power`` column per band in the configured
     PSD method.  Because all band powers flow through this group metric, the
@@ -753,71 +675,324 @@ def band_powers(ctx) -> dict[str, float]:
     return out
 
 
+# ===========================================================================
+# Frequency-domain completeness (PLAN.md phase 1a)
+#
+# Normalised units, total power, ln(HF) and per-band % / peak frequency, all
+# read off the same cached PSD as band_powers / lf_hf_ratio.
+# ===========================================================================
+
+
+def _total_power(series, method) -> float:
+    """Sum of every configured non-FullRange band power (the conventional total)."""
+    total, found = 0.0, False
+    for name in method.bands:
+        if name == "FullRange":
+            continue
+        p = _band_power(series, name, method)
+        if np.isfinite(p):
+            total += p
+            found = True
+    return total if found else float("nan")
+
+
+@epoch_metric
+def total_power(series, psd_method=None) -> float:
+    """Total spectral power: sum of all configured bands except FullRange (mMI² by default)."""
+    try:
+        method = _resolve_method(series, psd_method)
+        if method is None:
+            return np.nan
+        return _total_power(series, method)
+    except (KeyError, AttributeError, ValueError):
+        return np.nan
+
+
+def _lf_hf(series, psd_method):
+    """``(method, LF, HF)`` or ``None`` when LF/HF cannot be evaluated."""
+    method = _resolve_method(series, psd_method)
+    if method is None or "LF" not in method.bands or "HF" not in method.bands:
+        return None
+    return method, _band_power(series, "LF", method), _band_power(series, "HF", method)
+
+
+@epoch_metric
+def lf_nu(series, psd_method=None) -> float:
+    """LF power in normalised units: 100 * LF / (LF + HF)."""
+    try:
+        got = _lf_hf(series, psd_method)
+        if got is None:
+            return np.nan
+        _, lf, hf = got
+        s = lf + hf
+        return float(100.0 * lf / s) if np.isfinite(s) and s > 0 else np.nan
+    except (KeyError, AttributeError, ValueError):
+        return np.nan
+
+
+@epoch_metric
+def hf_nu(series, psd_method=None) -> float:
+    """HF power in normalised units: 100 * HF / (LF + HF)."""
+    try:
+        got = _lf_hf(series, psd_method)
+        if got is None:
+            return np.nan
+        _, lf, hf = got
+        s = lf + hf
+        return float(100.0 * hf / s) if np.isfinite(s) and s > 0 else np.nan
+    except (KeyError, AttributeError, ValueError):
+        return np.nan
+
+
+@epoch_metric
+def ln_hf(series, psd_method=None) -> float:
+    """Natural log of HF power, ln(HF)."""
+    try:
+        method = _resolve_method(series, psd_method)
+        if method is None or "HF" not in method.bands:
+            return np.nan
+        hf = _band_power(series, "HF", method)
+        return float(np.log(hf)) if np.isfinite(hf) and hf > 0 else np.nan
+    except (KeyError, AttributeError, ValueError):
+        return np.nan
+
+
 @epoch_metric_group
-def band_freq_stats(ctx) -> dict[str, float]:
-    """Per-band peak frequency, relative power, normalised LF/HF, and total power.
-
-    Emits alongside the absolute band powers of ``band_powers``:
-
-    ``{band}_peak_hz``
-        Dominant (peak-power) frequency within each band, in Hz.
-    ``{band}_rel_power``
-        Band power as a proportion of the sum across all bands (0–1).
-    ``total_power``
-        Sum of all component band powers, *excluding* FullRange (which
-        overlaps all other bands and would double-count).  Matches the HRV
-        convention where total power = VLF + LF + HF (+ ULF if present).
-    ``lf_norm`` / ``hf_norm``
-        LF / (LF + HF) and HF / (LF + HF), emitted only when both ``LF``
-        and ``HF`` bands are present in the configuration.  Unlike the raw
-        ratio, normalised power is bounded [0, 1] and the two values sum to
-        one — making them directly comparable across studies that use
-        different absolute power scales.
-    """
+def band_rel(ctx) -> dict[str, float]:
+    """``{band}_pct``: each configured band's % of the total (non-FullRange) power."""
     out: dict[str, float] = {}
     method = getattr(ctx, "psd_method", None)
     psd_res = getattr(ctx, "psd", None)
     if method is None or psd_res is None:
         return out
-
-    freqs = np.asarray(psd_res.freqs, dtype=float)
-    power = np.asarray(psd_res.power, dtype=float)
-
-    raw_powers: dict[str, float] = {}
-    for band_name, band_spec in method.bands.items():
-        lo, hi = float(band_spec.low), float(band_spec.high)
-        mask = (freqs >= lo) & (freqs <= hi)
-        if not mask.any():
+    powers: dict[str, float] = {}
+    for name, spec in method.bands.items():
+        if name == "FullRange":
             continue
-        # Peak frequency within the band
-        peak_idx = int(np.argmax(power[mask]))
-        out[f"{band_name.lower()}_peak_hz"] = float(freqs[mask][peak_idx])
-        # Absolute band power (rectangular integration, same as band_powers)
         try:
-            raw_powers[band_name] = float(
-                band_power_rectangular(freqs, power, lo, hi)
-            )
+            powers[name] = float(band_power_rectangular(
+                psd_res.freqs, psd_res.power, spec.low, spec.high))
         except Exception:
             pass
-
-    # "FullRange" is an umbrella band that overlaps all component bands.
-    # Including it in the denominator would double-count its power, giving
-    # fullrange_rel_power ≈ 0.5 instead of a meaningful fraction.
-    # HRV convention: total_power = Σ(component bands), FullRange excluded.
-    component_powers = {k: v for k, v in raw_powers.items() if k != "FullRange"}
-    total = float(sum(component_powers.values())) if component_powers else 0.0
-    out["total_power"] = total
-
-    if total > 0.0:
-        for band_name, bp in component_powers.items():
-            out[f"{band_name.lower()}_rel_power"] = float(bp / total)
-
-    lf = raw_powers.get("LF")
-    hf = raw_powers.get("HF")
-    if lf is not None and hf is not None:
-        denom = lf + hf
-        if denom > 0.0:
-            out["lf_norm"] = float(lf / denom)
-            out["hf_norm"] = float(hf / denom)
-
+    total = sum(p for p in powers.values() if np.isfinite(p))
+    if total <= 0:
+        return out
+    for name, p in powers.items():
+        if np.isfinite(p):
+            out[f"{name.lower()}_pct"] = float(100.0 * p / total)
     return out
+
+
+@epoch_metric_group
+def band_peak(ctx) -> dict[str, float]:
+    """``{band}_peak_hz``: frequency of the maximum PSD value inside each band."""
+    out: dict[str, float] = {}
+    method = getattr(ctx, "psd_method", None)
+    psd_res = getattr(ctx, "psd", None)
+    if method is None or psd_res is None:
+        return out
+    freqs = np.asarray(psd_res.freqs, dtype=float)
+    power = np.asarray(psd_res.power, dtype=float)
+    for name, spec in method.bands.items():
+        if name == "FullRange":
+            continue
+        mask = (freqs >= spec.low) & (freqs <= spec.high)
+        if mask.any() and np.isfinite(power[mask]).any():
+            out[f"{name.lower()}_peak_hz"] = float(
+                freqs[mask][int(np.nanargmax(power[mask]))])
+    return out
+
+
+# ===========================================================================
+# Time-domain staples (PLAN.md phase 1b)
+# ===========================================================================
+
+
+def _nn_pnn(series, threshold_ms: float):
+    """``(count, percent)`` of successive |ΔIBI| above *threshold_ms*."""
+    d = np.abs(successive_diffs_ms(series))
+    if d.size == 0:
+        return float("nan"), float("nan")
+    nn = int(np.count_nonzero(d > threshold_ms))
+    return float(nn), float(100.0 * nn / d.size)
+
+
+@epoch_metric
+def nn50(series) -> float:
+    """Number of successive IBI differences greater than 50 ms."""
+    return _nn_pnn(series, 50.0)[0]
+
+
+@epoch_metric
+def pnn50(series) -> float:
+    """Percentage of successive IBI differences greater than 50 ms."""
+    return _nn_pnn(series, 50.0)[1]
+
+
+@epoch_metric
+def nn20(series) -> float:
+    """Number of successive IBI differences greater than 20 ms."""
+    return _nn_pnn(series, 20.0)[0]
+
+
+@epoch_metric
+def pnn20(series) -> float:
+    """Percentage of successive IBI differences greater than 20 ms."""
+    return _nn_pnn(series, 20.0)[1]
+
+
+@epoch_metric
+def mean_hr(series) -> float:
+    """Mean heart rate in bpm = 60000 / mean(IBI in ms)."""
+    ibi = ibi_clean_ms(series)
+    if ibi.size == 0:
+        return np.nan
+    m = float(np.mean(ibi))
+    return float(60000.0 / m) if m > 0 else np.nan
+
+
+@epoch_metric
+def sd_hr(series) -> float:
+    """SD of the per-beat instantaneous heart rate (bpm)."""
+    ibi = ibi_clean_ms(series)
+    ibi = ibi[ibi > 0]
+    return float(np.std(60000.0 / ibi)) if ibi.size >= 2 else np.nan
+
+
+@epoch_metric
+def cvnn(series) -> float:
+    """Coefficient of variation of the IBIs: 100 * SDNN / mean (percent)."""
+    ibi = ibi_clean_ms(series)
+    if ibi.size < 2:
+        return np.nan
+    m = float(np.mean(ibi))
+    return float(100.0 * np.std(ibi) / m) if m > 0 else np.nan
+
+
+@epoch_metric
+def cvsd(series) -> float:
+    """Coefficient of variation of successive differences: 100 * SDSD / mean (percent)."""
+    ibi = ibi_clean_ms(series)
+    d = successive_diffs_ms(series)
+    if ibi.size < 2 or d.size == 0:
+        return np.nan
+    m = float(np.mean(ibi))
+    return float(100.0 * np.std(d) / m) if m > 0 else np.nan
+
+
+_TI_BIN_MS = 1000.0 / 128.0   # 7.8125 ms, the standard HRV histogram bin
+
+
+def _ibi_histogram(ibi_ms: np.ndarray):
+    """``(counts, centres)`` of the IBI histogram on the 1/128 s grid, or None."""
+    if ibi_ms.size < 2:
+        return None
+    lo, hi = float(np.min(ibi_ms)), float(np.max(ibi_ms))
+    if hi <= lo:
+        return None
+    edges = np.arange(lo, hi + _TI_BIN_MS, _TI_BIN_MS)
+    if edges.size < 2:
+        return None
+    counts, edges = np.histogram(ibi_ms, bins=edges)
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    return counts.astype(float), centres
+
+
+@epoch_metric
+def hrv_ti(series) -> float:
+    """HRV triangular index: total IBIs / height of the modal histogram bin (1/128 s bins)."""
+    h = _ibi_histogram(ibi_clean_ms(series))
+    if h is None:
+        return np.nan
+    counts, _ = h
+    peak = float(counts.max()) if counts.size else 0.0
+    return float(counts.sum() / peak) if peak > 0 else np.nan
+
+
+@epoch_metric
+def tinn(series) -> float:
+    """Triangular Interpolation of the NN histogram (ms): base width of the
+    least-squares triangle fitted to the IBI histogram (Task Force 1996)."""
+    h = _ibi_histogram(ibi_clean_ms(series))
+    if h is None:
+        return np.nan
+    counts, centres = h
+    x = int(np.argmax(counts))
+    y = float(counts[x])
+    if y <= 0:
+        return np.nan
+    last = counts.size - 1
+
+    # Left side: triangle rises 0 -> y from bin N (<= x) up to the mode.
+    left = np.arange(0, x + 1)
+    best_n, best_err = x, np.inf
+    for n_lo in range(0, x + 1):
+        q = np.zeros(x + 1)
+        if x > n_lo:
+            on = left >= n_lo
+            q[on] = y * (left[on] - n_lo) / (x - n_lo)
+        else:
+            q[x] = y
+        err = float(np.sum((counts[: x + 1] - q) ** 2))
+        if err < best_err:
+            best_err, best_n = err, n_lo
+
+    # Right side: triangle falls y -> 0 from the mode down to bin M (>= x).
+    right = np.arange(x, last + 1)
+    best_m, best_err = x, np.inf
+    for n_hi in range(x, last + 1):
+        q = np.zeros(last - x + 1)
+        if n_hi > x:
+            on = right <= n_hi
+            q[on] = y * (n_hi - right[on]) / (n_hi - x)
+        else:
+            q[0] = y
+        err = float(np.sum((counts[x:] - q) ** 2))
+        if err < best_err:
+            best_err, best_m = err, n_hi
+
+    return float(centres[best_m] - centres[best_n])
+
+
+# ===========================================================================
+# Poincaré complements (PLAN.md phase 1c): Toichi (1997) CSI / CVI
+# ===========================================================================
+
+
+@epoch_metric
+def csi(series) -> float:
+    """Cardiac Sympathetic Index L/T (T = 4·SD1, L = 4·SD2; Toichi 1997)."""
+    s1, s2 = sd1(series), sd2(series)
+    if np.isnan(s1) or np.isnan(s2) or s1 <= 0:
+        return np.nan
+    return float(s2 / s1)            # (4·SD2) / (4·SD1)
+
+
+@epoch_metric
+def cvi(series) -> float:
+    """Cardiac Vagal Index log10(L·T) = log10(16·SD1·SD2) (Toichi 1997)."""
+    s1, s2 = sd1(series), sd2(series)
+    if np.isnan(s1) or np.isnan(s2) or s1 <= 0 or s2 <= 0:
+        return np.nan
+    return float(np.log10(16.0 * s1 * s2))
+
+
+@epoch_metric
+def modified_csi(series) -> float:
+    """Modified Cardiac Sympathetic Index L²/T (Toichi 1997)."""
+    s1, s2 = sd1(series), sd2(series)
+    if np.isnan(s1) or np.isnan(s2) or s1 <= 0:
+        return np.nan
+    t, ell = 4.0 * s1, 4.0 * s2
+    return float(ell * ell / t)
+
+
+# ===========================================================================
+# Non-linear: long-term DFA (PLAN.md phase 1d)
+# ===========================================================================
+
+
+@epoch_metric
+def dfa_a2(series) -> float:
+    """DFA long-term scaling exponent α2 (Peng et al. 1995, box sizes 16-64 beats)."""
+    return dfa_alpha1(ibi_clean_ms(series), scale_min=16, scale_max=64)

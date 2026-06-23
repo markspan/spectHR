@@ -1,6 +1,6 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# spectHR/DataSet/preprocessing.py
+# spectHR/dataset/preprocessing.py
 """
 Loader-agnostic pre-processing transforms: ``Session`` → ``Session``.
 
@@ -33,10 +33,10 @@ from __future__ import annotations
 import numpy as np
 
 from spectHR.config import CardioParams, WorkspaceView
+from spectHR.logger import logger
 from spectHR.session import Events, Intervals, Samples, Session
-from spectHR.Tools.ECGProcessing import detect_ecg_polarity
-from spectHR.Tools.Logger import logger
-from spectHR.Tools.RespirationSegmentation import (
+from spectHR.signal.ecg import detect_ecg_polarity
+from spectHR.signal.respiration import (
     accel_to_respiration,
     segment_respiration,
 )
@@ -72,7 +72,7 @@ def _as_view(params: _ParamsLike) -> WorkspaceView:
 
 
 # ---------------------------------------------------------------------------
-# Channel resolution
+# Channel resolution (the device-aware layer)
 # ---------------------------------------------------------------------------
 #
 # Loaders disagree on sample-channel keys: NFF/EVT use canonical ``"ecg"`` /
@@ -80,6 +80,12 @@ def _as_view(params: _ParamsLike) -> WorkspaceView:
 # (``"ecg-[8554112A]"``, ``"RSP-[8554112A]"``).  These resolvers prefer the
 # canonical accessor and fall back to a case-insensitive prefix scan, so every
 # downstream consumer finds the same channel regardless of source.
+#
+# This is the single place that knows the device-naming conventions.  It is used
+# *before* canonicalisation (and by :func:`apply_canonical_channels` itself);
+# once that step has aliased the device-suffixed keys onto the canonical ones,
+# the plain ``Session.ecg`` / ``resp`` / ``bp`` / ``icg`` getters suffice and are
+# what the rest of the codebase uses.
 
 
 def resolve_ecg(session: Session) -> Samples | None:
@@ -169,7 +175,7 @@ def apply_ecg_polarity(session: Session, params: _ParamsLike = None) -> Session:
     A loader-agnostic, early pre-processing step: it inspects each channel
     whose key starts with ``"ecg"`` (canonical ``"ecg"`` and device-suffixed
     ``"ecg-[…]"`` alike), decides its polarity with
-    :func:`~spectHR.Tools.ECGProcessing.detect_ecg_polarity` (skewness of the
+    :func:`~spectHR.signal.ecg.detect_ecg_polarity` (skewness of the
     band-passed QRS, with a peak-prominence tiebreaker), and negates the
     values of any channel detected as ``"inverted"`` so downstream R-peak
     detection sees upright R-waves.
@@ -621,7 +627,9 @@ def _detect_per_epoch(session: Session, view: WorkspaceView) -> "Intervals | Non
             continue
         seg = _segment(_respiration_window(session, view, float(ep.start), float(ep.end)))
         if seg is not None:
-            starts_l.append(seg[0]); ends_l.append(seg[1]); labels_l.append(seg[2])
+            starts_l.append(seg[0])
+            ends_l.append(seg[1])
+            labels_l.append(seg[2])
 
     if not starts_l:
         seg = _segment(_respiration_window(session, view, None, None))

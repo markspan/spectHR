@@ -34,7 +34,6 @@ import numpy as np
 
 from spectHR.session._core import Events, Intervals, Samples  # noqa: F401 (re-used in methods)
 
-
 # ---------------------------------------------------------------------------
 # Epoch
 # ---------------------------------------------------------------------------
@@ -83,8 +82,11 @@ class AnalysisConfig:
     @classmethod
     def from_workspace(cls, workspace: dict | None) -> AnalysisConfig:
         """Build from a raw workspace dict."""
-        from spectHR.config import WorkspaceView, transfer_settings_from_workspace
-        from spectHR.config import display_bands_from_workspace
+        from spectHR.config import (
+            WorkspaceView,
+            display_bands_from_workspace,
+            transfer_settings_from_workspace,
+        )
         ws = WorkspaceView(workspace)
         ibi_dev, rate_dev = ws.rsa_rejection
         ts = transfer_settings_from_workspace(workspace)
@@ -174,6 +176,14 @@ class Session:
     epochs:    dict[str, Epoch]     = field(default_factory=dict)
 
     # --- typed getters by convention ---
+    #
+    # These resolve a channel by its *canonical* key (plus a couple of close
+    # synonyms).  Device-suffixed keys (``ecg-[vuams]``, ``dzdt-[…]``) are
+    # aliased onto the canonical keys once, early in the load pipeline, by
+    # :func:`spectHR.dataset.preprocessing.apply_canonical_channels`; the
+    # device-aware resolvers it uses (``resolve_ecg`` / ``resolve_resp`` / …)
+    # are the layer that knows the device-naming conventions.  After that step
+    # these getters are all downstream code needs.
 
     @property
     def hrv(self) -> Events | None:
@@ -237,7 +247,7 @@ class Session:
             Analysis parameters.  ``None`` uses :class:`AnalysisConfig` defaults.
         """
         from spectHR.analysis.epoch_context import EpochContext
-        from spectHR.analysis.registry import get_metrics, get_metric_groups
+        from spectHR.analysis.registry import get_metric_groups, get_metrics
 
         config = config or AnalysisConfig()
         active = {k: v for k, v in self.epochs.items() if v.active}
@@ -255,27 +265,18 @@ class Session:
         contexts: dict[str, EpochContext] = {}
         rows: list[dict[str, float]] = []
 
-        for label, epoch in active.items():
-            s, e = epoch.start, epoch.end
-
-            def _win(ch: Samples | None) -> Samples | None:
-                return ch.window(s, e) if ch is not None else None
-
+        for label in active:
+            # Zero-copy window every channel to the epoch in one place, then
+            # hand the windowed channels plus the shared config to the context.
+            scoped = self.scoped_to(label)
             ctx = EpochContext(
-                view=self.events["hrv"].window(s, e),
-                psd_method=config.psd_method,
-                bp_ts=_win(self.bp),
-                rsp_ts=_win(self.resp),
-                rsp_phases=(self.breath.window(s, e) if self.breath is not None else None),
-                rsa_lag_s=config.rsa_lag_s,
-                rsa_max_ibi_deviation=config.rsa_max_ibi_deviation,
-                rsa_max_rate_deviation=config.rsa_max_rate_deviation,
-                icg_ts=_win(self.icg),
-                ecg_ts=_win(self.ecg),
-                b_point_guard_ms=config.b_point_guard_ms,
-                transfer_config=config.transfer_config,
-                prsa_window=config.prsa_window,
-                log_band_power=config.log_band_power,
+                view=scoped.events["hrv"],
+                bp_ts=scoped.bp,
+                rsp_ts=scoped.resp,
+                rsp_phases=scoped.breath,
+                icg_ts=scoped.icg,
+                ecg_ts=scoped.ecg,
+                config=config,
             )
             contexts[label] = ctx
 

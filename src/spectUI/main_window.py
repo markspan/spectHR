@@ -18,13 +18,13 @@ from __future__ import annotations
 import pickle
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-
-from platformdirs import user_config_dir
 
 import numpy as np
 import qtawesome as qta
-from PySide6.QtCore import Qt, QObject, QSize, QThread, QTimer, Signal
+from platformdirs import user_config_dir
+from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -41,10 +41,8 @@ from PySide6.QtWidgets import (
 from PySide6QtAds import CDockManager, CDockWidget, DockWidgetArea
 
 from spectHR._version import __version__
-from spectHR.DataSet.loaders import load as _load_session
-from spectHR.Tools.Logger import logger
-from spectHR.session import Session
-from spectHR.DataSet.preprocessing import (
+from spectHR.dataset.loaders import load as _load_session
+from spectHR.dataset.preprocessing import (
     apply_beat_detection,
     apply_bp_calibration,
     apply_breath_phases,
@@ -56,7 +54,10 @@ from spectHR.DataSet.preprocessing import (
     retrigger_beats,
     retrigger_beats_per_epoch,
 )
-
+from spectHR.logger import logger
+from spectHR.session import Session
+from spectUI.coordinator import DataChange, DataCoordinator
+from spectUI.parameters import Parameters, populate_tree
 from spectUI.perspectives import (
     BUILTIN_COMPARE,
     BUILTIN_DEFAULT,
@@ -65,7 +66,6 @@ from spectUI.perspectives import (
 )
 from spectUI.plot_worker import DockScheduler
 from spectUI.settings import AppSettings
-from spectUI.coordinator import DataChange, DataCoordinator
 from spectUI.widgets import (
     BPSeriesWidget,
     EpochEditorWidget,
@@ -80,10 +80,9 @@ from spectUI.widgets import (
     TransferPlotWidget,
     TransferProfilePlotWidget,
 )
-from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.timeline.base import TimelineView
-from spectUI.parameters import Parameters, populate_tree
+from spectUI.widgets.workspace_editor import DirectorySelectorDialog, ParametersEditorDialog
 
 # ---------------------------------------------------------------------------
 # Dock object-name constants
@@ -313,7 +312,7 @@ class MainWindow(QMainWindow):
         # and the analysis parameters.
         _HEAVY = DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS
         data_specs = {
-            _DOCK_PREPROCESSING: (PrepPlotWidget, DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS),
+            _DOCK_PREPROCESSING: (PrepPlotWidget, _HEAVY),
             _DOCK_HR:            (HRSeriesWidget, DataChange.HRV | DataChange.EPOCHS),
             _DOCK_BP:            (BPSeriesWidget, DataChange.BP | DataChange.EPOCHS),
             _DOCK_POINCARE:      (PoincareWidget, DataChange.HRV | DataChange.EPOCHS),
@@ -403,11 +402,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_menu_and_toolbar(self) -> None:
-        self._edit_act     = self._action("fa5s.cog",               "&Edit settings…",       self.edit_workspace,          "Ctrl+E")
-        self._load_act     = self._action("fa5s.file-import",      "&Load settings…",       self.open_workspace,          "Ctrl+O")
-        self._save_act     = self._action("fa5s.save",             "&Save settings",        self.save_workspace,          "Ctrl+S")
-        self._settings_act = self._action("fa5s.folder-open",      "Directory &settings…",  self.open_directory_settings, "Ctrl+Shift+S")
-        self._doc_act      = self._action("fa5s.question-circle",  "&Documentation",        self._open_docs,              "Ctrl+D")
+        self._edit_act = self._action(
+            "fa5s.cog", "&Edit settings…", self.edit_workspace, "Ctrl+E")
+        self._load_act = self._action(
+            "fa5s.file-import", "&Load settings…", self.open_workspace, "Ctrl+O")
+        self._save_act = self._action(
+            "fa5s.save", "&Save settings", self.save_workspace, "Ctrl+S")
+        self._settings_act = self._action(
+            "fa5s.folder-open", "Directory &settings…",
+            self.open_directory_settings, "Ctrl+Shift+S")
+        self._doc_act = self._action(
+            "fa5s.question-circle", "&Documentation", self._open_docs, "Ctrl+D")
 
         # ---- Settings menu ----
         ws_menu = self.menuBar().addMenu("&Settings")
@@ -603,6 +608,7 @@ class MainWindow(QMainWindow):
         import re
 
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as _Canvas
+
         from spectUI.widgets.plot_export_dialog import PlotExportDialog
 
         def _slug(text) -> str:

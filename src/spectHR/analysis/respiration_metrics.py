@@ -13,6 +13,8 @@ Registered epoch metrics (one CSV/HDF5 column each, the function name)
 ---------------------------------------------------------------------
 Breathing-frequency context (Grossman & Taylor, 2007)
 * ``resp_freq``, mean breathing frequency in Hz.
+* ``resp_rate_bpm``, the same rate in breaths per minute (60 * resp_freq).
+* ``rrv``, respiration-rate variability: SD of the per-cycle breath durations (s).
 * ``hf_resp_in_band``, 1.0/0.0 flag: is the mean breathing frequency inside
   the configured HF band?  A 0.0 warns that the epoch's HF power may not index
   RSA at all (NaN when undeterminable).
@@ -56,11 +58,12 @@ import numpy as np
 
 from spectHR.analysis._beat_sampling import nanmean, rpeak_sample_indices
 from spectHR.analysis.registry import epoch_metric
-from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
-
+from spectHR.signal.respiration import mean_breath_frequency_hz
 
 __all__ = [
     "resp_freq",
+    "resp_rate_bpm",
+    "rrv",
     "hf_resp_in_band",
     "resp_mvo",
     "resp_svo",
@@ -102,8 +105,42 @@ def resp_freq(ctx) -> float:
 
 
 @epoch_metric
+def resp_rate_bpm(ctx) -> float:
+    """Mean breathing rate in breaths per minute (60 * resp_freq)."""
+    f = _mean_breath_hz(ctx)
+    return float(60.0 * f) if f is not None else float("nan")
+
+
+@epoch_metric
+def rrv(ctx) -> float:
+    """Respiration-rate variability: SD of the per-cycle breath durations (s).
+
+    Cycle durations mirror :func:`resp_freq` (each phase paired with its
+    successor, ``ends[1:] - starts[:-1]``).  NaN with fewer than two cycles.
+    Population SD (``ddof=0``), as in :mod:`spectHR.analysis.ecg_metrics`.
+    """
+    phases = getattr(ctx, "rsp_phases", None)
+    if phases is None:
+        return float("nan")
+    try:
+        starts = np.asarray(phases.starts, dtype=float)
+        ends = np.asarray(phases.ends, dtype=float)
+    except Exception:
+        return float("nan")
+    if starts.size < 3 or ends.size < 3:
+        return float("nan")
+    periods = ends[1:] - starts[:-1]
+    periods = periods[periods > 0]
+    return float(np.std(periods)) if periods.size >= 2 else float("nan")
+
+
+@epoch_metric
 def hf_resp_in_band(ctx) -> float:
-    """True if mean breathing frequency lies inside the HF band, else False (Grossman & Taylor 2007). A False value flags that the epoch's HF power may not reflect RSA."""
+    """True if mean breathing frequency lies inside the HF band, else False.
+
+    (Grossman & Taylor 2007.) A False value flags that the epoch's HF power may
+    not reflect RSA.
+    """
     f = _mean_breath_hz(ctx)
     if f is None:
         return float("nan")
@@ -244,7 +281,7 @@ _DEFAULT_RSA_LAG_S: float = 1.0  # dZ-HR phase shift; VU-DAMS default 1000 ms
 # Both are expressed as fractional deviations (0.50 = 50 %).
 # Source: VU-DAMS manual v2 / DAMS 5.0, Appendix A.
 _STRICT_IBI_DEV: float = 0.50   # max consecutive-IBI deviation (code -5)
-_STRICT_RATE_DEV: float = 0.50  # max respiration-rate deviation from 20-breath running avg (code -6)
+_STRICT_RATE_DEV: float = 0.50  # max resp-rate deviation from 20-breath avg (code -6)
 
 
 def grossman_rsa_per_breath(
@@ -414,11 +451,16 @@ def _rsa_metric(ctx, key: str) -> float:
 
 @epoch_metric
 def rsa(ctx) -> float:
-    """Respiratory sinus arrhythmia: mean over valid breath cycles (Grossman 1990 peak-to-valley, ms)."""
+    """Respiratory sinus arrhythmia: mean over valid breath cycles.
+
+    Grossman 1990 peak-to-valley, ms.
+    """
     return _rsa_metric(ctx, "rsa")
 
 
 @epoch_metric
 def rsa0(ctx) -> float:
-    """RSA with every invalid breath (negative or undetectable) counted as zero over the total breath count; reduces over-estimation bias (VU-DAMS RSA0, ms)."""
+    """RSA with every invalid breath (negative or undetectable) counted as zero
+    over the total breath count; reduces over-estimation bias (VU-DAMS RSA0, ms).
+    """
     return _rsa_metric(ctx, "rsa0")

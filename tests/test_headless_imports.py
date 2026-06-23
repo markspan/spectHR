@@ -23,7 +23,6 @@ import sys
 
 import pytest
 
-
 # Top-level package names that must never appear in sys.modules after a
 # pure spectHR import.
 FORBIDDEN_ROOTS = ("PySide6", "shiboken6", "spectUI", "qtawesome")
@@ -34,13 +33,13 @@ HEADLESS_MODULES = [
     "spectHR",
     "spectHR.config",
     "spectHR.analysis",
-    "spectHR.DataSet",
-    "spectHR.DataSet.preprocessing",
-    "spectHR.DataSet.loaders",
-    "spectHR.DataSet.loaders.edf_loader",
-    "spectHR.DataSet.loaders.evt_loader",
-    "spectHR.DataSet.loaders.nff_loader",
-    "spectHR.DataSet.loaders.xdf_loader",
+    "spectHR.dataset",
+    "spectHR.dataset.preprocessing",
+    "spectHR.dataset.loaders",
+    "spectHR.dataset.loaders.edf_loader",
+    "spectHR.dataset.loaders.evt_loader",
+    "spectHR.dataset.loaders.nff_loader",
+    "spectHR.dataset.loaders.xdf_loader",
 ]
 
 _CHECK_SRC = """

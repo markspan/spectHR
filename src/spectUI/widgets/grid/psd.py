@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from matplotlib.figure import Figure
 
-from spectHR.analysis.psd import PSDResult, PsdMethod
+from spectHR.analysis.psd import PsdMethod, PSDResult
 from spectHR.analysis.psd._engine import PSDEngine
 from spectHR.session import Session
 from spectUI.common.spectral_plots import draw_psd_tile

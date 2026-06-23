@@ -26,10 +26,9 @@ EventCodeWindow
 LogWidget
     Scrollable log output dock.
 """
-from spectUI.widgets.EventCodeWindow import EventCodeWindow
-from spectUI.widgets.WorkSpaceEditor import DirectorySelectorDialog, ParametersEditorDialog
 from spectUI.widgets.bp import BPSeriesWidget
 from spectUI.widgets.epochs import EpochEditorWidget
+from spectUI.widgets.event_code_window import EventCodeWindow
 from spectUI.widgets.grid import (
     ProfilePlotWidget,
     PSDPlotWidget,
@@ -43,6 +42,7 @@ from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.poincare import PoincareWidget
 from spectUI.widgets.prep import PrepPlotWidget, RTopController
 from spectUI.widgets.results import ResultsTableWidget
+from spectUI.widgets.workspace_editor import DirectorySelectorDialog, ParametersEditorDialog
 
 __all__ = [
     # plot widgets
@@ -54,6 +54,7 @@ __all__ = [
     "PSDPlotWidget",
     "ProfilePlotWidget",
     "SpectrogramPlotWidget",
+    "Spectrogram3DPlotWidget",
     "TransferPlotWidget",
     "TransferProfilePlotWidget",
     "ResultsTableWidget",

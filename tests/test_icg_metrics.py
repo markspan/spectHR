@@ -18,11 +18,11 @@ import numpy as np
 
 from spectHR.analysis.icg_metrics import (
     _b_point_index,
-    pep_ensemble,
     pep_b_ms,
     pep_c_ms,
-    pep_q_ms,
+    pep_ensemble,
     pep_n_beats,
+    pep_q_ms,
 )
 
 
@@ -96,6 +96,7 @@ def test_b_point_guard_flows_through_epoch_context():
     from types import SimpleNamespace
 
     from spectHR.analysis.epoch_context import EpochContext
+    from spectHR.session import AnalysisConfig
 
     rpeaks, t, dz, ecg = _synthetic_icg()
     view = SimpleNamespace(
@@ -108,7 +109,7 @@ def test_b_point_guard_flows_through_epoch_context():
 
     def pep_for(guard):
         ctx = EpochContext(view, icg_ts=icg_ts, ecg_ts=ecg_ts,
-                           b_point_guard_ms=guard)
+                           config=AnalysisConfig(b_point_guard_ms=guard))
         return ctx.pep_value
 
     near, far = pep_for(0.0), pep_for(60.0)

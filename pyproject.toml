@@ -7,7 +7,7 @@ name = "specthr"
 dynamic = ["version"]
 description = "HRV / physiological data tooling"
 readme = "readme.MD"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "GPL-2.0-only" }
 authors = [
   { name = "M.M. Span", email = "m.m.span@rug.nl" }
@@ -41,9 +41,38 @@ find = { where = ["src"] , include = ["spectUI*", "spectHR*"]}
 version = { attr = "spectHR._version.__version__" }
  
 [project.scripts]
-specthr = "spectUI.MainWindow:main"
+specthr = "spectUI.main_window:main"
 
 [project.urls]
 Homepage = "https://github.com/MarkSpan/spectHR"
 Repository = "https://github.com/MarkSpan/spectHR"
 Issues = "https://github.com/MarkSpan/spectHR/issues"
+
+[tool.ruff]
+target-version = "py312"   # code uses 3.12 f-string syntax; release builds on 3.14
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = ["tools"]   # local dev scratch scripts, not shipped code
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N"]
+ignore = [
+    # Scientific maths notation (matrices / constants: H, T, N, Q, B, C, ...)
+    # reads better than snake_case here; PEP 8 itself permits single-cap names.
+    "N803",  # argument name not lowercase
+    "N806",  # local variable not lowercase
+    # Qt conventions: signals are camelCase and method overrides must match Qt
+    # (mousePressEvent, sizeHint, ...), so they cannot be snake_case.
+    "N802",  # function name not lowercase
+    "N815",  # mixedCase class attribute
+    # spectHR / spectUI are the deliberate brand / distribution package names.
+    "N999",  # invalid module name
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["spectHR", "spectUI"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test idioms: semicolon setup (`a.show(); b.show()`), module aliases
+# (`import ecg_metrics as M`), and imports after sys.path / fixture setup.
+"tests/**" = ["E402", "E702", "N812"]

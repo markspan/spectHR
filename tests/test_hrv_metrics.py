@@ -22,33 +22,46 @@ import pytest
 
 from spectHR.session import Events
 
+
 def _ev(times):
     """Build an Events from a times array with all-'N' labels."""
     t = np.asarray(times, dtype=float)
     return Events(t, np.full(t.shape, "N", dtype=object))
-from spectHR.analysis.psd import (
-    BandSpec,
-    PsdMethod,
-    PSDResult,
-    PSDEngine,
-)
-from spectHR.analysis.psd._band_power import band_power_rectangular
-from spectHR.analysis.ecg_metrics import (
-    count, mean, median, sdnn, rmssd, sdsd, sd1, sd2, sd_ratio, ellipse_area,
-    min as ibi_min,
-    max as ibi_max,
-)
-from spectHR.analysis.ecg_metrics import (
-    lf_power, hf_power, lf_hf_ratio, vlf_power, fullrange_power,
-)
-
-from conftest import (   # imported via pytest rootdir/conftest.py
+from conftest import (  # imported via pytest rootdir/conftest.py
     WORKSPACE_BANDS,
     make_cs,
     make_spectral_cs,
     make_two_sinusoid_cs,
 )
-
+from spectHR.analysis.ecg_metrics import (
+    count,
+    ellipse_area,
+    fullrange_power,
+    hf_power,
+    lf_hf_ratio,
+    lf_power,
+    mean,
+    median,
+    rmssd,
+    sd1,
+    sd2,
+    sd_ratio,
+    sdnn,
+    sdsd,
+    vlf_power,
+)
+from spectHR.analysis.ecg_metrics import (
+    max as ibi_max,
+)
+from spectHR.analysis.ecg_metrics import (
+    min as ibi_min,
+)
+from spectHR.analysis.psd import (
+    PSDEngine,
+    PsdMethod,
+    PSDResult,
+)
+from spectHR.analysis.psd._band_power import band_power_rectangular
 
 # ---------------------------------------------------------------------------
 # Shared helpers for the frequency tests

@@ -164,12 +164,13 @@ class PoincareWidget(QWidget):
             self._teardown_cursor()
             self.ax.text(0.5, 0.5, "No R-peaks", ha="center", va="center",
                          transform=self.ax.transAxes, color="#999")
-            self.ax.set_xticks([]); self.ax.set_yticks([])
+            self.ax.set_xticks([])
+            self.ax.set_yticks([])
             return
 
         hi = 0.0
         for i, (name, ep) in enumerate(self._session.epochs.items()):
-            if not getattr(ep, "active", True): 
+            if not getattr(ep, "active", True):
                 continue
             ev = hrv.window(float(ep.start), float(ep.end))
             x, y, t = poincare_points(ev)

@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from spectHR.config import CardioParams
-from spectHR.DataSet.preprocessing import filter_ecg, resolve_ecg, resolve_resp
+from spectHR.dataset.preprocessing import filter_ecg, resolve_ecg, resolve_resp
 from spectHR.session import Samples, Session
 from spectUI.widgets.prep.rtop_controller import RTopController
 from spectUI.widgets.timeline.model import TimelineModel

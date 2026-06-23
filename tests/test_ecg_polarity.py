@@ -4,14 +4,14 @@
 Tests for ECG polarity detection (:func:`detect_ecg_polarity`).
 
 Pure spectHR signal logic, no Qt.  The Session-level transform
-:func:`spectHR.DataSet.preprocessing.apply_ecg_polarity` that calls this is
+:func:`spectHR.dataset.preprocessing.apply_ecg_polarity` that calls this is
 covered in ``test_preprocessing.py``.
 """
 from __future__ import annotations
 
 import numpy as np
 
-from spectHR.Tools.ECGProcessing import detect_ecg_polarity
+from spectHR.signal.ecg import detect_ecg_polarity
 
 
 def _synth_ecg(duration: float = 20.0, fs: float = 250.0, hr_bpm: float = 60.0):

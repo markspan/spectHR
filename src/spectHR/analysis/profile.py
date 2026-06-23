@@ -18,21 +18,23 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from spectHR.analysis.psd._config import (
-    PsdMethod,
-    _DEFAULT_PSD_METHOD,
-    respiration_min,
-    respiration_max,
+from spectHR.analysis._smoothing import (
+    smooth3 as _ma3,  # CARSPAN MAW kernel (T_AnaFunctions.pas:595-643)
+)
+from spectHR.analysis._smoothing import (
+    smooth3_triangular as _tri3,  # AutoSpectrum WindowSize=3 smoother
 )
 from spectHR.analysis.psd._band_power import band_power_rectangular
-from spectHR.analysis.psd._utils import ProfileResult
-from spectHR.Tools.Logger import logger
-from spectHR.Tools.RespirationSegmentation import mean_breath_frequency_hz
+from spectHR.analysis.psd._config import (
+    _DEFAULT_PSD_METHOD,
+    PsdMethod,
+    respiration_max,
+    respiration_min,
+)
 from spectHR.analysis.psd._engine import PSDEngine
-from spectHR.analysis._smoothing import smooth3 as _ma3  # CARSPAN MAW kernel (T_AnaFunctions.pas:595-643)
-from spectHR.analysis._smoothing import smooth3_triangular as _tri3  # AutoSpectrum WindowSize=3 smoother
-from spectHR.analysis.psd._utils import PSDResult as _PSDResult
-
+from spectHR.analysis.psd._utils import ProfileResult
+from spectHR.logger import logger
+from spectHR.signal.respiration import mean_breath_frequency_hz
 
 __all__ = [
     "compute_band_power_profile",

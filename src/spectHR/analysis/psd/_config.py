@@ -16,10 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Literal
 
-from spectHR.analysis.psd._welch import WelchOptions
-from spectHR.analysis.psd._lombscargle import LombscargleOptions
 from spectHR.analysis.psd._carspan import CarspanOptions
-
+from spectHR.analysis.psd._lombscargle import LombscargleOptions
+from spectHR.analysis.psd._welch import WelchOptions
 
 __all__ = [
     "Algorithm",

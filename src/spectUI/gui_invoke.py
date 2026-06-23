@@ -5,7 +5,7 @@
 Qt widgets may only be created and used on the thread that owns the
 ``QApplication``.  File loading, however, runs on a background
 ``QThread`` (see ``MainWindow._load_file``), and the CARSPAN ``.evt``
-loader may need to pop up :class:`~spectUI.widgets.EventCodeWindow`
+loader may need to pop up :class:`~spectUI.widgets.event_code_window`
 mid-load to ask the user which event codes mark epoch boundaries.
 
 :func:`run_in_gui_thread` bridges that gap: called from a worker thread
@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, TypeVar
 
-from PySide6.QtCore import QCoreApplication, QObject, Qt, Signal, Slot, QThread
+from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, Signal, Slot
 
 T = TypeVar("T")
 

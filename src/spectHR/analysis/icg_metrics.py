@@ -2,7 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # spectHR/analysis/icg_metrics.py
 """
-Impedance-cardiography (ICG) metric: pre-ejection period (PEP).
+Impedance-cardiography (ICG) metrics: pre-ejection period (PEP) and the
+Heather index of contractility.
+
+Registered columns: ``pep`` (and the scored landmarks ``pep_q_ms`` / ``pep_b_ms``
+/ ``pep_c_ms`` plus ``pep_n_beats``) and ``heather_index`` = ``(dZ/dt)max at the
+C-point / Q-to-C interval``, both read from the same cached ensemble.
 
 PEP is the cleanest non-invasive index of *sympathetic* (beta-adrenergic)
 drive to the heart, the branch that HRV alone cannot isolate (Sherwood et
@@ -65,7 +70,6 @@ from __future__ import annotations
 import numpy as np
 
 from spectHR.analysis.registry import epoch_metric
-
 
 __all__ = [
     "pep_per_beat", "pep_ensemble", "pep",
@@ -581,3 +585,33 @@ def pep_q_ms(ctx) -> float:
 def pep_n_beats(ctx) -> float:
     """Number of beats in the PEP ensemble average for the epoch (needs ICG dZ/dt)."""
     return _pep_detail_field(ctx, "n_beats")
+
+
+@epoch_metric
+def heather_index(ctx) -> float:
+    """Heather index of myocardial contractility (needs ICG dZ/dt + ECG).
+
+    ``(dZ/dt)max at the C-point / Q-to-C interval``: the peak ejection velocity
+    divided by the time from the ECG Q-onset to that peak (units of dZ/dt per
+    second).  Read from the cached PEP ensemble (Q and C are already scored), so
+    it costs nothing extra.  NaN when no scorable ensemble or no Q-onset.
+    """
+    detail = getattr(ctx, "pep_detail", None)
+    if not detail:
+        return float("nan")
+    t_c = detail.get("t_c_ms")
+    t_q = detail.get("t_q_ms")
+    rel_ms = detail.get("rel_ms")
+    icg_ens = detail.get("icg_ens")
+    if (t_c is None or t_q is None or rel_ms is None or icg_ens is None
+            or not np.isfinite(t_c) or not np.isfinite(t_q)):
+        return float("nan")
+    qc_s = (float(t_c) - float(t_q)) / 1000.0
+    if qc_s <= 0:
+        return float("nan")
+    rel_ms = np.asarray(rel_ms, dtype=float)
+    icg_ens = np.asarray(icg_ens, dtype=float)
+    if rel_ms.size == 0 or icg_ens.size != rel_ms.size:
+        return float("nan")
+    c_idx = int(np.argmin(np.abs(rel_ms - float(t_c))))
+    return float(float(icg_ens[c_idx]) / qc_s)

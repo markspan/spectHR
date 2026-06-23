@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from spectHR.session import Samples, Session
-from spectHR.Tools.Decimation import decimate_minmax
+from spectHR.signal.decimation import decimate_minmax
 from spectUI.common import style_axis_clean
 from spectUI.widgets.timeline.base import TimelineView
 from spectUI.widgets.timeline.model import TimelineModel

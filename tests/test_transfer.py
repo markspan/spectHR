@@ -24,11 +24,13 @@ sliding-window band-power profile is covered by
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pytest
 
+from conftest import make_cs, make_spectral_cs
+from spectHR.analysis.profile import _setup_profile_grid
+from spectHR.analysis.psd._carspan import _dft
 from spectHR.analysis.transfer import (
     INPUT_SIGNALS,
     BandTransfer,
@@ -41,11 +43,6 @@ from spectHR.analysis.transfer import (
     compute_transfer,
     compute_transfer_profile,
 )
-from spectHR.analysis.psd._carspan import _dft
-from spectHR.analysis.profile import _setup_profile_grid
-
-from conftest import make_spectral_cs, make_cs
-
 
 # ===========================================================================
 # Pascal-faithful _smooth3 (T_AnaFunctions.pas:443-487, WindowSize=3)

@@ -35,11 +35,11 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyArrowPatch
 from matplotlib.ticker import MultipleLocator
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from spectHR.session import Session
-from spectHR.Tools.Decimation import decimate_minmax
+from spectHR.signal.decimation import decimate_minmax
 from spectUI.common import (
     OverviewWindow,
     make_nav_button,
@@ -338,9 +338,11 @@ class TimelineView(QWidget):
                 transform=xform, clip_on=False, zorder=4,
             ))
             ax.text(
-                0.5 * (a + b), y + 0.012, str(name),
-                ha="center", va="bottom", fontsize=8, color=_C_EPOCH,
-                transform=xform, clip_on=False, zorder=4,
+                0.5 * (a + b), y, str(name),
+                ha="center", va="center", fontsize=8, color=_C_EPOCH,
+                transform=xform, clip_on=False, zorder=5,
+                bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
+                          edgecolor="none", alpha=0.85),
             )
 
     def _draw_overview_static(self) -> None:

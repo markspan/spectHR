@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from spectHR.DataSet.loaders.registry import register_loader
-from spectHR.Tools.Logger import logger
+from spectHR.dataset.loaders.registry import register_loader
+from spectHR.logger import logger
+
+if TYPE_CHECKING:
+    from spectHR.session import Session
 
 
 @register_loader(".pkl")
