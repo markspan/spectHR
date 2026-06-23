@@ -723,6 +723,9 @@ class MainWindow(QMainWindow):
         """
         if self._session is None:
             return
+        prep_window = (
+            self._prep_widget.current_window() if self._prep_widget is not None else None
+        )
         self.setCursor(Qt.WaitCursor)
         try:
             self._session = transform(self._session, self._parameters)
@@ -738,6 +741,8 @@ class MainWindow(QMainWindow):
         self.unsetCursor()
         self._scheduler.invalidate()
         self._coordinator.set_session(self._session, self._parameters)
+        if prep_window is not None and self._prep_widget is not None:
+            self._prep_widget.apply_window(*prep_window)
         self._save_cache()
 
     def _load_file(self, path: Path, *, ignore_cache: bool = False) -> None:
