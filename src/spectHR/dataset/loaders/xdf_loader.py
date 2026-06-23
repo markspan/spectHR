@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pyxdf
 
 from spectHR.dataset.loaders.registry import register_loader
 from spectHR.logger import logger
+
+if TYPE_CHECKING:
+    from spectHR.session import Session
 
 # ------------------------------------------------------------
 # INTERNAL: 3-axis Respiration signal computation
@@ -120,7 +124,8 @@ def _compute_RSP_signal(
     Notes
     -----
     - If the belt orientation changes slowly, gravity removal + PCA is generally robust.
-    - If there are large posture changes, consider segment-wise PCA (e.g., per epoch) using the same code.
+    - If there are large posture changes, consider segment-wise PCA (e.g., per
+      epoch) using the same code.
     """
     acc = np.asarray(acc, dtype=float)
     if acc.ndim != 2 or acc.shape[1] != 3:
@@ -218,7 +223,8 @@ def load_xdf(path: Path, **kwargs) -> "Session":
         is_polar = stype.upper() in ("ECG", "ACCELEROMETER")
 
         # ---- MARKER STREAMS ------------------------------------------------
-        if ("event" in stype.lower() or "marker" in stype.lower()) and not name_lower.startswith("cam"):
+        if (("event" in stype.lower() or "marker" in stype.lower())
+                and not name_lower.startswith("cam")):
             raw_times = np.asarray(stream["time_stamps"], dtype=float)
             for t, row in zip(raw_times, stream["time_series"]):
                 label = str(row[0])

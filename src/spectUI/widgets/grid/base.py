@@ -232,12 +232,14 @@ class EpochGridView(QWidget):
             ax = fig.add_subplot(111)
             ax.text(0.5, 0.5, f"{label}\n{result.message}", ha="center",
                     va="center", transform=ax.transAxes, fontsize=8, color="#c0392b")
-            ax.set_xticks([]); ax.set_yticks([])
+            ax.set_xticks([])
+            ax.set_yticks([])
         elif result is None:
             ax = fig.add_subplot(111)
             ax.text(0.5, 0.5, f"{label}\n(insufficient data)", ha="center",
                     va="center", transform=ax.transAxes, fontsize=8, color="#999")
-            ax.set_xticks([]); ax.set_yticks([])
+            ax.set_xticks([])
+            ax.set_yticks([])
         else:
             self._render_tile(fig, label, result)
         canvas.draw_idle()

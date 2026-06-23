@@ -315,8 +315,10 @@ def _accel_session(per_epoch_breaths=True):
     z = np.zeros_like(t)
     # Epoch 1 (0-60 s): breathing on X.  Epoch 2 (60-120 s): breathing on Y.
     breath = np.sin(2 * np.pi * 0.25 * t)
-    x = np.where(np.arange(t.size) < half, breath, z) + 0.01 * np.random.default_rng(0).normal(size=t.size)
-    y = np.where(np.arange(t.size) >= half, breath, z) + 0.01 * np.random.default_rng(1).normal(size=t.size)
+    x = (np.where(np.arange(t.size) < half, breath, z)
+         + 0.01 * np.random.default_rng(0).normal(size=t.size))
+    y = (np.where(np.arange(t.size) >= half, breath, z)
+         + 0.01 * np.random.default_rng(1).normal(size=t.size))
     peaks = np.arange(0.5, 120.0, 0.8)
     return Session(
         name="acc",

@@ -62,7 +62,8 @@ class SpectrogramPlotWidget(_SpectrogramBase):
             ax.text(0.5, 0.5, f"{label}\n{result.error or 'no data'}",
                     ha="center", va="center", transform=ax.transAxes,
                     fontsize=8, color="#999")
-            ax.set_xticks([]); ax.set_yticks([])
+            ax.set_xticks([])
+            ax.set_yticks([])
             return
 
         # Epoch-relative time on x, frequency on y, power as colour.

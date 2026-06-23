@@ -202,7 +202,7 @@ class TestEvents:
         new = np.array(["N", "V", "N", "N", "N", "N"], dtype=object)
         ev2 = ev.with_labels(new)
         assert ev2.labels[1] == "V"
-        assert all(l == "N" for l in ev.labels)   # original unchanged
+        assert all(lab == "N" for lab in ev.labels)   # original unchanged
 
     def test_replace_window(self):
         ev = make_events(n_beats=100)

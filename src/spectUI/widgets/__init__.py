@@ -54,6 +54,7 @@ __all__ = [
     "PSDPlotWidget",
     "ProfilePlotWidget",
     "SpectrogramPlotWidget",
+    "Spectrogram3DPlotWidget",
     "TransferPlotWidget",
     "TransferProfilePlotWidget",
     "ResultsTableWidget",

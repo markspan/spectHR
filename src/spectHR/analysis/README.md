@@ -343,7 +343,7 @@ Source: [`ecg_metrics.py`](ecg_metrics.py) (`hf_nu`)
 
 ### hf_resp_in_band
 
-True if mean breathing frequency lies inside the HF band, else False (Grossman & Taylor 2007). A False value flags that the epoch's HF power may not reflect RSA.
+True if mean breathing frequency lies inside the HF band, else False.
 
 Call chain: `hf_resp_in_band` -> `_mean_breath_hz` -> `mean_breath_frequency_hz`
 
@@ -527,7 +527,7 @@ Source: [`respiration_metrics.py`](respiration_metrics.py) (`rrv`)
 
 ### rsa
 
-Respiratory sinus arrhythmia: mean over valid breath cycles (Grossman 1990 peak-to-valley, ms).
+Respiratory sinus arrhythmia: mean over valid breath cycles.
 
 Call chain: `rsa` -> `_rsa_metric`
 

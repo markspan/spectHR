@@ -136,7 +136,11 @@ def rrv(ctx) -> float:
 
 @epoch_metric
 def hf_resp_in_band(ctx) -> float:
-    """True if mean breathing frequency lies inside the HF band, else False (Grossman & Taylor 2007). A False value flags that the epoch's HF power may not reflect RSA."""
+    """True if mean breathing frequency lies inside the HF band, else False.
+
+    (Grossman & Taylor 2007.) A False value flags that the epoch's HF power may
+    not reflect RSA.
+    """
     f = _mean_breath_hz(ctx)
     if f is None:
         return float("nan")
@@ -277,7 +281,7 @@ _DEFAULT_RSA_LAG_S: float = 1.0  # dZ-HR phase shift; VU-DAMS default 1000 ms
 # Both are expressed as fractional deviations (0.50 = 50 %).
 # Source: VU-DAMS manual v2 / DAMS 5.0, Appendix A.
 _STRICT_IBI_DEV: float = 0.50   # max consecutive-IBI deviation (code -5)
-_STRICT_RATE_DEV: float = 0.50  # max respiration-rate deviation from 20-breath running avg (code -6)
+_STRICT_RATE_DEV: float = 0.50  # max resp-rate deviation from 20-breath avg (code -6)
 
 
 def grossman_rsa_per_breath(
@@ -447,11 +451,16 @@ def _rsa_metric(ctx, key: str) -> float:
 
 @epoch_metric
 def rsa(ctx) -> float:
-    """Respiratory sinus arrhythmia: mean over valid breath cycles (Grossman 1990 peak-to-valley, ms)."""
+    """Respiratory sinus arrhythmia: mean over valid breath cycles.
+
+    Grossman 1990 peak-to-valley, ms.
+    """
     return _rsa_metric(ctx, "rsa")
 
 
 @epoch_metric
 def rsa0(ctx) -> float:
-    """RSA with every invalid breath (negative or undetectable) counted as zero over the total breath count; reduces over-estimation bias (VU-DAMS RSA0, ms)."""
+    """RSA with every invalid breath (negative or undetectable) counted as zero
+    over the total breath count; reduces over-estimation bias (VU-DAMS RSA0, ms).
+    """
     return _rsa_metric(ctx, "rsa0")

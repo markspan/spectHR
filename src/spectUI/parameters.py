@@ -25,6 +25,10 @@ import json
 from pathlib import Path
 
 from platformdirs import user_cache_dir, user_documents_dir
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+
+from spectHR.config import WorkspaceView
 
 _REPLACE_WHOLE = {"bands"}  # keys whose dict value is an atomic table, not merged
 
@@ -46,10 +50,6 @@ def _deep_merge(base: dict, override: dict) -> dict:
             result[k] = copy.deepcopy(v)
     return result
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
-
-from spectHR.config import WorkspaceView
 
 # ---------------------------------------------------------------------------
 # Default configuration

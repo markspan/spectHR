@@ -627,7 +627,9 @@ def _detect_per_epoch(session: Session, view: WorkspaceView) -> "Intervals | Non
             continue
         seg = _segment(_respiration_window(session, view, float(ep.start), float(ep.end)))
         if seg is not None:
-            starts_l.append(seg[0]); ends_l.append(seg[1]); labels_l.append(seg[2])
+            starts_l.append(seg[0])
+            ends_l.append(seg[1])
+            labels_l.append(seg[2])
 
     if not starts_l:
         seg = _segment(_respiration_window(session, view, None, None))

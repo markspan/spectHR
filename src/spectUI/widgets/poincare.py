@@ -164,7 +164,8 @@ class PoincareWidget(QWidget):
             self._teardown_cursor()
             self.ax.text(0.5, 0.5, "No R-peaks", ha="center", va="center",
                          transform=self.ax.transAxes, color="#999")
-            self.ax.set_xticks([]); self.ax.set_yticks([])
+            self.ax.set_xticks([])
+            self.ax.set_yticks([])
             return
 
         hi = 0.0

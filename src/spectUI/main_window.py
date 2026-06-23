@@ -18,6 +18,7 @@ from __future__ import annotations
 import pickle
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -311,7 +312,7 @@ class MainWindow(QMainWindow):
         # and the analysis parameters.
         _HEAVY = DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS
         data_specs = {
-            _DOCK_PREPROCESSING: (PrepPlotWidget, DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS),
+            _DOCK_PREPROCESSING: (PrepPlotWidget, _HEAVY),
             _DOCK_HR:            (HRSeriesWidget, DataChange.HRV | DataChange.EPOCHS),
             _DOCK_BP:            (BPSeriesWidget, DataChange.BP | DataChange.EPOCHS),
             _DOCK_POINCARE:      (PoincareWidget, DataChange.HRV | DataChange.EPOCHS),
@@ -401,11 +402,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_menu_and_toolbar(self) -> None:
-        self._edit_act     = self._action("fa5s.cog",               "&Edit settings…",       self.edit_workspace,          "Ctrl+E")
-        self._load_act     = self._action("fa5s.file-import",      "&Load settings…",       self.open_workspace,          "Ctrl+O")
-        self._save_act     = self._action("fa5s.save",             "&Save settings",        self.save_workspace,          "Ctrl+S")
-        self._settings_act = self._action("fa5s.folder-open",      "Directory &settings…",  self.open_directory_settings, "Ctrl+Shift+S")
-        self._doc_act      = self._action("fa5s.question-circle",  "&Documentation",        self._open_docs,              "Ctrl+D")
+        self._edit_act = self._action(
+            "fa5s.cog", "&Edit settings…", self.edit_workspace, "Ctrl+E")
+        self._load_act = self._action(
+            "fa5s.file-import", "&Load settings…", self.open_workspace, "Ctrl+O")
+        self._save_act = self._action(
+            "fa5s.save", "&Save settings", self.save_workspace, "Ctrl+S")
+        self._settings_act = self._action(
+            "fa5s.folder-open", "Directory &settings…",
+            self.open_directory_settings, "Ctrl+Shift+S")
+        self._doc_act = self._action(
+            "fa5s.question-circle", "&Documentation", self._open_docs, "Ctrl+D")
 
         # ---- Settings menu ----
         ws_menu = self.menuBar().addMenu("&Settings")

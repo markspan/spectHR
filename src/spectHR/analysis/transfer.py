@@ -65,9 +65,8 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
-from spectHR.analysis._smoothing import (
-    smooth3_triangular as _smooth3,  # Pascal CrossSpectrum/AutoSpectrum WindowSize=3 (T_AnaFunctions.pas:443-487)
-)
+# Pascal Cross/AutoSpectrum WindowSize=3 (T_AnaFunctions.pas:443-487)
+from spectHR.analysis._smoothing import smooth3_triangular as _smooth3
 from spectHR.analysis.bp_metrics import bp_beat_parameters
 from spectHR.analysis.ibi_helpers import event_times_clean
 from spectHR.analysis.profile import _setup_profile_grid

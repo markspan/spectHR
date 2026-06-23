@@ -118,7 +118,8 @@ class EpochEditorWidget(QWidget):
         if not epochs:
             ax.text(0.5, 0.5, "No epochs", ha="center", va="center",
                     transform=ax.transAxes, color="#999")
-            ax.set_xticks([]); ax.set_yticks([])
+            ax.set_xticks([])
+            ax.set_yticks([])
             return
 
         colors = cm.tab20(np.linspace(0, 1, len(epochs)))
@@ -151,7 +152,8 @@ class EpochEditorWidget(QWidget):
         ends = [float(ep.end) for ep in s.epochs.values()]
         ecg = s.ecg
         if ecg is not None and ecg.times.size:
-            starts.append(float(ecg.times[0])); ends.append(float(ecg.times[-1]))
+            starts.append(float(ecg.times[0]))
+            ends.append(float(ecg.times[-1]))
         lo, hi = min(starts), max(ends)
         if hi <= lo:
             hi = lo + 1.0

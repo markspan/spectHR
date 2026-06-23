@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from spectHR.dataset.loaders.registry import register_loader
 from spectHR.logger import logger
+
+if TYPE_CHECKING:
+    from spectHR.session import Session
 
 
 @register_loader(".txt")
