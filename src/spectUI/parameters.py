@@ -88,6 +88,9 @@ _DEFAULT: dict = {
         "lombscargle": {
             "nfreqs": 100, "fmin_floor": 0.0001,
         },
+        "autoregressive": {
+            "fs": 4.0, "order": 16, "nfreqs": 512,
+        },
         "confidence_interval_alpha": 0.05,
         "detrend":        False,
         "detrend_lambda": 500.0,

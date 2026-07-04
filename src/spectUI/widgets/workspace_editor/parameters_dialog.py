@@ -1,27 +1,27 @@
 # Copyright (C) 2025 Mark Span <m.m.span@rug.nl>
 # SPDX-License-Identifier: GPL-3.0-or-later
-import re
+"""
+The generic, workspace-driven parameters editor.
+
+:class:`ParametersEditorDialog` reads every non-directory section of the
+workspace dict and presents it as editable panels grouped into tabs.  Leaf
+widgets come from :mod:`spectUI.widgets.workspace_editor.field_widgets`.
+"""
+import copy
 from typing import Any
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QApplication,
     QCheckBox,
-    QColorDialog,
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFileDialog,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
     QScrollArea,
     QSizePolicy,
     QStyle,
@@ -30,89 +30,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-# ======================================================================
-# Existing dialog - directory editor (unchanged)
-# ======================================================================
-
-
-class DirectorySelectorDialog(QDialog):
-    """
-    Dialog for editing the Directories section of the workspace.
-
-    Accepts workspace["Directories"] as input, returns a flat dict with
-    the three directory keys that the caller merges back into
-    workspace["Directories"].
-    """
-
-    def __init__(self, directories: dict, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Directory Settings")
-        self.setModal(True)
-        self.resize(600, 300)
-        self.setWindowIcon(
-            QApplication.style().standardIcon(getattr(QStyle, "SP_DirIcon"))
-        )
-
-        self.data_dir_edit = QLineEdit(directories.get("DataDirectory", ""))
-        self.cache_dir_edit = QLineEdit(directories.get("CacheDirectory", ""))
-        self.output_dir_edit = QLineEdit(directories.get("OutputDirectory", ""))
-
-        self.data_dir_button = QPushButton("...")
-        self.cache_dir_button = QPushButton("...")
-        self.output_dir_button = QPushButton("...")
-
-        self.data_dir_button.clicked.connect(
-            lambda: self.select_directory(self.data_dir_edit)
-        )
-        self.cache_dir_button.clicked.connect(
-            lambda: self.select_directory(self.cache_dir_edit)
-        )
-        self.output_dir_button.clicked.connect(
-            lambda: self.select_directory(self.output_dir_edit)
-        )
-
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Data Directory:"))
-        self.add_directory_row(layout, self.data_dir_edit, self.data_dir_button)
-        layout.addWidget(QLabel("Cache Directory:"))
-        self.add_directory_row(layout, self.cache_dir_edit, self.cache_dir_button)
-        layout.addWidget(QLabel("Output Directory:"))
-        self.add_directory_row(layout, self.output_dir_edit, self.output_dir_button)
-
-        self.ok_button = QPushButton("OK")
-        self.cancel_button = QPushButton("Cancel")
-        self.ok_button.clicked.connect(self.accept)
-        self.cancel_button.clicked.connect(self.reject)
-
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(self.ok_button)
-        button_layout.addWidget(self.cancel_button)
-        layout.addLayout(button_layout)
-        self.setLayout(layout)
-
-    def add_directory_row(self, layout, line_edit, button):
-        row = QHBoxLayout()
-        row.addWidget(line_edit)
-        row.addWidget(button)
-        layout.addLayout(row)
-
-    def select_directory(self, line_edit):
-        directory = QFileDialog.getExistingDirectory(self, "Select Directory")
-        if directory:
-            line_edit.setText(directory)
-
-    def get_directories(self) -> dict:
-        """Return the edited directory values as a flat dict."""
-        return {
-            "DataDirectory": self.data_dir_edit.text(),
-            "CacheDirectory": self.cache_dir_edit.text(),
-            "OutputDirectory": self.output_dir_edit.text(),
-        }
-
-
-# ======================================================================
-# New dialog - dynamic parameters editor
-# ======================================================================
+from spectUI.widgets.workspace_editor.field_widgets import (
+    _AdaptiveBandWidget,
+    _BandMultiSelectWidget,
+    _ColorButton,
+    _label,
+    _make_bool_checkbox,
+)
 
 # Keys whose sections are handled by other dialogs or are not editable here
 _EXCLUDED_SECTIONS = {"Directories"}
@@ -135,7 +59,7 @@ _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
 # Known enumeration choices for specific leaf keys
 _ENUM_CHOICES: dict[str, list[str]] = {
     # Leaf-key enumerations (apply wherever the key appears)
-    "method": ["carspan", "carspan_strict", "welch", "lombscargle"],
+    "method": ["carspan", "carspan_strict", "welch", "lombscargle", "autoregressive"],
     "window": ["hamming", "hann", "blackman", "bartlett", "boxcar", "quadratic"],
     "filter_type": ["highpass", "lowpass", "bandpass"],
     # Path-specific enumerations (override the leaf entry above for that
@@ -189,259 +113,6 @@ _ENUM_CHOICES: dict[str, list[str]] = {
     #            RSA0 closer to VU-AMS output on noisy/sitting recordings.
     "RespirationAnalysis.rsa_rejection_mode": ["none", "strict"],
 }
-
-def _label(key: str) -> str:
-    """Turn a snake_case or camelCase key into a human-readable label.
-
-    Keys that already contain a space or a parenthesis are treated as
-    *pre-formatted* - the workspace author chose that spelling for the
-    dialog and we round-trip it untouched. Without that early return,
-    ``.title()`` would mangle ``"window (sec)"`` into ``"Window (Sec)"``
-    and re-title other unit-bearing keys in surprising ways.
-    """
-    # Pre-formatted key - already laid out the way the author wants it
-    # shown. Bypass camelCase/snake_case splitting and title-casing.
-    if " " in key or "(" in key or ")" in key:
-        return key
-
-    # camelCase, words
-    s = re.sub(r"([a-z])([A-Z])", r"\1 \2", key)
-    # underscores, spaces
-    s = s.replace("_", " ")
-    return s.title()
-
-
-# ----------------------------------------------------------------------
-# Colour-picker button used by the bands matrix
-# ----------------------------------------------------------------------
-
-
-class _ColorButton(QPushButton):
-    """
-    Push button that doubles as a colour swatch and a colour picker.
-
-    The button's *text* is the colour string itself (e.g. ``"darkgreen"``
-    or ``"#aa3322"``) - that way the surrounding ``ParametersEditorDialog``
-    can read the value via ``widget.text()`` exactly like a ``QLineEdit``,
-    no special-casing required.
-
-    Clicking the button opens a ``QColorDialog`` seeded with the current
-    colour. On accept the new colour is stored as ``#rrggbb`` (the format
-    Qt returns) and the swatch is repainted via the stylesheet.
-    """
-
-    def __init__(self, initial: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._color: str = str(initial) if initial is not None else ""
-        self.setMinimumWidth(110)
-        self._refresh()
-        self.clicked.connect(self._pick)
-
-    # --- internal -----------------------------------------------------
-
-    def _refresh(self) -> None:
-        """Re-paint the button so its background reflects ``self._color``."""
-        qc = QColor(self._color) if self._color else QColor()
-        self.setText(self._color)
-        if qc.isValid():
-            # Pick a foreground colour with enough contrast so the colour
-            # name stays readable on top of the swatch. Standard ITU-R
-            # BT.601 luma; the 128 threshold is the usual midpoint.
-            r, g, b, _ = qc.getRgb()
-            luma = 0.299 * r + 0.587 * g + 0.114 * b
-            fg = "black" if luma > 128 else "white"
-            self.setStyleSheet(
-                "QPushButton {"
-                f" background-color: {self._color};"
-                f" color: {fg};"
-                " border: 1px solid #888;"
-                " padding: 4px;"
-                "}"
-            )
-        else:
-            # Invalid / empty value - keep the system look so the user
-            # notices the field is unset.
-            self.setStyleSheet("")
-
-    def _pick(self) -> None:
-        """Open ``QColorDialog`` and store whatever the user picks."""
-        seed = QColor(self._color) if QColor(self._color).isValid() else QColor("white")
-        chosen = QColorDialog.getColor(seed, self, "Pick a band colour")
-        if chosen.isValid():
-            # ``name()`` returns ``#rrggbb`` - universally accepted by
-            # both matplotlib and Qt, even though the original workspace
-            # may have used SVG colour names like ``"darkgreen"``.
-            self._color = chosen.name()
-            self._refresh()
-
-
-# ----------------------------------------------------------------------
-# Bool dropdown - used wherever a workspace value is a Python bool
-# ----------------------------------------------------------------------
-
-
-def _make_bool_checkbox(value: bool) -> QCheckBox:
-    """Build a checkbox for a boolean workspace value.
-
-    ``get_parameters`` reads ``.isChecked()`` directly, so no string
-    coercion is needed on the read path.
-    """
-    cb = QCheckBox()
-    cb.setChecked(bool(value))
-    return cb
-
-
-# ----------------------------------------------------------------------
-# Multi-selector - used by Profile Settings to pick which bands to plot
-# ----------------------------------------------------------------------
-
-
-class _AdaptiveBandWidget(QWidget):
-    """Single-band adaptive-tracking selector: dropdown + half-width fields.
-
-    Renders as one row:
-
-        [- none - v]   below rp (Hz): [0.04]   above rp (Hz): [0.04]
-
-    The dropdown lists every band in the universe plus a "- none -"
-    sentinel. Only one band can be adaptive at a time - physiologically,
-    adaptive tracking makes sense only for the respiratory band (HF),
-    not for multiple bands simultaneously.
-
-    The half-width fields are disabled when "- none -" is selected.
-
-    ``get_value()`` returns a dict with zero or one entry that round-trips
-    directly into ``workspace["Profiles"]["adaptive_bands"]``:
-
-        {}                                          # none selected
-        {"HF": {"lower half-width (Hz)": 0.04,
-                "upper half-width (Hz)": 0.04}}     # HF selected
-    """
-
-    _LOW_KEY   = "lower half-width (Hz)"
-    _HIGH_KEY  = "upper half-width (Hz)"
-    _DEFAULT   = 0.04
-    _NONE_TEXT = "- none -"
-
-    def __init__(
-        self,
-        current: dict,
-        universe: list[str],
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-
-        # Resolve current single selection (take first entry if dict has
-        # more than one - legacy multi-band workspaces are collapsed here).
-        current_name  = next(iter(current), None)
-        current_entry = current.get(current_name, {}) if current_name else {}
-        low_val  = float(current_entry.get(self._LOW_KEY,  self._DEFAULT))
-        high_val = float(current_entry.get(self._HIGH_KEY, self._DEFAULT))
-
-        # Dropdown: "- none -" first, then band names in universe order.
-        self._combo = QComboBox()
-        self._combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._combo.addItem(self._NONE_TEXT)
-        for name in universe:
-            self._combo.addItem(name)
-
-        if current_name and current_name in universe:
-            self._combo.setCurrentIndex(self._combo.findText(current_name))
-        else:
-            self._combo.setCurrentIndex(0)
-
-        # Half-width fields - enabled only when a band is selected.
-        active = current_name is not None and current_name in universe
-        self._lbl_low  = QLabel("below rp (Hz):")
-        self._low_edit = QLineEdit(str(low_val))
-        self._low_edit.setMaximumWidth(60)
-
-        self._lbl_high  = QLabel("above rp (Hz):")
-        self._high_edit = QLineEdit(str(high_val))
-        self._high_edit.setMaximumWidth(60)
-
-        for w in (self._lbl_low, self._low_edit, self._lbl_high, self._high_edit):
-            w.setEnabled(active)
-
-        self._combo.currentIndexChanged.connect(self._on_selection_changed)
-
-        for w in (self._combo, self._lbl_low, self._low_edit,
-                  self._lbl_high, self._high_edit):
-            layout.addWidget(w)
-        layout.addStretch()
-
-    def _on_selection_changed(self, index: int) -> None:
-        enabled = index > 0   # index 0 is "- none -"
-        for w in (self._lbl_low, self._low_edit, self._lbl_high, self._high_edit):
-            w.setEnabled(enabled)
-
-    def get_value(self) -> dict:
-        """Return the workspace-ready dict for ``Profiles.adaptive_bands``."""
-        if self._combo.currentIndex() == 0:
-            return {}
-        name = self._combo.currentText()
-        try:
-            low = float(self._low_edit.text())
-        except ValueError:
-            low = self._DEFAULT
-        try:
-            high = float(self._high_edit.text())
-        except ValueError:
-            high = self._DEFAULT
-        return {name: {self._LOW_KEY: low, self._HIGH_KEY: high}}
-
-
-class _BandMultiSelectWidget(QListWidget):
-    """Tick-box list of band names; ticked items round-trip as a list.
-
-    Each row carries a Qt check-box (``ItemIsUserCheckable``) so users
-    pick bands by ticking them rather than by row-selecting them - the
-    selection mode is explicitly disabled so the highlight bar doesn't
-    fight with the check-state.
-
-    Populated from the live set of band names (the keys of
-    ``FrequencyAnalysis.bands``) so the user can only pick bands that
-    actually exist. The initial list is whatever the workspace had
-    saved, intersected with the universe - silently dropping any stale
-    names left over after a band rename.
-
-    ``ParametersEditorDialog`` recognises this widget type in its
-    ``get_parameters`` value-extraction loop and reads the ticked rows
-    as a Python ``list[str]``.
-    """
-
-    def __init__(
-        self,
-        selected: list[str],
-        universe: list[str],
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        # Tick-boxes carry the state; row selection would just confuse
-        # the visual signal of which bands are picked.
-        self.setSelectionMode(QAbstractItemView.NoSelection)
-        self.setMinimumHeight(55)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        selected_set = set(selected or [])
-        for name in universe:
-            item = QListWidgetItem(name)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(
-                Qt.Checked if name in selected_set else Qt.Unchecked
-            )
-            self.addItem(item)
-
-    def selected_names(self) -> list[str]:
-        """Return the currently-ticked band names in display order."""
-        return [
-            self.item(i).text()
-            for i in range(self.count())
-            if self.item(i).checkState() == Qt.Checked
-        ]
 
 
 # ----------------------------------------------------------------------
@@ -992,8 +663,6 @@ class ParametersEditorDialog(QDialog):
         The caller can pass this straight to ``SaveWorkspace()`` or merge it
         into the live workspace with ``_deep_merge``.
         """
-        import copy
-
         result = copy.deepcopy(workspace)
 
         for path, (widget, original) in self._widgets.items():

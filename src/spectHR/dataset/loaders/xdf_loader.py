@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -291,9 +292,8 @@ def load_xdf(path: Path, **kwargs) -> "Session":
                 (float(s.times[-1]) for s in samples.values() if s.times.size),
                 default=pressed[-1][0],
             )
-            from collections import Counter as _Counter
             base_names = [lbl[:lbl.lower().rfind(" pressed")].strip() for _, lbl in pressed]
-            counts = _Counter(base_names)
+            counts = Counter(base_names)
             seen: dict[str, int] = {}
             for i, (t_press, _) in enumerate(pressed):
                 base = base_names[i]

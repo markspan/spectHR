@@ -13,6 +13,7 @@ itself.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -84,6 +85,10 @@ class ResultsTableWidget(QWidget):
         self.setVisible(True)
         self.refresh()
 
+    def apply_config(self, config) -> None:
+        """Adopt new analysis parameters (the coordinator triggers any refresh)."""
+        self._config = config
+
     def set_epoch(self, name: str) -> None:  # noqa: ARG002, table shows all epochs
         """No-op: the table always shows every active epoch."""
 
@@ -135,8 +140,6 @@ class ResultsTableWidget(QWidget):
             self, "Export results to…", out_default)
         if not directory:
             return
-
-        import re
 
         from spectHR.analysis.exporter import (
             EpochExporter,

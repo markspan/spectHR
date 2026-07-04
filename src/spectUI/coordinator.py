@@ -36,6 +36,8 @@ from enum import Flag, auto
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QWidget
 
+from spectUI.dock_protocol import DataDock, TimelineDock
+
 
 class DataChange(Flag):
     """What part of the session changed (a dock declares which it depends on)."""
@@ -75,19 +77,26 @@ class DataCoordinator(QObject):
     # Registration
     # ------------------------------------------------------------------
 
-    def register(self, widget: QWidget, depends: DataChange) -> None:
+    def register(self, widget: DataDock, depends: DataChange) -> None:
         """Register *widget* to be refreshed when *depends* changes.
 
-        The widget must implement ``refresh()`` and (being a ``QWidget``)
-        ``isVisible()``.
+        The widget must satisfy the :class:`~spectUI.dock_protocol.DataDock`
+        contract (``set_session`` / ``apply_config`` / ``refresh`` /
+        ``isVisible``).  A dock missing any of those fails here, at
+        registration, rather than silently doing nothing at runtime.
         """
+        if not isinstance(widget, DataDock):
+            raise TypeError(
+                f"{type(widget).__name__} does not satisfy the DataDock contract "
+                "(needs set_session, apply_config, refresh, isVisible)."
+            )
         self._entries.append(_Entry(widget, depends))
 
-    def register_timeline(self, widget) -> None:
+    def register_timeline(self, widget: TimelineDock) -> None:
         """Register a timeline dock so its window stays in sync with siblings.
 
-        The widget must expose ``viewChanged`` (signal), ``current_window()``
-        and ``apply_window(x_min, x_max)``, the :class:`TimelineView` contract.
+        The widget must satisfy :class:`~spectUI.dock_protocol.TimelineDock`
+        (``viewChanged`` signal, ``current_window()`` and ``apply_window``).
         """
         self._timelines.append(widget)
         widget.viewChanged.connect(lambda w=widget: self._sync_window(w))

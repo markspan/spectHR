@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Literal
 
+from spectHR.analysis.psd._autoregressive import AutoregressiveOptions
 from spectHR.analysis.psd._carspan import CarspanOptions
 from spectHR.analysis.psd._lombscargle import LombscargleOptions
 from spectHR.analysis.psd._welch import WelchOptions
@@ -34,7 +35,9 @@ __all__ = [
 # Type aliases
 # ---------------------------------------------------------------------------
 
-Algorithm = Literal["welch", "lombscargle", "carspan", "carspan_strict"]
+Algorithm = Literal[
+    "welch", "lombscargle", "autoregressive", "carspan", "carspan_strict"
+]
 MeanConvention = Literal["harmonic", "arithmetic"]
 
 
@@ -201,6 +204,7 @@ class PsdMethod:
 
     welch: WelchOptions = field(default_factory=WelchOptions)
     lombscargle: LombscargleOptions = field(default_factory=LombscargleOptions)
+    autoregressive: AutoregressiveOptions = field(default_factory=AutoregressiveOptions)
     carspan: CarspanOptions = field(default_factory=CarspanOptions)
 
     detrend_lambda: float = 0.0

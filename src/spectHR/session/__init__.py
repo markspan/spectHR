@@ -16,6 +16,7 @@ Session layer::
 
     Epoch           labelled time window
     AnalysisConfig  typed analysis parameters
+    TransferConfig  typed transfer-metric settings (part of AnalysisConfig)
     MetricsTable    structured result of epochs_table
     Session         root container; owns channels and epoch table
 
@@ -36,6 +37,7 @@ from spectHR.session._session import (
     Epoch,
     MetricsTable,
     Session,
+    TransferConfig,
 )
 
 __all__ = [
@@ -47,6 +49,7 @@ __all__ = [
     "IntervalsLike",
     "Epoch",
     "AnalysisConfig",
+    "TransferConfig",
     "MetricsTable",
     "Session",
 ]

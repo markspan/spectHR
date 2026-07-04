@@ -21,6 +21,7 @@ Bottom: log output (hidden by default).
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -48,22 +49,13 @@ from spectHR.logger import logger
 from spectHR.session import Session
 from spectUI import menu_bar, plot_export, session_cache
 from spectUI.coordinator import DataChange, DataCoordinator
+from spectUI.dock_protocol import EmitsAnnotation, EmitsEpochsChanged, EmitsPlotsExport
 from spectUI.docks import (
     CENTRE_DOCKS,
-    DOCK_BP,
     DOCK_EPOCHS,
-    DOCK_HR,
     DOCK_LOG,
-    DOCK_POINCARE,
     DOCK_PREPROCESSING,
-    DOCK_PROFILES,
-    DOCK_PSD,
     DOCK_REQUIRES,
-    DOCK_RESULTS,
-    DOCK_SPECTROGRAM,
-    DOCK_SPECTROGRAM3D,
-    DOCK_TRANSFER,
-    DOCK_TRANSFERPROFILE,
     DOCK_WORKSPACE,
     VIEW_LABELS,
     Placeholder,
@@ -81,31 +73,6 @@ from spectUI.settings import AppSettings
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.timeline.base import TimelineView
 from spectUI.widgets.workspace_editor import DirectorySelectorDialog, ParametersEditorDialog
-
-
-# ---------------------------------------------------------------------------
-# Backward-compatible aliases
-#
-# The dock object-name constants moved to :mod:`spectUI.docks`; keep the old
-# ``_DOCK_*`` / ``_VIEW_LABELS`` names bound here so existing tests and scripts
-# that reference e.g. ``spectUI.main_window._DOCK_BP`` keep working.
-# ---------------------------------------------------------------------------
-
-_DOCK_WORKSPACE       = DOCK_WORKSPACE
-_DOCK_PREPROCESSING   = DOCK_PREPROCESSING
-_DOCK_HR              = DOCK_HR
-_DOCK_BP              = DOCK_BP
-_DOCK_POINCARE        = DOCK_POINCARE
-_DOCK_EPOCHS          = DOCK_EPOCHS
-_DOCK_PSD             = DOCK_PSD
-_DOCK_SPECTROGRAM     = DOCK_SPECTROGRAM
-_DOCK_SPECTROGRAM3D   = DOCK_SPECTROGRAM3D
-_DOCK_TRANSFER        = DOCK_TRANSFER
-_DOCK_TRANSFERPROFILE = DOCK_TRANSFERPROFILE
-_DOCK_PROFILES        = DOCK_PROFILES
-_DOCK_RESULTS         = DOCK_RESULTS
-_DOCK_LOG             = DOCK_LOG
-_VIEW_LABELS          = VIEW_LABELS
 
 
 # ---------------------------------------------------------------------------
@@ -237,14 +204,15 @@ class MainWindow(QMainWindow):
         if obj_name == DOCK_PREPROCESSING:
             self._prep_widget = widget
             widget.dataEdited.connect(self._on_data_edited)
-        # Optional cross-dock signals (Poincaré and future editors).
-        if hasattr(widget, "epochsChanged"):
+        # Optional cross-dock capabilities, matched against the dock-protocol
+        # markers so the signal names live in one place, not scattered strings.
+        if isinstance(widget, EmitsEpochsChanged):
             widget.epochsChanged.connect(
                 lambda w=widget: self._on_epochs_changed(w)
             )
-        if hasattr(widget, "annotationActivated"):
+        if isinstance(widget, EmitsAnnotation):
             widget.annotationActivated.connect(self._jump_to_prep_at)
-        if hasattr(widget, "plotsExportRequested"):
+        if isinstance(widget, EmitsPlotsExport):
             widget.plotsExportRequested.connect(self._export_plots)
 
     # ------------------------------------------------------------------
@@ -329,10 +297,9 @@ class MainWindow(QMainWindow):
         (PSD / profile / transfer / spectrogram / results) so the new bands,
         PSD method, RSA and transfer settings take effect immediately.
         """
-        import logging
         logging.getLogger("spectHR").setLevel(self._parameters.log_level)
         for widget in self._data_docks.values():
-            widget._config = self._parameters   # host owns these docks
+            widget.apply_config(self._parameters)
 
         # A respiration-source / per-epoch change means the INH/EXH phases must
         # be recomputed (e.g. switch to the accelerometer PCA); that rebuilds

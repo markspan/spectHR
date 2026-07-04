@@ -140,6 +140,14 @@ class TimelineView(QWidget):
         self.setVisible(True)
         self.redraw()
 
+    def apply_config(self, config) -> None:
+        """Adopt new analysis parameters without rebuilding the model.
+
+        Called for a parameter-only change; the coordinator refreshes the
+        parameter-dependent docks separately, so this only stores the config.
+        """
+        self._config = config
+
     def set_epoch(self, name: str) -> None:
         """Scroll the window to the time range of epoch *name* (no-op if unknown)."""
         m = self._model

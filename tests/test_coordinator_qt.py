@@ -41,6 +41,9 @@ class FakeDock(QWidget):
     def set_session(self, session, config):
         self.sessions.append((session, config))
 
+    def apply_config(self, config):
+        self._config = config
+
     def current_window(self):
         return self._win
 

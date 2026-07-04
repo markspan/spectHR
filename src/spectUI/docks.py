@@ -12,9 +12,6 @@ class is left with wiring, not layout tables:
 * :data:`DOCK_REQUIRES` (per-dock "needs this channel to be meaningful"),
 * :func:`build_data_specs` (which docks are live and what each derives from),
 * the :class:`Placeholder` widget for docks without a real widget yet.
-
-``main_window`` re-exports the ``DOCK_*`` names under their historical
-``_DOCK_*`` spelling for backward compatibility.
 """
 from __future__ import annotations
 

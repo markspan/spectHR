@@ -108,8 +108,8 @@ class DockScheduler:
 
         Parameters
         ----------
-        dock_name:  Stable dock object-name string (from the ``_DOCK_*``
-                    constants in MainWindow) used to track generations.
+        dock_name:  Stable dock object-name string (from the ``DOCK_*``
+                    constants in :mod:`spectUI.docks`) used to track generations.
         compute_fn: Zero-argument callable; returns the precomputed data.
                     Called on a pool thread, must NOT touch Qt objects.
         on_done:    ``callback(result)`` called on the **main thread** with

@@ -140,6 +140,14 @@ class EpochGridView(QWidget):
         self.setVisible(True)
         self.refresh()
 
+    def apply_config(self, config) -> None:
+        """Adopt new analysis parameters without reloading the session.
+
+        Called for a parameter-only change; the coordinator then refreshes the
+        parameter-dependent docks separately, so this only stores the config.
+        """
+        self._config = config
+
     def set_epoch(self, name: str) -> None:  # noqa: ARG002, grid shows all epochs
         """No-op: the grid always shows every active epoch."""
 

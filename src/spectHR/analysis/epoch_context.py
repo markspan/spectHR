@@ -280,18 +280,15 @@ class EpochContext:
     def transfer_result(self):
         """Per-epoch transfer function result (cached), or ``None``.
 
-        Uses the configured ``transfer_config`` dict.  ``None`` when no config
-        is present, the required input channel is absent, or fewer than 4
-        clean R-peaks are available.
+        Uses the configured :class:`~spectHR.session.TransferConfig`.  ``None``
+        when no config is present, the required input channel is absent, or
+        fewer than 4 clean R-peaks are available.
         """
         cfg = self.config.transfer_config
         if cfg is None:
             return None
-        sig = cfg.get("input_signal", "rsp")
-        if sig.startswith("bp"):
-            inp = self.bp_ts
-        else:
-            inp = self.rsp_ts
+        sig = cfg.input_signal
+        inp = self.bp_ts if sig.startswith("bp") else self.rsp_ts
         if inp is None:
             return None
         from spectHR.analysis.transfer import compute_transfer
@@ -301,9 +298,9 @@ class EpochContext:
                 self.view,
                 inp,
                 input_signal=sig,
-                bands=cfg.get("bands") or {},
-                min_coherence=float(cfg.get("min_coherence", 0.5)),
-                f_max=float(cfg.get("f_max", 0.5)),
+                bands=cfg.bands or {},
+                min_coherence=cfg.min_coherence,
+                f_max=cfg.f_max,
             ),
         )
 

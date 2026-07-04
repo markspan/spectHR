@@ -28,11 +28,14 @@ and ``@epoch_metric_group`` for all active epochs and returns a
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from spectHR.session._core import Events, Intervals, Samples  # noqa: F401 (re-used in methods)
+
+if TYPE_CHECKING:
+    from spectHR.analysis.psd._config import PsdMethod
 
 # ---------------------------------------------------------------------------
 # Epoch
@@ -56,6 +59,36 @@ class Epoch:
 
 
 # ---------------------------------------------------------------------------
+# TransferConfig, typed settings for the per-epoch transfer-function metrics
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TransferConfig:
+    """Transfer-function metric settings for one analysis run.
+
+    Carried by :class:`AnalysisConfig` and consumed by
+    :attr:`~spectHR.analysis.epoch_context.EpochContext.transfer_result`.
+
+    Attributes
+    ----------
+    input_signal
+        Which channel drives the transfer input: ``"bp_sys"`` / ``"bp_dia"``
+        select the blood-pressure channel, anything else selects respiration.
+    min_coherence
+        Coherence floor below which a band's gain/phase is masked.
+    f_max
+        Upper frequency bound of the analysis (Hz).
+    bands
+        ``{name: (low, high)}`` frequency bands the metric reports over.
+    """
+
+    input_signal:  str   = "bp_sys"
+    min_coherence: float = 0.5
+    f_max:         float = 0.5
+    bands:         dict[str, tuple[float, float]] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
 # AnalysisConfig, typed replacement for workspace-dict kwargs
 # ---------------------------------------------------------------------------
 
@@ -68,50 +101,26 @@ class AnalysisConfig:
     via :meth:`from_workspace`.
     """
 
-    psd_method:             Any   = None
+    psd_method:             "PsdMethod | None" = None
     rsa_lag_s:              float = 1.0
     rsa_max_ibi_deviation:  float | None = None
     rsa_max_rate_deviation: float | None = None
     b_point_guard_ms:       float = 30.0
-    # Transfer config: dict with keys input_signal, min_coherence,
-    # f_max, and bands {name: (lo, hi)}.  None disables transfer metrics.
-    transfer_config:        Any   = None
+    # None disables the transfer metrics for this run.
+    transfer_config:        "TransferConfig | None" = None
     prsa_window:            int   = 30
     log_band_power:         bool  = False
 
     @classmethod
     def from_workspace(cls, workspace: dict | None) -> AnalysisConfig:
-        """Build from a raw workspace dict."""
-        from spectHR.config import (
-            WorkspaceView,
-            display_bands_from_workspace,
-            transfer_settings_from_workspace,
-        )
-        ws = WorkspaceView(workspace)
-        ibi_dev, rate_dev = ws.rsa_rejection
-        ts = transfer_settings_from_workspace(workspace)
-        raw_bands = display_bands_from_workspace(workspace)
-        bands = {
-            name: (float(s["low"]), float(s["high"]))
-            for name, s in raw_bands.items()
-            if "low" in s and "high" in s and name != "FullRange"
-        }
-        tf_cfg = {
-            "input_signal": ts["input_signal"],
-            "min_coherence": ts["min_coherence"],
-            "f_max": ts["f_max"],
-            "bands": bands,
-        }
-        return cls(
-            psd_method=ws.psd_method,
-            rsa_lag_s=ws.rsa_lag_s,
-            rsa_max_ibi_deviation=ibi_dev,
-            rsa_max_rate_deviation=rate_dev,
-            b_point_guard_ms=ws.b_point_guard_ms,
-            transfer_config=tf_cfg,
-            prsa_window=ws.prsa_window,
-            log_band_power=ws.log_band_power,
-        )
+        """Build from a raw workspace dict.
+
+        A thin shim over :meth:`~spectHR.config.WorkspaceView.analysis_config`,
+        which owns the single mapping from typed workspace settings to this flat
+        metric-facing config.
+        """
+        from spectHR.config import WorkspaceView
+        return WorkspaceView(workspace).analysis_config()
 
 
 # ---------------------------------------------------------------------------

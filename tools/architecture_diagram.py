@@ -139,7 +139,7 @@ def build():
 
     Ix,Iy,Iw,Ih = 278,L3y+34,185,62
     p += [box(Ix,Iy,Iw,Ih,'fil'),
-          tc(Ix+Iw//2,Iy+22,'get_loader(filename)','label-bold'),
+          tc(Ix+Iw//2,Iy+22,'load(filename)','label-bold'),
           tc(Ix+Iw//2,Iy+42,'loaders / registry.py','sub')]
 
     Jx,Jy,Jw,Jh = 481,L3y+34,235,62

@@ -41,6 +41,9 @@ from spectHR.analysis.psd._carspan import (
 from spectHR.analysis.psd._carspan import (
     compute_carspan_psd as _compute_carspan_psd,
 )
+from spectHR.analysis.psd._autoregressive import (
+    compute_autoregressive_psd as _compute_autoregressive_psd,
+)
 from spectHR.analysis.psd._config import (
     BandSpec,
     MeanConvention,
@@ -94,13 +97,15 @@ class PSDEngine:
             return self._psd_welch(method, with_ci=with_ci)
         if algo == "lombscargle":
             return self._psd_lombscargle(method, with_ci=with_ci)
+        if algo == "autoregressive":
+            return self._psd_autoregressive(method, with_ci=with_ci)
         if algo == "carspan_strict":
             return self._psd_carspan_strict(method, with_ci=with_ci)
         if algo == "carspan":
             return self._psd_carspan(method, with_ci=with_ci)
         raise ValueError(
-            f"Unknown PSD algorithm '{algo}'. "
-            "Choose from: welch, lombscargle, carspan, carspan_strict."
+            f"Unknown PSD algorithm '{algo}'. Choose from: "
+            "welch, lombscargle, autoregressive, carspan, carspan_strict."
         )
 
     def for_band_power(self, method: PsdMethod) -> PSDResult:
@@ -281,6 +286,27 @@ class PSDEngine:
             alpha_ci=method.alpha_ci,
             f_max=self._f_max(method.bands),
             options=method.lombscargle,
+        )
+        return self._finalise(
+            raw,
+            convert=convert,
+            with_ci=with_ci,
+            mask=self._band_mask(raw.freqs, method.bands),
+            unit=unit,
+        )
+
+    def _psd_autoregressive(
+        self, method: PsdMethod, *, with_ci: bool = True
+    ) -> PSDResult:
+        ibi_times_s, ibi_values_ms = ibi_clean_pairs(self._series)
+        ibi_values_ms = self._maybe_detrend(method, ibi_values_ms)
+        convert, unit = self._ibi_psd_display(method.autoregressive.units)
+        raw = _compute_autoregressive_psd(
+            ibi_times_s,
+            ibi_values_ms,
+            alpha_ci=method.alpha_ci,
+            f_max=self._f_max(method.bands),
+            options=method.autoregressive,
         )
         return self._finalise(
             raw,

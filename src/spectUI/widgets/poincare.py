@@ -100,6 +100,10 @@ class PoincareWidget(QWidget):
         self.setVisible(True)
         self.refresh()
 
+    def apply_config(self, config) -> None:
+        """Adopt new analysis parameters (the coordinator triggers any refresh)."""
+        self._config = config
+
     def set_epoch(self, name: str) -> None:  # noqa: ARG002, all epochs shown at once
         """No-op: every active epoch is shown with its own checkbox."""
 

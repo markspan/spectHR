@@ -32,6 +32,7 @@ app = QApplication.instance() or QApplication([])
 
 import spectUI.main_window as mw
 from spectHR.session import Epoch, Events, Samples, Session
+from spectUI.docks import DOCK_BP
 
 w = mw.MainWindow()
 
@@ -58,8 +59,8 @@ def make_session(with_bp):
     )
 
 
-bp_act = w._view_actions[mw._DOCK_BP]
-bp_dock = w._docks[mw._DOCK_BP]
+bp_act = w._view_actions[DOCK_BP]
+bp_dock = w._docks[DOCK_BP]
 
 # No BP channel -> BP dock closed + its View entry greyed out.
 w._apply_dock_availability(make_session(with_bp=False))

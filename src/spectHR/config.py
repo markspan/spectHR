@@ -22,8 +22,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
+if TYPE_CHECKING:
+    from spectHR.session import AnalysisConfig, TransferConfig
+
+from spectHR.analysis.psd._autoregressive import AutoregressiveOptions
 from spectHR.analysis.psd._carspan import CarspanOptions
 from spectHR.analysis.psd._config import BandSpec, PsdMethod
 from spectHR.analysis.psd._lombscargle import LombscargleOptions
@@ -499,6 +503,11 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
     ls_cfg = _filter_kwargs(LombscargleOptions, ls_raw)
     ls_opts = LombscargleOptions(**ls_cfg)
 
+    ar_raw = dict(fa.get("autoregressive", {}))
+    ar_raw.setdefault("units", canonical_units)
+    ar_cfg = _filter_kwargs(AutoregressiveOptions, ar_raw)
+    ar_opts = AutoregressiveOptions(**ar_cfg)
+
     carspan_raw = dict(fa.get("carspan", {}))
     carspan_raw.setdefault("plot_units", canonical_units)
     carspan_raw["f_max"] = f_max
@@ -515,6 +524,7 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
         mean_convention=mean_convention,
         welch=welch_opts,
         lombscargle=ls_opts,
+        autoregressive=ar_opts,
         carspan=carspan_opts,
         detrend_lambda=(
             float(fa.get("detrend_lambda", 500.0) or 500.0)
@@ -658,8 +668,56 @@ class WorkspaceView:
 
     @cached_property
     def transfer_settings(self) -> Dict[str, Any]:
-        """Flattened transfer-function settings dict."""
+        """Flattened transfer-function settings dict.
+
+        The Bode-plot widgets read this dict directly.  The metric path uses the
+        typed :attr:`transfer_config` instead.
+        """
         return transfer_settings_from_workspace(self._ws)
+
+    @cached_property
+    def transfer_config(self) -> "TransferConfig":
+        """Typed transfer-metric config (input signal, coherence, f_max, bands).
+
+        The single place the flat transfer settings and the display bands are
+        assembled into the band edges the epoch transfer metric consumes.
+        ``FullRange`` is excluded (it is a display-only overview band).
+        """
+        from spectHR.session import TransferConfig
+        ts = self.transfer_settings
+        bands = {
+            name: (float(s["low"]), float(s["high"]))
+            for name, s in self.display_bands.items()
+            if "low" in s and "high" in s and name != "FullRange"
+        }
+        return TransferConfig(
+            input_signal=str(ts["input_signal"]),
+            min_coherence=float(ts["min_coherence"]),
+            f_max=float(ts["f_max"]),
+            bands=bands,
+        )
+
+    # ---- metric-facing config ---------------------------------------
+
+    def analysis_config(self) -> "AnalysisConfig":
+        """Build the metric-facing :class:`AnalysisConfig` from these settings.
+
+        This is the single mapping from the typed workspace properties onto the
+        flat config the epoch metrics consume; ``AnalysisConfig.from_workspace``
+        delegates here, so a new metric parameter is wired in one place.
+        """
+        from spectHR.session import AnalysisConfig
+        ibi_dev, rate_dev = self.rsa_rejection
+        return AnalysisConfig(
+            psd_method=self.psd_method,
+            rsa_lag_s=self.rsa_lag_s,
+            rsa_max_ibi_deviation=ibi_dev,
+            rsa_max_rate_deviation=rate_dev,
+            b_point_guard_ms=self.b_point_guard_ms,
+            transfer_config=self.transfer_config,
+            prsa_window=self.prsa_window,
+            log_band_power=self.log_band_power,
+        )
 
     # ---- logging ----------------------------------------------------
 

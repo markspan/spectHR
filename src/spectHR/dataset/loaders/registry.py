@@ -32,19 +32,3 @@ def load(path: str | Path, **kwargs) -> "Session":
     if loader is None:
         raise ValueError(f"No loader registered for '{path.suffix}'")
     return loader(path, **kwargs)
-
-
-def get_loader(ext_or_path: str) -> LoaderFunc | None:
-    """Return the loader registered for *ext_or_path*'s extension.
-
-    Accepts either a bare extension (``".xdf"``) or a full path
-    (``"data/file.xdf"``).  Returns ``None`` when no loader is registered.
-
-    .. deprecated::
-        Use :func:`load` instead.  ``get_loader`` exists for backward
-        compatibility with old-style callers.
-    """
-    import os
-    _, ext = os.path.splitext(ext_or_path)
-    ext = ext.lower() if ext else ext_or_path.lower()
-    return _EXTENSION_LOADERS.get(ext)

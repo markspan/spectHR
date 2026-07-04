@@ -149,6 +149,12 @@ tests can isolate to a temp `.ini`.
 - **Example data:** `ExampleData/`, `example1.EVT`/`.nff` (ECG+BP+RESP, no
   ICG), `ExampleData/data/VU-AMS_5fs_example_data.edf` (has ICG=`dzdt-[vuams]`
   + raw accel `mxr/myr/mzr` → exercises PEP and per-epoch accel-PCA breathing).
+- **Deliberate function-local imports.** Some imports sit inside functions on
+  purpose, and should stay there: to keep the headless `spectHR` import light
+  (heavy deps like `scipy.signal`, `h5py`, matplotlib) or to break a module
+  cycle (`session` ↔ `config`, `session` ↔ `analysis`, `config` ↔ `session`).
+  Don't hoist those to module top. A pure-stdlib function-local import with no
+  such reason is just clutter and belongs at the top of the module.
 - LF→CRLF git warnings and an offscreen exit-code-9 on Qt teardown are benign.
 
 ## Export

@@ -9,6 +9,10 @@ _lombscargle, _carspan, _engine, _config, _utils, _band_power).
 This __init__ re-exports the names that callers need.
 """
 
+from spectHR.analysis.psd._autoregressive import (  # noqa: F401
+    AutoregressiveOptions,
+    compute_autoregressive_psd,
+)
 from spectHR.analysis.psd._band_power import band_power_rectangular  # noqa: F401
 from spectHR.analysis.psd._carspan import (  # noqa: F401
     CarspanOptions,
@@ -48,6 +52,8 @@ __all__ = [
     "compute_welch_psd",
     "LombscargleOptions",
     "compute_lombscargle_psd",
+    "AutoregressiveOptions",
+    "compute_autoregressive_psd",
     "CarspanOptions",
     "compute_carspan_psd",
     "compute_carspan_psd_strict",

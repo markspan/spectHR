@@ -78,6 +78,10 @@ class EpochEditorWidget(QWidget):
         self.setVisible(True)
         self.refresh()
 
+    def apply_config(self, config) -> None:
+        """Adopt new analysis parameters (the coordinator triggers any refresh)."""
+        self._config = config
+
     def set_epoch(self, name: str) -> None:  # noqa: ARG002, shows all epochs
         """No-op: the editor always shows the whole epoch table."""
 

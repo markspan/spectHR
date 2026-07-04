@@ -15,6 +15,6 @@ import spectHR.dataset.loaders.polar_csv  # noqa: F401
 import spectHR.dataset.loaders.xdf_loader  # noqa: F401
 
 # Expose registry API
-from spectHR.dataset.loaders.registry import get_loader, load, register_loader
+from spectHR.dataset.loaders.registry import load, register_loader
 
-__all__ = ["load", "get_loader", "register_loader"]
+__all__ = ["load", "register_loader"]
