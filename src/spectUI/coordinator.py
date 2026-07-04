@@ -173,6 +173,34 @@ class DataCoordinator(QObject):
         if widget in self._timelines and self._shared_window is not None:
             widget.apply_window(*self._shared_window)
 
+    def ensure_ready(self, widgets=None) -> None:
+        """Bring docks up to date so their figures are computed and drawn.
+
+        Applies the pending session to any dock that was hidden when the
+        session arrived (and so never computed), and refreshes any dock left
+        dirty by a change while hidden, exactly what :meth:`widget_shown` does,
+        but eagerly for a set of docks (or every registered dock when *widgets*
+        is ``None``).  Used before exporting plots, so a dock the user never
+        opened still produces its figure.  Docks already current are untouched.
+
+        Grid docks compute on a background thread, so this only *starts* their
+        work; the caller waits for :meth:`~spectUI.widgets.grid.base.EpochGridView.is_busy`
+        to clear before reading the figures.
+        """
+        if self._session is None:
+            return
+        targets = set(widgets) if widgets is not None else None
+        for entry in self._entries:
+            if targets is not None and entry.widget not in targets:
+                continue
+            if entry.needs_session:
+                entry.needs_session = False
+                entry.dirty = False
+                entry.widget.set_session(self._session, self._config)
+            elif entry.dirty:
+                entry.dirty = False
+                entry.widget.refresh()
+
     # ------------------------------------------------------------------
     # Window sync
     # ------------------------------------------------------------------

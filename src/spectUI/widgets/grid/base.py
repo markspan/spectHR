@@ -148,6 +148,15 @@ class EpochGridView(QWidget):
         """
         self._config = config
 
+    def is_busy(self) -> bool:
+        """True while the per-epoch tiles are still computing on the pool.
+
+        Lets the host wait for the grid to finish rendering before exporting
+        its figures (the tiles and their canvases only exist once the async
+        compute has delivered and ``_build_grid`` has run).
+        """
+        return self._scheduler.is_busy()
+
     def set_epoch(self, name: str) -> None:  # noqa: ARG002, grid shows all epochs
         """No-op: the grid always shows every active epoch."""
 

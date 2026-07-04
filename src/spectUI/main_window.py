@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 from platformdirs import user_config_dir
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QEventLoop, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -326,7 +327,15 @@ class MainWindow(QMainWindow):
         return (p.rsp_source, p.rsp_per_epoch)
 
     def _export_plots(self, directory: str) -> None:
-        """Save the open dock plots as files into *directory* (via a dialog)."""
+        """Save the open dock plots as files into *directory* (via a dialog).
+
+        Docks the user never opened are lazy (never computed) and the grid
+        docks compute on a background thread, so first make sure every dock's
+        figure actually exists and is rendered, then let the export proceed.
+        """
+        if self._session is not None:
+            self._coordinator.ensure_ready()
+            self._wait_for_docks(self._data_docks.values())
         plot_export.export_dock_plots(
             self,
             self._data_docks,
@@ -334,6 +343,32 @@ class MainWindow(QMainWindow):
             getattr(self._session, "name", "") or "",
             directory,
         )
+
+    def _wait_for_docks(self, widgets, timeout_s: float = 20.0) -> None:
+        """Pump the event loop until the grid docks finish computing.
+
+        Grid docks deliver their per-epoch tiles via a queued signal, so the
+        event loop must run for the tiles (and their canvases) to appear.
+        Bounded by *timeout_s* so a stuck computation can never hang the export.
+        """
+        pending = [w for w in widgets if hasattr(w, "is_busy")]
+        if not pending:
+            return
+
+        def _busy() -> bool:
+            return any(w.is_busy() for w in pending)
+
+        self.setCursor(Qt.WaitCursor)
+        try:
+            deadline = time.monotonic() + timeout_s
+            while _busy() and time.monotonic() < deadline:
+                QCoreApplication.processEvents(QEventLoop.AllEvents, 50)
+                time.sleep(0.02)
+            # One more pass so the final finished-signal delivers and the last
+            # tile paints before the figures are read.
+            QCoreApplication.processEvents(QEventLoop.AllEvents, 50)
+        finally:
+            self.unsetCursor()
 
     # ------------------------------------------------------------------
     # File tree

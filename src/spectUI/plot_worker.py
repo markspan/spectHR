@@ -93,6 +93,10 @@ class DockScheduler:
         """Register *cb* to be called when this scheduler becomes idle."""
         self._idle_cbs.append(cb)
 
+    def is_busy(self) -> bool:
+        """True while any submitted worker is still in flight."""
+        return bool(self._inflight)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
