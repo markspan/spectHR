@@ -106,7 +106,7 @@ class ResultsTableWidget(QWidget):
         self._scheduler.submit("results", compute, self._on_table, self._on_error)
 
     def _on_table(self, table) -> None:
-        self._populate(table.labels, table.columns, table.values)
+        self._populate(table.labels, table.columns, table.values, table.error_mask)
 
     @staticmethod
     def _on_error(exc: Exception) -> None:
@@ -256,7 +256,13 @@ class ResultsTableWidget(QWidget):
             )
         menu.exec(header.mapToGlobal(pos))
 
-    def _populate(self, labels, columns: list[str], values: np.ndarray) -> None:
+    def _populate(
+        self,
+        labels,
+        columns: list[str],
+        values: np.ndarray,
+        error_mask: np.ndarray | None = None,
+    ) -> None:
         self.table.clear()
         self._columns = list(columns)
         self.table.setRowCount(len(labels))
@@ -273,16 +279,23 @@ class ResultsTableWidget(QWidget):
                 hint = "Right-click to open the description"
                 header.setToolTip(f"{tip}\n\n{hint}" if tip else hint)
 
+        from spectHR.analysis.exporter import ERROR_CELL_TEXT
         from spectHR.analysis.respiration_metrics import BOOLEAN_METRIC_COLUMNS
+        has_err = error_mask is not None and error_mask.size
         for r, label in enumerate(labels):
             name_item = QTableWidgetItem(str(label))
             self.table.setItem(r, 0, name_item)
             for c, col in enumerate(columns):
-                val = values[r, c] if values.size else np.nan
-                if col in BOOLEAN_METRIC_COLUMNS:
-                    text = "" if (val is None or np.isnan(val)) else ("True" if val else "False")
+                # A cell whose metric raised shows ERROR_CELL_TEXT, so a real
+                # failure is not mistaken for a blank "not enough data" NaN.
+                if has_err and error_mask[r, c]:
+                    text = ERROR_CELL_TEXT
                 else:
-                    text = "" if (val is None or np.isnan(val)) else f"{val:.4g}"
+                    val = values[r, c] if values.size else np.nan
+                    if col in BOOLEAN_METRIC_COLUMNS:
+                        text = "" if (val is None or np.isnan(val)) else ("True" if val else "False")
+                    else:
+                        text = "" if (val is None or np.isnan(val)) else f"{val:.4g}"
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.table.setItem(r, c + 1, item)

@@ -338,6 +338,12 @@ class EpochExporter:
 # ---------------------------------------------------------------------------
 
 
+#: Token written into a metrics-table cell whose metric *raised* (a real
+#: failure), to distinguish it from a legitimately-empty (NaN) cell, which
+#: stays blank.  Kept as a named constant so downstream readers can match it.
+ERROR_CELL_TEXT = "ERR"
+
+
 def _fmt_csv(value) -> str:
     """Format a metrics-table cell for CSV (blank for NaN/None)."""
     if value is None:
@@ -365,15 +371,23 @@ def write_results_csv(path, table) -> None:
 
     *table* is the :class:`~spectHR.session.MetricsTable` from
     :meth:`Session.epochs_table` (``labels`` / ``columns`` / ``values``).
+
+    A cell whose metric raised (``table.error_mask``) is written as
+    :data:`ERROR_CELL_TEXT` rather than left blank, so a genuine failure is
+    visible in the CSV and not mistaken for an honest "not enough data" NaN.
     """
     from spectHR.analysis.respiration_metrics import BOOLEAN_METRIC_COLUMNS
     path = Path(path)
+    err = table.error_mask
     with path.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["epoch", *table.columns])
         for i, label in enumerate(table.labels):
             row = [str(label)]
             for c, col in enumerate(table.columns):
+                if err is not None and err.size and err[i, c]:
+                    row.append(ERROR_CELL_TEXT)
+                    continue
                 val = table.values[i, c] if table.values.size else None
                 if col in BOOLEAN_METRIC_COLUMNS:
                     row.append(_fmt_csv_bool(val))

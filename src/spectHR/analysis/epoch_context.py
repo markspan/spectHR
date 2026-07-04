@@ -46,6 +46,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from spectHR.logger import logger
 from spectHR.session._session import AnalysisConfig
 
 # ------------------------------------------------------------------ #
@@ -151,66 +152,87 @@ class EpochContext:
 
     # ------------------------------------------------------------------ #
     # Lazily-cached spectral / waveform results                          #
+    #                                                                    #
+    # Each guards the legitimately-absent case (channel not loaded) and  #
+    # returns None silently; a genuine computation failure is logged via #
+    # _guarded rather than swallowed, so a real bug leaves a trace.      #
     # ------------------------------------------------------------------ #
+
+    def _guarded(self, name: str, compute):
+        """Run *compute*; on failure log it (not silent) and return ``None``.
+
+        Callers guard the legitimately-absent case (no channel) *before*
+        calling this, so anything reaching here is a real computation error
+        worth surfacing in the log rather than silently swallowing to ``None``.
+        """
+        try:
+            return compute()
+        except Exception as exc:   # noqa: BLE001, one bad epoch must not abort the table
+            logger.warning(
+                "Epoch resource %r failed: %s: %s",
+                name, type(exc).__name__, exc,
+            )
+            logger.debug("Traceback for epoch resource %r:", name, exc_info=True)
+            return None
 
     @cached_property
     def psd(self):
         """Band-power PSD for ``config.psd_method`` (cached), or ``None``."""
         if self.config.psd_method is None:
             return None
-        try:
-            from spectHR.analysis.psd._engine import PSDEngine
-            return PSDEngine(self.view).for_band_power(self.config.psd_method)
-        except Exception:
-            return None
+        from spectHR.analysis.psd._engine import PSDEngine
+        return self._guarded(
+            "psd",
+            lambda: PSDEngine(self.view).for_band_power(self.config.psd_method),
+        )
 
     @cached_property
     def bp_beats(self):
         """Per-beat BP parameter dict (cached), or ``None`` when no BP channel."""
         if self.bp_ts is None:
             return None
-        try:
-            from spectHR.analysis.bp_metrics import bp_beat_parameters
-            return bp_beat_parameters(
+        from spectHR.analysis.bp_metrics import bp_beat_parameters
+        return self._guarded(
+            "bp_beats",
+            lambda: bp_beat_parameters(
                 np.asarray(self.bp_ts.times,  dtype=float),
                 np.asarray(self.bp_ts.values, dtype=float),
                 np.asarray(self.rpeak_times,  dtype=float),
-            )
-        except Exception:
-            return None
+            ),
+        )
 
     @cached_property
     def resp_beats(self):
         """Per-beat respiration parameter dict (cached), or ``None``."""
         if self.rsp_ts is None:
             return None
-        try:
-            from spectHR.analysis.respiration_metrics import resp_beat_parameters
-            return resp_beat_parameters(
+        from spectHR.analysis.respiration_metrics import resp_beat_parameters
+        return self._guarded(
+            "resp_beats",
+            lambda: resp_beat_parameters(
                 np.asarray(self.rsp_ts.times,  dtype=float),
                 np.asarray(self.rsp_ts.values, dtype=float),
                 np.asarray(self.rpeak_times,   dtype=float),
-            )
-        except Exception:
-            return None
+            ),
+        )
 
     @cached_property
     def rsa_beats(self):
         """Per-breath Grossman peak-to-valley RSA array (ms), or ``None``."""
         if self.rsp_phases is None or len(self.rsp_phases) < 2:
             return None
-        try:
-            from spectHR.analysis.respiration_metrics import grossman_rsa_per_breath
-            return grossman_rsa_per_breath(
+        from spectHR.analysis.respiration_metrics import grossman_rsa_per_breath
+        return self._guarded(
+            "rsa_beats",
+            lambda: grossman_rsa_per_breath(
                 np.asarray(self.rpeak_times, dtype=float),
                 np.asarray(self.labels,      dtype=object),
                 self.rsp_phases,
                 lag_s=self.config.rsa_lag_s,
                 max_ibi_deviation=self.config.rsa_max_ibi_deviation,
                 max_rate_deviation=self.config.rsa_max_rate_deviation,
-            )
-        except Exception:
-            return None
+            ),
+        )
 
     @cached_property
     def pep_detail(self):
@@ -219,8 +241,9 @@ class EpochContext:
         present or no scorable ensemble could be formed."""
         if self.icg_ts is None:
             return None
-        try:
-            from spectHR.analysis.icg_metrics import pep_ensemble
+        from spectHR.analysis.icg_metrics import pep_ensemble
+
+        def _compute():
             ecg_kw: dict = {}
             if self.ecg_ts is not None:
                 ecg_kw = dict(
@@ -235,8 +258,8 @@ class EpochContext:
                 return_detail=True,
                 **ecg_kw,
             )
-        except Exception:
-            return None
+
+        return self._guarded("pep_detail", _compute)
 
     @cached_property
     def breath_times(self) -> np.ndarray:
@@ -271,18 +294,18 @@ class EpochContext:
             inp = self.rsp_ts
         if inp is None:
             return None
-        try:
-            from spectHR.analysis.transfer import compute_transfer
-            return compute_transfer(
+        from spectHR.analysis.transfer import compute_transfer
+        return self._guarded(
+            "transfer_result",
+            lambda: compute_transfer(
                 self.view,
                 inp,
                 input_signal=sig,
                 bands=cfg.get("bands") or {},
                 min_coherence=float(cfg.get("min_coherence", 0.5)),
                 f_max=float(cfg.get("f_max", 0.5)),
-            )
-        except Exception:
-            return None
+            ),
+        )
 
     @property
     def pep_value(self):

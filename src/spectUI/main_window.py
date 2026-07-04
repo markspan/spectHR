@@ -3,52 +3,42 @@
 """
 spectUI main window.
 
+A thin orchestrator that wires the collaborators together; the bulky pieces
+live in sibling modules:
+
+* :mod:`spectUI.docks` - dock layout constants, specs and the placeholder.
+* :mod:`spectUI.menu_bar` - menu bar + toolbar construction.
+* :mod:`spectUI.session_loader` - background file loading (worker + thread).
+* :mod:`spectUI.session_cache` - the edited-session pickle cache.
+* :mod:`spectUI.plot_export` - export the open dock figures.
+* :mod:`spectUI.coordinator` - dependency-aware dock refresh + window sync.
+
 Dock layout
 -----------
 Left:   workspace file browser (QTreeWidget).
-Center: 12 tabified plot docks (placeholders until widgets are built).
-Bottom: log output (:class:`~spectUI.widgets.log_widget.LogWidget`,
-        hidden by default).
-
-Only workspace I/O and directory settings are wired.
-Plot-dock callbacks are stubs pending widget implementation.
+Centre: tabified plot docks (some still placeholders).
+Bottom: log output (hidden by default).
 """
 from __future__ import annotations
 
-import pickle
 import sys
-import time
-from collections.abc import Callable
 from pathlib import Path
 
-import numpy as np
-import qtawesome as qta
 from platformdirs import user_config_dir
-from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
-    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
-    QToolButton,
     QTreeWidget,
-    QVBoxLayout,
     QWidget,
 )
 from PySide6QtAds import CDockManager, CDockWidget, DockWidgetArea
 
 from spectHR._version import __version__
-from spectHR.dataset.loaders import load as _load_session
 from spectHR.dataset.preprocessing import (
-    apply_beat_detection,
-    apply_bp_calibration,
-    apply_breath_phases,
-    apply_canonical_channels,
-    apply_ecg_polarity,
-    apply_rsp_source,
     invert_ecg,
     recompute_breath_phases,
     retrigger_beats,
@@ -56,193 +46,66 @@ from spectHR.dataset.preprocessing import (
 )
 from spectHR.logger import logger
 from spectHR.session import Session
+from spectUI import menu_bar, plot_export, session_cache
 from spectUI.coordinator import DataChange, DataCoordinator
+from spectUI.docks import (
+    CENTRE_DOCKS,
+    DOCK_BP,
+    DOCK_EPOCHS,
+    DOCK_HR,
+    DOCK_LOG,
+    DOCK_POINCARE,
+    DOCK_PREPROCESSING,
+    DOCK_PROFILES,
+    DOCK_PSD,
+    DOCK_REQUIRES,
+    DOCK_RESULTS,
+    DOCK_SPECTROGRAM,
+    DOCK_SPECTROGRAM3D,
+    DOCK_TRANSFER,
+    DOCK_TRANSFERPROFILE,
+    DOCK_WORKSPACE,
+    VIEW_LABELS,
+    Placeholder,
+    build_data_specs,
+)
 from spectUI.parameters import Parameters, populate_tree
 from spectUI.perspectives import (
     BUILTIN_COMPARE,
     BUILTIN_DEFAULT,
     BUILTIN_PSDFOCUS,
-    PerspectiveMenu,
 )
 from spectUI.plot_worker import DockScheduler
+from spectUI.session_loader import SessionLoader, session_summary
 from spectUI.settings import AppSettings
-from spectUI.widgets import (
-    BPSeriesWidget,
-    EpochEditorWidget,
-    HRSeriesWidget,
-    PoincareWidget,
-    PrepPlotWidget,
-    ProfilePlotWidget,
-    PSDPlotWidget,
-    ResultsTableWidget,
-    Spectrogram3DPlotWidget,
-    SpectrogramPlotWidget,
-    TransferPlotWidget,
-    TransferProfilePlotWidget,
-)
 from spectUI.widgets.log_widget import LogWidget
 from spectUI.widgets.timeline.base import TimelineView
 from spectUI.widgets.workspace_editor import DirectorySelectorDialog, ParametersEditorDialog
 
-# ---------------------------------------------------------------------------
-# Dock object-name constants
-# ---------------------------------------------------------------------------
-
-_DOCK_WORKSPACE       = "dock.workspace"
-_DOCK_PREPROCESSING   = "dock.preprocessing"
-_DOCK_HR              = "dock.hr"
-_DOCK_BP              = "dock.bp"
-_DOCK_POINCARE        = "dock.poincare"
-_DOCK_EPOCHS          = "dock.epochs"
-_DOCK_PSD             = "dock.psd"
-_DOCK_SPECTROGRAM     = "dock.spectrogram"
-_DOCK_SPECTROGRAM3D   = "dock.spectrogram3d"
-_DOCK_TRANSFER        = "dock.transfer"
-_DOCK_TRANSFERPROFILE = "dock.transferprofile"
-_DOCK_PROFILES        = "dock.profiles"
-_DOCK_RESULTS         = "dock.results"
-_DOCK_LOG             = "dock.log"
-
-_CENTRE_DOCKS: tuple[tuple[str, str], ...] = (
-    (_DOCK_PREPROCESSING,   "Preprocessing"),
-    (_DOCK_HR,              "HR Series"),
-    (_DOCK_BP,              "Blood Pressure"),
-    (_DOCK_POINCARE,        "Poincaré"),
-    (_DOCK_EPOCHS,          "Epochs"),
-    (_DOCK_PSD,             "PSD"),
-    (_DOCK_SPECTROGRAM,     "Spectrogram"),
-    (_DOCK_SPECTROGRAM3D,   "Spectrogram 3D"),
-    (_DOCK_TRANSFER,        "Transfer"),
-    (_DOCK_TRANSFERPROFILE, "Transfer Profile"),
-    (_DOCK_PROFILES,        "Profiles"),
-    (_DOCK_RESULTS,      "Results"),
-)
-
-_VIEW_LABELS: dict[str, str] = {
-    _DOCK_WORKSPACE:       "Workspace",
-    _DOCK_PREPROCESSING:   "Preprocessing",
-    _DOCK_HR:              "HR Series",
-    _DOCK_BP:              "Blood Pressure",
-    _DOCK_POINCARE:        "Poincaré",
-    _DOCK_EPOCHS:          "Epochs",
-    _DOCK_PSD:             "PSD",
-    _DOCK_SPECTROGRAM:     "Spectrogram",
-    _DOCK_SPECTROGRAM3D:   "Spectrogram 3D",
-    _DOCK_TRANSFER:        "Transfer",
-    _DOCK_TRANSFERPROFILE: "Transfer Profile",
-    _DOCK_PROFILES:        "Profiles",
-    _DOCK_RESULTS:      "Results",
-    _DOCK_LOG:             "Log",
-}
-
-# Docks that need a particular source channel to be meaningful.  When the
-# predicate is False for the loaded session the dock is hidden and its
-# View-menu entry greyed out.  Docks not listed here are always available
-# (they derive from the R-peaks, which every loaded session has).
-_DOCK_REQUIRES: dict[str, "Callable[[Session], bool]"] = {
-    _DOCK_BP:              lambda s: s.bp is not None,
-    _DOCK_TRANSFER:        lambda s: s.resp is not None or s.bp is not None,
-    _DOCK_TRANSFERPROFILE: lambda s: s.resp is not None or s.bp is not None,
-}
-
 
 # ---------------------------------------------------------------------------
-# Background file loader
+# Backward-compatible aliases
+#
+# The dock object-name constants moved to :mod:`spectUI.docks`; keep the old
+# ``_DOCK_*`` / ``_VIEW_LABELS`` names bound here so existing tests and scripts
+# that reference e.g. ``spectUI.main_window._DOCK_BP`` keep working.
 # ---------------------------------------------------------------------------
 
-class _LoadWorker(QObject):
-    """Loads a recording file on a worker thread.
-
-    Emits ``finished`` with the ready ``Session`` on success, or
-    ``failed`` with a human-readable error string on failure.
-    The caller is responsible for moving this object to a ``QThread``
-    before calling ``run()``.
-    """
-
-    finished = Signal(object, float)   # (Session, elapsed_seconds)
-    failed   = Signal(str,   str)      # (path_str, error_message)
-
-    def __init__(self, path: Path, params: "Parameters") -> None:
-        super().__init__()
-        self._path   = path
-        self._params = params
-
-    def run(self) -> None:
-        t0 = time.monotonic()
-        try:
-            session = _load_session(self._path)
-            # A cached ``.pkl`` is an already-processed Session (it may carry
-            # the user's R-peak edits), re-running the pipeline would, e.g.,
-            # flip an already-corrected ECG a second time, and recomputing
-            # breath phases on every cache load would defeat the cache.  Only
-            # raw files get the conditioning pipeline; the ``.pkl`` is trusted
-            # to already hold the derived data (breath phases included).
-            if self._path.suffix.lower() != ".pkl":
-                session = apply_canonical_channels(session)            # alias keys first
-                session = apply_ecg_polarity(session,   self._params)  # before detection
-                session = apply_rsp_source(session,     self._params)
-                session = apply_bp_calibration(session, self._params)
-                session = apply_beat_detection(session, self._params)
-                session = apply_breath_phases(session,  self._params)  # needs beats
-            self.finished.emit(session, time.monotonic() - t0)
-        except Exception as exc:
-            self.failed.emit(str(self._path), str(exc))
-
-
-def _session_summary(session: Session) -> str:
-    """Return a multi-line human-readable summary of *session*."""
-    lines: list[str] = []
-
-    # Duration, prefer the experiment epoch, fall back to sample axes
-    exp   = session.epochs.get("experiment")
-    dur_s = (exp.end - exp.start) if exp else max(
-        (s.times[-1] for s in session.samples.values() if len(s.times)),
-        default=0.0,
-    )
-    h, rem  = divmod(int(dur_s), 3600)
-    m, s    = divmod(rem, 60)
-    dur_str = (f"{h} h {m:02d} min" if h else
-               f"{m} min {s:02d} s"  if m else
-               f"{s} s")
-    lines.append(f"  Duration : {int(dur_s):,} s  ({dur_str})")
-
-    # Sample channels with sampling rate
-    if session.samples:
-        ch_parts = []
-        for name, sig in sorted(session.samples.items()):
-            rate = getattr(sig, "srate", None)
-            ch_parts.append(f"{name} ({rate:.0f} Hz)" if rate else name)
-        lines.append(f"  Samples  : {', '.join(ch_parts)}")
-
-    # R-peaks / mean HR
-    hrv = session.hrv
-    if hrv is not None and len(hrv.times):
-        ibi  = hrv.ibi
-        fin  = ibi[np.isfinite(ibi)]
-        hr   = f"  |  mean HR {60.0 / fin.mean():.1f} bpm" if len(fin) else ""
-        lines.append(f"  R-peaks  : {len(hrv.times):,}{hr}")
-
-    # Epochs
-    if session.epochs:
-        names = ", ".join(session.epochs)
-        lines.append(f"  Epochs   : {names}  ({len(session.epochs)} total)")
-
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Placeholder
-# ---------------------------------------------------------------------------
-
-class _Placeholder(QWidget):
-    def __init__(self, name: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        lbl = QLabel(name)
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet("color:#bbb; font-size:16pt;")
-        layout = QVBoxLayout(self)
-        layout.addWidget(lbl)
-        self.setStyleSheet("background:#f8f8f8;")
+_DOCK_WORKSPACE       = DOCK_WORKSPACE
+_DOCK_PREPROCESSING   = DOCK_PREPROCESSING
+_DOCK_HR              = DOCK_HR
+_DOCK_BP              = DOCK_BP
+_DOCK_POINCARE        = DOCK_POINCARE
+_DOCK_EPOCHS          = DOCK_EPOCHS
+_DOCK_PSD             = DOCK_PSD
+_DOCK_SPECTROGRAM     = DOCK_SPECTROGRAM
+_DOCK_SPECTROGRAM3D   = DOCK_SPECTROGRAM3D
+_DOCK_TRANSFER        = DOCK_TRANSFER
+_DOCK_TRANSFERPROFILE = DOCK_TRANSFERPROFILE
+_DOCK_PROFILES        = DOCK_PROFILES
+_DOCK_RESULTS         = DOCK_RESULTS
+_DOCK_LOG             = DOCK_LOG
+_VIEW_LABELS          = VIEW_LABELS
 
 
 # ---------------------------------------------------------------------------
@@ -265,19 +128,23 @@ class MainWindow(QMainWindow):
         self._scheduler       = DockScheduler()
         self._coordinator     = DataCoordinator(self)
         self._settings        = AppSettings()
-        self._parameters       = Parameters.default()
+        self._parameters      = Parameters.default()
         self._parameters_path: Path | None = None
         # Respiration settings last applied to the loaded Session's breath
         # phases; a change triggers a re-detection in _on_workspace_changed.
         self._resp_key: tuple | None = None
         self._session:         Session | None = None
-        self._load_thread:     QThread | None = None
-        self._prep_widget:     PrepPlotWidget | None = None
+        self._prep_widget:     QWidget | None = None
         self._loaded_raw_path: Path | None = None  # the raw file behind the cache
 
         self._docks: dict[str, CDockWidget] = {}
         # Live data docks (those that take a Session), keyed by object name.
         self._data_docks: dict[str, QWidget] = {}
+
+        # Background loader (owns its worker + thread lifecycle).
+        self._loader = SessionLoader(self)
+        self._loader.loaded.connect(self._on_session_loaded)
+        self._loader.failed.connect(self._on_load_failed)
 
         # Debounced "data changed → save edited Session to the cache" timer.
         self._cache_timer = QTimer(self)
@@ -286,7 +153,7 @@ class MainWindow(QMainWindow):
         self._cache_timer.timeout.connect(self._save_cache)
 
         self._build_docks()
-        self._build_menu_and_toolbar()
+        menu_bar.build_menu_and_toolbar(self)
         self._capture_builtin_perspectives()
         self._restore()
 
@@ -302,41 +169,24 @@ class MainWindow(QMainWindow):
         self._tree.itemClicked.connect(self._on_tree_item_clicked)
         self._tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._on_tree_menu)
-        self._add_dock(_DOCK_WORKSPACE, "Workspace", self._tree,
+        self._add_dock(DOCK_WORKSPACE, "Workspace", self._tree,
                        DockWidgetArea.LeftDockWidgetArea)
 
         # Which centre docks are live (take a Session) and what each derives
-        # from, the coordinator refreshes a dock when its dependencies change.
+        # from; the coordinator refreshes a dock when its dependencies change.
         # Docks not listed here are still placeholders.
-        # Heavy spectral docks all derive from the R-peaks, the epoch table
-        # and the analysis parameters.
-        _HEAVY = DataChange.HRV | DataChange.EPOCHS | DataChange.PARAMS
-        data_specs = {
-            _DOCK_PREPROCESSING: (PrepPlotWidget, _HEAVY),
-            _DOCK_HR:            (HRSeriesWidget, DataChange.HRV | DataChange.EPOCHS),
-            _DOCK_BP:            (BPSeriesWidget, DataChange.BP | DataChange.EPOCHS),
-            _DOCK_POINCARE:      (PoincareWidget, DataChange.HRV | DataChange.EPOCHS),
-            _DOCK_EPOCHS:        (EpochEditorWidget, DataChange.HRV | DataChange.EPOCHS),
-            _DOCK_PSD:           (PSDPlotWidget, _HEAVY),
-            _DOCK_PROFILES:      (ProfilePlotWidget, _HEAVY),
-            _DOCK_SPECTROGRAM:   (SpectrogramPlotWidget, _HEAVY | DataChange.RESP),
-            _DOCK_SPECTROGRAM3D: (Spectrogram3DPlotWidget, _HEAVY | DataChange.RESP),
-            _DOCK_TRANSFER:      (TransferPlotWidget, _HEAVY | DataChange.BP | DataChange.RESP),
-            _DOCK_TRANSFERPROFILE: (TransferProfilePlotWidget,
-                                    _HEAVY | DataChange.BP | DataChange.RESP),
-            _DOCK_RESULTS:       (ResultsTableWidget, DataChange.ALL),
-        }
+        data_specs = build_data_specs()
 
         # Centre: tabified plot docks.
         reference_area = None
-        for obj_name, title in _CENTRE_DOCKS:
+        for obj_name, title in CENTRE_DOCKS:
             spec = data_specs.get(obj_name)
             if spec is not None:
                 factory, depends = spec
                 widget = factory()
                 self._register_data_dock(obj_name, widget, depends)
             else:
-                widget = _Placeholder(title)
+                widget = Placeholder(title)
             dock = self._add_dock(obj_name, title, widget)
             if spec is not None:
                 dock.visibilityChanged.connect(
@@ -352,7 +202,7 @@ class MainWindow(QMainWindow):
 
         # Bottom: log (hidden by default)
         self._log_widget = LogWidget()
-        log_dock = self._add_dock(_DOCK_LOG, "Log", self._log_widget,
+        log_dock = self._add_dock(DOCK_LOG, "Log", self._log_widget,
                                   DockWidgetArea.BottomDockWidgetArea)
         log_dock.toggleView(False)
 
@@ -384,7 +234,7 @@ class MainWindow(QMainWindow):
         self._coordinator.register(widget, depends)
         if isinstance(widget, TimelineView):
             self._coordinator.register_timeline(widget)
-        if obj_name == _DOCK_PREPROCESSING:
+        if obj_name == DOCK_PREPROCESSING:
             self._prep_widget = widget
             widget.dataEdited.connect(self._on_data_edited)
         # Optional cross-dock signals (Poincaré and future editors).
@@ -398,104 +248,13 @@ class MainWindow(QMainWindow):
             widget.plotsExportRequested.connect(self._export_plots)
 
     # ------------------------------------------------------------------
-    # Menu bar + toolbar
-    # ------------------------------------------------------------------
-
-    def _build_menu_and_toolbar(self) -> None:
-        self._edit_act = self._action(
-            "fa5s.cog", "&Edit settings…", self.edit_workspace, "Ctrl+E")
-        self._load_act = self._action(
-            "fa5s.file-import", "&Load settings…", self.open_workspace, "Ctrl+O")
-        self._save_act = self._action(
-            "fa5s.save", "&Save settings", self.save_workspace, "Ctrl+S")
-        self._settings_act = self._action(
-            "fa5s.folder-open", "Directory &settings…",
-            self.open_directory_settings, "Ctrl+Shift+S")
-        self._doc_act = self._action(
-            "fa5s.question-circle", "&Documentation", self._open_docs, "Ctrl+D")
-
-        # ---- Settings menu ----
-        ws_menu = self.menuBar().addMenu("&Settings")
-        ws_menu.addAction(self._load_act)
-        ws_menu.addSeparator()
-        ws_menu.addAction(self._edit_act)
-        ws_menu.addAction(self._save_act)
-        ws_menu.addSeparator()
-        ws_menu.addAction(self._settings_act)
-        ws_menu.addSeparator()
-        quit_act = QAction("&Quit", self, shortcut=QKeySequence("Ctrl+Q"))
-        quit_act.triggered.connect(QApplication.quit)
-        ws_menu.addAction(quit_act)
-
-        # ---- View menu ----
-        view_menu = self.menuBar().addMenu("&View")
-        self._view_actions: dict[str, object] = {}
-        for obj_name, label in _VIEW_LABELS.items():
-            dock = self._docks.get(obj_name)
-            if dock:
-                act = dock.toggleViewAction()
-                act.setText(label)
-                view_menu.addAction(act)
-                self._view_actions[obj_name] = act
-        view_menu.addSeparator()
-        self._perspective_menu = PerspectiveMenu(
-            self, self._dock_manager, view_menu.addMenu("&Layout")
-        )
-
-        # ---- Help menu ----
-        self.menuBar().addMenu("&Help").addAction(self._doc_act)
-
-        # ---- Toolbar ----
-        tb = self.addToolBar("Main")
-        tb.setObjectName("toolbar.main")
-        tb.setMovable(False)
-        tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        tb.setIconSize(QSize(20, 20))
-
-        tb.addAction(self._edit_act)
-
-        # Load + Save stacked (half-height)
-        pair = QWidget()
-        pair.setStyleSheet("background: transparent;")
-        vbox = QVBoxLayout(pair)
-        vbox.setContentsMargins(2, 2, 2, 2)
-        vbox.setSpacing(0)
-        for act, label in ((self._load_act, "Load"), (self._save_act, "Save")):
-            btn = QToolButton()
-            btn.setDefaultAction(act)
-            btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-            btn.setIconSize(QSize(16, 16))
-            btn.setText(label)
-            btn.setStyleSheet("QToolButton { background: transparent; }")
-            vbox.addWidget(btn)
-        tb.addWidget(pair)
-        tb.addSeparator()
-
-        tb.addAction(self._settings_act)
-        tb.addSeparator()
-        tb.addAction(self._doc_act)
-
-    def _action(
-        self,
-        icon:     str,
-        text:     str,
-        slot,
-        shortcut: str | None = None,
-    ) -> QAction:
-        act = QAction(qta.icon(icon), text, self)
-        if shortcut:
-            act.setShortcut(QKeySequence(shortcut))
-        act.triggered.connect(slot)
-        return act
-
-    # ------------------------------------------------------------------
     # Built-in perspectives
     # ------------------------------------------------------------------
 
     def _capture_builtin_perspectives(self) -> None:
         self._dock_manager.addPerspective(BUILTIN_DEFAULT)
 
-        epochs = self._docks.get(_DOCK_EPOCHS)
+        epochs = self._docks.get(DOCK_EPOCHS)
         if epochs:
             self._dock_manager.addDockWidget(
                 DockWidgetArea.BottomDockWidgetArea, epochs
@@ -600,81 +359,14 @@ class MainWindow(QMainWindow):
         return (p.rsp_source, p.rsp_per_epoch)
 
     def _export_plots(self, directory: str) -> None:
-        """Let the user pick which dock plots to save as PDFs into *directory*.
-
-        Each file is named ``{datafile}_{dock}[_{epoch}].pdf``, the recording's
-        name plus the dock, plus the epoch label for per-epoch grid tiles.
-        """
-        import re
-
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as _Canvas
-
-        from spectUI.widgets.plot_export_dialog import PlotExportDialog
-
-        def _slug(text) -> str:
-            return re.sub(r"[^\w.-]+", "_", str(text)).strip("_")
-
-        def _dock_figures(widget):
-            """``(canvas, epoch_label|None)`` for every figure in *widget*.
-
-            Grid docks expose one tile per epoch (``_subplots`` aligned with the
-            ``_last_results`` records), so each tile is tagged with its epoch
-            label; single-figure docks yield one untagged canvas.
-            """
-            tiles = getattr(widget, "_subplots", None)
-            results = getattr(widget, "_last_results", None)
-            if tiles and results and len(tiles) == len(results):
-                return [(t.canvas, lbl) for t, (lbl, _r) in zip(tiles, results)
-                        if getattr(t, "canvas", None) is not None]
-            return [(cv, None) for cv in widget.findChildren(_Canvas)]
-
-        # Every data dock that currently has at least one figure.
-        candidates = []
-        for obj_name, widget in self._data_docks.items():
-            if widget.findChildren(_Canvas):
-                candidates.append((obj_name, _VIEW_LABELS.get(obj_name, obj_name), widget))
-        if not candidates:
-            QMessageBox.information(self, "Export plots", "No plots are available to export.")
-            return
-
-        dlg = PlotExportDialog(self, [(k, lbl) for k, lbl, _ in candidates], directory)
-        if not dlg.exec():
-            return
-        out = Path(dlg.directory())
-        out.mkdir(parents=True, exist_ok=True)
-        selected  = dlg.selected()
-        ext, fmt  = dlg.export_format()
-        dpi       = dlg.dpi()
-
-        import matplotlib as mpl
-        data_stem = _slug(getattr(self._session, "name", "") or "data") or "data"
-        saved = 0
-        # Embed fonts as TrueType (type 42) so PDF/EPS text stays editable in
-        # Illustrator / Inkscape rather than being converted to outlines.
-        with mpl.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42}):
-            for obj_name, label, widget in candidates:
-                if obj_name not in selected:
-                    continue
-                figs = _dock_figures(widget)
-                dock_slug = _slug(label) or obj_name
-                for i, (cv, epoch) in enumerate(figs):
-                    parts = [data_stem, dock_slug]
-                    if epoch:
-                        parts.append(_slug(epoch))
-                    elif len(figs) > 1:
-                        parts.append(str(i + 1))
-                    try:
-                        cv.figure.savefig(
-                            out / f"{'_'.join(parts)}{ext}",
-                            format=fmt,
-                            dpi=dpi,
-                            bbox_inches="tight",
-                        )
-                        saved += 1
-                    except Exception:  # noqa: BLE001, skip a bad figure, keep going
-                        logger.exception("Failed to save figure for %s", obj_name)
-        QMessageBox.information(self, "Plots exported",
-                                f"Saved {saved} figure(s) to {out}")
+        """Save the open dock plots as files into *directory* (via a dialog)."""
+        plot_export.export_dock_plots(
+            self,
+            self._data_docks,
+            VIEW_LABELS,
+            getattr(self._session, "name", "") or "",
+            directory,
+        )
 
     # ------------------------------------------------------------------
     # File tree
@@ -720,6 +412,7 @@ class MainWindow(QMainWindow):
 
         Used by the tree menu's invert / retrigger actions: run the transform,
         re-broadcast the new session to every dock, invalidate caches and save.
+        The prep dock's scroll window is preserved across the rebuild.
         """
         if self._session is None:
             return
@@ -745,14 +438,18 @@ class MainWindow(QMainWindow):
             self._prep_widget.apply_window(*prep_window)
         self._save_cache()
 
+    # ------------------------------------------------------------------
+    # Loading
+    # ------------------------------------------------------------------
+
     def _load_file(self, path: Path, *, ignore_cache: bool = False) -> None:
-        if self._load_thread is not None and self._load_thread.isRunning():
+        if self._loader.is_running():
             logger.warning(f"Still loading, ignoring {path.name}")
             return
 
         self._loaded_raw_path = path
         self._cache_timer.stop()
-        cache = self._cache_path(path)
+        cache = session_cache.cache_path(self._parameters.cache_dir, path)
         if ignore_cache and cache.exists():
             cache.unlink()
         actual = cache if (cache.exists() and not ignore_cache) else path
@@ -761,40 +458,14 @@ class MainWindow(QMainWindow):
             + (" (from cache)" if actual is cache else "")
         )
         self.setCursor(Qt.WaitCursor)
-
-        self._load_worker = _LoadWorker(actual, self._parameters)
-        self._load_thread = QThread(self)
-        self._load_worker.moveToThread(self._load_thread)
-
-        self._load_thread.started.connect(self._load_worker.run)
-        self._load_worker.finished.connect(self._on_session_loaded)
-        self._load_worker.failed.connect(self._on_load_failed)
-        self._load_worker.finished.connect(self._load_thread.quit)
-        self._load_worker.failed.connect(self._load_thread.quit)
-        self._load_thread.finished.connect(self._load_worker.deleteLater)
-        self._load_thread.finished.connect(self._on_load_thread_finished)
-
-        self._load_thread.start()
-
-    def _on_load_thread_finished(self) -> None:
-        """Release the finished loader thread.
-
-        ``deleteLater`` destroys the underlying C++ QThread, so the Python
-        references must be dropped here as well, otherwise the next
-        ``_load_file`` call would touch a dead wrapper and raise
-        ``RuntimeError: Internal C++ object already deleted``.
-        """
-        if self._load_thread is not None:
-            self._load_thread.deleteLater()
-        self._load_thread = None
-        self._load_worker = None
+        self._loader.start(actual, self._parameters)
 
     def _on_session_loaded(self, session: Session, elapsed: float) -> None:
         self.unsetCursor()
         self._session = session
         logger.info(
             f"Loaded {session.name}  ({elapsed:.2f} s)\n"
-            + _session_summary(session)
+            + session_summary(session)
         )
         self._resp_key = self._current_resp_key()  # baseline for change detection
         self._scheduler.invalidate()  # discard any stale background results
@@ -808,10 +479,10 @@ class MainWindow(QMainWindow):
 
         E.g. with no blood-pressure channel the BP dock is closed and its
         View-menu entry is disabled; the entry re-enables when a later
-        recording carries the channel.  Docks not in ``_DOCK_REQUIRES`` are
+        recording carries the channel.  Docks not in ``DOCK_REQUIRES`` are
         always available.
         """
-        for obj_name, available in _DOCK_REQUIRES.items():
+        for obj_name, available in DOCK_REQUIRES.items():
             ok = bool(available(session))
             act = self._view_actions.get(obj_name)
             if act is not None:
@@ -820,27 +491,30 @@ class MainWindow(QMainWindow):
             if dock is not None and not ok:
                 dock.toggleView(False)   # deselect: close the unavailable dock
 
-    def _cache_path(self, raw_path: Path) -> Path:
-        """Cache pickle path for a raw recording: ``<cache_dir>/<name>.pkl``."""
-        return self._parameters.cache_dir / (raw_path.name + ".pkl")
+    def _on_load_failed(self, path: str, error: str) -> None:
+        self.unsetCursor()
+        logger.error(f"Failed to load {Path(path).name}: {error}")
+        QMessageBox.critical(self, "Load error", f"{Path(path).name}\n\n{error}")
+
+    # ------------------------------------------------------------------
+    # Cache
+    # ------------------------------------------------------------------
 
     def _save_cache(self) -> None:
         """Persist the current (edited) Session to the cache as a pickle.
 
         Called debounced after a data change.  On the next load of the same
-        raw file the cached Session, with the user's edits, is loaded
-        instead of re-parsing and re-detecting the raw recording.
+        raw file the cached Session, with the user's edits, is loaded instead
+        of re-parsing and re-detecting the raw recording.
         """
         if self._session is None or self._loaded_raw_path is None:
             return
-        cache = self._cache_path(self._loaded_raw_path)
-        try:
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            with open(cache, "wb") as f:
-                pickle.dump(self._session, f, protocol=pickle.HIGHEST_PROTOCOL)
-            logger.info("Cached edited dataset → %s", cache.name)
-        except Exception:  # noqa: BLE001, caching is best-effort
-            logger.exception("Failed to write cache pickle %s", cache)
+        path = session_cache.cache_path(self._parameters.cache_dir, self._loaded_raw_path)
+        session_cache.write_session_cache(self._session, path)
+
+    # ------------------------------------------------------------------
+    # Cross-dock events
+    # ------------------------------------------------------------------
 
     def _on_epochs_changed(self, source) -> None:
         """An epoch's active state changed in *source* (e.g. Poincaré checkbox)."""
@@ -854,7 +528,7 @@ class MainWindow(QMainWindow):
         Wired to a dock's ``annotationActivated`` signal, double-clicking a
         Poincaré point jumps to that beat in the editor.
         """
-        dock = self._docks.get(_DOCK_PREPROCESSING)
+        dock = self._docks.get(DOCK_PREPROCESSING)
         if dock is not None:
             dock.toggleView(True)
             dock.setAsCurrentTab()
@@ -875,11 +549,6 @@ class MainWindow(QMainWindow):
         self._coordinator.notify(DataChange.HRV, source=self._prep_widget)
         self._cache_timer.start()  # debounced: save edited dataset to cache
 
-    def _on_load_failed(self, path: str, error: str) -> None:
-        self.unsetCursor()
-        logger.error(f"Failed to load {Path(path).name}: {error}")
-        QMessageBox.critical(self, "Load error", f"{Path(path).name}\n\n{error}")
-
     # ------------------------------------------------------------------
     # Misc
     # ------------------------------------------------------------------
@@ -896,8 +565,9 @@ class MainWindow(QMainWindow):
     @property
     def _workspace_file(self) -> Path:
         """The single default settings file in the OS config directory."""
-        logger.info(f"Workspace file in: {user_config_dir("spectHR")}")
-        return Path(user_config_dir("spectHR")) / "workspace.json"
+        cfg_dir = user_config_dir("spectHR")
+        logger.info(f"Workspace file in: {cfg_dir}")
+        return Path(cfg_dir) / "workspace.json"
 
     def _restore(self) -> None:
         # All settings (analysis parameters + working directories) come from one

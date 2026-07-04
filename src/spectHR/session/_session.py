@@ -131,16 +131,24 @@ class MetricsTable:
     values
         Float matrix, shape ``(n_epochs, n_metrics)``.  ``NaN`` when a
         metric could not be computed for an epoch.
+    error_mask
+        Boolean matrix parallel to :attr:`values`, ``True`` where the metric
+        *raised* an exception (a real failure, logged when it happened) as
+        opposed to legitimately returning ``NaN`` (e.g. too few IBIs to
+        compute the metric).  A cell that is ``NaN`` with ``error_mask`` False
+        is a valid "not enough data" result, not a bug.  ``None`` on the empty
+        table.
     contexts
         ``label → EpochContext`` mapping.  Contexts carry cached PSD,
         RSA, and ICG results so an :class:`~spectHR.analysis.exporter.EpochExporter`
         can reuse them without recomputation.
     """
 
-    labels:   np.ndarray
-    columns:  list[str]
-    values:   np.ndarray
-    contexts: dict[str, Any]
+    labels:     np.ndarray
+    columns:    list[str]
+    values:     np.ndarray
+    contexts:   dict[str, Any]
+    error_mask: np.ndarray | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +256,7 @@ class Session:
         """
         from spectHR.analysis.epoch_context import EpochContext
         from spectHR.analysis.registry import get_metric_groups, get_metrics
+        from spectHR.logger import logger
 
         config = config or AnalysisConfig()
         active = {k: v for k, v in self.epochs.items() if v.active}
@@ -258,12 +267,16 @@ class Session:
                 columns=[],
                 values=np.empty((len(active), 0)),
                 contexts={},
+                error_mask=np.empty((len(active), 0), dtype=bool),
             )
 
         metrics = get_metrics()
         groups  = get_metric_groups()
         contexts: dict[str, EpochContext] = {}
         rows: list[dict[str, float]] = []
+        # Per-row set of column names whose metric *raised* (a real error),
+        # kept apart from columns that are legitimately NaN (too little data).
+        row_errors: list[set[str]] = []
 
         for label in active:
             # Zero-copy window every channel to the epoch in one place, then
@@ -281,32 +294,62 @@ class Session:
             contexts[label] = ctx
 
             row: dict[str, float] = {}
+            errored: set[str] = set()
             for mname, fn in metrics.items():
                 try:
-                    row[mname] = float(fn(ctx))
-                except Exception:
+                    val = fn(ctx)
+                    # ``None`` means "not applicable" (like NaN), not a failure.
+                    row[mname] = np.nan if val is None else float(val)
+                except Exception as exc:   # noqa: BLE001, one metric must not abort the table
+                    # A raised exception is a genuine failure, not a legitimate
+                    # NaN: log it (never silent) and flag the cell so it is
+                    # distinguishable from an honest "not enough data" NaN.
+                    logger.warning(
+                        "Epoch metric %r failed for epoch %r: %s: %s",
+                        mname, label, type(exc).__name__, exc,
+                    )
+                    logger.debug(
+                        "Traceback for metric %r (epoch %r):", mname, label,
+                        exc_info=True,
+                    )
                     row[mname] = np.nan
-            for _, fn in groups.items():
+                    errored.add(mname)
+            for gname, fn in groups.items():
                 try:
                     extra = fn(ctx)
                     if isinstance(extra, dict):
                         row.update({k: float(v) for k, v in extra.items()})
-                except Exception:
-                    pass
+                except Exception as exc:   # noqa: BLE001
+                    # A group failure drops its whole column set for this epoch;
+                    # we cannot flag specific cells (the columns are unknown),
+                    # but the failure is still logged rather than swallowed.
+                    logger.warning(
+                        "Epoch metric group %r failed for epoch %r: %s: %s",
+                        gname, label, type(exc).__name__, exc,
+                    )
+                    logger.debug(
+                        "Traceback for metric group %r (epoch %r):", gname, label,
+                        exc_info=True,
+                    )
             rows.append(row)
+            row_errors.append(errored)
 
         all_cols = list(dict.fromkeys(c for r in rows for c in r))
         matrix   = np.full((len(rows), len(all_cols)), np.nan)
+        errmask  = np.zeros((len(rows), len(all_cols)), dtype=bool)
         col_idx  = {c: i for i, c in enumerate(all_cols)}
-        for i, row in enumerate(rows):
+        for i, (row, errored) in enumerate(zip(rows, row_errors)):
             for col, val in row.items():
                 matrix[i, col_idx[col]] = val
+            for col in errored:
+                errmask[i, col_idx[col]] = True
 
         return MetricsTable(
             labels=np.array(list(active), dtype=object),
             columns=all_cols,
             values=matrix,
             contexts=contexts,
+            error_mask=errmask,
         )
 
     # --- preprocessing helpers (functional, return new Session) ---
