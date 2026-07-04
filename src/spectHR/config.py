@@ -493,23 +493,20 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
     else:
         canonical_units = "mMI²/Hz"
 
-    welch_raw = dict(fa.get("welch", {}))
-    welch_raw.setdefault("units", canonical_units)
-    welch_cfg = _filter_kwargs(WelchOptions, welch_raw)
+    # The display unit is a single top-level setting (``plot_units``); the
+    # per-method options bundles no longer carry their own units field.  Any
+    # legacy per-method ``units`` / ``plot_units`` keys still present in an old
+    # workspace are silently dropped by ``_filter_kwargs`` below.
+    welch_cfg = _filter_kwargs(WelchOptions, dict(fa.get("welch", {})))
     welch_opts = WelchOptions(**welch_cfg)
 
-    ls_raw = dict(fa.get("lombscargle", {}))
-    ls_raw.setdefault("units", canonical_units)
-    ls_cfg = _filter_kwargs(LombscargleOptions, ls_raw)
+    ls_cfg = _filter_kwargs(LombscargleOptions, dict(fa.get("lombscargle", {})))
     ls_opts = LombscargleOptions(**ls_cfg)
 
-    ar_raw = dict(fa.get("autoregressive", {}))
-    ar_raw.setdefault("units", canonical_units)
-    ar_cfg = _filter_kwargs(AutoregressiveOptions, ar_raw)
+    ar_cfg = _filter_kwargs(AutoregressiveOptions, dict(fa.get("autoregressive", {})))
     ar_opts = AutoregressiveOptions(**ar_cfg)
 
     carspan_raw = dict(fa.get("carspan", {}))
-    carspan_raw.setdefault("plot_units", canonical_units)
     carspan_raw["f_max"] = f_max
     carspan_cfg = _filter_kwargs(CarspanOptions, carspan_raw)
     carspan_opts = CarspanOptions(**carspan_cfg)
@@ -521,6 +518,7 @@ def psd_method_from_workspace(workspace: Dict[str, Any]) -> PsdMethod:
         algorithm=algorithm,
         bands=bands,
         alpha_ci=float(fa.get("confidence_interval_alpha", 0.05)),
+        plot_units=canonical_units,
         mean_convention=mean_convention,
         welch=welch_opts,
         lombscargle=ls_opts,

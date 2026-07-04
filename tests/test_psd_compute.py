@@ -110,7 +110,6 @@ class TestWelchOptions:
         assert o.noverlap == 128
         assert o.nfft is None
         assert o.window == "hann"
-        assert o.units == "mMI²"
 
     def test_frozen(self):
         o = WelchOptions()
@@ -209,7 +208,6 @@ class TestLombscargleOptions:
         o = LombscargleOptions()
         assert o.nfreqs == 1000
         assert o.fmin_floor == 1e-4
-        assert o.units == "mMI²"
 
     def test_frozen(self):
         o = LombscargleOptions()
@@ -290,7 +288,6 @@ class TestCarspanOptions:
         assert o.dc_removal is False
         assert o.dc_grid == "span_matched"
         assert o.smooth_for_display is True
-        assert o.plot_units == "mMI²/Hz"
 
     def test_frozen(self):
         o = CarspanOptions()

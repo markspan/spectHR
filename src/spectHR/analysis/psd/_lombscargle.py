@@ -28,9 +28,6 @@ class LombscargleOptions:
     fmin_floor: float = 1e-4
     """Lower frequency floor in Hz."""
 
-    units: str = "mMI²"
-    """Output unit hint: ``"mMI²"`` or ``"ms²"``."""
-
 
 _DEFAULT_LS_OPTIONS = LombscargleOptions()
 

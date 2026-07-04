@@ -171,10 +171,6 @@ class CarspanOptions:
     ``ΔT = T/(N-1)``, exactly as the Pascal ``SOC`` lays out ``ExpT``.
     Ignored when ``signal == "ibi_amplitude"``."""
 
-    # ----- Plot-unit hint ---------------------------------------------------
-    plot_units: str = "mMI²/Hz"
-    """Display unit hint for the caller - ``"mMI²/Hz"`` or ``"ms²/Hz"``."""
-
 
 _DEFAULT_CARSPAN_OPTIONS = CarspanOptions()
 
@@ -183,7 +179,6 @@ def carspan_strict_options(
     *,
     smooth_for_display: bool = True,
     f_max: float = 0.5,
-    plot_units: str = "mMI²/Hz",
 ) -> CarspanOptions:
     """Manual-faithful CARSPAN preset - a :class:`CarspanOptions` bundle
     that drives :func:`compute_carspan_psd` along the IBI-amplitude DFT
@@ -200,7 +195,9 @@ def carspan_strict_options(
 
     * ``smooth_for_display`` - 3-point MA on the display grid (plot only).
     * ``f_max`` - upper frequency limit of the native grid.
-    * ``plot_units`` - display unit hint passed downstream.
+
+    The display unit is not a CARSPAN knob; it is the single top-level
+    ``PsdMethod.plot_units`` applied by the engine.
     """
     return CarspanOptions(
         signal="ibi_amplitude",
@@ -217,7 +214,6 @@ def carspan_strict_options(
         skip_first_event=True,
         dc_removal=True,
         dc_grid="carspan_strict",
-        plot_units=plot_units,
     )
 
 

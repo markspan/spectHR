@@ -21,16 +21,24 @@ module (``hrv.ecg_metrics.rmssd``, ``hrv.bp_metrics.bp_sbp``, ...) or look them
 up by name via :func:`get_metrics`.
 """
 
-# Importing the metric submodules populates _REGISTRY as a side effect.
-# The registry is filled on first access to spectHR.analysis.
-# One submodule per series type; see analysis/README.md for the full map.
+# Importing the metric submodules populates _REGISTRY as a side effect. The
+# registry is filled on first access to spectHR.analysis; one submodule per
+# series type (see analysis/README.md for the full map).
+#
+# The import order is also the *column order* of the results table and the CSV
+# export (registration order). It is deliberate, not alphabetical: blood
+# pressure sits just before the ICG/PEP block, so the table reads
+#   epoch | HRV time/frequency (ecg) | blood pressure | PEP (icg) | resp | transfer
+# Keep this order; isort is turned off for the block so it is not re-sorted.
+# isort: off
 from spectHR.analysis import (
-    bp_metrics,  # noqa: F401  (bp_sbp/dbp/pp/map)
-    ecg_metrics,  # noqa: F401  (all IBI/HRV: time, Poincaré, DFA, PRSA, band powers)
-    icg_metrics,  # noqa: F401  (pep, pep_b/c/q_ms, pep_n_beats)
+    ecg_metrics,          # noqa: F401  (IBI/HRV: time, Poincaré, DFA, PRSA, band powers)
+    bp_metrics,           # noqa: F401  (bp_sbp/dbp/pp/map, sbp_sd/dbp_sd)
+    icg_metrics,          # noqa: F401  (pep, pep_b/c/q_ms, pep_n_beats, heather_index)
     respiration_metrics,  # noqa: F401  (resp_freq, hf_resp_in_band, resp_mvo/svo, rsa/rsa0)
-    transfer_metrics,  # noqa: F401  (transfer_band_metrics)
+    transfer_metrics,     # noqa: F401  (transfer_band_metrics)
 )
+# isort: on
 from spectHR.analysis.registry import (
     epoch_metric,
     epoch_metric_group,

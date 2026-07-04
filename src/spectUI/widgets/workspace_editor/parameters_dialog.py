@@ -115,6 +115,107 @@ _ENUM_CHOICES: dict[str, list[str]] = {
 }
 
 
+# Per-setting help text shown as a hover tooltip.  Keyed by the leaf key
+# (applies wherever that key appears) or by the full dotted path (which wins
+# over the leaf entry, for keys whose meaning differs between sections).  The
+# built-in default value is appended automatically, so these strings describe
+# only what the parameter does, never its default.
+_FIELD_HELP: dict[str, str] = {
+    # Cardio: IBI classification / R-peak detection
+    "window_length": "Beats in the centred rolling window used for the local IBI "
+                     "mean and SD that drive artefact classification.",
+    "n_std": "Threshold width in standard deviations: an IBI outside "
+             "mean +/- n_std x SD is flagged short or long.",
+    "max_ibi_sec": "Absolute ceiling in seconds; IBIs longer than this are labelled "
+                   "too-long and excluded from the rolling statistics.",
+    "min_peak_distance_ms": "Refractory period for R-peak detection: the minimum "
+                            "spacing between successive beats.",
+    "filter_type": "ECG prefilter applied before R-peak detection (highpass removes "
+                   "baseline wander).",
+    "filter_cutoff": "Cutoff frequency (Hz) of the ECG prefilter.",
+    "display_filtered": "Show the filtered ECG in the preprocessing plot instead of "
+                        "the raw signal.",
+    # Respiration / RSA
+    "per_epoch": "Detect breath phases separately within each epoch (re-runs the "
+                 "accelerometer PCA per epoch).",
+    "rsa_lag_s": "Lag of the Grossman peak-to-valley RSA window; lower it for fast "
+                 "heart rates (children).",
+    "rsa_overlay": "Which RSA series to overlay: rsa (NaN for invalid breaths) or "
+                   "rsa0 (zero-filled).",
+    "rsp_source": "Respiration source for ICG recordings: the thoracic-impedance "
+                  "signal or the accelerometer chest-wall surrogate.",
+    "rsa_rejection_mode": "Breath rejection for Grossman RSA: none, or strict "
+                          "(VU-AMS-style irregular-IBI / rate guards).",
+    # Calibration
+    "bp_scale": "Blood-pressure calibration slope: mmHg = bp_scale x raw + bp_zero.",
+    "bp_zero": "Blood-pressure calibration offset in mmHg.",
+    # ICG / PRSA
+    "b_point_guard_ms": "Guard zone (ms) before the C-point excluded from the ICG "
+                        "B-point search.",
+    "prsa_window": "Half-window in beats each side of the PRSA anchor, for "
+                   "Deceleration / Acceleration Capacity.",
+    # Logging
+    "level": "Minimum severity shown in the log dock and console.",
+    # Frequency analysis, top level
+    "method": "PSD estimation algorithm for the HRV spectrum.",
+    "plot_units": "Display unit for every PSD method: normalised mMI2/Hz or raw ms2/Hz.",
+    "confidence_interval_alpha": "Significance level of the PSD confidence interval "
+                                 "(0.05 = 95% CI).",
+    "detrend": "Apply Tarvainen smoothness-priors detrending to the tachogram before "
+               "the Welch / Lomb-Scargle / autoregressive methods.",
+    "detrend_lambda": "Detrending strength lambda; larger values remove slower trends.",
+    "log_band_power": "Apply a natural log to each band-power value (CARSPAN acLn), "
+                      "conditioning them for parametric statistics.",
+    "low": "Lower edge of the frequency band (Hz).",
+    "high": "Upper edge of the frequency band (Hz).",
+    "color": "Plot colour for this band.",
+    # CARSPAN
+    "FrequencyAnalysis.carspan.freq_resolution": "Frequency resolution (Hz) of the "
+                                                 "CARSPAN display grid.",
+    "FrequencyAnalysis.carspan.signal": "CARSPAN input: a unit-impulse event train "
+                                        "(events) or the IBI-amplitude DFT (ibi_amplitude).",
+    "FrequencyAnalysis.carspan.window": "Taper applied before the CARSPAN DFT.",
+    "FrequencyAnalysis.carspan.smooth_for_display": "Apply a 3-point moving average to "
+        "the displayed spectrum only; band powers use the unsmoothed spectrum.",
+    "FrequencyAnalysis.carspan.dc_removal": "Subtract a reference-grid DC term to limit "
+        "low-frequency spectral leakage (events signal only).",
+    # Welch
+    "fs": "Resampling frequency (Hz) the uneven IBI series is interpolated onto before "
+          "the transform.",
+    "nperseg": "Samples per Welch segment; larger gives finer resolution but fewer "
+               "averages.",
+    "noverlap": "Overlap in samples between successive Welch segments.",
+    "nfft": "FFT length; zero-pads each segment when larger than nperseg.",
+    "FrequencyAnalysis.welch.window": "Welch window: hann, or quadratic (the VU-DAMS "
+                                      "parabolic window).",
+    # Lomb-Scargle
+    "nfreqs": "Number of frequency points evaluated across the band range.",
+    "fmin_floor": "Lower frequency floor (Hz) of the Lomb-Scargle grid.",
+    # Autoregressive
+    "order": "Autoregressive (Burg) model order; 10 to 20 is the usual "
+             "short-term-HRV range.",
+    # Profiles / Spectrogram / Transfer (shared leaf keys)
+    "window (sec)": "Length in seconds of the sliding analysis window.",
+    "step (sec)": "Step in seconds between successive sliding windows.",
+    "smooth_for_display": "Smooth the displayed curve only (plot cosmetic).",
+    "adaptive_source": "Source of the breathing frequency used for adaptive band "
+                       "tracking.",
+    "smooth_breath_freq": "Smooth the per-window breathing-frequency estimate.",
+    "show_respiration_overlay": "Overlay the breathing-frequency trace on the "
+                                "spectrogram.",
+    "colormap": "Colour map for the spectrogram tiles.",
+    "input_signal": "Transfer-function input: blood pressure (baroreflex) or "
+                    "respiration (RSA); the output is always IBI/HR.",
+    "min_coherence": "Coherence floor; a band's gain and phase are masked where "
+                     "coherence falls below it.",
+    "f_min": "Lower frequency (Hz) of the transfer analysis.",
+    "f_max": "Upper frequency (Hz) of the transfer analysis.",
+    "phase_view": "Phase display: wrapped to (-pi, pi] or unwrapped.",
+    "show_coherence_threshold": "Draw the coherence-threshold line on the transfer plot.",
+    "coherence_mask_alpha": "Opacity of the shading over low-coherence regions.",
+}
+
+
 # ----------------------------------------------------------------------
 # Generic parameters editor
 # ----------------------------------------------------------------------
@@ -153,6 +254,16 @@ class ParametersEditorDialog(QDialog):
         # QLineEdit / QPushButton (.text()), QComboBox (.currentText()),
         # _BandMultiSelectWidget (.selected_names()).
         self._widgets: dict[str, tuple[QWidget, Any]] = {}
+
+        # Nested sub-section group boxes, keyed by dotted path (e.g.
+        # "FrequencyAnalysis.welch").  The PSD tab uses these to grey out the
+        # method-specific sections that don't apply to the chosen PSD method.
+        self._section_groups: dict[str, QWidget] = {}
+
+        # Field labels, keyed by the same dotted path as _widgets, so a field
+        # and its label can be greyed together (e.g. the carspan knobs the
+        # carspan_strict preset overrides).
+        self._field_labels: dict[str, QWidget] = {}
 
         # Universe of band names - looked up here so the editor's
         # widget-builder helpers can offer it to the band multiselect.
@@ -217,6 +328,140 @@ class ParametersEditorDialog(QDialog):
         outer = QVBoxLayout(self)
         outer.addWidget(tabs)
         outer.addWidget(buttons)
+
+        # PSD tab: grey out the method-specific sections that don't apply to
+        # the currently-selected PSD method (must run after every group exists).
+        self._wire_psd_method_sections()
+
+        # Hover tooltips: explain each setting and show its default.
+        self._apply_tooltips()
+
+    # ------------------------------------------------------------------
+    # PSD tab: enable only the chosen method's settings
+    # ------------------------------------------------------------------
+
+    #: FrequencyAnalysis sub-sections that are method-specific.  Everything
+    #: else under FrequencyAnalysis (bands, plot_units, detrend,
+    #: confidence_interval_alpha, log_band_power) applies to every method and is
+    #: never greyed.
+    _PSD_METHOD_SECTIONS: tuple[str, ...] = (
+        "welch", "lombscargle", "autoregressive", "carspan",
+    )
+
+    #: CARSPAN leaf settings the ``carspan_strict`` preset overrides, so they
+    #: have no influence under strict and are greyed within the carspan group:
+    #:   signal          -> forced to "ibi_amplitude"
+    #:   freq_resolution -> forced to 0.01
+    #:   window          -> ignored (strict uses the Pascal index taper)
+    #:   dc_removal      -> ignored (mean subtraction removes DC at signal level)
+    #: ``smooth_for_display`` is carried over from the user's setting, so it
+    #: stays active.
+    _CARSPAN_STRICT_LOCKED: tuple[str, ...] = (
+        "signal", "freq_resolution", "window", "dc_removal",
+    )
+
+    @classmethod
+    def _active_psd_section(cls, method_value: str) -> "str | None":
+        """Return the FrequencyAnalysis sub-section *method_value* uses.
+
+        ``carspan_strict`` is a preset of the carspan engine, so it shares the
+        ``carspan`` section.
+        """
+        if method_value in ("carspan", "carspan_strict"):
+            return "carspan"
+        if method_value in cls._PSD_METHOD_SECTIONS:
+            return method_value
+        return None
+
+    def _wire_psd_method_sections(self) -> None:
+        """Drive the method-specific PSD group boxes from the method combo.
+
+        Only the selected method's sub-section stays enabled; the others are
+        greyed out (their values are preserved, just shown as inactive).  A
+        no-op when the workspace carries no ``FrequencyAnalysis.method`` combo.
+        """
+        entry = self._widgets.get("FrequencyAnalysis.method")
+        if entry is None:
+            return
+        combo = entry[0]
+        if not isinstance(combo, QComboBox):
+            return
+
+        def _apply() -> None:
+            value = combo.currentData(Qt.UserRole)
+            if value is None:
+                value = combo.currentText()
+            value = str(value)
+            active = self._active_psd_section(value)
+            for section in self._PSD_METHOD_SECTIONS:
+                group = self._section_groups.get(f"FrequencyAnalysis.{section}")
+                if group is not None:
+                    group.setEnabled(section == active)
+            # Within the (shared) carspan section, the carspan_strict preset
+            # fixes most knobs, so grey the ones it overrides; plain carspan
+            # leaves them all editable.
+            strict = value == "carspan_strict"
+            for field in self._CARSPAN_STRICT_LOCKED:
+                self._set_field_enabled(
+                    f"FrequencyAnalysis.carspan.{field}", not strict
+                )
+
+        combo.currentIndexChanged.connect(lambda _idx: _apply())
+        _apply()
+
+    def _set_field_enabled(self, path: str, enabled: bool) -> None:
+        """Enable or grey a leaf field and its label together (if present)."""
+        entry = self._widgets.get(path)
+        if entry is not None:
+            entry[0].setEnabled(enabled)
+        label = self._field_labels.get(path)
+        if label is not None:
+            label.setEnabled(enabled)
+
+    # ------------------------------------------------------------------
+    # Hover tooltips: explain each setting and show its default
+    # ------------------------------------------------------------------
+
+    def _apply_tooltips(self) -> None:
+        """Set a hover tooltip on every field and its label.
+
+        The text is the parameter's help string from :data:`_FIELD_HELP` with
+        the built-in default appended; a field with neither help nor a known
+        default gets no tooltip.
+        """
+        from spectUI.parameters import Parameters
+        defaults = Parameters.default().to_dict()
+        for path, (widget, _orig) in self._widgets.items():
+            tip = self._tooltip_for(path, defaults)
+            if not tip:
+                continue
+            widget.setToolTip(tip)
+            label = self._field_labels.get(path)
+            if label is not None:
+                label.setToolTip(tip)
+
+    def _tooltip_for(self, path: str, defaults: dict) -> str:
+        """Compose the tooltip for *path*: help text plus the default value."""
+        leaf = path.rsplit(".", 1)[-1]
+        help_text = _FIELD_HELP.get(path) or _FIELD_HELP.get(leaf) or ""
+        default = self._lookup(defaults, path)
+        if default is None:
+            return help_text
+        shown = "on" if default is True else "off" if default is False else str(default)
+        if help_text:
+            return f"{help_text}  (default: {shown})"
+        return f"Default: {shown}"
+
+    @staticmethod
+    def _lookup(tree: dict, path: str):
+        """Walk *tree* by the dotted *path*; return the scalar leaf or None."""
+        node = tree
+        for part in path.split("."):
+            if isinstance(node, dict) and part in node:
+                node = node[part]
+            else:
+                return None
+        return node if isinstance(node, (str, int, float, bool)) else None
 
     def _build_tab(self, workspace: dict, section_keys: list[str]) -> QWidget:
         """Build one tab pane - a vertical scroll of section group boxes."""
@@ -297,6 +542,7 @@ class ParametersEditorDialog(QDialog):
                         self._widgets[mp] = (w, mv)
                         label_txt = self._LABEL_ALIASES.get(mp, _label(mk))
                         lbl = QLabel(label_txt + ":")
+                        self._field_labels[mp] = lbl
                         if i == 0:
                             lbl.setMinimumWidth(160)
                         else:
@@ -327,6 +573,7 @@ class ParametersEditorDialog(QDialog):
                 layout.addLayout(row)
             elif isinstance(value, dict):
                 sub_group = self._make_group(key, value, prefix=path)
+                self._section_groups[path] = sub_group
                 layout.addWidget(sub_group)
             elif self._is_band_list_path(path):
                 # ``Profiles.bands`` is a list of band names the profile
@@ -353,6 +600,7 @@ class ParametersEditorDialog(QDialog):
                 row = QHBoxLayout()
                 label_txt = self._LABEL_ALIASES.get(path, _label(key))
                 label = QLabel(label_txt + ":")
+                self._field_labels[path] = label
                 label.setMinimumWidth(160)
                 label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 row.addWidget(label)
@@ -439,6 +687,8 @@ class ParametersEditorDialog(QDialog):
         "FrequencyAnalysis.welch.fs":     ["nperseg", "noverlap", "nfft"],
         # PSD - Lomb-Scargle (both on one line)
         "FrequencyAnalysis.lombscargle.nfreqs": ["fmin_floor"],
+        # PSD - Autoregressive (all three on one line)
+        "FrequencyAnalysis.autoregressive.fs": ["order", "nfreqs"],
     }
 
     # Per-path display-label overrides. Workspace key stays untouched
@@ -446,11 +696,11 @@ class ParametersEditorDialog(QDialog):
     # remapped. Useful when the editor reads better with a different
     # phrasing than the underlying field name.
     _LABEL_ALIASES: dict[str, str] = {
-        "FrequencyAnalysis.detrend":           "smoothness-priors detrend",
-        "FrequencyAnalysis.detrend_lambda":    "detrend λ (Tarvainen 2002)",
-        "FrequencyAnalysis.plot_units":        "plot units (all PSD methods)",
-        "FrequencyAnalysis.log_band_power":    "log band power (ln, CARSPAN acLn)",
-        "CardioParameters.EcgPreprocessing.display_filtered": "show filtered ECG in plot",
+        "FrequencyAnalysis.detrend":           "Smoothness-Priors Detrend",
+        "FrequencyAnalysis.detrend_lambda":    "Detrend λ (Tarvainen 2002)",
+        "FrequencyAnalysis.plot_units":        "Plot Units (All PSD Methods)",
+        "FrequencyAnalysis.log_band_power":    "Log Band Power (ln, CARSPAN acLn)",
+        "CardioParameters.EcgPreprocessing.display_filtered": "Show Filtered ECG In Plot",
     }
 
     # Path whose value is the adaptive-bands dict. Rendered by

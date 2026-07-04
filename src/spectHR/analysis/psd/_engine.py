@@ -205,6 +205,7 @@ class PSDEngine:
         self,
         carspan_opts: CarspanOptions,
         mean_convention: MeanConvention,
+        plot_units: str,
     ) -> Tuple[float, str]:
         """Return ``(convert, unit)`` for the CARSPAN display path.
 
@@ -217,7 +218,7 @@ class PSDEngine:
           events²/Hz (unit-impulse DFT). Legacy mapping uses
           ``mean_ms²`` (kept for back-compat).
         """
-        units = str(carspan_opts.plot_units)
+        units = str(plot_units)
         if mean_convention == "arithmetic":
             mean_ibi_ms_val = mean_ibi_ms_arithmetic(self._series)
         else:
@@ -259,7 +260,7 @@ class PSDEngine:
     def _psd_welch(self, method: PsdMethod, *, with_ci: bool = True) -> PSDResult:
         ibi_times_s, ibi_values_ms = ibi_clean_pairs(self._series)
         ibi_values_ms = self._maybe_detrend(method, ibi_values_ms)
-        convert, unit = self._ibi_psd_display(method.welch.units)
+        convert, unit = self._ibi_psd_display(method.plot_units)
         raw = _compute_welch_psd(
             ibi_times_s,
             ibi_values_ms,
@@ -279,7 +280,7 @@ class PSDEngine:
     ) -> PSDResult:
         ibi_times_s, ibi_values_ms = ibi_clean_pairs(self._series)
         ibi_values_ms = self._maybe_detrend(method, ibi_values_ms)
-        convert, unit = self._ibi_psd_display(method.lombscargle.units)
+        convert, unit = self._ibi_psd_display(method.plot_units)
         raw = _compute_lombscargle_psd(
             ibi_times_s,
             ibi_values_ms,
@@ -300,7 +301,7 @@ class PSDEngine:
     ) -> PSDResult:
         ibi_times_s, ibi_values_ms = ibi_clean_pairs(self._series)
         ibi_values_ms = self._maybe_detrend(method, ibi_values_ms)
-        convert, unit = self._ibi_psd_display(method.autoregressive.units)
+        convert, unit = self._ibi_psd_display(method.plot_units)
         raw = _compute_autoregressive_psd(
             ibi_times_s,
             ibi_values_ms,
@@ -325,7 +326,9 @@ class PSDEngine:
         ``CarspanOptions``) and ``algorithm="carspan_strict"`` (which first
         forces ``method.carspan`` to :func:`carspan_strict_options`).
         """
-        convert, unit = self._carspan_display(method.carspan, method.mean_convention)
+        convert, unit = self._carspan_display(
+            method.carspan, method.mean_convention, method.plot_units
+        )
         raw = _compute_carspan_psd(
             event_times_clean(self._series),
             alpha_ci=method.alpha_ci,
@@ -347,17 +350,17 @@ class PSDEngine:
 
         The strict variant is, by design, just :func:`carspan_strict_options`
         applied through the same compute pipeline as configurable CARSPAN.
-        Only ``smooth_for_display``, ``f_max``, and ``plot_units`` are
-        carried over from the caller's ``method.carspan``; every other field
-        is overridden by the strict preset to match Pascal's
-        ``IsRPDataCol=False`` branch (IBI-amplitude DFT, Eq. 3.21). The
+        Only ``smooth_for_display`` and ``f_max`` are carried over from the
+        caller's ``method.carspan`` (the display unit comes from the top-level
+        ``method.plot_units``); every other field is overridden by the strict
+        preset to match Pascal's ``IsRPDataCol=False`` branch (IBI-amplitude
+        DFT, Eq. 3.21). The
         ``method`` field on the returned PSDResult is rebranded to
         ``"carspan_strict"`` so downstream code can tell the two apart.
         """
         strict_opts = carspan_strict_options(
             smooth_for_display=bool(method.carspan.smooth_for_display),
             f_max=float(method.carspan.f_max),
-            plot_units=str(method.carspan.plot_units),
         )
         strict_method = replace(method, carspan=strict_opts)
         result = self._psd_carspan(strict_method, with_ci=with_ci)

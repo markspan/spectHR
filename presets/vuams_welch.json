@@ -3,6 +3,7 @@
 
     "FrequencyAnalysis": {
         "method": "welch",
+        "plot_units": "ms²/Hz",
 
         "bands": {
             "TP":  {"low": 0.0001, "high": 0.40, "color": "gray",      "alpha": 0.35},
@@ -16,8 +17,7 @@
             "nperseg":  1024,
             "noverlap": 512,
             "nfft":     1024,
-            "window":   "quadratic",
-            "units":    "ms²"
+            "window":   "quadratic"
         },
 
         "detrend_lambda": 500.0

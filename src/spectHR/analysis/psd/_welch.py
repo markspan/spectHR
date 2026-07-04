@@ -40,9 +40,6 @@ class WelchOptions:
     """``scipy.signal.get_window`` name, or ``"quadratic"`` for the
     Welch/parabolic window used by VU-DAMS (see :func:`_quadratic_window`)."""
 
-    units: str = "mMI²"
-    """Output unit hint: ``"mMI²"`` (normalised) or ``"ms²"`` (raw)."""
-
 
 _DEFAULT_WELCH_OPTIONS = WelchOptions()
 

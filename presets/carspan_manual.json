@@ -31,7 +31,6 @@
             "freq_resolution": 0.01,
             "signal": "events",
             "window": "10% cosine bell",
-            "plot_units": "mMI²/Hz",
             "smooth_for_display": true,
             "dc_removal": true
         },
@@ -40,13 +39,11 @@
             "nperseg": 256,
             "noverlap": 128,
             "nfft": 512,
-            "window": "hann",
-            "units": "mMI²"
+            "window": "hann"
         },
         "lombscargle": {
             "nfreqs": 100,
-            "fmin_floor": 0.0001,
-            "units": "mMI²"
+            "fmin_floor": 0.0001
         },
         "confidence_interval_alpha": 0.05
     },

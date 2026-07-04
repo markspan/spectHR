@@ -28,25 +28,32 @@ from PySide6.QtWidgets import (
 )
 
 
-def _label(key: str) -> str:
-    """Turn a snake_case or camelCase key into a human-readable label.
+def _titlecase(s: str) -> str:
+    """Capitalise the first letter of each word, leaving the rest untouched.
 
-    Keys that already contain a space or a parenthesis are treated as
-    *pre-formatted* - the workspace author chose that spelling for the
-    dialog and we round-trip it untouched. Without that early return,
-    ``.title()`` would mangle ``"window (sec)"`` into ``"Window (Sec)"``
-    and re-title other unit-bearing keys in surprising ways.
+    Unlike ``str.title()`` this does **not** lowercase the remainder of a
+    word, so acronyms and unit tokens survive: ``"log band power"`` becomes
+    ``"Log Band Power"`` and ``"window (sec)"`` becomes ``"Window (sec)"``
+    (the ``sec`` is not capitalised because ``(sec)`` starts with ``(``).
     """
-    # Pre-formatted key - already laid out the way the author wants it
-    # shown. Bypass camelCase/snake_case splitting and title-casing.
+    return " ".join(w[:1].upper() + w[1:] if w else w for w in s.split(" "))
+
+
+def _label(key: str) -> str:
+    """Turn a snake_case or camelCase key into a title-cased on-screen label.
+
+    Keys that already contain a space or a parenthesis (e.g. ``"window
+    (sec)"``) keep their internal spelling and are only title-cased; other
+    keys are first split from snake_case / camelCase.
+    """
     if " " in key or "(" in key or ")" in key:
-        return key
+        return _titlecase(key)
 
     # camelCase, words
     s = re.sub(r"([a-z])([A-Z])", r"\1 \2", key)
     # underscores, spaces
     s = s.replace("_", " ")
-    return s.title()
+    return _titlecase(s)
 
 
 # ----------------------------------------------------------------------

@@ -57,9 +57,6 @@ class AutoregressiveOptions:
     nfreqs: int = 512
     """Number of frequency evaluation points across ``[0, f_max]``."""
 
-    units: str = "mMI²"
-    """Output unit hint: ``"mMI²"`` (normalised) or ``"ms²"`` (raw)."""
-
 
 _DEFAULT_AR_OPTIONS = AutoregressiveOptions()
 

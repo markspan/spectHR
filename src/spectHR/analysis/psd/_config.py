@@ -196,6 +196,11 @@ class PsdMethod:
     algorithm: Algorithm = "carspan"
     bands: Dict[str, BandSpec] = field(default_factory=_default_bands)
     alpha_ci: float = 0.05
+    plot_units: str = "mMI²/Hz"
+    """Display-unit hint for **every** PSD method: ``"mMI²/Hz"`` (normalised)
+    or ``"ms²/Hz"`` (raw). The single source of truth, driven by the workspace
+    ``FrequencyAnalysis.plot_units`` setting; the per-method options bundles no
+    longer carry their own units field."""
     mean_convention: MeanConvention = "harmonic"
     """Mean rate convention for the events²/Hz → mMI²/Hz conversion.
     ``"harmonic"`` (= ``T/N``) is the manual definition; ``"arithmetic"``

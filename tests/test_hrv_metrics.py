@@ -675,11 +675,10 @@ class TestUnitConsistency:
         assert "mMI" in r.unit
 
     def test_welch_ms2_units_when_requested(self, lf_cs):
-        from spectHR.analysis.psd import WelchOptions
         m = PsdMethod(
             algorithm="welch",
             bands=dict(WORKSPACE_BANDS),
-            welch=WelchOptions(units="ms²"),
+            plot_units="ms²/Hz",
         )
         r = _psd(lf_cs, m)
         assert "ms" in r.unit
