@@ -41,8 +41,8 @@ from spectHR.analysis.registry import get_metric_groups, get_metrics
 #: package was pip-installed rather than run from a git checkout).
 DEFAULT_GITHUB_BASE = "https://github.com/markspan/spectHR"
 
-#: Branch the help links point at (PRs target V2; it is the working reference).
-DEFAULT_REF = "V2"
+#: Branch the help links point at (``main`` is the default/reference branch).
+DEFAULT_REF = "main"
 
 #: Deep-link target document, relative to the repository root.  The metric
 #: reference stays with the analysis library it documents.

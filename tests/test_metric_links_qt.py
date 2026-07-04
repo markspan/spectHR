@@ -53,7 +53,7 @@ for name in ("sdnn", "rmssd", "csi", "lf_nu", "tinn"):
 # --- URLs ------------------------------------------------------------------
 assert ML.github_base() == "https://github.com/markspan/spectHR"
 src = ML.metric_source_url("csi")
-assert src.startswith("https://github.com/markspan/spectHR/blob/V2/")
+assert src.startswith("https://github.com/markspan/spectHR/blob/main/")
 assert "ecg_metrics.py#L" in src
 assert ML.metric_doc_url("csi").endswith("/src/spectHR/analysis/README.md#csi")
 assert ML._normalise_remote("git@github.com:markspan/spectHR.git") == (
