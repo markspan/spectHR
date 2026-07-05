@@ -53,38 +53,36 @@ p3.write_text("not an svg", encoding="utf-8")
 _make_svg_responsive(p3)
 assert p3.read_text(encoding="utf-8") == "not an svg"
 
-# --- scaled to a fixed width, live figure size restored ---------------------
-import re as _re
-
+# --- line/font scaling: applied within the context, restored on exit --------
 from matplotlib.figure import Figure
 
-from spectUI.plot_export import _SVG_EXPORT_WIDTH_PT, _savefig_svg_scaled
+from spectUI.parameters import Parameters
+from spectUI.plot_export import _scaled_line_and_font
 
+fig = Figure(figsize=(3.2, 2.4))
+ax = fig.add_subplot(111)
+(line,) = ax.plot([0, 1, 2], [0, 1, 0], linewidth=2.0)
+ax.set_xlabel("Frequency (Hz)")
+lbl = ax.xaxis.get_label()
+lw0 = line.get_linewidth()
+fs0 = lbl.get_fontsize()
 
-def _viewbox_w(text):
-    m = _re.search(r'viewBox="0 0 ([\d.]+) [\d.]+"', text)
-    return float(m.group(1))
+with _scaled_line_and_font(fig, 0.5):
+    assert abs(line.get_linewidth() - lw0 * 0.5) < 1e-9, line.get_linewidth()
+    assert abs(lbl.get_fontsize() - fs0 * 0.5) < 1e-9, lbl.get_fontsize()
+# restored on exit
+assert abs(line.get_linewidth() - lw0) < 1e-9
+assert abs(lbl.get_fontsize() - fs0) < 1e-9
 
+# factor 1.0 is a no-op
+with _scaled_line_and_font(fig, 1.0):
+    assert line.get_linewidth() == lw0
 
-assert _SVG_EXPORT_WIDTH_PT == 1024.0
-
-# A small tile and a larger figure must both come out at exactly the target
-# width, regardless of their original on-screen size, with aspect preserved.
-for name, figsize in (("tile", (3.2, 2.4)), ("wide", (6.4, 4.8))):
-    fig = Figure(figsize=figsize)
-    ax = fig.add_subplot(111)
-    ax.plot([0, 1, 2], [0, 1, 0], linewidth=1.0)
-    ax.set_xlabel("Frequency (Hz)")
-    orig = tuple(fig.get_size_inches())
-    out = d / f"{name}.svg"
-    # The export path saves scaled, then makes the result responsive.
-    _savefig_svg_scaled(fig, out, 300)
-    _make_svg_responsive(out)
-    assert tuple(fig.get_size_inches()) == orig, f"{name}: figure size not restored"
-    text = out.read_text(encoding="utf-8")
-    assert abs(_viewbox_w(text) - 1024.0) < 1.0, (name, _viewbox_w(text))
-    # Responsive rewrite still applies on top of the scaling.
-    assert 'width="100%"' in text and 'height="100%"' in text
+# The setting is exposed and defaults to 0.5.
+p = Parameters.default()
+assert p.export_line_font_scale == 0.5
+p2 = Parameters.from_dict({"Export": {"vector_line_font_scale": 0.3}})
+assert p2.export_line_font_scale == 0.3
 
 print("SVG_RESPONSIVE_OK")
 """

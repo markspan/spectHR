@@ -11,11 +11,16 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
 from PySide6.QtWidgets import QMessageBox, QWidget
 
 from spectHR.logger import logger
+
+#: Vector formats the line/font scale applies to (PNG is raster; its detail is
+#: set by DPI, so the scale is not applied to it).
+_VECTOR_FORMATS = frozenset({"svg", "pdf", "eps"})
 
 
 def _slug(text) -> str:
@@ -23,38 +28,43 @@ def _slug(text) -> str:
     return re.sub(r"[^\w.-]+", "_", str(text)).strip("_")
 
 
-# Exported SVGs are scaled to this width in points (aspect ratio preserved), so
-# every figure comes out a consistent, large size regardless of its on-screen
-# tile size.  Point-based line widths and fonts then read proportionally lighter
-# once a browser scales the responsive SVG to fill the window.  A figure that
-# packs several sub-plots shares this width, so each sub-plot is correspondingly
-# smaller than a single-plot figure of the same width.
-_SVG_EXPORT_WIDTH_PT = 1024.0
+@contextmanager
+def _scaled_line_and_font(fig, factor: float):
+    """Temporarily scale every line width and font size in *fig* by *factor*.
 
-
-def _savefig_svg_scaled(fig, dest: Path, dpi: int) -> None:
-    """Save *fig* as SVG scaled to :data:`_SVG_EXPORT_WIDTH_PT` wide, then restore it.
-
-    The figure is resized (aspect ratio preserved) so its width is 1024 pt while
-    its line widths and fonts stay fixed in points, so relative to the enlarged
-    figure they read lighter once a browser scales the SVG to fill the window.
-    The live figure size is restored in the ``finally`` block; ``forward=False``
-    keeps the change off the on-screen Qt canvas (no flicker).
+    A plot authored for a small on-screen tile has line widths and fonts that
+    look heavy when the exported file is viewed large (a fullscreen browser SVG
+    or a PDF fitted to the window).  Scaling them down, together, without
+    changing the figure's physical size, keeps the file usable both for viewing
+    and for embedding at its true dimensions.  The originals are restored on
+    exit, and no event loop runs in between, so the on-screen canvas never
+    repaints (no flicker).
     """
-    orig = fig.get_size_inches().copy()
-    orig_w_in = float(orig[0])
-    if orig_w_in <= 0:
-        fig.savefig(dest, format="svg", dpi=dpi, bbox_inches="tight")
+    if factor == 1.0 or factor <= 0.0:
+        yield
         return
-    scale = (_SVG_EXPORT_WIDTH_PT / 72.0) / orig_w_in
+    from matplotlib.lines import Line2D
+    from matplotlib.text import Text
+
+    restore = []
+    for line in fig.findobj(Line2D):        # data lines, tick marks, grid, legend
+        lw = line.get_linewidth()
+        restore.append((line.set_linewidth, lw))
+        line.set_linewidth(lw * factor)
+    for ax in fig.get_axes():               # axes spines (the plot box)
+        for spine in ax.spines.values():
+            lw = spine.get_linewidth()
+            restore.append((spine.set_linewidth, lw))
+            spine.set_linewidth(lw * factor)
+    for text in fig.findobj(Text):          # titles, labels, ticks, legend, notes
+        fs = text.get_fontsize()
+        restore.append((text.set_fontsize, fs))
+        text.set_fontsize(fs * factor)
     try:
-        fig.set_size_inches(orig * scale, forward=False)
-        # No bbox_inches="tight" here: the widgets already tight_layout their
-        # axes, and cropping would trim the figure below the target width, so
-        # this keeps the SVG exactly _SVG_EXPORT_WIDTH_PT wide.
-        fig.savefig(dest, format="svg", dpi=dpi)
+        yield
     finally:
-        fig.set_size_inches(orig, forward=False)
+        for setter, value in restore:
+            setter(value)
 
 
 def _make_svg_responsive(path: Path) -> None:
@@ -111,12 +121,17 @@ def export_dock_plots(
     view_labels: Mapping[str, str],
     session_name: str,
     directory: str,
+    line_font_scale: float = 1.0,
 ) -> None:
     """Let the user pick which dock plots to save, then write them to disk.
 
     Each file is named ``{datafile}_{dock}[_{epoch}].{ext}``, the recording's
     name plus the dock, plus the epoch label for per-epoch grid tiles.  Fonts
     are embedded as TrueType so PDF/EPS text stays editable in vector editors.
+
+    *line_font_scale* multiplies line widths and font sizes for the **vector**
+    formats (SVG/PDF/EPS), so a plot authored for a small on-screen tile can be
+    made lighter for viewing at a larger size.  ``1.0`` leaves them unchanged.
     """
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as _Canvas
 
@@ -158,14 +173,14 @@ def export_dock_plots(
                 elif len(figs) > 1:
                     parts.append(str(i + 1))
                 dest = out / f"{'_'.join(parts)}{ext}"
+                scale = line_font_scale if fmt in _VECTOR_FORMATS else 1.0
                 try:
-                    if fmt == "svg":
-                        _savefig_svg_scaled(cv.figure, dest, dpi)
-                        _make_svg_responsive(dest)
-                    else:
+                    with _scaled_line_and_font(cv.figure, scale):
                         cv.figure.savefig(
                             dest, format=fmt, dpi=dpi, bbox_inches="tight",
                         )
+                    if fmt == "svg":
+                        _make_svg_responsive(dest)
                     saved += 1
                 except Exception:  # noqa: BLE001, skip a bad figure, keep going
                     logger.exception("Failed to save figure for %s", obj_name)

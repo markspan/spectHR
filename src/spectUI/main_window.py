@@ -342,6 +342,7 @@ class MainWindow(QMainWindow):
             VIEW_LABELS,
             getattr(self._session, "name", "") or "",
             directory,
+            line_font_scale=self._parameters.export_line_font_scale,
         )
 
     def _wait_for_docks(self, widgets, timeout_s: float = 20.0) -> None:

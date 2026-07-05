@@ -119,6 +119,9 @@ _DEFAULT: dict = {
     "PrsaAnalysis": {
         "prsa_window": 30,
     },
+    "Export": {
+        "vector_line_font_scale": 0.5,
+    },
     "Profiles": {
         "window (sec)":       30.0,
         "step (sec)":          5.0,
@@ -272,6 +275,20 @@ class Parameters(WorkspaceView):
         path = self.output_dir / context if context else self.output_dir
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    @property
+    def export_line_font_scale(self) -> float:
+        """Line-width / font multiplier for vector plot exports (SVG/PDF/EPS).
+
+        Values below 1 make the exported lines and fonts thinner and smaller,
+        which reads better when a plot authored for a small on-screen tile is
+        viewed large (a fullscreen browser SVG or a fit-to-window PDF).
+        """
+        exp = self._ws.get("Export", {}) or {}
+        try:
+            return float(exp.get("vector_line_font_scale", 1.0))
+        except (TypeError, ValueError):
+            return 1.0
 
     @property
     def directories(self) -> dict:

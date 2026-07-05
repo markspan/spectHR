@@ -49,7 +49,7 @@ _EXCLUDED_SECTIONS = {"Directories"}
 _TAB_LAYOUT: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("General Settings",     ("CardioParameters", "RespirationAnalysis",
                               "Calibration", "IcgAnalysis", "PrsaAnalysis",
-                              "Logging")),
+                              "Export", "Logging")),
     ("PSD Settings",         ("FrequencyAnalysis",)),
     ("Profile Settings",     ("Profiles",)),
     ("Spectrogram Settings", ("Spectrogram",)),
@@ -154,6 +154,12 @@ _FIELD_HELP: dict[str, str] = {
                         "B-point search.",
     "prsa_window": "Half-window in beats each side of the PRSA anchor, for "
                    "Deceleration / Acceleration Capacity.",
+    # Export
+    "vector_line_font_scale": "Multiplier for line widths and fonts in exported "
+        "vector plots (SVG / PDF / EPS). Below 1 makes them thinner and smaller, "
+        "which reads better when a small plot is viewed large (a fullscreen "
+        "browser SVG or a fit-to-window PDF). PNG is unaffected (set its detail "
+        "with DPI).",
     # Logging
     "level": "Minimum severity shown in the log dock and console.",
     # Frequency analysis, top level
@@ -701,6 +707,7 @@ class ParametersEditorDialog(QDialog):
         "FrequencyAnalysis.plot_units":        "Plot Units (All PSD Methods)",
         "FrequencyAnalysis.log_band_power":    "Log Band Power (ln, CARSPAN acLn)",
         "CardioParameters.EcgPreprocessing.display_filtered": "Show Filtered ECG In Plot",
+        "Export.vector_line_font_scale":       "Line/Font Scale (SVG, PDF, EPS)",
     }
 
     # Path whose value is the adaptive-bands dict. Rendered by
